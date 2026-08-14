@@ -29,6 +29,7 @@ const ICONS = {
   activity:   '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>',
   events:     '<path d="M4 17V9M4 9 8 5M4 9l4 4M20 7v8M20 15l-4 4M20 15l-4-4"/>',
   roles:      '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/>',
+  code:       '<path d="m8 6-6 6 6 6M16 6l6 6-6 6M14 4l-4 16"/>',
   search:     '<circle cx="11" cy="11" r="7"/><path d="m21 21-4.35-4.35"/>',
   bell:       '<path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/>',
   menu:       '<path d="M3 6h18M3 12h18M3 18h18"/>',
@@ -73,9 +74,20 @@ const ADMIN_NAV = [
     { id: 'integrations', label: 'Event log', icon: 'events',   href: '/admin/integrations.html' }
   ]},
   { group: 'Workspace', items: [
-    { id: 'roles', label: 'Roles & access', icon: 'roles', href: '/admin/roles.html' }
+    { id: 'roles', label: 'Roles & access', icon: 'roles', href: '/admin/roles.html' },
+    // An item may name the permission it needs. The nav then hides it from a
+    // role that does not hold it, so nobody is offered a page that answers 403.
+    { id: 'api-docs', label: 'API reference', icon: 'code', href: '/admin/api-docs.html', permission: 'docs.read' }
   ]}
 ];
+
+// Groups with the permission-gated items removed, and any group left empty
+// dropped with them — the source of truth for both the sidebar and the palette.
+function visibleNav() {
+  return ADMIN_NAV
+    .map(g => ({ ...g, items: g.items.filter(i => !i.permission || Auth.can(i.permission)) }))
+    .filter(g => g.items.length);
+}
 
 // The developer's side of the product. Every engagement type the blueprint
 // names is a destination here — surveys, sessions, self-initiated feedback,
@@ -129,7 +141,7 @@ const Shell = {
 
   _sidebar(activeId) {
     const user = Auth.getUser() || {};
-    const groups = ADMIN_NAV.map(g => `
+    const groups = visibleNav().map(g => `
       <div class="nav-group">
         <div class="nav-group-label">${g.group}</div>
         ${g.items.map(i => `
@@ -172,7 +184,7 @@ const Shell = {
   },
 
   _mobileBar(activeId) {
-    const all = ADMIN_NAV.flatMap(g => g.items);
+    const all = visibleNav().flatMap(g => g.items);
     const current = all.find(i => i.id === activeId);
     return `
       <div class="mobile-bar">
@@ -353,7 +365,7 @@ const Shell = {
 
   async _fillPalette(term) {
     const q = term.trim().toLowerCase();
-    const pages = ADMIN_NAV.flatMap(g => g.items.map(i => ({ ...i, group: g.group })))
+    const pages = visibleNav().flatMap(g => g.items.map(i => ({ ...i, group: g.group })))
       .filter(i => !q || i.label.toLowerCase().includes(q) || i.group.toLowerCase().includes(q))
       .map(i => ({ kind: 'page', label: i.label, sub: i.group, icon: i.icon, href: i.href }));
 

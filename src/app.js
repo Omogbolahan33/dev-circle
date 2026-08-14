@@ -39,6 +39,25 @@ app.use(securityHeaders);
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 app.use(express.static(PUBLIC_DIR, { extensions: ['html'] }));
 
+// Swagger UI ships as static assets in a package rather than in public/, and
+// the API reference page loads them from here. Only the two files that page
+// names are reachable: publishing a package directory wholesale would also
+// serve the vendor's own demo page, which points at an external petstore, and
+// its source maps. Serving them from our origin is what keeps the reference
+// inside the Content-Security-Policy — both files are self-contained.
+const SWAGGER_ASSETS = new Set(['/swagger-ui.css', '/swagger-ui-bundle.js']);
+
+app.use('/vendor/swagger-ui',
+  (req, res, next) => {
+    if (!SWAGGER_ASSETS.has(req.path)) return res.status(404).type('text/plain').send('Not found');
+    next();
+  },
+  express.static(require('swagger-ui-dist').getAbsoluteFSPath(), {
+    index: false,
+    maxAge: config.isProduction ? '7d' : 0
+  })
+);
+
 app.use(requestLogger());
 
 // ─── Rate limits ────────────────────────────────────────────

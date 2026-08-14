@@ -10,10 +10,11 @@ const router = express.Router();
 
 router.use(requireAuth, requireAdmin);
 
-// Circles and sessions mount first: their paths would otherwise be caught by
-// the parameterised routes in the resource routers below.
+// Circles, sessions and the API reference mount first: their paths would
+// otherwise be caught by the parameterised routes in the resource routers below.
 router.use('/circles', require('./circles.routes'));
 router.use('/sessions', require('./sessions.routes'));
+router.use('/docs', require('./docs.routes'));
 
 router.use('/', require('./dashboard.routes'));
 router.use('/', require('./members.routes'));

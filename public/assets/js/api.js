@@ -8,6 +8,7 @@ const Auth = {
   TOKEN_KEY: 'devcircle_token',
   USER_KEY: 'devcircle_user',
   ADMIN_KEY: 'devcircle_is_admin',
+  PERMS_KEY: 'devcircle_permissions',
 
   getToken() {
     return localStorage.getItem(this.TOKEN_KEY);
@@ -21,14 +22,37 @@ const Auth = {
     return localStorage.getItem(this.ADMIN_KEY) === 'true';
   },
 
+  // Null rather than [] when nothing was stored: a session that predates this
+  // being saved is unknown, not unprivileged, and the two are treated
+  // differently by anything that hides a control.
+  getPermissions() {
+    const raw = localStorage.getItem(this.PERMS_KEY);
+    if (raw === null) return null;
+    try { return JSON.parse(raw); } catch { return null; }
+  },
+
+  // Whether the signed-in admin holds a permission. This only decides what the
+  // interface offers — the server gates the route regardless, so an out-of-date
+  // answer here can never become access.
+  can(permission) {
+    const perms = this.getPermissions();
+    if (perms === null) return true;          // unknown: let the server decide
+    return perms.includes('*') || perms.includes(permission);
+  },
+
   isLoggedIn() {
     return !!this.getToken();
   },
 
-  save(token, user, isAdmin = false) {
+  save(token, user, isAdmin = false, permissions) {
     localStorage.setItem(this.TOKEN_KEY, token);
     localStorage.setItem(this.USER_KEY, JSON.stringify(user));
     localStorage.setItem(this.ADMIN_KEY, String(isAdmin));
+    if (Array.isArray(permissions)) {
+      localStorage.setItem(this.PERMS_KEY, JSON.stringify(permissions));
+    } else {
+      localStorage.removeItem(this.PERMS_KEY);
+    }
   },
 
   logout() {
@@ -42,6 +66,7 @@ const Auth = {
     localStorage.removeItem(this.TOKEN_KEY);
     localStorage.removeItem(this.USER_KEY);
     localStorage.removeItem(this.ADMIN_KEY);
+    localStorage.removeItem(this.PERMS_KEY);
     window.location.href = '/index.html';
   },
 

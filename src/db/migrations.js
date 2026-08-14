@@ -407,6 +407,27 @@ function define(db) {
         // the browser, and typing /admin/dashboard.html would walk around it.
         addColumn('sessions', 'scope', "TEXT DEFAULT 'full'");
       }
+    },
+    {
+      id: 18,
+      name: 'api_reference_permission',
+      up() {
+        // 'docs.read' gates the API reference. It is new, so no role holds it
+        // yet — and Super Admin is the role that is meant to. A role holding
+        // '*' already has it by definition; this fills in a Super Admin whose
+        // permissions were written out in full instead.
+        const roles = db.prepare("SELECT id, permissions FROM roles WHERE name = 'Super Admin'").all();
+
+        for (const role of roles) {
+          let permissions;
+          try { permissions = JSON.parse(role.permissions || '[]'); } catch { permissions = []; }
+          if (!Array.isArray(permissions)) continue;
+          if (permissions.includes('*') || permissions.includes('docs.read')) continue;
+
+          db.prepare('UPDATE roles SET permissions = ? WHERE id = ?')
+            .run(JSON.stringify([...permissions, 'docs.read']), role.id);
+        }
+      }
     }
   ];
   return migrations;

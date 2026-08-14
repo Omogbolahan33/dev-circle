@@ -1,7 +1,7 @@
 {
   "name": "dev-circle",
   "version": "1.0.0",
-  "description": "Engagement and feedback platform for the Credit Direct developer ecosystem \u2014 surveys, cohorts, consent-aware messaging, and engagement history for developers integrating the Credit Direct APIs.",
+  "description": "Engagement and feedback platform for the Credit Direct developer ecosystem — surveys, cohorts, consent-aware messaging, and engagement history for developers integrating the Credit Direct APIs.",
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
@@ -27,7 +27,8 @@
     "bcryptjs": "^3.0.3",
     "better-sqlite3": "^13.0.3",
     "cors": "^2.8.6",
-    "express": "^5.2.1"
+    "express": "^5.2.1",
+    "swagger-ui-dist": "^5.32.13"
   },
   "private": true,
   "engines": {

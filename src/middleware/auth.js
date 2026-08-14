@@ -99,7 +99,12 @@ const PERMISSIONS = [
   { key: 'integrations.read', label: 'View integration events', group: 'System' },
   { key: 'integrations.write', label: 'Manage API keys and integrations', group: 'System' },
   { key: 'roles.read', label: 'View roles', group: 'System' },
-  { key: 'roles.write', label: 'Create roles and manage admin users', group: 'System' }
+  { key: 'roles.write', label: 'Create roles and manage admin users', group: 'System' },
+  // The reference documents every endpoint, the payloads they take, and which
+  // permission each one is gated on. That is a map of the whole admin surface,
+  // so it is a capability in its own right rather than something every role
+  // gets for free.
+  { key: 'docs.read', label: 'View the API reference', group: 'System' }
 ];
 
 const PERMISSION_KEYS = new Set(PERMISSIONS.map(p => p.key));

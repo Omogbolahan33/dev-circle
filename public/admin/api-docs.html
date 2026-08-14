@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dev Circle — API reference</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/css/tokens.css">
+  <link rel="stylesheet" href="/assets/css/app.css">
+  <!-- Swagger UI ships with the app rather than from a CDN, so the reference
+       works offline and stays inside the Content-Security-Policy. -->
+  <link rel="stylesheet" href="/vendor/swagger-ui/swagger-ui.css">
+  <script src="/assets/js/theme.js"></script>
+  <style>
+    /* ── Quick start ──────────────────────────────────────────
+       Swagger UI's own snippets only appear once a call has been executed,
+       which is no help to somebody who has not made their first one. This
+       block is the four lines they actually need, in their language. */
+    .quickstart { max-width: var(--max-content); margin-bottom: var(--sp-6); }
+    .quickstart .card-body { padding-top: var(--sp-4); }
+    .snippet {
+      font-family: var(--font-mono);
+      font-size: var(--fs-xs);
+      line-height: var(--lh-loose);
+      color: var(--text);
+      background: var(--surface-0);
+      border: 1px solid var(--line-faint);
+      border-radius: var(--r-md);
+      padding: var(--sp-4);
+      margin: 0;
+      white-space: pre;
+      overflow-x: auto;
+    }
+    .snippet-bar { display: flex; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-3); }
+    .snippet-bar .spacer { flex: 1; }
+
+    /* ── Swagger UI, wearing the product's clothes ────────────
+       Swagger's stylesheet is built for a white page. These map its surfaces,
+       type and lines onto our tokens, which flip with the theme — so the
+       reference reads as part of the console in both. */
+    .swagger-wrap {
+      background: var(--surface-2);
+      border: 1px solid var(--line-faint);
+      border-radius: var(--r-lg);
+      overflow: hidden;
+      max-width: var(--max-content);
+    }
+
+    .swagger-ui, .swagger-ui .info li, .swagger-ui .info p, .swagger-ui .info table,
+    .swagger-ui .opblock-description-wrapper p, .swagger-ui .opblock-external-docs-wrapper p,
+    .swagger-ui .opblock-title_normal p, .swagger-ui .renderedMarkdown p,
+    .swagger-ui .parameter__name, .swagger-ui table thead tr td, .swagger-ui table thead tr th,
+    .swagger-ui .response-col_status, .swagger-ui .response-col_links, .swagger-ui label,
+    .swagger-ui .tab li, .swagger-ui .opblock .opblock-section-header h4,
+    .swagger-ui .opblock .opblock-section-header > label {
+      color: var(--text);
+      font-family: var(--font-body);
+    }
+
+    .swagger-ui .info .title, .swagger-ui h1, .swagger-ui h2, .swagger-ui h3,
+    .swagger-ui h4, .swagger-ui h5, .swagger-ui .opblock-tag {
+      color: var(--text);
+      font-family: var(--font-display);
+    }
+
+    .swagger-ui .info { margin: var(--sp-8) 0 var(--sp-6); }
+    .swagger-ui .scheme-container, .swagger-ui .wrapper { background: transparent; box-shadow: none; }
+    .swagger-ui .scheme-container { border-bottom: 1px solid var(--line-faint); padding: var(--sp-4) 0; }
+
+    .swagger-ui .opblock-tag { border-bottom-color: var(--line-faint); }
+    .swagger-ui .opblock-tag small { color: var(--text-2); }
+    .swagger-ui .opblock-tag:hover { background: var(--tint-1); }
+
+    .swagger-ui .opblock {
+      background: var(--surface-3);
+      border-color: var(--line);
+      box-shadow: none;
+      margin: 0 0 var(--sp-3);
+    }
+    .swagger-ui .opblock .opblock-summary { border-color: var(--line); }
+    .swagger-ui .opblock .opblock-summary-path,
+    .swagger-ui .opblock .opblock-summary-path__deprecated,
+    .swagger-ui .opblock .opblock-summary-operation-id {
+      color: var(--text);
+      font-family: var(--font-mono);
+    }
+    .swagger-ui .opblock .opblock-summary-description { color: var(--text-2); }
+    .swagger-ui .opblock-body { background: var(--surface-2); }
+
+    .swagger-ui .opblock .opblock-section-header {
+      background: var(--tint-1);
+      box-shadow: none;
+      border-bottom: 1px solid var(--line-faint);
+    }
+
+    .swagger-ui .parameters-col_description p, .swagger-ui .markdown p,
+    .swagger-ui .renderedMarkdown li, .swagger-ui .response-col_description__inner p {
+      color: var(--text-2);
+    }
+    .swagger-ui .parameter__type, .swagger-ui .prop-type,
+    .swagger-ui .parameter__extension, .swagger-ui .parameter__in {
+      color: var(--blue-ink);
+      font-family: var(--font-mono);
+    }
+    .swagger-ui .parameter__enum { color: var(--text-3); }
+
+    .swagger-ui table tbody tr td { border-color: var(--line-faint); color: var(--text-2); }
+    .swagger-ui .responses-inner { padding: var(--sp-4); }
+
+    /* Code, both the syntax-highlighted blocks and inline spans. */
+    .swagger-ui .microlight, .swagger-ui pre.microlight,
+    .swagger-ui .highlight-code > .microlight, .swagger-ui .model-example pre {
+      background: var(--surface-0) !important;
+      border: 1px solid var(--line-faint);
+      border-radius: var(--r-md);
+    }
+    .swagger-ui .markdown code, .swagger-ui .renderedMarkdown code {
+      background: var(--tint-2);
+      color: var(--cd-gold);
+      font-family: var(--font-mono);
+      padding: 1px 5px;
+      border-radius: var(--r-sm);
+    }
+    .swagger-ui .markdown pre, .swagger-ui .renderedMarkdown pre {
+      background: var(--surface-0);
+      border: 1px solid var(--line-faint);
+      border-radius: var(--r-md);
+      color: var(--text);
+    }
+
+    /* Models and schemas. */
+    .swagger-ui section.models { border-color: var(--line); background: var(--surface-3); }
+    .swagger-ui section.models .model-container { background: var(--tint-1); }
+    .swagger-ui .model-title, .swagger-ui .model, .swagger-ui .model-toggle:after { color: var(--text); }
+    .swagger-ui .model .property.primitive, .swagger-ui .prop-format { color: var(--text-3); }
+
+    /* Controls. */
+    .swagger-ui input[type=text], .swagger-ui input[type=password], .swagger-ui input[type=email],
+    .swagger-ui textarea, .swagger-ui select {
+      background: var(--surface-4);
+      color: var(--text);
+      border-color: var(--line);
+      font-family: var(--font-body);
+    }
+    .swagger-ui textarea { font-family: var(--font-mono); }
+    .swagger-ui .filter .operation-filter-input {
+      background: var(--surface-4);
+      border-color: var(--line);
+      color: var(--text);
+    }
+    .swagger-ui .btn { color: var(--text); border-color: var(--line-strong); }
+    .swagger-ui .btn.execute { background: var(--cd-blue); border-color: var(--cd-blue); color: var(--on-accent); }
+    .swagger-ui .btn.authorize { color: var(--teal); border-color: var(--teal); }
+    .swagger-ui .btn.authorize svg { fill: var(--teal); }
+    .swagger-ui .dialog-ux .modal-ux { background: var(--surface-3); border-color: var(--line); }
+    .swagger-ui .dialog-ux .modal-ux-header h3, .swagger-ui .dialog-ux .modal-ux-content h4,
+    .swagger-ui .dialog-ux .modal-ux-content p { color: var(--text); }
+    .swagger-ui .copy-to-clipboard { background: var(--tint-3); }
+
+    /* The vendor extension we use to say which permission gates an endpoint. */
+    .swagger-ui .opblock-summary-description + .view-line-link { display: none; }
+    .swagger-ui .renderedMarkdown strong { color: var(--cd-gold); }
+
+    /* Swagger draws its own top bar and info block; ours already says what the
+       page is, so its title and version badge would only repeat us. */
+    .swagger-ui .info .title small.version-stamp { display: none; }
+    .swagger-ui .info hgroup.main { display: none; }
+
+    /* Dark mode needs the arrows and toggles lifted off Swagger's black. */
+    :root[data-theme="dark"] .swagger-ui svg:not(.authorize):not(.locked):not(.unlocked) { fill: var(--text-2); }
+    :root[data-theme="dark"] .swagger-ui .opblock-summary-control:focus { outline-color: var(--cd-blue); }
+    :root[data-theme="dark"] .swagger-ui .expand-methods svg,
+    :root[data-theme="dark"] .swagger-ui .expand-operation svg { fill: var(--text-2); }
+
+    @media (max-width: 720px) {
+      .swagger-ui .opblock-summary-path { word-break: break-all; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="app">
+  <div class="app-main">
+
+    <header class="page-head">
+      <div class="page-head-row">
+        <div>
+          <h1 class="page-title">API reference</h1>
+          <p class="page-subtitle">Every Dev Circle endpoint, with payloads, responses and a live console. Share it with anybody building against the platform.</p>
+        </div>
+        <div class="page-actions">
+          <button class="btn btn-sm btn-secondary" onclick="copySpecUrl()">Copy spec URL</button>
+          <button class="btn btn-sm btn-primary" onclick="downloadSpec()">Download OpenAPI</button>
+        </div>
+      </div>
+    </header>
+
+    <div class="app-body">
+
+      <section class="card quickstart hide" id="quickstart">
+        <div class="card-head">
+          <h2 class="card-title">Quick start</h2>
+          <span class="spacer"></span>
+          <span class="text-xs dim" id="specMeta"></span>
+        </div>
+        <div class="card-body">
+          <div class="snippet-bar">
+            <button class="chip active" data-lang="curl">cURL</button>
+            <button class="chip" data-lang="javascript">JavaScript</button>
+            <button class="chip" data-lang="node">Node.js</button>
+            <button class="chip" data-lang="python">Python</button>
+            <span class="spacer"></span>
+            <button class="btn btn-sm btn-ghost" onclick="copyQuickstart()">Copy</button>
+          </div>
+          <pre class="snippet" id="quickstartCode"></pre>
+        </div>
+      </section>
+
+      <div id="state"></div>
+      <div class="swagger-wrap hide" id="swaggerWrap"><div id="swagger"></div></div>
+    </div>
+  </div>
+</div>
+
+<script src="/assets/js/api.js"></script>
+<script src="/assets/js/shell.js"></script>
+<script src="/vendor/swagger-ui/swagger-ui-bundle.js"></script>
+<script>
+  Shell.admin('api-docs');
+
+  const SPEC_PATH = '/admin/docs/openapi.json';
+  const SPEC_URL = window.location.origin + '/api' + SPEC_PATH;
+  let spec = null;
+
+  // ─── Request snippets ───────────────────────────────────────
+  // Swagger UI resolves a snippet generator by looking for a function named
+  // requestSnippetGenerator_<key> on the system. Registering our own is how the
+  // "Try it out" panel offers JavaScript, Node and Python beside its cURL.
+
+  // The request arrives as an Immutable Map, so it is flattened once here and
+  // every generator works with plain values.
+  function readRequest(request) {
+    const headers = {};
+    const raw = request.get('headers');
+    if (raw && typeof raw.entries === 'function') {
+      for (const [key, value] of raw.entries()) headers[key] = value;
+    }
+
+    let body = request.get('body');
+    if (body && typeof body.toJS === 'function') body = body.toJS();
+
+    return {
+      url: request.get('url'),
+      method: (request.get('method') || 'GET').toUpperCase(),
+      headers,
+      body
+    };
+  }
+
+  // The body is a string for JSON operations and an object for form data.
+  // Either way we want a value we can print as a literal.
+  function bodyValue(body) {
+    if (body === undefined || body === null || body === '') return undefined;
+    if (typeof body === 'object') return body;
+    try { return JSON.parse(body); } catch { return String(body); }
+  }
+
+  function jsLiteral(value, indent = 2) {
+    return JSON.stringify(value, null, indent).split('\n').join('\n' + ' '.repeat(indent));
+  }
+
+  // JSON is very nearly Python already — only the three literals differ.
+  function pyLiteral(value, indent = 4) {
+    const json = JSON.stringify(value, null, 4);
+    if (json === undefined) return 'None';
+    return json
+      .replace(/: true\b/g, ': True')
+      .replace(/: false\b/g, ': False')
+      .replace(/: null\b/g, ': None')
+      .split('\n').join('\n' + ' '.repeat(indent));
+  }
+
+  function headerLiteral(headers, printer, indent) {
+    const kept = { ...headers };
+    delete kept['Content-Length'];
+    return printer(kept, indent);
+  }
+
+  function javascriptSnippet(request, { node = false } = {}) {
+    const { url, method, headers, body } = request;
+    const payload = bodyValue(body);
+    const lines = [];
+
+    if (node) {
+      lines.push('// Node 18+ has fetch built in.', '');
+    }
+
+    lines.push(`const response = await fetch(${JSON.stringify(url)}, {`);
+    lines.push(`  method: ${JSON.stringify(method)},`);
+    lines.push(`  headers: ${headerLiteral(headers, jsLiteral, 2)}${payload === undefined ? '' : ','}`);
+    if (payload !== undefined) {
+      lines.push(typeof payload === 'string'
+        ? `  body: ${JSON.stringify(payload)}`
+        : `  body: JSON.stringify(${jsLiteral(payload, 2)})`);
+    }
+    lines.push('});', '');
+    lines.push('if (!response.ok) {');
+    lines.push('  const { error } = await response.json();');
+    lines.push('  throw new Error(error);');
+    lines.push('}', '');
+    lines.push('const data = await response.json();');
+
+    return lines.join('\n');
+  }
+
+  function pythonSnippet(request) {
+    const { url, method, headers, body } = request;
+    const payload = bodyValue(body);
+    const lines = ['import requests', ''];
+
+    lines.push(`response = requests.${method.toLowerCase()}(`);
+    lines.push(`    ${JSON.stringify(url)},`);
+    lines.push(`    headers=${headerLiteral(headers, pyLiteral, 4)},`);
+    if (payload !== undefined) {
+      lines.push(typeof payload === 'string'
+        ? `    data=${JSON.stringify(payload)},`
+        : `    json=${pyLiteral(payload, 4)},`);
+    }
+    lines.push(')', '');
+    lines.push('response.raise_for_status()');
+    lines.push('data = response.json()');
+
+    return lines.join('\n');
+  }
+
+  const SnippetPlugin = () => ({
+    fn: {
+      requestSnippetGenerator_javascript_fetch: r => javascriptSnippet(readRequest(r)),
+      requestSnippetGenerator_node_fetch: r => javascriptSnippet(readRequest(r), { node: true }),
+      requestSnippetGenerator_python_requests: r => pythonSnippet(readRequest(r))
+    }
+  });
+
+  // ─── Quick start ────────────────────────────────────────────
+  // A whole first call — sign in, then use the token — rather than a fragment.
+
+  const QUICKSTART = {
+    curl: `# 1. Ask for a one-time sign-in code
+curl -X POST '${window.location.origin}/api/auth/code/request' \\
+  -H 'Content-Type: application/json' \\
+  -d '{"identifier":"chidi@paystack.africa"}'
+
+# 2. Trade the code for a session token
+curl -X POST '${window.location.origin}/api/auth/code/verify' \\
+  -H 'Content-Type: application/json' \\
+  -d '{"identifier":"chidi@paystack.africa","code":"418302"}'
+
+# 3. Call anything with the token
+curl '${window.location.origin}/api/users/profile' \\
+  -H 'Authorization: Bearer <token>'`,
+
+    javascript: `const BASE = '${window.location.origin}/api';
+
+async function call(path, { method = 'GET', token, body } = {}) {
+  const response = await fetch(BASE + path, {
+    method,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token && { Authorization: 'Bearer ' + token })
+    },
+    body: body && JSON.stringify(body)
+  });
+
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error);
+  return data;
+}
+
+// Sign in, then use the token on everything that follows.
+await call('/auth/code/request', { method: 'POST', body: { identifier: 'chidi@paystack.africa' } });
+const { token } = await call('/auth/code/verify', {
+  method: 'POST',
+  body: { identifier: 'chidi@paystack.africa', code: '418302' }
+});
+
+const profile = await call('/users/profile', { token });`,
+
+    node: `// Node 18+ — an integration authenticating with a scoped API key.
+const BASE = '${window.location.origin}/api';
+const API_KEY = process.env.DEVCIRCLE_API_KEY;
+
+async function report(event) {
+  const response = await fetch(BASE + '/integrations/events', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': API_KEY
+    },
+    body: JSON.stringify(event)
+  });
+
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error);
+  return data;
+}
+
+await report({
+  event_type: 'first_sandbox_call',
+  user_identifier: 'chidi@paystack.africa',
+  user_identifier_type: 'email',
+  data: { endpoint: '/v1/loans/eligibility' }
+});`,
+
+    python: `import os
+import requests
+
+BASE = "${window.location.origin}/api"
+API_KEY = os.environ["DEVCIRCLE_API_KEY"]
+
+response = requests.post(
+    f"{BASE}/integrations/events",
+    headers={"x-api-key": API_KEY},
+    json={
+        "event_type": "first_sandbox_call",
+        "user_identifier": "chidi@paystack.africa",
+        "user_identifier_type": "email",
+        "data": {"endpoint": "/v1/loans/eligibility"},
+    },
+)
+
+response.raise_for_status()
+print(response.json())`
+  };
+
+  let quickstartLang = 'curl';
+
+  function renderQuickstart() {
+    document.getElementById('quickstartCode').textContent = QUICKSTART[quickstartLang];
+  }
+
+  function copyQuickstart() {
+    navigator.clipboard.writeText(QUICKSTART[quickstartLang])
+      .then(() => showToast('Copied'))
+      .catch(() => showToast('Could not copy', 'error'));
+  }
+
+  function copySpecUrl() {
+    navigator.clipboard.writeText(SPEC_URL)
+      .then(() => showToast('Spec URL copied'))
+      .catch(() => showToast('Could not copy', 'error'));
+  }
+
+  function downloadSpec() {
+    if (!spec) return showToast('The specification has not loaded yet', 'error');
+
+    const blob = new Blob([JSON.stringify(spec, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'devcircle-openapi.json';
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
+  document.querySelectorAll('.chip[data-lang]').forEach(chip => {
+    chip.addEventListener('click', () => {
+      document.querySelectorAll('.chip[data-lang]').forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+      quickstartLang = chip.dataset.lang;
+      renderQuickstart();
+    });
+  });
+
+  // ─── Load and render ────────────────────────────────────────
+
+  function countOperations(paths) {
+    const METHODS = ['get', 'post', 'put', 'patch', 'delete'];
+    return Object.values(paths || {})
+      .reduce((total, item) => total + METHODS.filter(m => item[m]).length, 0);
+  }
+
+  async function load() {
+    const state = document.getElementById('state');
+    state.innerHTML = '<div class="empty"><div class="empty-text">Loading the specification…</div></div>';
+
+    try {
+      spec = await api.get(SPEC_PATH);
+    } catch (err) {
+      // The reference is a map of the whole admin surface, so a role without
+      // docs.read is told what it is missing rather than shown a blank page.
+      state.innerHTML = emptyState({
+        title: 'You cannot view the API reference',
+        text: `${err.message} Ask an administrator for the "docs.read" permission.`
+      });
+      return;
+    }
+
+    state.innerHTML = '';
+    document.getElementById('specMeta').textContent =
+      `OpenAPI ${spec.openapi} · v${spec.info.version} · ${countOperations(spec.paths)} endpoints`;
+    document.getElementById('quickstart').classList.remove('hide');
+    document.getElementById('swaggerWrap').classList.remove('hide');
+
+    SwaggerUIBundle({
+      spec,
+      dom_id: '#swagger',
+      presets: [SwaggerUIBundle.presets.apis],
+      plugins: [SnippetPlugin],
+      layout: 'BaseLayout',
+
+      deepLinking: true,
+      docExpansion: 'none',
+      filter: true,
+      displayRequestDuration: true,
+      persistAuthorization: true,
+      tryItOutEnabled: true,
+      defaultModelsExpandDepth: 1,
+      defaultModelExpandDepth: 3,
+      // The permission each endpoint is gated on rides on x-permission, so the
+      // extensions have to be on screen for that to be worth carrying.
+      showExtensions: true,
+      showCommonExtensions: true,
+
+      requestSnippetsEnabled: true,
+      requestSnippets: {
+        defaultExpanded: true,
+        languages: null,
+        generators: {
+          curl_bash: { title: 'cURL', syntax: 'bash' },
+          javascript_fetch: { title: 'JavaScript', syntax: 'javascript' },
+          node_fetch: { title: 'Node.js', syntax: 'javascript' },
+          python_requests: { title: 'Python', syntax: 'python' }
+        }
+      },
+
+      // "Try it out" runs as whoever is reading, without them pasting a token —
+      // unless they authorised explicitly, in which case that wins.
+      requestInterceptor: request => {
+        const token = Auth.getToken();
+        const hasAuth = request.headers.Authorization || request.headers.authorization;
+        if (token && !hasAuth) request.headers.Authorization = 'Bearer ' + token;
+        return request;
+      }
+    });
+  }
+
+  renderQuickstart();
+  load();
+</script>
+</body>
+</html>

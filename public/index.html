@@ -367,7 +367,9 @@
       });
       if (!ok) { showError(data.error || 'Sign in failed'); return; }
 
-      Auth.save(data.token, data.admin || data.user, true);
+      // The permission list comes back with the session so the console can hide
+      // what this role cannot do, rather than offering it and failing at 403.
+      Auth.save(data.token, data.admin || data.user, true, data.permissions);
       window.location.href = '/admin/dashboard.html';
     });
   }
