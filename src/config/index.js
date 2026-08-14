@@ -50,6 +50,26 @@ const config = {
   // Session lifetime for Dev Circle's own tokens
   sessionTtlMs: parseInt(process.env.SESSION_TTL_HOURS, 10) * 3600 * 1000 || 24 * 3600 * 1000,
 
+  // ─── Who is staff ─────────────────────────────────────────
+  // There is one sign-in form. These domains are what tells the backend the
+  // person in front of it works for Credit Direct and should be asked for a
+  // password; everybody else is a participant and signs in with a one-time
+  // code or Developer Hub SSO.
+  staffEmailDomains: (process.env.STAFF_EMAIL_DOMAINS || 'creditdirect.ng,fcmb.com')
+    .split(',').map(s => s.trim().toLowerCase().replace(/^@/, '')).filter(Boolean),
+
+  // One-time sign-in codes for participants
+  loginCode: {
+    length: 6,
+    ttlSec: parseInt(process.env.LOGIN_CODE_TTL_SEC, 10) || 10 * 60,
+    // Wrong guesses allowed against a single code before it is burned
+    maxAttempts: parseInt(process.env.LOGIN_CODE_MAX_ATTEMPTS, 10) || 5,
+    // Codes one identifier may request inside the window, so the endpoint
+    // cannot be used to spam somebody's inbox or phone
+    maxPerWindow: parseInt(process.env.LOGIN_CODE_MAX_PER_WINDOW, 10) || 4,
+    windowSec: parseInt(process.env.LOGIN_CODE_WINDOW_SEC, 10) || 15 * 60
+  },
+
   // Shared secret used to verify SSO handoff tokens minted by the Developer Hub
   devHub: {
     ssoSecret: requireSecret('DEV_HUB_SSO_SECRET', 'sso'),

@@ -124,28 +124,22 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
+// Toasts stack in the corner rather than replacing one another, so a burst
+// of results (a blast that sent, then failed a channel) stays readable.
 function showToast(message, type = 'success') {
-  const existing = document.querySelector('.toast');
-  if (existing) existing.remove();
+  let stack = document.getElementById('toastStack');
+  if (!stack) {
+    stack = document.createElement('div');
+    stack.id = 'toastStack';
+    stack.className = 'toast-stack';
+    document.body.appendChild(stack);
+  }
 
   const toast = document.createElement('div');
-  toast.className = 'toast';
-  toast.style.cssText = `
-    position: fixed; bottom: 24px; right: 24px; z-index: 9999;
-    padding: 12px 20px; border-radius: 8px; font-size: 14px; font-weight: 500;
-    font-family: var(--font-body); color: #fff; box-shadow: 0 4px 12px rgba(0,0,0,0.4);
-    animation: slideUp 0.3s cubic-bezier(0.16,1,0.3,1);
-    background: ${type === 'error' ? 'var(--rose)' : type === 'warning' ? 'var(--cd-gold)' : 'var(--emerald)'};
-  `;
-  toast.textContent = message;
-  document.body.appendChild(toast);
-  setTimeout(() => toast.remove(), 3000);
-}
+  toast.className = `toast toast-${type}`;
+  toast.innerHTML = '<span class="mark"></span>';
+  toast.appendChild(document.createTextNode(message));
+  stack.appendChild(toast);
 
-// Inject toast animation
-if (!document.getElementById('toast-styles')) {
-  const style = document.createElement('style');
-  style.id = 'toast-styles';
-  style.textContent = `@keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }`;
-  document.head.appendChild(style);
+  setTimeout(() => toast.remove(), 3600);
 }

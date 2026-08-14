@@ -2,6 +2,7 @@ const db = require('.');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const config = require('../config');
+const { NO_PASSWORD, normalizePhone } = require('../utils/identity');
 const { generateApiKey, hashApiKey } = require('../middleware/auth');
 
 function uuid() { return crypto.randomUUID(); }
@@ -206,11 +207,11 @@ const developers = [
 
 const userStmt = db.prepare(`
   INSERT INTO users (
-    id, email, name, phone, password_hash, company, work_sector, api_status, kyb_completed,
+    id, email, name, phone, phone_normalized, password_hash, company, work_sector, api_status, kyb_completed,
     engagement_streak, best_streak, preferred_channels, preferred_days,
     date_of_birth, gender, location_state, api_products, dev_hub_user_id,
     last_active_at, last_engagement_at, created_at
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now', ?), datetime('now', ?), datetime('now', ?))
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now', ?), datetime('now', ?), datetime('now', ?))
 `);
 
 const cohortAssignStmt = db.prepare('INSERT OR IGNORE INTO user_cohorts (user_id, cohort_id) VALUES (?, ?)');
@@ -238,8 +239,10 @@ for (let i = 0; i < developers.length; i++) {
   const phone = `+234${700 + Math.floor(Math.random() * 300)}${String(Math.floor(Math.random() * 10000000)).padStart(7, '0')}`;
   const hoursAgo = Math.floor(Math.random() * 168);
 
+  // Members hold no password: they sign in with a one-time code on the email
+  // or number seeded here, so there is nothing to publish for them.
   userStmt.run(
-    id, d.email, d.name, phone, bcrypt.hashSync('dev123', 10),
+    id, d.email, d.name, phone, normalizePhone(phone), NO_PASSWORD,
     d.company, d.work_sector, d.api_status, d.kyb ? 1 : 0,
     d.streak, d.best,
     channels[i % channels.length],
@@ -557,9 +560,12 @@ db.prepare(`
 
 // ─── Done ───────────────────────────────────────────────────
 console.log('\n✅ Seed complete!');
-console.log('\nTest credentials:');
-console.log('  Admin (full access):  admin@creditdirect.ng / admin123');
-console.log('  CDL Rep (limited):    engagement@creditdirect.ng / engagement123');
-console.log('  Developer:            adebayo@paystack.dev / dev123');
+console.log('\nSign in at / with any of these — one form, no role to pick:');
+console.log('  Admin (full access):  admin@creditdirect.ng      password: admin123');
+console.log('  CDL Rep (limited):    engagement@creditdirect.ng password: engagement123');
+console.log('  Developer:            adebayo@paystack.dev       one-time code, no password');
+console.log('\nA Credit Direct domain gets asked for a password; everyone else gets a code.');
+console.log('Without Customer.io credentials the code cannot actually be sent, so outside');
+console.log('production it comes back in the response and the sign-in page fills it in.');
 console.log('\nIntegration API key (shown once — endpoints reject unauthenticated calls):');
 console.log(`  ${bootstrapKey}`);

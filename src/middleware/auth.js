@@ -61,7 +61,7 @@ sweeper.unref();
 
 const PERMISSIONS = [
   { key: 'members.read', label: 'View members', group: 'Members' },
-  { key: 'members.write', label: 'Edit members and reset passwords', group: 'Members' },
+  { key: 'members.write', label: 'Edit members and end their sessions', group: 'Members' },
   { key: 'members.import', label: 'Bulk import members', group: 'Members' },
   { key: 'cohorts.read', label: 'View cohorts', group: 'Cohorts' },
   { key: 'cohorts.write', label: 'Create and edit cohorts', group: 'Cohorts' },

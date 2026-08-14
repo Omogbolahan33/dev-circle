@@ -13,12 +13,18 @@ beforeEach(async () => {
   h.reset();
   h.makeRootCircle();
   const role = h.makeRole('Super Admin', ['*']);
-  const admin = h.makeAdmin({ email: 'boss@cd.ng', roleId: role });
+  const admin = h.makeAdmin({ email: 'boss@creditdirect.ng', roleId: role });
   token = await h.loginAdmin(admin.email, admin.password);
 });
 
+// Outbound engagement only. Sign-in codes also leave a delivery row, but they
+// are transactional and deliberately ignore consent and quiet hours, so they
+// would only muddy assertions about who agreed to hear from us.
 function deliveriesFor(userId) {
-  return h.db.prepare('SELECT channel, status, reason FROM message_deliveries WHERE user_id = ?').all(userId);
+  return h.db.prepare(`
+    SELECT channel, status, reason FROM message_deliveries
+    WHERE user_id = ? AND source_type != 'system'
+  `).all(userId);
 }
 
 // ─── Consent ────────────────────────────────────────────────
@@ -47,9 +53,9 @@ test('a blast never goes out on a channel the member did not consent to', async 
 });
 
 test('withdrawing consent stops the next send on that channel', async () => {
-  const user = h.makeUser({ password: 'dev-password' });
+  const user = h.makeUser();
   h.grantConsent(user.id, 'email');
-  const userToken = await h.loginUser(user.email, 'dev-password');
+  const userToken = await h.loginUser(user.email);
 
   await h.del('/api/users/consent/email', { token: userToken });
 
@@ -63,9 +69,9 @@ test('withdrawing consent stops the next send on that channel', async () => {
 });
 
 test('withdrawing consent also cancels anything already queued on that channel', async () => {
-  const user = h.makeUser({ password: 'dev-password' });
+  const user = h.makeUser();
   h.grantConsent(user.id, 'sms');
-  const userToken = await h.loginUser(user.email, 'dev-password');
+  const userToken = await h.loginUser(user.email);
 
   h.db.prepare(`
     INSERT INTO message_deliveries (id, source_type, source_id, user_id, channel, status, reason)
@@ -109,9 +115,9 @@ test('a preferred-channel list narrows delivery within what was consented', asyn
 // ─── Notification preferences ───────────────────────────────
 
 test('turning a category off stops those messages', async () => {
-  const user = h.makeUser({ password: 'dev-password' });
+  const user = h.makeUser();
   h.grantConsent(user.id, 'email');
-  const userToken = await h.loginUser(user.email, 'dev-password');
+  const userToken = await h.loginUser(user.email);
 
   await h.put('/api/users/notification-preferences',
     { categories: { survey_invites: false } }, { token: userToken });
@@ -122,8 +128,8 @@ test('turning a category off stops those messages', async () => {
 });
 
 test('a mandatory category cannot be switched off', async () => {
-  const user = h.makeUser({ password: 'dev-password' });
-  const userToken = await h.loginUser(user.email, 'dev-password');
+  const user = h.makeUser();
+  const userToken = await h.loginUser(user.email);
 
   const res = await h.put('/api/users/notification-preferences',
     { categories: { feedback_updates: false } }, { token: userToken });
@@ -134,8 +140,8 @@ test('a mandatory category cannot be switched off', async () => {
 });
 
 test('an unknown category is rejected', async () => {
-  const user = h.makeUser({ password: 'dev-password' });
-  const userToken = await h.loginUser(user.email, 'dev-password');
+  const user = h.makeUser();
+  const userToken = await h.loginUser(user.email);
 
   const res = await h.put('/api/users/notification-preferences',
     { categories: { spam_me: true } }, { token: userToken });
@@ -214,10 +220,10 @@ test('a lapsed streak resets instead of climbing forever', () => {
 });
 
 test('a stale streak is zeroed when the member next looks at their profile', async () => {
-  const user = h.makeUser({ engagement_streak: 7, password: 'dev-password' });
+  const user = h.makeUser({ engagement_streak: 7 });
   h.db.prepare("UPDATE users SET last_engagement_at = datetime('now', '-120 days') WHERE id = ?").run(user.id);
 
-  const userToken = await h.loginUser(user.email, 'dev-password');
+  const userToken = await h.loginUser(user.email);
   const res = await h.get('/api/users/profile', { token: userToken });
 
   assert.equal(res.body.stats.streak, 0);
@@ -236,9 +242,9 @@ function makeGift({ minSurveys = 0, minStreak = 0, stock = null } = {}) {
 }
 
 test('a gift below the requirement is listed as locked with the reason', async () => {
-  const user = h.makeUser({ password: 'dev-password' });
+  const user = h.makeUser();
   makeGift({ minSurveys: 2 });
-  const userToken = await h.loginUser(user.email, 'dev-password');
+  const userToken = await h.loginUser(user.email);
 
   const res = await h.get('/api/users/gifts', { token: userToken });
   assert.equal(res.body.available.length, 0);
@@ -247,18 +253,18 @@ test('a gift below the requirement is listed as locked with the reason', async (
 });
 
 test('claiming a locked gift is refused', async () => {
-  const user = h.makeUser({ password: 'dev-password' });
+  const user = h.makeUser();
   const giftId = makeGift({ minStreak: 5 });
-  const userToken = await h.loginUser(user.email, 'dev-password');
+  const userToken = await h.loginUser(user.email);
 
   const res = await h.post(`/api/users/gifts/${giftId}/claim`, {}, { token: userToken });
   assert.equal(res.status, 403);
 });
 
 test('a gift can only be claimed once', async () => {
-  const user = h.makeUser({ password: 'dev-password' });
+  const user = h.makeUser();
   const giftId = makeGift();
-  const userToken = await h.loginUser(user.email, 'dev-password');
+  const userToken = await h.loginUser(user.email);
 
   const first = await h.post(`/api/users/gifts/${giftId}/claim`, {}, { token: userToken });
   const second = await h.post(`/api/users/gifts/${giftId}/claim`, {}, { token: userToken });
@@ -269,9 +275,9 @@ test('a gift can only be claimed once', async () => {
 });
 
 test('a claim is written to the ledger and to engagement history', async () => {
-  const user = h.makeUser({ password: 'dev-password' });
+  const user = h.makeUser();
   const giftId = makeGift();
-  const userToken = await h.loginUser(user.email, 'dev-password');
+  const userToken = await h.loginUser(user.email);
 
   await h.post(`/api/users/gifts/${giftId}/claim`, {}, { token: userToken });
 
@@ -286,20 +292,20 @@ test('a claim is written to the ledger and to engagement history', async () => {
 });
 
 test('a gift out of stock cannot be claimed', async () => {
-  const first = h.makeUser({ password: 'dev-password' });
-  const second = h.makeUser({ password: 'dev-password' });
+  const first = h.makeUser();
+  const second = h.makeUser();
   const giftId = makeGift({ stock: 1 });
 
-  const firstToken = await h.loginUser(first.email, 'dev-password');
-  const secondToken = await h.loginUser(second.email, 'dev-password');
+  const firstToken = await h.loginUser(first.email);
+  const secondToken = await h.loginUser(second.email);
 
   assert.equal((await h.post(`/api/users/gifts/${giftId}/claim`, {}, { token: firstToken })).status, 201);
   assert.equal((await h.post(`/api/users/gifts/${giftId}/claim`, {}, { token: secondToken })).status, 409);
 });
 
 test('a gift targeted at a cohort is invisible to everyone else', async () => {
-  const member = h.makeUser({ password: 'dev-password' });
-  const outsider = h.makeUser({ password: 'dev-password' });
+  const member = h.makeUser();
+  const outsider = h.makeUser();
 
   const cohortId = h.uuid();
   h.db.prepare("INSERT INTO cohorts (id, name, type) VALUES (?, 'VIP', 'custom')").run(cohortId);
@@ -311,8 +317,8 @@ test('a gift targeted at a cohort is invisible to everyone else', async () => {
     VALUES (?, 'VIP gift', 1000, 'NGN', ?, 1)
   `).run(giftId, JSON.stringify([cohortId]));
 
-  const memberToken = await h.loginUser(member.email, 'dev-password');
-  const outsiderToken = await h.loginUser(outsider.email, 'dev-password');
+  const memberToken = await h.loginUser(member.email);
+  const outsiderToken = await h.loginUser(outsider.email);
 
   assert.equal((await h.get('/api/users/gifts', { token: memberToken })).body.available.length, 1);
   assert.equal((await h.get('/api/users/gifts', { token: outsiderToken })).body.available.length, 0);

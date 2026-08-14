@@ -14,7 +14,7 @@ beforeEach(async () => {
   h.reset();
   rootCircle = h.makeRootCircle();
   const role = h.makeRole('Super Admin', ['*']);
-  const admin = h.makeAdmin({ email: 'boss@cd.ng', roleId: role });
+  const admin = h.makeAdmin({ email: 'boss@creditdirect.ng', roleId: role });
   token = await h.loginAdmin(admin.email, admin.password);
 });
 
@@ -241,8 +241,8 @@ test('a circle with active sub-circles cannot be archived', async () => {
 });
 
 test('a survey scoped to a sub-circle is invisible to everyone else', async () => {
-  const inside = h.makeUser({ password: 'dev-password' });
-  const outside = h.makeUser({ password: 'dev-password' });
+  const inside = h.makeUser();
+  const outside = h.makeUser();
   circles.joinRoot(inside.id);
   circles.joinRoot(outside.id);
 
@@ -255,8 +255,8 @@ test('a survey scoped to a sub-circle is invisible to everyone else', async () =
   }, { token });
   await h.put(`/api/admin/surveys/${survey.body.survey.id}`, { status: 'active' }, { token });
 
-  const insideToken = await h.loginUser(inside.email, 'dev-password');
-  const outsideToken = await h.loginUser(outside.email, 'dev-password');
+  const insideToken = await h.loginUser(inside.email);
+  const outsideToken = await h.loginUser(outside.email);
 
   const seenByInside = await h.get('/api/users/surveys', { token: insideToken });
   const seenByOutside = await h.get('/api/users/surveys', { token: outsideToken });

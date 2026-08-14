@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dev Circle — Activity</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/css/tokens.css">
+  <link rel="stylesheet" href="/assets/css/app.css">
+  <style>
+    .stream { max-width: 760px; }
+    /* Where an event came from matters here — a customer.io signal and a
+       hand-logged note should not look identical. */
+    .provenance { font-size: 10px; font-family: var(--font-mono); color: var(--cd-clay); text-transform: uppercase; letter-spacing: 0.06em; }
+  </style>
+</head>
+<body>
+
+<div class="app">
+  <div class="app-main">
+
+    <header class="page-head">
+      <div class="page-head-row">
+        <div>
+          <h1 class="page-title">Activity</h1>
+          <p class="page-subtitle">Every engagement event across the ecosystem, newest first.</p>
+        </div>
+      </div>
+    </header>
+
+    <div class="app-body">
+      <div class="toolbar">
+        <button class="chip active" data-group="">Everything</button>
+        <button class="chip" data-group="integration">Integration milestones</button>
+        <button class="chip" data-group="survey">Surveys</button>
+        <button class="chip" data-group="reward">Rewards</button>
+        <button class="chip" data-group="voice">Feedback</button>
+        <span class="result-count" id="count"></span>
+      </div>
+
+      <div class="stream">
+        <div class="timeline" id="stream">
+          <div class="tl-item"><div class="skeleton" style="width:70%"></div></div>
+          <div class="tl-item"><div class="skeleton" style="width:52%"></div></div>
+          <div class="tl-item"><div class="skeleton" style="width:64%"></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/assets/js/api.js"></script>
+<script src="/assets/js/shell.js"></script>
+<script src="/assets/js/activity.js"></script>
+<script>
+  Shell.admin('activity');
+
+  // Event types grouped the way an operator thinks about them, rather than
+  // by the enum they happen to be stored as.
+  const GROUPS = {
+    integration: ['account_created', 'api_key_generated', 'first_sandbox_call', 'first_production_call', 'kyb_completed', 'product_requested'],
+    survey: ['survey_invited', 'survey_started', 'survey_completed'],
+    reward: ['gift_claimed', 'gift_delivered'],
+    voice: ['feedback_submitted', 'complaint_received']
+  };
+
+  let events = [];
+  let group = '';
+
+  async function load() {
+    try {
+      const data = await api.get('/admin/dashboard');
+      events = data.recent_activity;
+      render();
+    } catch (err) {
+      document.getElementById('stream').innerHTML = emptyState({ title: 'Could not load activity', text: err.message });
+    }
+  }
+
+  function render() {
+    const list = group ? events.filter(e => GROUPS[group].includes(e.type)) : events;
+    document.getElementById('count').textContent = `${list.length} event${list.length === 1 ? '' : 's'}`;
+
+    const stream = document.getElementById('stream');
+    if (!list.length) {
+      stream.innerHTML = emptyState({
+        title: 'No events here',
+        text: 'Nothing of this kind has been recorded yet.'
+      });
+      return;
+    }
+
+    let lastDay = null;
+    stream.innerHTML = list.map(a => {
+      const info = activityInfo(a.type);
+      const day = activityDayLabel(a.created_at);
+      const divider = day !== lastDay ? `<div class="tl-divider">${day}</div>` : '';
+      lastDay = day;
+
+      // Anything not raised inside Dev Circle names the system it came from.
+      const from = a.source && a.source !== 'dev_circle' && a.source !== 'system'
+        ? `<span class="provenance">${escapeHtml(a.source.replace('_', '.'))}</span>` : '';
+
+      return `
+        ${divider}
+        <div class="tl-item">
+          <div class="tl-dot ${info.tone}"></div>
+          <div class="tl-head">
+            <a class="tl-title" href="/admin/member.html?id=${a.user_id}">${escapeHtml(a.user_name || 'System')}</a>
+            <span class="muted text-sm">${info.text}</span>
+            ${from}
+            <span class="tl-time">${formatDate(a.created_at)}</span>
+          </div>
+          ${a.user_email ? `<div class="tl-body text-xs dim">${escapeHtml(a.user_email)}</div>` : ''}
+        </div>`;
+    }).join('');
+  }
+
+  document.querySelectorAll('.chip[data-group]').forEach(chip => {
+    chip.addEventListener('click', () => {
+      document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+      group = chip.dataset.group;
+      render();
+    });
+  });
+
+  load();
+</script>
+</body>
+</html>

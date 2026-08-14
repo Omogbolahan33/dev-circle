@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dev Circle — Surveys</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/css/tokens.css">
+  <link rel="stylesheet" href="/assets/css/app.css">
+</head>
+<body>
+
+<div class="app">
+  <div class="app-main">
+
+    <header class="page-head">
+      <div class="page-head-row">
+        <div>
+          <h1 class="page-title">Surveys</h1>
+          <p class="page-subtitle">Questions put to developers, and what came back.</p>
+        </div>
+        <div class="page-actions">
+          <a href="/admin/survey-new.html" class="btn btn-sm btn-primary">New survey</a>
+        </div>
+      </div>
+      <nav class="tabs" id="tabs">
+        <button class="tab active" data-status="">All</button>
+        <button class="tab" data-status="active">Active</button>
+        <button class="tab" data-status="draft">Draft</button>
+        <button class="tab" data-status="closed">Closed</button>
+      </nav>
+    </header>
+
+    <div class="app-body">
+      <div class="table-shell">
+        <div class="table-scroll">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Survey</th>
+                <th>Status</th>
+                <th class="hide-sm">Audience</th>
+                <th class="hide-sm">Mode</th>
+                <th>Responses</th>
+                <th class="col-actions"></th>
+              </tr>
+            </thead>
+            <tbody id="rows"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/assets/js/api.js"></script>
+<script src="/assets/js/shell.js"></script>
+<script>
+  Shell.admin('surveys');
+
+  let surveys = [];
+  let statusFilter = '';
+
+  const MODES = { '1-on-1': '1-on-1', email: 'Email', whatsapp: 'WhatsApp', in_portal: 'In-portal' };
+
+  async function load() {
+    document.getElementById('rows').innerHTML = skeletonRows(4, 6);
+    try {
+      const data = await api.get('/admin/surveys');
+      surveys = data.surveys;
+      render();
+    } catch (err) {
+      document.getElementById('rows').innerHTML =
+        `<tr><td colspan="6">${emptyState({ title: 'Could not load surveys', text: err.message })}</td></tr>`;
+    }
+  }
+
+  function render() {
+    const list = surveys.filter(s => !statusFilter || s.status === statusFilter);
+    const tbody = document.getElementById('rows');
+
+    // Tab counts tell you where the work is before you click.
+    document.querySelectorAll('.tab[data-status]').forEach(tab => {
+      const n = tab.dataset.status ? surveys.filter(s => s.status === tab.dataset.status).length : surveys.length;
+      tab.innerHTML = `${tab.dataset.status ? tab.dataset.status[0].toUpperCase() + tab.dataset.status.slice(1) : 'All'}<span class="count">${n}</span>`;
+    });
+
+    if (!list.length) {
+      tbody.innerHTML = `<tr><td colspan="6">${emptyState({
+        title: statusFilter ? `No ${statusFilter} surveys` : 'No surveys yet',
+        text: 'A survey asks a cohort a short set of questions and records the answers against each member\'s engagement history.',
+        action: '<a href="/admin/survey-new.html" class="btn btn-sm btn-primary">Write the first one</a>'
+      })}</td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = list.map(s => {
+      const rate = s.response_count ? Math.round((s.completed_count / s.response_count) * 100) : 0;
+      const audience = s.target_type === 'all' ? 'Everyone'
+        : s.target_type === 'cohort' ? `${s.target_ids.length} cohort${s.target_ids.length === 1 ? '' : 's'}`
+        : `${s.target_ids.length} member${s.target_ids.length === 1 ? '' : 's'}`;
+
+      return `
+        <tr class="row-link" onclick="window.location.href='/admin/survey-responses.html?id=${s.id}'">
+          <td>
+            <div class="identity-meta">
+              <div class="identity-name">${escapeHtml(s.title)}</div>
+              <div class="identity-sub">${s.questions.length} question${s.questions.length === 1 ? '' : 's'} · ~${s.time_estimate_min} min</div>
+            </div>
+          </td>
+          <td>${badge(s.status, s.status === 'active' ? 'active' : s.status === 'draft' ? 'warn' : 'inactive')}</td>
+          <td class="hide-sm text-xs muted">${audience}</td>
+          <td class="hide-sm text-xs muted">${MODES[s.engagement_mode] || s.engagement_mode}</td>
+          <td class="nowrap">
+            <span class="mono tnum">${s.completed_count}/${s.response_count}</span>
+            ${s.response_count ? `<span class="dim text-xs"> · ${rate}%</span>` : ''}
+          </td>
+          <td class="col-actions" onclick="event.stopPropagation()">
+            <div class="row-actions">
+              ${s.status === 'active' ? `
+                <button class="btn btn-sm btn-ghost" onclick="invite('${s.id}')">Invite</button>
+                <button class="btn btn-sm btn-ghost" onclick="remind('${s.id}')">Remind</button>` : ''}
+              <a class="btn btn-sm btn-ghost" href="/admin/survey-responses.html?id=${s.id}">Responses</a>
+            </div>
+          </td>
+        </tr>`;
+    }).join('');
+  }
+
+  // Invites go out through the member's consented channel; the response
+  // reports who was actually reachable.
+  async function invite(id) {
+    const ok = await Shell.confirm({
+      title: 'Send invitations?',
+      text: 'Everyone in the survey audience who has consented will be invited on their preferred channel.',
+      ok: 'Send invites',
+      danger: false
+    });
+    if (!ok) return;
+
+    try {
+      const res = await api.post(`/admin/surveys/${id}/invite`, {});
+      showToast(`${res.invited} invited${res.skipped ? ` · ${res.skipped} skipped` : ''}`);
+      load();
+    } catch (err) { showToast(err.message, 'error'); }
+  }
+
+  async function remind(id) {
+    try {
+      const res = await api.post(`/admin/surveys/${id}/remind`, {});
+      showToast(`${res.reminded} reminded${res.skipped ? ` · ${res.skipped} skipped` : ''}`);
+    } catch (err) { showToast(err.message, 'error'); }
+  }
+
+  document.querySelectorAll('.tab[data-status]').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      statusFilter = tab.dataset.status;
+      render();
+    });
+  });
+
+  load();
+</script>
+</body>
+</html>

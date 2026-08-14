@@ -8,226 +8,279 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/assets/css/tokens.css">
+  <link rel="stylesheet" href="/assets/css/app.css">
   <style>
-    .topnav { position:sticky;top:0;z-index:100;background:var(--ink);border-bottom:1px solid rgba(160,160,184,0.06);padding:0 var(--sp-6); }
-    .topnav-inner { max-width:960px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;height:56px; }
-    .topnav-logo { font-family:var(--font-display);font-weight:var(--fw-black);font-size:var(--fs-md);letter-spacing:-0.03em;color:var(--white);text-decoration:none; }
-    .topnav-logo span { color:var(--cd-blue); }
-    .topnav-logo .badge { font-family:var(--font-mono);font-size:10px;color:var(--cd-blue);background:var(--cd-blue-dim);padding:2px 6px;border-radius:var(--r-sm);margin-left:var(--sp-2); }
-    .topnav-back { font-size:var(--fs-sm);color:var(--ash);text-decoration:none; }
-    .topnav-back:hover { color:var(--white); }
-
-    .page { max-width:960px;margin:0 auto;padding:var(--sp-8) var(--sp-6); }
-
-    .cohort-header { display:flex;align-items:flex-start;gap:var(--sp-4);margin-bottom:var(--sp-6); }
-    .cohort-color-dot { width:16px;height:16px;border-radius:50%;margin-top:6px;flex-shrink:0; }
-    .cohort-name { font-family:var(--font-display);font-weight:var(--fw-bold);font-size:var(--fs-2xl);letter-spacing:-0.03em;margin-bottom:var(--sp-1); }
-    .cohort-desc { color:var(--ash);font-size:var(--fs-sm);margin-bottom:var(--sp-2); }
-    .cohort-meta { font-size:var(--fs-xs);font-family:var(--font-mono);color:var(--ash-dim); }
-
-    .actions-row { display:flex;gap:var(--sp-2);margin-bottom:var(--sp-6);flex-wrap:wrap; }
-
-    .stat-strip { display:flex;gap:var(--sp-6);flex-wrap:wrap;padding:var(--sp-4) 0;margin-bottom:var(--sp-6);border-bottom:1px solid rgba(160,160,184,0.06); }
-    .stat-item .val { font-family:var(--font-display);font-weight:var(--fw-black);font-size:var(--fs-xl);letter-spacing:-0.03em; }
-    .stat-item .label { font-size:var(--fs-xs);color:var(--ash-dim);margin-top:2px; }
-
-    .section { margin-bottom:var(--sp-8); }
-    .section-title { font-family:var(--font-display);font-weight:var(--fw-semibold);font-size:var(--fs-md);letter-spacing:-0.01em;margin-bottom:var(--sp-4); }
-
-    .data-table { width:100%;border-collapse:collapse;font-size:var(--fs-sm); }
-    .data-table th { text-align:left;font-family:var(--font-display);font-weight:var(--fw-semibold);font-size:11px;color:var(--ash-dim);text-transform:uppercase;letter-spacing:0.08em;padding:var(--sp-2) var(--sp-3);border-bottom:1px solid rgba(160,160,184,0.06); }
-    .data-table td { padding:var(--sp-3);border-bottom:1px solid rgba(160,160,184,0.03);vertical-align:middle; }
-    .data-table tr:hover td { background:rgba(160,160,184,0.02); }
-    .user-cell { display:flex;align-items:center;gap:var(--sp-3); }
-    .user-cell-avatar { width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:var(--fw-bold);flex-shrink:0; }
-    .user-cell-name { font-weight:var(--fw-medium); }
-    .user-cell-email { font-size:var(--fs-xs);color:var(--ash-dim); }
-    .mono-sm { font-family:var(--font-mono);font-size:var(--fs-xs);color:var(--ash); }
-
-    .search-bar { display:flex;gap:var(--sp-2);margin-bottom:var(--sp-4); }
-    .search-input { flex:1;background:var(--slate);border:1px solid rgba(160,160,184,0.08);border-radius:var(--r-md);padding:var(--sp-2) var(--sp-3);font-size:var(--fs-sm);color:var(--white); }
-    .search-input::placeholder { color:var(--ash-dim); }
-    .search-input:focus { border-color:var(--cd-blue);outline:none; }
-
-    .pagination { display:flex;align-items:center;justify-content:space-between;padding:var(--sp-3) 0;font-size:var(--fs-xs);color:var(--ash-dim); }
-    .pagination-btns { display:flex;gap:var(--sp-1); }
-
-    .btn { display:inline-flex;align-items:center;justify-content:center;gap:var(--sp-2);font-family:var(--font-body);font-size:var(--fs-sm);font-weight:var(--fw-medium);padding:var(--sp-2) var(--sp-4);border-radius:var(--r-md);transition:all var(--duration-fast) var(--ease-out);white-space:nowrap;cursor:pointer;border:none; }
-    .btn-primary { background:var(--cd-blue);color:var(--white); }
-    .btn-primary:hover { background:var(--cd-blue-deep); }
-    .btn-secondary { background:none;color:var(--ash);border:1px solid rgba(160,160,184,0.10); }
-    .btn-secondary:hover { color:var(--white);border-color:rgba(160,160,184,0.25); }
-    .btn-ghost { background:none;color:var(--ash);border:none; }
-    .btn-ghost:hover { color:var(--white); }
-    .btn-sm { font-size:var(--fs-xs);padding:var(--sp-1) var(--sp-3); }
-    .btn-danger { background:none;color:var(--rose);border:1px solid rgba(225,29,72,0.20); }
-    .btn-danger:hover { background:var(--rose-dim); }
-
-    .modal-overlay { display:none;position:fixed;inset:0;z-index:999;background:rgba(26,26,46,0.85);align-items:center;justify-content:center; }
-    .modal-overlay.open { display:flex; }
-    .modal-box { background:var(--slate);border-radius:var(--r-lg);padding:var(--sp-6);max-width:400px;width:90%; }
-    .modal-title { font-family:var(--font-display);font-weight:var(--fw-bold);font-size:var(--fs-lg);margin-bottom:var(--sp-4); }
-    .form-group { margin-bottom:var(--sp-4); }
-    .form-label { display:block;font-size:var(--fs-xs);font-weight:var(--fw-medium);color:var(--ash);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:var(--sp-1); }
-    .form-input { width:100%;background:var(--ink);border:1px solid rgba(160,160,184,0.10);border-radius:var(--r-md);padding:var(--sp-2) var(--sp-3);color:var(--white);font-size:var(--fs-sm); }
-    .form-input:focus { border-color:var(--cd-blue);outline:none; }
-
-    .empty { text-align:center;padding:var(--sp-6);color:var(--ash-dim);font-size:var(--fs-sm); }
-
-    @media (max-width:768px) { .page{padding:var(--sp-6) var(--sp-4);} .cohort-name{font-size:var(--fs-xl);} .stat-strip{gap:var(--sp-4);} }
+    .cohort-id { display: flex; align-items: center; gap: var(--sp-4); }
+    .cohort-dot { width: 14px; height: 14px; border-radius: var(--r-sm); flex-shrink: 0; }
+    .rule-line { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--ash); line-height: var(--lh-loose); }
+    .rule-line b { color: var(--white); font-weight: var(--fw-medium); }
   </style>
 </head>
 <body>
 
-  <nav class="topnav">
-    <div class="topnav-inner">
-      <a href="/admin/dashboard.html" class="topnav-logo">dev<span>.</span>circle <span class="badge">Admin</span></a>
-      <a href="/admin/dashboard.html" class="topnav-back">← Back</a>
-    </div>
-  </nav>
+<div class="app">
+  <div class="app-main">
 
-  <div class="page" id="cohortPage">
-    <div style="text-align:center;padding:var(--sp-16);color:var(--ash)">Loading…</div>
-  </div>
-
-  <div class="modal-overlay" id="addMemberModal">
-    <div class="modal-box">
-      <h3 class="modal-title">Add member to cohort</h3>
-      <div class="form-group">
-        <label class="form-label">Search by email</label>
-        <input type="text" class="form-input" id="addMemberEmail" placeholder="developer@company.ng">
+    <header class="page-head">
+      <div class="breadcrumb">
+        <a href="/admin/cohorts.html">Cohorts</a>
+        <span class="sep">/</span>
+        <span id="crumbName">…</span>
       </div>
-      <div id="addMemberResults" style="font-size:var(--fs-sm);margin-bottom:var(--sp-4)"></div>
-      <div style="display:flex;gap:var(--sp-3);justify-content:flex-end">
-        <button class="btn btn-secondary" onclick="closeModal('addMemberModal')">Cancel</button>
-        <button class="btn btn-primary" onclick="addMemberByEmail()">Add</button>
+
+      <div class="page-head-row">
+        <div class="cohort-id" id="identity">
+          <div class="skeleton" style="width:200px;height:24px"></div>
+        </div>
+        <div class="page-actions" id="actions"></div>
+      </div>
+    </header>
+
+    <div class="app-body">
+      <div class="split">
+
+        <aside class="rail">
+          <section class="card">
+            <div class="card-title mb-4">Composition</div>
+            <div class="kv" id="composition"></div>
+          </section>
+
+          <section class="card" id="ruleCard" hidden>
+            <div class="card-title mb-4">Membership rule</div>
+            <div class="rule-line" id="ruleText"></div>
+            <button class="btn btn-sm btn-secondary btn-block mt-4" onclick="syncCohort()">Re-run rule</button>
+          </section>
+        </aside>
+
+        <div>
+          <div class="toolbar">
+            <label class="search-box">
+              <span class="icon">⌕</span>
+              <input type="search" id="search" placeholder="Search within this cohort…" autocomplete="off">
+            </label>
+            <span class="result-count" id="count"></span>
+          </div>
+
+          <div class="table-shell">
+            <div class="table-scroll">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Member</th>
+                    <th>Stage</th>
+                    <th class="hide-sm">Surveys</th>
+                    <th class="hide-sm">Streak</th>
+                    <th>Last active</th>
+                    <th class="col-actions"></th>
+                  </tr>
+                </thead>
+                <tbody id="rows"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
       </div>
     </div>
   </div>
+</div>
+
+<!-- Add a member by email -->
+<aside class="drawer" id="addDrawer">
+  <div class="drawer-head">
+    <div>
+      <div class="drawer-title">Add a member</div>
+      <div class="drawer-sub">Look them up by email address</div>
+    </div>
+    <button class="icon-btn" onclick="Shell.closeDrawer('addDrawer')">×</button>
+  </div>
+  <div class="drawer-body">
+    <div class="field">
+      <label class="label">Email</label>
+      <input type="email" class="input" id="addEmail" placeholder="developer@company.ng">
+      <p class="hint">The member must already exist in Dev Circle. Import them first if they do not.</p>
+    </div>
+  </div>
+  <div class="drawer-foot">
+    <button class="btn btn-secondary" onclick="Shell.closeDrawer('addDrawer')">Cancel</button>
+    <button class="btn btn-primary" onclick="addMember()">Add to cohort</button>
+  </div>
+</aside>
+
+<!-- Broadcasting to exactly the cohort you are looking at -->
+<aside class="drawer" id="broadcastDrawer">
+  <div class="drawer-head">
+    <div>
+      <div class="drawer-title">Message this cohort</div>
+      <div class="drawer-sub" id="broadcastAudience"></div>
+    </div>
+    <button class="icon-btn" onclick="Shell.closeDrawer('broadcastDrawer')">×</button>
+  </div>
+  <div class="drawer-body">
+    <div class="field">
+      <label class="label">Subject</label>
+      <input type="text" class="input" id="bSubject" placeholder="Survey invitation, product update…">
+    </div>
+    <div class="field">
+      <label class="label">Message</label>
+      <textarea class="input" id="bContent" style="min-height:160px" placeholder="Write your message…"></textarea>
+    </div>
+    <div class="field">
+      <label class="label">Channel</label>
+      <select class="input" id="bChannel">
+        <option value="email">Email</option>
+        <option value="whatsapp">WhatsApp</option>
+        <option value="sms">SMS</option>
+        <option value="in_portal">In-portal</option>
+        <option value="all">All channels</option>
+      </select>
+    </div>
+    <p class="hint">Consent is enforced on send — members who withdrew this channel are skipped, and anyone outside their preferred hours is held.</p>
+  </div>
+  <div class="drawer-foot">
+    <button class="btn btn-secondary" onclick="Shell.closeDrawer('broadcastDrawer')">Cancel</button>
+    <button class="btn btn-primary" id="bSend" onclick="sendBroadcast()">Send</button>
+  </div>
+</aside>
 
 <script src="/assets/js/api.js"></script>
+<script src="/assets/js/shell.js"></script>
 <script>
-  if (!Auth.requireAuth(true)) throw new Error('Redirecting');
+  Shell.admin('cohorts');
 
-  let cohortId = null;
+  const cohortId = param('id');
+  if (!cohortId) window.location.href = '/admin/cohorts.html';
+
+  let cohort = null;
+  let searchTimer = null;
 
   async function load() {
-    const params = new URLSearchParams(window.location.search);
-    cohortId = params.get('id');
-    if (!cohortId) { window.location.href = '/admin/dashboard.html'; return; }
-
     try {
-      // Get cohort info from cohorts list
-      const cohortsData = await api.get('/admin/cohorts');
-      const cohort = cohortsData.cohorts.find(c => c.id === cohortId);
-      if (!cohort) { document.getElementById('cohortPage').innerHTML = '<div class="empty">Cohort not found</div>'; return; }
+      const [{ cohorts }, membersData] = await Promise.all([
+        api.get('/admin/cohorts'),
+        api.get(`/admin/members?cohort_id=${cohortId}&limit=100`)
+      ]);
 
-      // Get members in this cohort
-      const membersData = await api.get(`/admin/members?cohort_id=${cohortId}&limit=100`);
+      cohort = cohorts.find(c => c.id === cohortId);
+      if (!cohort) {
+        document.querySelector('.app-body').innerHTML = emptyState({
+          title: 'Cohort not found',
+          text: 'It may have been deleted.',
+          action: '<a href="/admin/cohorts.html" class="btn btn-sm btn-secondary">Back to cohorts</a>'
+        });
+        return;
+      }
 
-      renderCohort(cohort, membersData);
+      renderIdentity();
+      renderComposition(membersData.members);
+      renderRows(membersData.members);
     } catch (err) {
-      document.getElementById('cohortPage').innerHTML = `<div style="text-align:center;padding:var(--sp-16);color:var(--rose)">${err.message}</div>`;
+      document.querySelector('.app-body').innerHTML = emptyState({ title: 'Could not load this cohort', text: err.message });
     }
   }
 
-  function renderCohort(cohort, membersData) {
-    const { members, pagination } = membersData;
+  function renderIdentity() {
+    document.getElementById('crumbName').textContent = cohort.name;
+    document.title = `Dev Circle — ${cohort.name}`;
 
-    document.getElementById('cohortPage').innerHTML = `
-      <div class="cohort-header">
-        <div class="cohort-color-dot" style="background:${cohort.color}"></div>
-        <div>
-          <div class="cohort-name">${escapeHtml(cohort.name)}</div>
-          <div class="cohort-desc">${escapeHtml(cohort.description || 'No description')}</div>
-          <div class="cohort-meta">${cohort.type} · ${cohort.member_count} members · Created ${formatDate(cohort.created_at)}</div>
-        </div>
-      </div>
+    document.getElementById('identity').innerHTML = `
+      <span class="cohort-dot" style="background:${cohort.color}"></span>
+      <div>
+        <h1 class="page-title">${escapeHtml(cohort.name)}</h1>
+        <p class="page-subtitle">${escapeHtml(cohort.description || 'No description')}</p>
+      </div>`;
 
-      <div class="actions-row">
-        <button class="btn btn-sm btn-secondary" onclick="showAddMemberModal()">+ Add member</button>
-        <button class="btn btn-sm btn-secondary" onclick="exportCohort()">↓ Export CSV</button>
-        <button class="btn btn-sm btn-primary" onclick="blastCohort()">✦ Message blast</button>
-        ${cohort.type !== 'system' ? '<button class="btn btn-sm btn-danger" onclick="deleteCohort()">Delete cohort</button>' : ''}
-      </div>
+    document.getElementById('actions').innerHTML = `
+      <button class="btn btn-sm btn-secondary" onclick="Shell.openDrawer('addDrawer')">Add member</button>
+      <button class="btn btn-sm btn-secondary" onclick="exportCohort()">Export CSV</button>
+      <button class="btn btn-sm btn-gold" onclick="openBroadcast()">Message cohort</button>
+      ${cohort.type !== 'system' ? '<button class="btn btn-sm btn-ghost" onclick="deleteCohort()">Delete</button>' : ''}`;
 
-      <div class="stat-strip">
-        <div class="stat-item"><div class="val">${cohort.member_count}</div><div class="label">Members</div></div>
-        <div class="stat-item"><div class="val">${members.filter(m => m.api_status === 'production').length}</div><div class="label">Production</div></div>
-        <div class="stat-item"><div class="val">${members.filter(m => m.kyb_completed).length}</div><div class="label">KYB done</div></div>
-      </div>
-
-      <section class="section">
-        <div class="search-bar">
-          <input type="search" class="search-input" id="memberSearch" placeholder="Search within cohort…" oninput="debounceSearch()">
-        </div>
-        <table class="data-table">
-          <thead><tr><th>Member</th><th>Status</th><th>Surveys</th><th>Streak</th><th>Last active</th><th></th></tr></thead>
-          <tbody id="membersBody">
-            ${members.map(m => {
-              const initials = m.name.split(' ').map(n => n[0]).join('').toUpperCase();
-              const statusColor = m.api_status === 'production' ? 'var(--teal)' : 'var(--cd-gold)';
-              return `<tr>
-                <td><div class="user-cell"><div class="user-cell-avatar" style="background:${statusColor}18;color:${statusColor}">${initials}</div><div><div class="user-cell-name">${escapeHtml(m.name)}</div><div class="user-cell-email">${escapeHtml(m.email)}</div></div></div></td>
-                <td><span class="state-label state-${m.api_status}">● ${m.api_status}</span></td>
-                <td class="mono-sm">${m.surveys_completed}/${m.surveys_invited}</td>
-                <td class="mono-sm">${m.engagement_streak}</td>
-                <td class="mono-sm">${formatDate(m.last_active_at)}</td>
-                <td><button class="btn btn-sm btn-ghost" onclick="removeMember('${m.id}','${escapeHtml(m.name)}')">Remove</button></td>
-              </tr>`;
-            }).join('')}
-          </tbody>
-        </table>
-        <div class="pagination">
-          <span>${pagination.total} members</span>
-        </div>
-      </section>
-    `;
+    // A rule-backed cohort explains itself in words, so nobody has to guess
+    // why a member is in it.
+    const rules = cohort.filter_rules && cohort.filter_rules.rules;
+    if (rules && rules.length) {
+      document.getElementById('ruleCard').hidden = false;
+      document.getElementById('ruleText').innerHTML =
+        `Match <b>${cohort.filter_rules.match || 'all'}</b> of:<br>` +
+        rules.map(r => `· <b>${escapeHtml(r.field)}</b> ${escapeHtml(r.op)} <b>${escapeHtml(String(r.value))}</b>`).join('<br>');
+    }
   }
 
-  let searchTimeout;
-  function debounceSearch() { clearTimeout(searchTimeout); searchTimeout = setTimeout(searchMembers, 300); }
-  async function searchMembers() {
-    const search = document.getElementById('memberSearch').value;
-    const data = await api.get(`/admin/members?cohort_id=${cohortId}&limit=100${search ? '&search=' + encodeURIComponent(search) : ''}`);
-    // Re-render just the table body
-    const tbody = document.getElementById('membersBody');
-    tbody.innerHTML = data.members.map(m => {
-      const initials = m.name.split(' ').map(n => n[0]).join('').toUpperCase();
-      const statusColor = m.api_status === 'production' ? 'var(--teal)' : 'var(--cd-gold)';
-      return `<tr>
-        <td><div class="user-cell"><div class="user-cell-avatar" style="background:${statusColor}18;color:${statusColor}">${initials}</div><div><div class="user-cell-name">${escapeHtml(m.name)}</div><div class="user-cell-email">${escapeHtml(m.email)}</div></div></div></td>
-        <td><span class="state-label state-${m.api_status}">● ${m.api_status}</span></td>
-        <td class="mono-sm">${m.surveys_completed}/${m.surveys_invited}</td>
-        <td class="mono-sm">${m.engagement_streak}</td>
-        <td class="mono-sm">${formatDate(m.last_active_at)}</td>
-        <td><button class="btn btn-sm btn-ghost" onclick="removeMember('${m.id}','${escapeHtml(m.name)}')">Remove</button></td>
-      </tr>`;
-    }).join('');
+  function renderComposition(members) {
+    const production = members.filter(m => m.api_status === 'production').length;
+    const kyb = members.filter(m => m.kyb_completed).length;
+    const streaking = members.filter(m => m.engagement_streak > 0).length;
+
+    document.getElementById('composition').innerHTML = `
+      <div class="kv-row"><span class="kv-key">Members</span><span class="kv-val">${cohort.member_count}</span></div>
+      <div class="kv-row"><span class="kv-key">Production</span><span class="kv-val">${production}</span></div>
+      <div class="kv-row"><span class="kv-key">KYB done</span><span class="kv-val">${kyb}</span></div>
+      <div class="kv-row"><span class="kv-key">On a streak</span><span class="kv-val">${streaking}</span></div>
+      <div class="kv-row"><span class="kv-key">Type</span><span class="kv-val">${cohort.type}</span></div>
+      <div class="kv-row"><span class="kv-key">Created</span><span class="kv-val">${formatDate(cohort.created_at)}</span></div>`;
   }
 
-  function showAddMemberModal() { document.getElementById('addMemberModal').classList.add('open'); document.getElementById('addMemberEmail').focus(); }
-  function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+  function renderRows(members) {
+    document.getElementById('count').textContent = `${members.length} shown`;
+    document.getElementById('rows').innerHTML = members.length
+      ? members.map(m => `
+        <tr class="row-link" onclick="if(!event.target.closest('button'))window.location.href='/admin/member.html?id=${m.id}'">
+          <td>${identityCell(m.name, m.company || m.email, orbitLevel(m.engagement_streak))}</td>
+          <td>${badge(m.api_status, m.api_status)}</td>
+          <td class="hide-sm mono text-xs tnum">${m.surveys_completed}/${m.surveys_invited}</td>
+          <td class="hide-sm">${m.engagement_streak ? `<span class="streak">${m.engagement_streak}d</span>` : '<span class="dim">—</span>'}</td>
+          <td class="text-xs muted nowrap">${formatDate(m.last_active_at)}</td>
+          <td class="col-actions">
+            <div class="row-actions">
+              <button class="btn btn-sm btn-ghost" onclick="removeMember('${m.id}', '${escapeHtml(m.name).replace(/'/g, '&#39;')}')">Remove</button>
+            </div>
+          </td>
+        </tr>`).join('')
+      : `<tr><td colspan="6">${emptyState({
+          title: 'Nobody in this cohort yet',
+          text: cohort && cohort.filter_rules ? 'No members match its rule right now.' : 'Add members by email, or give the cohort a rule so it fills itself.',
+          action: '<button class="btn btn-sm btn-secondary" onclick="Shell.openDrawer(\'addDrawer\')">Add a member</button>'
+        })}</td></tr>`;
+  }
 
-  async function addMemberByEmail() {
-    const email = document.getElementById('addMemberEmail').value.trim();
+  async function search() {
+    const term = document.getElementById('search').value.trim();
+    const data = await api.get(`/admin/members?cohort_id=${cohortId}&limit=100${term ? '&search=' + encodeURIComponent(term) : ''}`);
+    renderRows(data.members);
+  }
+
+  document.getElementById('search').addEventListener('input', () => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(search, 280);
+  });
+
+  // ─── Actions ────────────────────────────────────────────
+  async function addMember() {
+    const email = document.getElementById('addEmail').value.trim();
     if (!email) { showToast('Enter an email', 'warning'); return; }
-    try {
-      // Find user by search
-      const search = await api.get(`/admin/members?search=${encodeURIComponent(email)}&limit=1`);
-      if (!search.members.length) { showToast('User not found', 'error'); return; }
-      const user = search.members[0];
 
+    try {
+      const found = await api.get(`/admin/members?search=${encodeURIComponent(email)}&limit=1`);
+      if (!found.members.length) { showToast('No member with that email', 'error'); return; }
+
+      const user = found.members[0];
       await api.post(`/admin/cohorts/${cohortId}/members`, { user_ids: [user.id] });
-      closeModal('addMemberModal');
-      document.getElementById('addMemberEmail').value = '';
-      showToast(`${user.name} added to cohort`);
+      Shell.closeDrawer('addDrawer');
+      document.getElementById('addEmail').value = '';
+      showToast(`${user.name} added`);
       load();
     } catch (err) { showToast(err.message, 'error'); }
   }
 
   async function removeMember(userId, name) {
-    if (!confirm(`Remove ${name} from this cohort?`)) return;
+    const ok = await Shell.confirm({
+      title: `Remove ${name}?`,
+      text: 'They stay in Dev Circle — this only takes them out of this cohort.',
+      ok: 'Remove'
+    });
+    if (!ok) return;
+
     try {
       await api.del(`/admin/cohorts/${cohortId}/members/${userId}`);
       showToast(`${name} removed`);
@@ -236,30 +289,81 @@
   }
 
   async function deleteCohort() {
-    if (!confirm('Delete this cohort? Members will not be deleted.')) return;
+    const ok = await Shell.confirm({
+      title: 'Delete this cohort?',
+      text: 'The cohort and its rule are removed. No member is deleted.',
+      ok: 'Delete cohort'
+    });
+    if (!ok) return;
+
     try {
       await api.del(`/admin/cohorts/${cohortId}`);
       showToast('Cohort deleted');
-      window.location.href = '/admin/dashboard.html';
+      window.location.href = '/admin/cohorts.html';
     } catch (err) { showToast(err.message, 'error'); }
   }
 
-  function blastCohort() {
-    // Redirect to admin dashboard with blast modal pre-filled
-    localStorage.setItem('blast_cohort_id', cohortId);
-    window.location.href = '/admin/dashboard.html';
+  async function syncCohort() {
+    try {
+      const res = await api.post(`/admin/cohorts/${cohortId}/sync`, {});
+      showToast(res.message || 'Rule re-run');
+      load();
+    } catch (err) { showToast(err.message, 'error'); }
+  }
+
+  function openBroadcast() {
+    document.getElementById('broadcastAudience').textContent =
+      `To ${cohort.member_count} member${cohort.member_count === 1 ? '' : 's'} in ${cohort.name}`;
+    Shell.openDrawer('broadcastDrawer');
+  }
+
+  async function sendBroadcast() {
+    const content = document.getElementById('bContent').value.trim();
+    if (!content) { showToast('Message required', 'warning'); return; }
+
+    const btn = document.getElementById('bSend');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Sending';
+
+    try {
+      const blast = await api.post('/admin/blasts', {
+        subject: document.getElementById('bSubject').value.trim(),
+        content,
+        channel: document.getElementById('bChannel').value,
+        target_type: 'cohort',
+        target_ids: [cohortId]
+      });
+      const result = await api.post(`/admin/blasts/${blast.blast.id}/send`);
+      Shell.closeDrawer('broadcastDrawer');
+
+      const notes = [];
+      if (result.skipped) notes.push(`${result.skipped} skipped (consent or preference)`);
+      if (result.queued_for_quiet_hours) notes.push(`${result.queued_for_quiet_hours} held for quiet hours`);
+      if (result.failed) notes.push(`${result.failed} failed`);
+      showToast(`${result.delivered} delivered${notes.length ? ' · ' + notes.join(' · ') : ''}`,
+                result.failed ? 'warning' : 'success');
+
+      document.getElementById('bSubject').value = '';
+      document.getElementById('bContent').value = '';
+    } catch (err) {
+      showToast(err.message, 'error');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Send';
+    }
   }
 
   async function exportCohort() {
     try {
       const res = await fetch(`${API_BASE}/admin/export?format=csv&cohort_id=${cohortId}`, { headers: Auth.headers() });
       const blob = await res.blob();
-      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'cohort-export.csv'; a.click();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'cohort-export.csv';
+      a.click();
       showToast('Exported');
     } catch { showToast('Export failed', 'error'); }
   }
-
-  document.querySelectorAll('.modal-overlay').forEach(m => { m.addEventListener('click', e => { if (e.target === m) m.classList.remove('open'); }); });
 
   load();
 </script>

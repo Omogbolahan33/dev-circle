@@ -71,7 +71,7 @@ test('an upstream request id is honoured rather than replaced', async () => {
 test('auth endpoints refuse a flood and say when to come back', async () => {
   let last;
   for (let i = 0; i < 25; i++) {
-    last = await h.post('/api/auth/login', { email: 'nobody@x.ng', password: 'x' });
+    last = await h.post('/api/auth/login', { identifier: 'nobody@creditdirect.ng', password: 'x' });
   }
 
   assert.equal(last.status, 429);
@@ -85,11 +85,11 @@ test('rate limit headers are present on a normal response', async () => {
 });
 
 test('authenticated callers get their own bucket, not a shared IP one', async () => {
-  const first = h.makeUser({ password: 'dev-password' });
-  const second = h.makeUser({ password: 'dev-password' });
+  const first = h.makeUser();
+  const second = h.makeUser();
 
-  const firstToken = await h.loginUser(first.email, 'dev-password');
-  const secondToken = await h.loginUser(second.email, 'dev-password');
+  const firstToken = await h.loginUser(first.email);
+  const secondToken = await h.loginUser(second.email);
 
   store.resetAll();
 

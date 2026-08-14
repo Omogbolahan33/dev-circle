@@ -15,8 +15,8 @@ beforeEach(async () => {
   const readOnlyRole = h.makeRole('Read Only', ['members.read', 'cohorts.read', 'surveys.read']);
   const superRole = h.makeRole('Super Admin', ['*']);
 
-  const readOnly = h.makeAdmin({ email: 'viewer@cd.ng', roleId: readOnlyRole });
-  const superAdmin = h.makeAdmin({ email: 'boss@cd.ng', roleId: superRole });
+  const readOnly = h.makeAdmin({ email: 'viewer@creditdirect.ng', roleId: readOnlyRole });
+  const superAdmin = h.makeAdmin({ email: 'boss@creditdirect.ng', roleId: superRole });
 
   readOnlyToken = await h.loginAdmin(readOnly.email, readOnly.password);
   superToken = await h.loginAdmin(superAdmin.email, superAdmin.password);
@@ -49,10 +49,9 @@ test('a read-only role cannot export member data', async () => {
   assert.equal(res.status, 403);
 });
 
-test('a read-only role cannot reset a member password', async () => {
+test('a read-only role cannot sign a member out of their devices', async () => {
   const user = h.makeUser();
-  const res = await h.post(`/api/admin/members/${user.id}/reset-password`,
-    { new_password: 'newpassword123' }, { token: readOnlyToken });
+  const res = await h.post(`/api/admin/members/${user.id}/sign-out`, {}, { token: readOnlyToken });
   assert.equal(res.status, 403);
 });
 
@@ -71,8 +70,8 @@ test('a super admin passes every gate', async () => {
 });
 
 test('a member token cannot reach admin endpoints at all', async () => {
-  const user = h.makeUser({ password: 'dev-password' });
-  const token = await h.loginUser(user.email, 'dev-password');
+  const user = h.makeUser();
+  const token = await h.loginUser(user.email);
 
   const res = await h.get('/api/admin/members', { token });
   assert.equal(res.status, 403);
@@ -80,7 +79,7 @@ test('a member token cannot reach admin endpoints at all', async () => {
 
 test('changing an admin role takes effect immediately, not at token expiry', async () => {
   const role = h.makeRole('Editor', ['members.read', 'surveys.read', 'surveys.write']);
-  const editor = h.makeAdmin({ email: 'editor@cd.ng', roleId: role });
+  const editor = h.makeAdmin({ email: 'editor@creditdirect.ng', roleId: role });
   const token = await h.loginAdmin(editor.email, editor.password);
 
   const before = await h.post('/api/admin/surveys', { title: 'x', questions: [] }, { token });
@@ -103,7 +102,7 @@ test('a role cannot be built from a permission that gates nothing', async () => 
 });
 
 test('an admin cannot deactivate their own account', async () => {
-  const me = h.db.prepare("SELECT id FROM admin_users WHERE email = 'boss@cd.ng'").get();
+  const me = h.db.prepare("SELECT id FROM admin_users WHERE email = 'boss@creditdirect.ng'").get();
   const res = await h.put(`/api/admin/admins/${me.id}`, { status: 'inactive' }, { token: superToken });
   assert.equal(res.status, 400);
 });
@@ -122,7 +121,7 @@ test('a system role cannot be edited or deleted', async () => {
 
 test('a role still assigned to an admin cannot be deleted', async () => {
   const role = h.makeRole('Temp', ['members.read']);
-  h.makeAdmin({ email: 'temp@cd.ng', roleId: role });
+  h.makeAdmin({ email: 'temp@creditdirect.ng', roleId: role });
 
   const res = await h.del(`/api/admin/roles/${role}`, { token: superToken });
   assert.equal(res.status, 409);

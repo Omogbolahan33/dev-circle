@@ -1,7 +1,9 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const db = require('../../db');
+const config = require('../../config');
 const { uuid, parseJSON } = require('../../utils/helpers');
+const identity = require('../../utils/identity');
 const { requirePermission, destroyAllSessionsFor, PERMISSIONS } = require('../../middleware/auth');
 
 const router = express.Router();
@@ -108,9 +110,20 @@ router.get('/admins', requirePermission('roles.read'), (req, res) => {
 
 // POST /api/admin/admins — create an internal user and assign a role
 router.post('/admins', requirePermission('roles.write'), (req, res) => {
-  const { email, name, password, role_id } = req.body;
+  const { name, password, role_id } = req.body;
+  const email = identity.normalizeEmail(req.body.email);
+
   if (!email || !name || !password || !role_id) {
-    return res.status(400).json({ error: 'email, name, password, and role_id are required' });
+    return res.status(400).json({ error: 'A valid email, name, password, and role_id are required' });
+  }
+  // The sign-in page reads the domain to decide whether to ask for a password
+  // at all. An admin on any other domain would be sent down the one-time-code
+  // path and could never get in, so the rule is enforced where the account is
+  // made rather than discovered at the door.
+  if (!identity.isStaffEmail(email)) {
+    return res.status(400).json({
+      error: `Admin accounts must use a Credit Direct address (${config.staffEmailDomains.join(', ')})`
+    });
   }
   if (String(password).length < 10) {
     return res.status(400).json({ error: 'Admin passwords must be at least 10 characters' });

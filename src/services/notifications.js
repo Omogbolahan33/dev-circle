@@ -148,7 +148,9 @@ async function dispatchToProvider(channel, user, message) {
       body: JSON.stringify({
         transactional_message_id: message.category,
         identifiers: { email: user.email },
-        to: channel === 'email' ? user.email : user.phone,
+        // An explicit destination wins, so a sign-in code goes to the address
+        // or number the member actually typed rather than their primary one
+        to: message.to || (channel === 'email' ? user.email : user.phone),
         message_data: { title: message.title, body: message.body, action_url: message.action_url }
       })
     });
@@ -228,6 +230,42 @@ async function notify(user, {
   }
 
   return { notification_id: notificationId, deliveries: results, delivered: allowed.length };
+}
+
+// Send one transactional message on one channel, bypassing consent, category
+// preference, and quiet hours. This exists for messages the member has just
+// asked for and cannot proceed without — a sign-in code — where the filters
+// that govern outbound engagement would instead lock someone out of their own
+// account. It is deliberately not reachable from blasts or campaigns. The
+// attempt is recorded in message_deliveries like any other.
+async function sendDirect(user, {
+  channel,
+  to = null,
+  category = 'platform_updates',
+  title,
+  body = null,
+  sourceType = 'system',
+  sourceId = null
+}) {
+  if (!title) throw new Error('sendDirect() requires a title');
+  if (!CHANNELS.includes(channel)) throw new Error(`Unsupported channel ${channel}`);
+
+  let outcome;
+  try {
+    outcome = await dispatchToProvider(channel, user, { category, title, body, to, action_url: null });
+  } catch (err) {
+    outcome = { status: 'failed', ref: null, error: err.message };
+  }
+
+  insertDelivery.run(
+    uuid(), sourceType, sourceId, user.id, channel,
+    outcome.status, outcome.error || null, outcome.ref || null,
+    ['sent', 'simulated'].includes(outcome.status)
+      ? new Date().toISOString().replace('T', ' ').slice(0, 19)
+      : null
+  );
+
+  return { channel, status: outcome.status, reason: outcome.error || null };
 }
 
 // Send the same message to many members
@@ -341,6 +379,7 @@ function markAllRead(userId) {
 module.exports = {
   notify,
   notifyMany,
+  sendDirect,
   inbox,
   markRead,
   markAllRead,

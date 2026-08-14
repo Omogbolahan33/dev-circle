@@ -1,6 +1,7 @@
 const express = require('express');
 const db = require('../db');
 const { uuid, parseJSON, sanitizeUser } = require('../utils/helpers');
+const identity = require('../utils/identity');
 const { requireAuth } = require('../middleware/auth');
 const engagement = require('../services/engagement');
 const notifications = require('../services/notifications');
@@ -128,7 +129,19 @@ router.put('/profile', requireAuth, (req, res) => {
 
   try {
     setText('name', name);
-    setText('phone', phone);
+
+    // The phone number is a way in now, not just a contact detail, so it is
+    // stored twice: as the member wrote it, and in the canonical form a
+    // sign-in is matched against.
+    if (phone !== undefined) {
+      const normalized = identity.normalizePhone(phone);
+      if (phone && !normalized) {
+        return res.status(400).json({ error: 'That phone number is not one we can send a code to.' });
+      }
+      setText('phone', phone || null);
+      setText('phone_normalized', normalized);
+    }
+
     setText('company', company);
     setText('work_sector', work_sector);
     setText('preferred_time_start', preferred_time_start);

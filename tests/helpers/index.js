@@ -72,6 +72,7 @@ function reset() {
   require('../../src/middleware/rateLimit').store.resetAll();
 
   const tables = [
+    'login_codes',
     'session_dispatches', 'scheduled_sessions', 'message_deliveries', 'notifications',
     'user_gifts', 'gifts', 'consent', 'feedback', 'survey_responses', 'surveys',
     'engagement_history', 'circle_members', 'circles', 'user_cohorts', 'cohorts',
@@ -108,12 +109,12 @@ function makeAdmin({ email, password = 'admin-password', roleId }) {
 }
 
 function makeUser(overrides = {}) {
-  const bcrypt = require('bcryptjs');
+  const identity = require('../../src/utils/identity');
   const id = uuid();
   const user = {
     email: `dev-${id.slice(0, 8)}@example.ng`,
     name: 'Test Developer',
-    password: 'dev-password',
+    phone: null,
     company: 'Testco',
     work_sector: 'Fintech',
     api_status: 'sandbox',
@@ -131,14 +132,19 @@ function makeUser(overrides = {}) {
   };
 
   db.prepare(`
-    INSERT INTO users (id, email, name, password_hash, company, work_sector, api_status,
+    INSERT INTO users (id, email, name, phone, phone_normalized, password_hash,
+                       company, work_sector, api_status,
                        kyb_completed, engagement_streak, preferred_channels, preferred_days,
                        preferred_time_start, preferred_time_end, api_products,
                        location_state, gender, date_of_birth, status,
                        quiet_hours_start, quiet_hours_end)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)
   `).run(
-    id, user.email, user.name, bcrypt.hashSync(user.password, 4), user.company,
+    id, user.email, user.name,
+    user.phone, identity.normalizePhone(user.phone),
+    // Members have no password at all — a one-time code is the way in
+    identity.NO_PASSWORD,
+    user.company,
     user.work_sector, user.api_status, user.kyb_completed, user.engagement_streak,
     JSON.stringify(user.preferred_channels), JSON.stringify(user.preferred_days),
     user.preferred_time_start, user.preferred_time_end,
@@ -175,13 +181,21 @@ function makeApiKey(scopes = ['*']) {
 }
 
 async function loginAdmin(email, password) {
-  const res = await post('/api/auth/admin/login', { email, password });
+  const res = await post('/api/auth/login', { identifier: email, password });
   return res.body.token;
 }
 
-async function loginUser(email, password) {
-  const res = await post('/api/auth/login', { email, password });
-  return res.body.token;
+// Members hold no password: they ask for a one-time code and send it back.
+// Outside production the code comes back in the request response, which is
+// what makes the real flow exercisable here rather than reaching into the
+// database for it.
+async function loginUser(identifier) {
+  const requested = await post('/api/auth/code/request', { identifier });
+  const verified = await post('/api/auth/code/verify', {
+    identifier,
+    code: requested.body.dev_code
+  });
+  return verified.body.token;
 }
 
 module.exports = {

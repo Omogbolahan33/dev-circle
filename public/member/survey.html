@@ -8,380 +8,351 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/assets/css/tokens.css">
+  <link rel="stylesheet" href="/assets/css/app.css">
   <style>
-    body { min-height: 100vh; display: flex; flex-direction: column; }
+    /* Answering a survey is a focused mode: no nav, no sidebar, one question
+       at a time. The only things on screen are the question and the way out. */
+    body { display: flex; flex-direction: column; min-height: 100vh; }
 
-    .survey-header {
-      padding: var(--sp-4) var(--sp-6);
-      display: flex; align-items: center; justify-content: space-between;
-      border-bottom: 1px solid rgba(160, 160, 184, 0.06); flex-shrink: 0;
+    .survey-bar {
+      display: flex;
+      align-items: center;
+      gap: var(--sp-4);
+      padding: 0 var(--sp-6);
+      height: var(--topbar-h);
+      border-bottom: 1px solid var(--line-faint);
+      flex-shrink: 0;
     }
-    .survey-logo { font-family: var(--font-display); font-weight: var(--fw-black); font-size: var(--fs-md); letter-spacing: -0.03em; }
-    .survey-logo span { color: var(--cd-blue); }
-    .survey-meta-bar { display: flex; align-items: center; gap: var(--sp-4); }
-    .survey-id { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--ash-dim); }
-    .survey-exit { font-size: var(--fs-sm); color: var(--ash); cursor: pointer; background: none; border: none; }
-    .survey-exit:hover { color: var(--white); }
+    .survey-name { font-size: var(--fs-sm); color: var(--ash); }
 
-    .survey-progress { padding: 0 var(--sp-6); padding-top: var(--sp-4); flex-shrink: 0; }
-    .progress-track { height: 3px; background: rgba(160, 160, 184, 0.06); border-radius: var(--r-full); overflow: hidden; }
-    .progress-fill { height: 100%; background: var(--cd-blue); border-radius: var(--r-full); transition: width var(--duration-normal) var(--ease-out); }
-    .progress-label { display: flex; justify-content: space-between; margin-top: var(--sp-2); font-size: var(--fs-xs); color: var(--ash-dim); font-family: var(--font-mono); }
+    .progress-strip { padding: var(--sp-4) var(--sp-6) 0; max-width: 640px; margin: 0 auto; width: 100%; }
+    .progress-meta { display: flex; justify-content: space-between; font-size: var(--fs-xs); color: var(--ash-dim); margin-top: var(--sp-2); }
 
-    .survey-body { flex: 1; display: flex; align-items: center; justify-content: center; padding: var(--sp-6); }
-    .question-container { max-width: 640px; width: 100%; text-align: center; }
-    .question-number { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--cd-blue); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: var(--sp-4); }
-    .question-text { font-family: var(--font-display); font-weight: var(--fw-bold); font-size: var(--fs-xl); letter-spacing: -0.02em; line-height: var(--lh-tight); margin-bottom: var(--sp-8); max-width: 520px; margin-left: auto; margin-right: auto; }
+    main {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: var(--sp-8) var(--sp-6);
+    }
 
-    /* Rating */
-    .rating-scale { display: flex; justify-content: center; gap: var(--sp-3); margin-bottom: var(--sp-6); }
+    .question-wrap { max-width: 640px; width: 100%; }
+    .question-number { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--cd-blue); margin-bottom: var(--sp-3); }
+    .question-text {
+      font-family: var(--font-display);
+      font-weight: var(--fw-bold);
+      font-size: var(--fs-xl);
+      letter-spacing: -0.02em;
+      line-height: var(--lh-tight);
+      margin-bottom: var(--sp-8);
+    }
+
+    /* Rating: the numbers are the control, big enough to hit on a phone. */
+    .rating { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
     .rating-option { display: flex; flex-direction: column; align-items: center; gap: var(--sp-2); cursor: pointer; }
     .rating-circle {
-      width: 52px; height: 52px; border-radius: 50%; border: 2px solid rgba(160, 160, 184, 0.15);
+      width: 52px; height: 52px;
+      border: 1px solid var(--line);
+      border-radius: 50%;
       display: flex; align-items: center; justify-content: center;
-      font-family: var(--font-display); font-weight: var(--fw-bold); font-size: var(--fs-lg); color: var(--ash);
-      transition: all var(--duration-fast) var(--ease-out); position: relative;
-    }
-    .rating-circle::after { content: ''; position: absolute; inset: -4px; border-radius: 50%; border: 2px solid transparent; transition: border-color var(--duration-fast) var(--ease-out); }
-    .rating-option:hover .rating-circle { border-color: var(--cd-blue-40); color: var(--white); }
-    .rating-option.selected .rating-circle { border-color: var(--cd-blue); background: var(--cd-blue); color: var(--white); }
-    .rating-option.selected .rating-circle::after { border-color: var(--cd-blue-20); }
-    .rating-label { font-size: 10px; color: var(--ash-dim); font-family: var(--font-mono); text-transform: uppercase; letter-spacing: 0.04em; }
-    .rating-option.selected .rating-label { color: var(--cd-blue); }
-
-    /* Choice */
-    .choice-list { display: flex; flex-direction: column; gap: var(--sp-3); max-width: 480px; margin: 0 auto var(--sp-6); text-align: left; }
-    .choice-item {
-      display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-3) var(--sp-4);
-      border: 1px solid rgba(160, 160, 184, 0.08); border-radius: var(--r-md); cursor: pointer;
-      transition: all var(--duration-fast) var(--ease-out); font-size: var(--fs-base);
-    }
-    .choice-item:hover { border-color: var(--cd-blue-40); background: rgba(16, 126, 188, 0.04); }
-    .choice-item.selected { border-color: var(--cd-blue); background: rgba(16, 126, 188, 0.08); }
-    .choice-radio {
-      width: 18px; height: 18px; border-radius: 50%; border: 2px solid rgba(160, 160, 184, 0.15);
-      flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+      font-family: var(--font-display);
+      font-weight: var(--fw-semibold);
+      font-size: var(--fs-md);
+      color: var(--ash);
       transition: all var(--duration-fast) var(--ease-out);
     }
-    .choice-item.selected .choice-radio { border-color: var(--cd-blue); }
-    .choice-item.selected .choice-radio::after { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--cd-blue); }
+    .rating-option:hover .rating-circle { border-color: var(--cd-blue-40); color: var(--white); }
+    .rating-option.selected .rating-circle { background: var(--cd-blue); border-color: var(--cd-blue); color: var(--white); }
+    .rating-label { font-size: 10px; color: var(--ash-dim); max-width: 60px; text-align: center; }
 
-    /* Text */
-    .text-answer { max-width: 480px; margin: 0 auto var(--sp-6); }
-    .text-area {
-      width: 100%; min-height: 120px; background: var(--slate); border: 1px solid rgba(160, 160, 184, 0.08);
-      border-radius: var(--r-lg); padding: var(--sp-4); color: var(--white); font-family: var(--font-body);
-      font-size: var(--fs-base); line-height: var(--lh-normal); resize: vertical;
-      transition: border-color var(--duration-fast) var(--ease-out);
+    .choice-list { display: flex; flex-direction: column; gap: var(--sp-2); }
+    .choice-item {
+      display: flex; align-items: center; gap: var(--sp-3);
+      padding: var(--sp-4);
+      border: 1px solid var(--line);
+      border-radius: var(--r-md);
+      cursor: pointer;
+      font-size: var(--fs-base);
+      transition: all var(--duration-fast) var(--ease-out);
     }
-    .text-area::placeholder { color: var(--ash-dim); }
-    .text-area:focus { border-color: var(--cd-blue); outline: none; }
-    .char-count { text-align: right; font-size: var(--fs-xs); color: var(--ash-dim); font-family: var(--font-mono); margin-top: var(--sp-1); }
+    .choice-item:hover { border-color: var(--line-strong); }
+    .choice-item.selected { border-color: var(--cd-blue); background: var(--cd-blue-dim); }
+    .choice-radio { width: 16px; height: 16px; border: 1px solid var(--line-strong); border-radius: 50%; flex-shrink: 0; }
+    .choice-item.selected .choice-radio { border: 5px solid var(--cd-blue); }
 
-    .survey-footer {
-      padding: var(--sp-4) var(--sp-6); display: flex; align-items: center;
-      justify-content: space-between; border-top: 1px solid rgba(160, 160, 184, 0.06); flex-shrink: 0;
+    .char-count { text-align: right; font-size: var(--fs-xs); color: var(--ash-dim); margin-top: var(--sp-2); }
+
+    .survey-foot {
+      display: flex;
+      justify-content: space-between;
+      gap: var(--sp-3);
+      padding: var(--sp-4) var(--sp-6);
+      border-top: 1px solid var(--line-faint);
+      max-width: 640px;
+      margin: 0 auto;
+      width: 100%;
+      flex-shrink: 0;
     }
-    .survey-footer .btn { min-width: 120px; }
-    .keyboard-hint { font-size: 10px; color: var(--ash-dim); font-family: var(--font-mono); }
-    .keyboard-hint kbd { display: inline-block; padding: 1px 6px; background: var(--slate-mid); border: 1px solid rgba(160, 160, 184, 0.08); border-radius: 3px; font-family: var(--font-mono); font-size: 10px; margin: 0 2px; }
 
-    /* Completion */
-    .completion-screen { display: none; flex: 1; align-items: center; justify-content: center; padding: var(--sp-6); text-align: center; }
-    .completion-screen.visible { display: flex; }
-    .completion-icon { width: 72px; height: 72px; border-radius: 50%; background: var(--emerald-dim); display: flex; align-items: center; justify-content: center; font-size: 32px; margin: 0 auto var(--sp-6); color: var(--emerald); }
-    .completion-title { font-family: var(--font-display); font-weight: var(--fw-bold); font-size: var(--fs-xl); letter-spacing: -0.02em; margin-bottom: var(--sp-2); }
-    .completion-text { color: var(--ash); font-size: var(--fs-sm); max-width: 400px; margin: 0 auto var(--sp-6); line-height: var(--lh-loose); }
-    .completion-meta { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--ash-dim); margin-bottom: var(--sp-6); }
-
-    /* Loading */
-    .loading-screen { flex: 1; display: flex; align-items: center; justify-content: center; color: var(--ash); }
-
-    .loading-skeleton { background:linear-gradient(90deg,var(--slate) 25%,var(--slate-mid) 50%,var(--slate) 75%); background-size:200% 100%; animation:shimmer 1.5s infinite; border-radius:var(--r-md); }
-    @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
-
-    @media (max-width: 768px) {
-      .survey-header { padding: var(--sp-3) var(--sp-4); }
-      .survey-progress { padding: var(--sp-3) var(--sp-4) 0; }
-      .survey-body { padding: var(--sp-4); align-items: flex-start; padding-top: var(--sp-8); }
-      .question-text { font-size: var(--fs-lg); }
-      .rating-circle { width: 44px; height: 44px; font-size: var(--fs-md); }
-      .rating-scale { gap: var(--sp-2); }
-      .survey-footer { padding: var(--sp-3) var(--sp-4); }
-      .keyboard-hint { display: none; }
+    .done { max-width: 480px; text-align: center; }
+    .done-mark {
+      width: 56px; height: 56px;
+      border-radius: 50%;
+      background: var(--emerald-dim);
+      color: var(--emerald);
+      display: flex; align-items: center; justify-content: center;
+      font-size: var(--fs-lg);
+      margin: 0 auto var(--sp-5);
     }
-    @media (max-width: 480px) {
-      .rating-scale { flex-wrap: wrap; gap: var(--sp-2); }
-      .rating-circle { width: 40px; height: 40px; }
+    .done-title { font-family: var(--font-display); font-weight: var(--fw-bold); font-size: var(--fs-xl); margin-bottom: var(--sp-3); }
+    .done-text { color: var(--ash); font-size: var(--fs-sm); line-height: var(--lh-loose); margin-bottom: var(--sp-2); }
+    .done-meta { font-size: var(--fs-xs); color: var(--ash-dim); margin-bottom: var(--sp-6); }
+
+    .picker-item {
+      display: block;
+      padding: var(--sp-4);
+      border: 1px solid var(--line);
+      border-radius: var(--r-md);
+      margin-bottom: var(--sp-3);
+      text-decoration: none;
     }
+    .picker-item:hover { border-color: var(--cd-blue-40); text-decoration: none; }
   </style>
 </head>
 <body>
 
-  <header class="survey-header">
-    <div class="survey-logo">dev<span>.</span>circle</div>
-    <div class="survey-meta-bar">
-      <span class="survey-id" id="surveyId">—</span>
-      <button class="survey-exit" onclick="exitSurvey()">✕ Exit</button>
-    </div>
-  </header>
+  <div class="survey-bar">
+    <span class="brand-mark">dev<span>.</span>circle</span>
+    <span class="survey-name" id="surveyName"></span>
+    <span class="spacer"></span>
+    <button class="btn btn-sm btn-ghost" onclick="exitSurvey()">Save &amp; exit</button>
+  </div>
 
-  <div class="survey-progress" id="progressSection">
-    <div class="progress-track">
-      <div class="progress-fill" id="progressFill" style="width:0%"></div>
-    </div>
-    <div class="progress-label">
-      <span id="progressText">Loading…</span>
-      <span id="progressTime">—</span>
+  <div class="progress-strip hide" id="progressStrip">
+    <div class="progress"><div class="fill" id="progressFill" style="width:0"></div></div>
+    <div class="progress-meta">
+      <span id="progressText"></span>
+      <span id="progressTime"></span>
     </div>
   </div>
 
-  <main class="survey-body" id="questionView">
-    <div class="loading-screen" id="loadingScreen">
-      <p>Loading survey…</p>
-    </div>
+  <main id="stage">
+    <div class="row"><span class="spinner"></span></div>
   </main>
 
-  <div class="completion-screen" id="completionView">
-    <div>
-      <div class="completion-icon">✓</div>
-      <h2 class="completion-title">Survey complete</h2>
-      <p class="completion-text" id="completionText">Thank you for your feedback. Your responses help us build a better developer experience.</p>
-      <div class="completion-meta" id="completionMeta">Response recorded</div>
-      <div style="display:flex;gap:var(--sp-3);justify-content:center">
-        <button class="btn btn-primary" onclick="window.location.href='/member/dashboard.html'">Return to Dashboard</button>
-      </div>
-    </div>
+  <div class="survey-foot hide" id="foot">
+    <button class="btn btn-secondary" id="prevBtn" onclick="prevQuestion()">← Back</button>
+    <button class="btn btn-primary" id="nextBtn" onclick="nextQuestion()">Next →</button>
   </div>
 
-  <footer class="survey-footer" id="surveyFooter">
-    <button class="btn btn-secondary" id="prevBtn" onclick="prevQuestion()">← Previous</button>
-    <div class="keyboard-hint">
-      Press <kbd>←</kbd> <kbd>→</kbd> to navigate · <kbd>1</kbd>–<kbd>5</kbd> to rate
-    </div>
-    <button class="btn btn-primary" id="nextBtn" onclick="nextQuestion()">Next →</button>
-  </footer>
-
 <script src="/assets/js/api.js"></script>
+<script src="/assets/js/shell.js"></script>
 <script>
-  // ─── Auth Guard ──────────────────────────────────────
   if (!Auth.requireAuth(false)) throw new Error('Redirecting');
 
-  // ─── State ───────────────────────────────────────────
   let survey = null;
   let questions = [];
-  let currentIndex = 0;
   let answers = {};
-  let responseId = null;
+  let currentIndex = 0;
 
-  // ─── Init ────────────────────────────────────────────
   async function init() {
-    const params = new URLSearchParams(window.location.search);
-    const surveyId = params.get('id');
-
-    if (!surveyId) {
-      // Show available surveys to pick from
-      showSurveyPicker();
-      return;
-    }
+    const surveyId = param('id');
+    if (!surveyId) { showPicker(); return; }
 
     try {
       const data = await api.post(`/users/surveys/${surveyId}/start`);
       survey = data.survey;
       questions = survey.questions;
-      responseId = data.response.id;
 
-      document.getElementById('surveyId').textContent = survey.title;
+      document.getElementById('surveyName').textContent = survey.title;
       document.title = `Dev Circle — ${survey.title}`;
+      document.getElementById('progressStrip').classList.remove('hide');
+      document.getElementById('foot').classList.remove('hide');
 
       renderQuestion();
     } catch (err) {
-      document.getElementById('loadingScreen').innerHTML = `
-        <div style="text-align:center">
-          <p style="color:var(--rose);margin-bottom:var(--sp-4)">${err.message}</p>
-          <button class="btn btn-primary" onclick="window.location.href='/member/dashboard.html'">Back to Dashboard</button>
+      document.getElementById('stage').innerHTML = `
+        <div class="done">
+          <p class="done-text" style="color:var(--rose)">${escapeHtml(err.message)}</p>
+          <a class="btn btn-primary" href="/member/dashboard.html">Back to home</a>
         </div>`;
     }
   }
 
-  async function showSurveyPicker() {
+  // Arriving without an id means "I want to answer something" — so offer
+  // whatever is open rather than dead-ending.
+  async function showPicker() {
     try {
       const data = await api.get('/users/surveys');
       const available = data.surveys.filter(s => !s.completed);
 
-      if (!available.length) {
-        document.getElementById('loadingScreen').innerHTML = `
-          <div style="text-align:center">
-            <p style="font-size:var(--fs-xl);margin-bottom:var(--sp-2)">📋</p>
-            <p style="color:var(--ash);margin-bottom:var(--sp-4)">No active surveys right now</p>
-            <button class="btn btn-primary" onclick="window.location.href='/member/dashboard.html'">Back to Dashboard</button>
-          </div>`;
-        return;
-      }
-
-      document.getElementById('loadingScreen').innerHTML = `
-        <div style="max-width:480px;width:100%">
-          <h2 style="font-family:var(--font-display);font-weight:var(--fw-bold);font-size:var(--fs-lg);margin-bottom:var(--sp-4);text-align:center">Choose a Survey</h2>
-          ${available.map(s => `
-            <div style="background:var(--slate);border:1px solid rgba(160,160,184,0.06);border-radius:var(--r-lg);padding:var(--sp-4);margin-bottom:var(--sp-3);cursor:pointer" onclick="window.location.href='/member/survey.html?id=${s.id}'">
-              <div style="font-weight:var(--fw-medium);margin-bottom:var(--sp-1)">${escapeHtml(s.title)}</div>
-              <div style="font-size:var(--fs-xs);color:var(--ash-dim)">~${s.time_estimate_min} min · ${s.questions.length} questions</div>
-            </div>
-          `).join('')}
-        </div>`;
+      document.getElementById('stage').innerHTML = available.length
+        ? `<div style="max-width:480px;width:100%">
+             <h1 class="done-title" style="text-align:center">Choose a survey</h1>
+             ${available.map(s => `
+               <a class="picker-item" href="/member/survey.html?id=${s.id}">
+                 <div style="font-weight:var(--fw-medium);margin-bottom:2px">${escapeHtml(s.title)}</div>
+                 <div class="text-xs dim">~${s.time_estimate_min} min · ${s.questions.length} question${s.questions.length === 1 ? '' : 's'}</div>
+               </a>`).join('')}
+           </div>`
+        : `<div class="done">
+             <div class="done-title">Nothing to answer</div>
+             <p class="done-text">There are no open surveys for you right now. We will let you know when there are.</p>
+             <a class="btn btn-primary" href="/member/dashboard.html">Back to home</a>
+           </div>`;
     } catch (err) {
-      document.getElementById('loadingScreen').innerHTML = `<p style="color:var(--rose)">${err.message}</p>`;
+      document.getElementById('stage').innerHTML =
+        `<p class="done-text" style="color:var(--rose)">${escapeHtml(err.message)}</p>`;
     }
   }
 
-  // ─── Render Question ─────────────────────────────────
   function renderQuestion() {
     const q = questions[currentIndex];
     const progress = ((currentIndex + 1) / questions.length) * 100;
-    const remaining = questions.slice(currentIndex).reduce((sum, q) => sum + (q.type === 'text' ? 1 : 0.5), 0);
+    const remaining = questions.slice(currentIndex).reduce((sum, x) => sum + (x.type === 'text' ? 1 : 0.5), 0);
 
     document.getElementById('progressFill').style.width = progress + '%';
     document.getElementById('progressText').textContent = `Question ${currentIndex + 1} of ${questions.length}`;
-    document.getElementById('progressTime').textContent = `~${Math.ceil(remaining)} min remaining`;
+    document.getElementById('progressTime').textContent = `~${Math.ceil(remaining)} min left`;
 
     document.getElementById('prevBtn').disabled = currentIndex === 0;
-    document.getElementById('nextBtn').textContent = currentIndex === questions.length - 1 ? 'Submit →' : 'Next →';
+    document.getElementById('nextBtn').textContent =
+      currentIndex === questions.length - 1 ? 'Submit' : 'Next →';
 
-    let answerHtml = '';
+    let control = '';
 
     if (q.type === 'rating') {
       const scale = q.scale || 5;
       const labels = q.labels || [];
-      answerHtml = `
-        <div class="rating-scale">
-          ${Array.from({length: scale}, (_, i) => {
+      control = `
+        <div class="rating" role="radiogroup">
+          ${Array.from({ length: scale }, (_, i) => {
             const val = i + 1;
-            const label = labels[i] || '';
-            const selected = answers[q.id] === val ? 'selected' : '';
+            const selected = answers[q.id] === val;
             return `
-              <div class="rating-option ${selected}" data-value="${val}" onclick="selectRating('${q.id}', ${val})" tabindex="0" role="radio" aria-checked="${selected ? 'true' : 'false'}">
+              <div class="rating-option${selected ? ' selected' : ''}" data-value="${val}"
+                   onclick="selectRating('${q.id}', ${val})" tabindex="0" role="radio" aria-checked="${selected}">
                 <div class="rating-circle">${val}</div>
-                <span class="rating-label">${label}</span>
+                <span class="rating-label">${escapeHtml(labels[i] || '')}</span>
               </div>`;
           }).join('')}
         </div>`;
     } else if (q.type === 'choice') {
-      answerHtml = `
+      control = `
         <div class="choice-list">
-          ${q.options.map(opt => {
-            const selected = answers[q.id] === opt ? 'selected' : '';
-            return `
-              <div class="choice-item ${selected}" onclick="selectChoice('${q.id}', '${escapeHtml(opt)}')" tabindex="0">
-                <div class="choice-radio"></div>
-                <div class="choice-text">${escapeHtml(opt)}</div>
-              </div>`;
-          }).join('')}
+          ${q.options.map((opt, i) => `
+            <div class="choice-item${answers[q.id] === opt ? ' selected' : ''}"
+                 onclick="selectChoice('${q.id}', ${i})" tabindex="0">
+              <span class="choice-radio"></span>
+              <span>${escapeHtml(opt)}</span>
+            </div>`).join('')}
         </div>`;
-    } else if (q.type === 'text') {
+    } else {
       const current = answers[q.id] || '';
-      answerHtml = `
-        <div class="text-answer">
-          <textarea class="text-area" id="textAnswer" placeholder="Type your answer…" oninput="answers['${q.id}']=this.value;updateCharCount()">${escapeHtml(current)}</textarea>
-          <div class="char-count"><span id="charCount">${current.length}</span>/500</div>
-        </div>`;
+      control = `
+        <textarea class="input" id="textAnswer" maxlength="500" style="min-height:160px"
+                  placeholder="Type your answer…" oninput="onText('${q.id}')">${escapeHtml(current)}</textarea>
+        <div class="char-count"><span id="charCount">${current.length}</span>/500</div>`;
     }
 
-    document.getElementById('questionView').innerHTML = `
-      <div class="question-container">
+    document.getElementById('stage').innerHTML = `
+      <div class="question-wrap">
         <div class="question-number">Question ${currentIndex + 1}</div>
-        <h1 class="question-text">${escapeHtml(q.text)}</h1>
-        ${answerHtml}
+        <h1 class="question-text">${escapeHtml(q.text)}${q.optional ? ' <span class="dim" style="font-size:var(--fs-sm);font-weight:400">(optional)</span>' : ''}</h1>
+        ${control}
       </div>`;
 
-    // Focus textarea if text question
-    if (q.type === 'text') {
-      setTimeout(() => document.getElementById('textAnswer')?.focus(), 100);
-    }
+    if (q.type === 'text') setTimeout(() => document.getElementById('textAnswer')?.focus(), 60);
   }
 
-  // ─── Answer Handlers ─────────────────────────────────
   function selectRating(qId, value) {
     answers[qId] = value;
     document.querySelectorAll('.rating-option').forEach(opt => {
-      const isSelected = parseInt(opt.dataset.value) === value;
-      opt.classList.toggle('selected', isSelected);
-      opt.setAttribute('aria-checked', isSelected ? 'true' : 'false');
+      const on = Number(opt.dataset.value) === value;
+      opt.classList.toggle('selected', on);
+      opt.setAttribute('aria-checked', String(on));
     });
   }
 
-  function selectChoice(qId, value) {
+  // Index rather than text, so an option containing a quote cannot break out.
+  function selectChoice(qId, index) {
+    const value = questions[currentIndex].options[index];
     answers[qId] = value;
-    document.querySelectorAll('.choice-item').forEach(item => {
-      const text = item.querySelector('.choice-text').textContent;
-      item.classList.toggle('selected', text === value);
+    document.querySelectorAll('.choice-item').forEach((item, i) => {
+      item.classList.toggle('selected', i === index);
     });
   }
 
-  function updateCharCount() {
-    const el = document.getElementById('charCount');
+  function onText(qId) {
     const ta = document.getElementById('textAnswer');
-    if (el && ta) el.textContent = ta.value.length;
+    answers[qId] = ta.value;
+    document.getElementById('charCount').textContent = ta.value.length;
   }
 
-  // ─── Navigation ──────────────────────────────────────
   function nextQuestion() {
-    if (currentIndex < questions.length - 1) {
-      currentIndex++;
-      renderQuestion();
-    } else {
-      submitSurvey();
-    }
+    if (currentIndex < questions.length - 1) { currentIndex++; renderQuestion(); }
+    else submitSurvey();
   }
 
   function prevQuestion() {
-    if (currentIndex > 0) {
-      currentIndex--;
-      renderQuestion();
-    }
+    if (currentIndex > 0) { currentIndex--; renderQuestion(); }
   }
 
   async function submitSurvey() {
     try {
       const result = await api.post(`/users/surveys/${survey.id}/respond`, { answers });
-
-      document.getElementById('questionView').style.display = 'none';
-      document.getElementById('surveyFooter').style.display = 'none';
-      document.getElementById('progressSection').style.display = 'none';
-
       const user = Auth.getUser();
-      document.getElementById('completionText').textContent = `Thank you for your feedback, ${user.name.split(' ')[0]}. Your responses help us build a better developer experience.`;
-      document.getElementById('completionMeta').textContent = `Response recorded · Engagement streak: ${result.streak} sessions`;
-      document.getElementById('completionView').classList.add('visible');
 
+      document.getElementById('progressStrip').classList.add('hide');
+      document.getElementById('foot').classList.add('hide');
+      document.getElementById('stage').innerHTML = `
+        <div class="done">
+          <div class="done-mark">✓</div>
+          <div class="done-title">Thank you, ${escapeHtml(user.name.split(' ')[0])}</div>
+          <p class="done-text">
+            Your answers go straight to the team building the APIs you integrate with.
+            That is the whole point of this — no ticket queue, no black hole.
+          </p>
+          <p class="done-meta">Response recorded · ${result.streak} session streak</p>
+          <a class="btn btn-primary" href="/member/dashboard.html">Back to home</a>
+        </div>`;
     } catch (err) {
       showToast(err.message, 'error');
     }
   }
 
-  function exitSurvey() {
-    if (Object.keys(answers).length > 0) {
-      if (!confirm('You have unsaved answers. Exit anyway?')) return;
+  async function exitSurvey() {
+    if (Object.keys(answers).length) {
+      const ok = await Shell.confirm({
+        title: 'Leave this survey?',
+        text: 'Your answers so far are not submitted yet, and will not be kept.',
+        ok: 'Leave'
+      });
+      if (!ok) return;
     }
     window.location.href = '/member/dashboard.html';
   }
 
-  // ─── Keyboard Navigation ─────────────────────────────
-  document.addEventListener('keydown', (e) => {
+  // Keyboard: arrows move, digits answer a rating.
+  document.addEventListener('keydown', e => {
     if (e.target.tagName === 'TEXTAREA') return;
+    if (!questions.length) return;
 
     if (e.key === 'ArrowRight' || e.key === 'Enter') nextQuestion();
     if (e.key === 'ArrowLeft') prevQuestion();
 
-    const num = parseInt(e.key);
-    if (num >= 1 && num <= 5) {
-      const q = questions[currentIndex];
-      if (q && q.type === 'rating') selectRating(q.id, num);
+    const num = parseInt(e.key, 10);
+    const q = questions[currentIndex];
+    if (num >= 1 && num <= 9 && q && q.type === 'rating' && num <= (q.scale || 5)) {
+      selectRating(q.id, num);
     }
   });
 
-  // ─── Start ───────────────────────────────────────────
+  // Overlay furniture (scrim, toasts, confirm) without the portal chrome.
+  Shell._mountOverlays();
+  Shell._bindKeys(false);
+
   init();
 </script>
-
 </body>
 </html>

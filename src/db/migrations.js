@@ -350,6 +350,46 @@ function define(db) {
         addColumn('feedback', 'feex_updated_at', 'TEXT');
         db.exec('CREATE INDEX IF NOT EXISTS idx_feedback_ticket ON feedback(external_ticket_id)');
       }
+    },
+    {
+      id: 16,
+      name: 'passwordless_participant_login',
+      up() {
+        // One sign-in field for everyone. Participants prove who they are with
+        // a one-time code sent to the email or phone they registered with, so
+        // they never hold a password; staff keep theirs.
+        db.exec(`
+          CREATE TABLE IF NOT EXISTS login_codes (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            -- The normalised email or E.164 phone the code was sent to, so a
+            -- code issued to one channel cannot be redeemed from another
+            identifier TEXT NOT NULL,
+            channel TEXT NOT NULL CHECK(channel IN ('email','sms')),
+            -- Only the hash is stored: a database leak must not hand over live
+            -- sign-in codes, exactly as with session tokens
+            code_hash TEXT NOT NULL,
+            attempts INTEGER NOT NULL DEFAULT 0,
+            expires_at TEXT NOT NULL,
+            consumed_at TEXT,
+            created_at TEXT DEFAULT (datetime('now'))
+          );
+          CREATE INDEX IF NOT EXISTS idx_login_codes_identifier ON login_codes(identifier, created_at);
+          CREATE INDEX IF NOT EXISTS idx_login_codes_user ON login_codes(user_id);
+        `);
+
+        // Members write their number however they habitually do — 0803…,
+        // +234803…, with spaces. Matching a sign-in against that needs one
+        // canonical form, kept beside the number the member actually typed.
+        addColumn('users', 'phone_normalized', 'TEXT');
+        db.exec('CREATE INDEX IF NOT EXISTS idx_users_phone_normalized ON users(phone_normalized)');
+
+        const { normalizePhone } = require('../utils/identity');
+        const update = db.prepare('UPDATE users SET phone_normalized = ? WHERE id = ?');
+        for (const row of db.prepare('SELECT id, phone FROM users WHERE phone IS NOT NULL').all()) {
+          update.run(normalizePhone(row.phone), row.id);
+        }
+      }
     }
   ];
   return migrations;

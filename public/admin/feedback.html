@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dev Circle — Feedback</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/css/tokens.css">
+  <link rel="stylesheet" href="/assets/css/app.css">
+  <style>
+    /* Feedback is prose, so it reads as a list of things people said rather
+       than as table cells. The quote leads; the metadata follows it. */
+    .fb-list { max-width: 780px; }
+
+    .fb-item {
+      padding: var(--sp-5) 0;
+      border-bottom: 1px solid var(--line-faint);
+      cursor: pointer;
+      transition: opacity var(--duration-fast) var(--ease-out);
+    }
+    .fb-item:hover { opacity: 0.86; }
+    .fb-quote { font-size: var(--fs-base); line-height: var(--lh-loose); color: var(--white); margin-bottom: var(--sp-3); }
+    .fb-meta { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; font-size: var(--fs-xs); color: var(--ash-dim); }
+    .fb-meta .who { color: var(--ash); font-weight: var(--fw-medium); }
+
+    /* Feex complaints are mirrored from another system, so they are marked
+       with the clay tone: present, but not ours to edit. */
+    .fb-item.feex { border-left: 2px solid var(--cd-clay); padding-left: var(--sp-4); }
+
+    .rating { display: inline-flex; gap: 1px; color: var(--cd-gold); letter-spacing: 1px; }
+  </style>
+</head>
+<body>
+
+<div class="app">
+  <div class="app-main">
+
+    <header class="page-head">
+      <div class="page-head-row">
+        <div>
+          <h1 class="page-title">Feedback</h1>
+          <p class="page-subtitle">What developers told us, unprompted and in surveys. Triage marks how far the team has read — it does not resolve tickets.</p>
+        </div>
+      </div>
+      <nav class="tabs" id="tabs">
+        <button class="tab active" data-status="">All</button>
+        <button class="tab" data-status="open">Open</button>
+        <button class="tab" data-status="reviewed">Reviewed</button>
+        <button class="tab" data-status="resolved">Resolved</button>
+      </nav>
+    </header>
+
+    <div class="app-body">
+      <div class="toolbar">
+        <button class="chip active" data-source="">Every source</button>
+        <button class="chip" data-source="dev_circle">Dev Circle</button>
+        <button class="chip" data-source="feex">Feex</button>
+        <span class="result-count" id="count"></span>
+      </div>
+
+      <div class="fb-list" id="list"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Reading a single piece of feedback, with triage in reach. -->
+<aside class="drawer" id="fbDrawer">
+  <div class="drawer-head">
+    <div>
+      <div class="drawer-title" id="dName">—</div>
+      <div class="drawer-sub" id="dMeta"></div>
+    </div>
+    <button class="icon-btn" onclick="Shell.closeDrawer('fbDrawer')">×</button>
+  </div>
+  <div class="drawer-body">
+    <p class="fb-quote" id="dContent"></p>
+
+    <div class="kv mt-6" id="dFacts"></div>
+
+    <div class="field mt-6" id="dTriage">
+      <label class="label">Triage state</label>
+      <div class="segmented" id="dStatus">
+        <button data-status="open">Open</button>
+        <button data-status="reviewed">Reviewed</button>
+        <button data-status="resolved">Resolved</button>
+      </div>
+      <div class="field mt-4">
+        <label class="label">Note (optional)</label>
+        <textarea class="input" id="dNote" placeholder="What did we learn, or what did we do about it?"></textarea>
+      </div>
+    </div>
+
+    <p class="hint hide" id="dFeexNote">
+      This complaint belongs to Feex. Its status is mirrored here for engagement
+      tracking and has to be updated in Feex itself.
+    </p>
+  </div>
+  <div class="drawer-foot">
+    <button class="btn btn-secondary" onclick="Shell.closeDrawer('fbDrawer')">Close</button>
+    <button class="btn btn-primary" id="dSave" onclick="saveTriage()">Save triage</button>
+  </div>
+</aside>
+
+<script src="/assets/js/api.js"></script>
+<script src="/assets/js/shell.js"></script>
+<script>
+  Shell.admin('feedback');
+
+  let items = [];
+  let statusFilter = '';
+  let sourceFilter = '';
+  let open = null;         // The feedback currently in the drawer
+
+  async function load() {
+    document.getElementById('list').innerHTML =
+      '<div class="fb-item"><div class="skeleton" style="width:80%;height:14px;margin-bottom:10px"></div><div class="skeleton" style="width:40%"></div></div>';
+    try {
+      const params = new URLSearchParams({ limit: 100 });
+      if (statusFilter) params.set('status', statusFilter);
+      if (sourceFilter) params.set('source', sourceFilter);
+
+      const data = await api.get(`/admin/feedback?${params}`);
+      items = data.feedback;
+      render();
+
+      // Deep link from the overview opens straight into the drawer.
+      const id = param('id');
+      if (id) { const hit = items.find(f => f.id === id); if (hit) openItem(hit.id); }
+    } catch (err) {
+      document.getElementById('list').innerHTML = emptyState({ title: 'Could not load feedback', text: err.message });
+    }
+  }
+
+  function render() {
+    document.getElementById('count').textContent = `${items.length} item${items.length === 1 ? '' : 's'}`;
+
+    document.querySelectorAll('.tab[data-status]').forEach(tab => {
+      tab.classList.toggle('active', tab.dataset.status === statusFilter);
+    });
+
+    const list = document.getElementById('list');
+    if (!items.length) {
+      list.innerHTML = emptyState({
+        title: 'Nothing here',
+        text: statusFilter || sourceFilter
+          ? 'No feedback matches these filters.'
+          : 'Feedback appears here when developers submit it in Dev Circle or raise a complaint through Feex.'
+      });
+      return;
+    }
+
+    list.innerHTML = items.map(f => `
+      <article class="fb-item ${f.source === 'feex' ? 'feex' : ''}" onclick="openItem('${f.id}')">
+        <p class="fb-quote">${escapeHtml(f.content.length > 240 ? f.content.slice(0, 240) + '…' : f.content)}</p>
+        <div class="fb-meta">
+          <span class="who">${escapeHtml(f.user_name)}</span>
+          ${f.user_company ? `<span>${escapeHtml(f.user_company)}</span>` : ''}
+          ${f.category ? `<span>${escapeHtml(f.category)}</span>` : ''}
+          ${f.rating ? `<span class="rating">${'★'.repeat(f.rating)}${'☆'.repeat(5 - f.rating)}</span>` : ''}
+          <span>${formatDate(f.created_at)}</span>
+          ${f.source === 'feex' ? `<span>via Feex${f.external_ticket_id ? ' · ' + escapeHtml(f.external_ticket_id) : ''}</span>` : ''}
+          ${badge(f.status, f.status === 'open' ? 'warn' : f.status === 'resolved' ? 'active' : 'inactive')}
+        </div>
+      </article>`).join('');
+  }
+
+  function openItem(id) {
+    open = items.find(f => f.id === id);
+    if (!open) return;
+
+    document.getElementById('dName').textContent = open.user_name;
+    document.getElementById('dMeta').textContent =
+      [open.user_company, open.category, fmtDateTime(open.created_at)].filter(Boolean).join(' · ');
+    document.getElementById('dContent').textContent = open.content;
+
+    document.getElementById('dFacts').innerHTML = `
+      <div class="kv-row"><span class="kv-key">Source</span><span class="kv-val">${open.source === 'feex' ? 'Feex' : 'Dev Circle'}</span></div>
+      <div class="kv-row"><span class="kv-key">Type</span><span class="kv-val">${escapeHtml((open.type || '').replace(/_/g, ' '))}</span></div>
+      ${open.rating ? `<div class="kv-row"><span class="kv-key">Rating</span><span class="kv-val">${open.rating} / 5</span></div>` : ''}
+      ${open.external_ticket_id ? `<div class="kv-row"><span class="kv-key">Ticket</span><span class="kv-val mono">${escapeHtml(open.external_ticket_id)}</span></div>` : ''}
+      <div class="kv-row"><span class="kv-key">Email</span><span class="kv-val">${escapeHtml(open.user_email)}</span></div>`;
+
+    // Feex owns its own complaints — triage is read-only for those.
+    const isFeex = open.source === 'feex';
+    document.getElementById('dTriage').classList.toggle('hide', isFeex);
+    document.getElementById('dFeexNote').classList.toggle('hide', !isFeex);
+    document.getElementById('dSave').classList.toggle('hide', isFeex);
+
+    document.querySelectorAll('#dStatus button').forEach(b =>
+      b.classList.toggle('active', b.dataset.status === open.status));
+
+    document.getElementById('dNote').value = '';
+    Shell.openDrawer('fbDrawer');
+  }
+
+  document.querySelectorAll('#dStatus button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#dStatus button').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    });
+  });
+
+  async function saveTriage() {
+    const status = document.querySelector('#dStatus button.active')?.dataset.status;
+    if (!status || !open) return;
+
+    try {
+      await api.put(`/admin/feedback/${open.id}`, { status, note: document.getElementById('dNote').value.trim() || undefined });
+      showToast('Triage saved');
+      Shell.closeDrawer('fbDrawer');
+      load();
+    } catch (err) { showToast(err.message, 'error'); }
+  }
+
+  document.querySelectorAll('.tab[data-status]').forEach(tab => {
+    tab.addEventListener('click', () => { statusFilter = tab.dataset.status; load(); });
+  });
+
+  document.querySelectorAll('.chip[data-source]').forEach(chip => {
+    chip.addEventListener('click', () => {
+      document.querySelectorAll('.chip[data-source]').forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+      sourceFilter = chip.dataset.source;
+      load();
+    });
+  });
+
+  load();
+</script>
+</body>
+</html>

@@ -1,8 +1,7 @@
 const express = require('express');
-const bcrypt = require('bcryptjs');
-const crypto = require('crypto');
 const db = require('../../db');
 const { uuid, parseJSON, paginate, sanitizeUser, toCSV, parseCSV } = require('../../utils/helpers');
+const identity = require('../../utils/identity');
 const { parseXLSX } = require('../../utils/xlsx');
 const { requirePermission, destroyAllSessionsFor } = require('../../middleware/auth');
 const { memberFilters } = require('../../services/audience');
@@ -140,23 +139,17 @@ router.put('/members/:id', requirePermission('members.write'), (req, res) => {
   res.json({ user: sanitizeUser(updated) });
 });
 
-// POST /api/admin/members/:id/reset-password
-router.post('/members/:id/reset-password', requirePermission('members.write'), (req, res) => {
-  const { new_password } = req.body;
-  if (!new_password || String(new_password).length < 8) {
-    return res.status(400).json({ error: 'new_password of at least 8 characters is required' });
-  }
-
-  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
+// POST /api/admin/members/:id/sign-out
+// Members have no password to reset — they sign in with a one-time code — so
+// what an operator actually needs after a report of a lost or shared device is
+// to end that member's live sessions. The next code they request is their way
+// back in.
+router.post('/members/:id/sign-out', requirePermission('members.write'), (req, res) => {
+  const user = db.prepare('SELECT id FROM users WHERE id = ?').get(req.params.id);
   if (!user) return res.status(404).json({ error: 'Member not found' });
 
-  db.prepare("UPDATE users SET password_hash = ?, updated_at = datetime('now') WHERE id = ?")
-    .run(bcrypt.hashSync(new_password, 10), user.id);
-
-  // A password reset invalidates existing sessions
   destroyAllSessionsFor(user.id);
-
-  res.json({ message: 'Password reset successful. Existing sessions were signed out.' });
+  res.json({ message: 'Signed out of every device. They can sign back in with a new code.' });
 });
 
 // ─── Bulk Import ────────────────────────────────────────────
@@ -193,9 +186,9 @@ router.post('/import', requirePermission('members.import'), (req, res) => {
 
   const existsStmt = db.prepare('SELECT id FROM users WHERE email = ?');
   const insertStmt = db.prepare(`
-    INSERT INTO users (id, email, name, phone, company, work_sector, password_hash,
+    INSERT INTO users (id, email, name, phone, phone_normalized, company, work_sector, password_hash,
                        date_of_birth, gender, location_state, api_products)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const allCohort = db.prepare("SELECT id FROM cohorts WHERE name = 'All Members'").get();
   const cohortStmt = db.prepare('INSERT OR IGNORE INTO user_cohorts (user_id, cohort_id) VALUES (?, ?)');
@@ -219,8 +212,7 @@ router.post('/import', requirePermission('members.import'), (req, res) => {
     location_state: row.location_state || row.state || null,
     api_products: row.api_products
       ? String(row.api_products).split(/[;|]/).map(s => s.trim()).filter(Boolean)
-      : [],
-    password: row.password || null
+      : []
   });
 
   const run = db.transaction(() => {
@@ -231,8 +223,15 @@ router.post('/import', requirePermission('members.import'), (req, res) => {
         results.errors.push({ row: raw, error: 'email and name are required' });
         continue;
       }
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(row.email)) {
+      if (!identity.EMAIL_RE.test(row.email)) {
         results.errors.push({ row: raw, error: `"${row.email}" is not a valid email` });
+        continue;
+      }
+      // A Credit Direct address means staff, and staff accounts are created
+      // under Roles with a password — importing one would make a profile that
+      // can never be signed in to.
+      if (identity.isStaffEmail(row.email)) {
+        results.errors.push({ row: raw, error: `"${row.email}" is a Credit Direct address — add staff under Roles` });
         continue;
       }
       if (existsStmt.get(row.email)) {
@@ -247,13 +246,11 @@ router.post('/import', requirePermission('members.import'), (req, res) => {
       }
 
       const id = uuid();
-      // Imported members have no password of their own; the admin issues a
-      // reset, or the member arrives via Developer Hub SSO.
-      const hash = bcrypt.hashSync(row.password || crypto.randomBytes(24).toString('hex'), 10);
 
       try {
         insertStmt.run(
-          id, row.email, row.name, row.phone, row.company, row.work_sector, hash,
+          id, row.email, row.name, row.phone, identity.normalizePhone(row.phone),
+          row.company, row.work_sector, identity.NO_PASSWORD,
           row.date_of_birth, row.gender, row.location_state, JSON.stringify(row.api_products)
         );
         if (allCohort) cohortStmt.run(id, allCohort.id);

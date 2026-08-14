@@ -1,16 +1,29 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
-const crypto = require('crypto');
 const db = require('../db');
 const config = require('../config');
 const { uuid } = require('../utils/helpers');
+const { logger } = require('../utils/logger');
+const identity = require('../utils/identity');
 const circles = require('../services/circles');
+const loginCodes = require('../services/loginCodes');
 const {
   createSession, destroySession, requireAuth,
   signSSOToken, verifySSOToken, permissionsFor
 } = require('../middleware/auth');
 
 const router = express.Router();
+
+// ─── One way in ─────────────────────────────────────────────
+// There is a single sign-in form and a single field: the visitor types the
+// email or phone number they are known by, and the backend works out who they
+// are. Credit Direct staff — recognised by their work email domain — are asked
+// for a password. Everyone else is a participant: they receive a one-time code
+// on the email or number already on their record, or arrive through Developer
+// Hub SSO. Participants hold no password at all, so there is none to leak,
+// reset, or reuse from another site.
+
+const { NO_PASSWORD } = identity;
 
 // ─── Login throttling ───────────────────────────────────────
 // Slows credential stuffing without adding a dependency. Keyed by
@@ -46,28 +59,208 @@ function clearFailures(key) {
   attempts.delete(key);
 }
 
-// ─── User Auth ──────────────────────────────────────────────
+function safeUser(row) {
+  const { password_hash: _, ...rest } = row;
+  return rest;
+}
 
-// POST /api/auth/register
-router.post('/register', (req, res) => {
-  const { email, name, password, phone, company, work_sector } = req.body;
+const BAD_IDENTIFIER = 'Enter the email address or phone number you registered with.';
 
-  if (!email || !name || !password) {
-    return res.status(400).json({ error: 'email, name, and password are required' });
+// ─── Step one: who is this? ─────────────────────────────────
+
+// POST /api/auth/identify
+// Decides what to ask for next. The answer comes from the identifier alone —
+// no database lookup — so this cannot be used to discover who holds an account.
+router.post('/identify', (req, res) => {
+  const who = identity.classify(req.body.identifier || req.body.email);
+  if (!who) {
+    return res.status(400).json({ error: BAD_IDENTIFIER });
   }
 
-  const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(email);
+  res.json({
+    identifier: who.value,
+    type: who.type,
+    audience: who.audience,
+    method: who.method,                       // 'password' for staff, 'code' for participants
+    channel: who.channel,                     // where a code would go
+    masked: identity.mask(who),
+    // Staff sign in with their Credit Direct password; the Developer Hub
+    // handoff is for the people building on the APIs.
+    sso: who.audience === 'participant'
+  });
+});
+
+// ─── Participants: one-time code ────────────────────────────
+
+// POST /api/auth/code/request
+// Answers the same way whether or not the account exists, so the endpoint
+// never becomes a membership oracle. Only a real member is actually sent
+// anything.
+router.post('/code/request', async (req, res) => {
+  const who = identity.classify(req.body.identifier || req.body.email);
+  if (!who) {
+    return res.status(400).json({ error: BAD_IDENTIFIER });
+  }
+
+  if (who.audience === 'staff') {
+    return res.status(400).json({
+      error: 'Credit Direct staff sign in with a password.',
+      method: 'password'
+    });
+  }
+
+  if (loginCodes.throttled(who.value)) {
+    return res.status(429).json({
+      error: 'Too many codes requested. Wait a few minutes before trying again.'
+    });
+  }
+
+  const answer = {
+    sent: true,
+    channel: who.channel,
+    masked: identity.mask(who),
+    expires_in_sec: loginCodes.TTL_SEC,
+    code_length: loginCodes.CODE_LENGTH
+  };
+
+  const user = loginCodes.findParticipant(who);
+
+  if (user && user.status === 'active') {
+    const { code } = loginCodes.issue(user, who);
+
+    try {
+      await loginCodes.deliver(user, who, code);
+    } catch (err) {
+      logger.error('Sign-in code delivery failed', { error: err.message });
+    }
+
+    // Message delivery is simulated without provider credentials, which would
+    // leave local and demo environments with no way in. Outside production the
+    // code comes back in the response, the way /sso/mint stands in for the Hub.
+    if (!config.isProduction) answer.dev_code = code;
+  }
+
+  res.json(answer);
+});
+
+// POST /api/auth/code/verify
+router.post('/code/verify', (req, res) => {
+  const who = identity.classify(req.body.identifier || req.body.email);
+  if (!who || who.audience !== 'participant') {
+    return res.status(400).json({ error: BAD_IDENTIFIER });
+  }
+
+  const key = throttleKey(req, 'code:' + who.value);
+  if (isThrottled(key)) {
+    return res.status(429).json({ error: 'Too many attempts. Try again in 15 minutes.' });
+  }
+
+  const result = loginCodes.verify(who, req.body.code);
+  if (!result.ok) {
+    recordFailure(key);
+    return res.status(401).json({ error: result.error });
+  }
+
+  // Checked only after the code verifies, so a suspended account is not
+  // revealed to somebody guessing addresses.
+  if (result.user.status !== 'active') {
+    return res.status(403).json({ error: 'Account is ' + result.user.status });
+  }
+
+  clearFailures(key);
+  db.prepare("UPDATE users SET last_active_at = datetime('now') WHERE id = ?").run(result.user.id);
+
+  const token = createSession(result.user.id, false, {
+    issuedVia: `login_code_${who.channel}`,
+    userAgent: req.headers['user-agent']
+  });
+
+  res.json({ token, user: safeUser(result.user), isAdmin: false });
+});
+
+// ─── Staff: password ────────────────────────────────────────
+
+// POST /api/auth/login          (and /api/auth/admin/login, kept for callers
+// written against the old split) — the password half of the single form.
+function staffLogin(req, res) {
+  const { password } = req.body;
+  const who = identity.classify(req.body.identifier || req.body.email);
+
+  if (!who || !password) {
+    return res.status(400).json({ error: 'Email and password are required' });
+  }
+
+  if (who.audience !== 'staff') {
+    // Not a refusal to serve them — they simply have no password to give.
+    return res.status(400).json({
+      error: 'Sign in with a one-time code sent to your email or phone. Passwords are for Credit Direct staff.',
+      method: 'code'
+    });
+  }
+
+  const key = throttleKey(req, 'staff:' + who.value);
+  if (isThrottled(key)) {
+    return res.status(429).json({ error: 'Too many failed attempts. Try again in 15 minutes.' });
+  }
+
+  const admin = db.prepare('SELECT * FROM admin_users WHERE lower(email) = ?').get(who.value);
+  if (!admin || !bcrypt.compareSync(password, admin.password_hash)) {
+    recordFailure(key);
+    return res.status(401).json({ error: 'Invalid credentials' });
+  }
+
+  // Status is checked only after the password verifies, so the endpoint does
+  // not reveal which addresses have accounts.
+  if (admin.status !== 'active') {
+    return res.status(403).json({ error: 'Account is ' + admin.status });
+  }
+
+  clearFailures(key);
+
+  const token = createSession(admin.id, true, { userAgent: req.headers['user-agent'] });
+  const safe = safeUser(admin);
+
+  // The client needs the permission list to hide actions the role cannot perform
+  res.json({ token, admin: safe, user: safe, isAdmin: true, permissions: permissionsFor(admin) });
+}
+
+router.post('/login', staffLogin);
+router.post('/admin/login', staffLogin);
+
+// ─── Registration ───────────────────────────────────────────
+
+// POST /api/auth/register
+// Creates a participant profile. No password is set — the account is claimed
+// by signing in with a one-time code, which is also what proves the address
+// belongs to whoever registered it.
+router.post('/register', (req, res) => {
+  const { name, phone, company, work_sector } = req.body;
+  const email = identity.normalizeEmail(req.body.email);
+
+  if (!email || !name) {
+    return res.status(400).json({ error: 'A valid email and a name are required' });
+  }
+
+  if (identity.isStaffEmail(email)) {
+    return res.status(400).json({
+      error: 'Credit Direct accounts are created by an administrator, not through registration.'
+    });
+  }
+
+  const existing = db.prepare('SELECT id FROM users WHERE lower(email) = ?').get(email);
   if (existing) {
     return res.status(409).json({ error: 'Email already registered' });
   }
 
   const id = uuid();
-  const password_hash = bcrypt.hashSync(password, 10);
 
   db.prepare(`
-    INSERT INTO users (id, email, name, password_hash, phone, company, work_sector)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(id, email, name, password_hash, phone || null, company || null, work_sector || null);
+    INSERT INTO users (id, email, name, password_hash, phone, phone_normalized, company, work_sector)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    id, email, name, NO_PASSWORD,
+    phone || null, identity.normalizePhone(phone), company || null, work_sector || null
+  );
 
   // Auto-assign to "All Members" cohort
   const allCohort = db.prepare("SELECT id FROM cohorts WHERE name = 'All Members'").get();
@@ -83,54 +276,16 @@ router.post('/register', (req, res) => {
     VALUES (?, ?, 'account_created', 'dev_circle', '{}')
   `).run(uuid(), id);
 
-  const token = createSession(id, false);
-
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(id);
-  const { password_hash: _, ...safe } = user;
 
-  res.status(201).json({ token, user: safe });
+  // No session yet: the code sent to this address is what proves it is theirs.
+  res.status(201).json({
+    user: safeUser(user),
+    next: { method: 'code', endpoint: '/api/auth/code/request', identifier: email }
+  });
 });
 
-// POST /api/auth/login
-router.post('/login', (req, res) => {
-  const { email, password } = req.body;
-
-  if (!email || !password) {
-    return res.status(400).json({ error: 'email and password are required' });
-  }
-
-  const key = throttleKey(req, email);
-  if (isThrottled(key)) {
-    return res.status(429).json({ error: 'Too many failed attempts. Try again in 15 minutes.' });
-  }
-
-  const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email);
-  if (!user) {
-    recordFailure(key);
-    return res.status(401).json({ error: 'Invalid credentials' });
-  }
-
-  if (!bcrypt.compareSync(password, user.password_hash)) {
-    recordFailure(key);
-    return res.status(401).json({ error: 'Invalid credentials' });
-  }
-
-  // Status is checked only after the password verifies, so the endpoint does
-  // not reveal which addresses are registered.
-  if (user.status !== 'active') {
-    return res.status(403).json({ error: 'Account is ' + user.status });
-  }
-
-  clearFailures(key);
-
-  // Update last active
-  db.prepare("UPDATE users SET last_active_at = datetime('now') WHERE id = ?").run(user.id);
-
-  const token = createSession(user.id, false, { userAgent: req.headers['user-agent'] });
-  const { password_hash: _, ...safe } = user;
-
-  res.json({ token, user: safe });
-});
+// ─── Session ────────────────────────────────────────────────
 
 // POST /api/auth/logout
 router.post('/logout', requireAuth, (req, res) => {
@@ -142,42 +297,10 @@ router.post('/logout', requireAuth, (req, res) => {
 // GET /api/auth/me
 router.get('/me', requireAuth, (req, res) => {
   if (req.isAdmin) {
-    const { password_hash: _, ...safe } = req.admin;
     const role = db.prepare('SELECT * FROM roles WHERE id = ?').get(req.admin.role_id);
-    return res.json({ user: safe, role, permissions: req.permissions, isAdmin: true });
+    return res.json({ user: safeUser(req.admin), role, permissions: req.permissions, isAdmin: true });
   }
-  const { password_hash: _, ...safe } = req.user;
-  res.json({ user: safe, isAdmin: false });
-});
-
-// ─── Admin Auth ─────────────────────────────────────────────
-
-// POST /api/auth/admin/login
-router.post('/admin/login', (req, res) => {
-  const { email, password } = req.body;
-
-  if (!email || !password) {
-    return res.status(400).json({ error: 'email and password are required' });
-  }
-
-  const key = throttleKey(req, 'admin:' + email);
-  if (isThrottled(key)) {
-    return res.status(429).json({ error: 'Too many failed attempts. Try again in 15 minutes.' });
-  }
-
-  const admin = db.prepare('SELECT * FROM admin_users WHERE email = ?').get(email);
-  if (!admin || admin.status !== 'active' || !bcrypt.compareSync(password, admin.password_hash)) {
-    recordFailure(key);
-    return res.status(401).json({ error: 'Invalid credentials' });
-  }
-
-  clearFailures(key);
-
-  const token = createSession(admin.id, true, { userAgent: req.headers['user-agent'] });
-  const { password_hash: _, ...safe } = admin;
-
-  // The client needs the permission list to hide actions the role cannot perform
-  res.json({ token, admin: safe, permissions: permissionsFor(admin) });
+  res.json({ user: safeUser(req.user), isAdmin: false });
 });
 
 // ─── SSO (Developer Hub → Dev Circle) ───────────────────────
@@ -198,28 +321,30 @@ router.post('/sso/exchange', (req, res) => {
     return res.status(401).json({ error: `SSO rejected: ${result.error}` });
   }
 
-  const { sub: devHubUserId, email, name, company, work_sector } = result.payload;
+  const { sub: devHubUserId, email: rawEmail, name, company, work_sector } = result.payload;
+  const email = identity.normalizeEmail(rawEmail);
 
   let user = db.prepare('SELECT * FROM users WHERE dev_hub_user_id = ?').get(devHubUserId);
 
   // Fall back to matching on the verified email, then link the accounts
   if (!user && email) {
-    user = db.prepare('SELECT * FROM users WHERE email = ?').get(email);
+    user = db.prepare('SELECT * FROM users WHERE lower(email) = ?').get(email);
     if (user) {
       db.prepare('UPDATE users SET dev_hub_user_id = ? WHERE id = ?').run(devHubUserId, user.id);
     }
   }
 
   // An authenticated Hub developer with no Dev Circle profile gets one created,
-  // rather than hitting a dead end on their first visit.
-  if (!user && config.devHub.autoProvision && email) {
+  // rather than hitting a dead end on their first visit. A Credit Direct
+  // address is the one thing not provisioned this way: staff sign in with a
+  // password, so a participant profile on that domain could never be used.
+  if (!user && config.devHub.autoProvision && email && !identity.isStaffEmail(email)) {
     const id = uuid();
-    const placeholderPassword = bcrypt.hashSync(crypto.randomBytes(32).toString('hex'), 10);
 
     db.prepare(`
       INSERT INTO users (id, email, name, password_hash, company, work_sector, dev_hub_user_id)
       VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(id, email, name || email.split('@')[0], placeholderPassword, company || null, work_sector || null, devHubUserId);
+    `).run(id, email, name || email.split('@')[0], NO_PASSWORD, company || null, work_sector || null, devHubUserId);
 
     const allCohort = db.prepare("SELECT id FROM cohorts WHERE name = 'All Members'").get();
     if (allCohort) {
@@ -246,9 +371,8 @@ router.post('/sso/exchange', (req, res) => {
 
   db.prepare("UPDATE users SET last_active_at = datetime('now') WHERE id = ?").run(user.id);
   const token = createSession(user.id, false, { issuedVia: 'dev_hub_sso', userAgent: req.headers['user-agent'] });
-  const { password_hash: _, ...safe } = user;
 
-  res.json({ token, user: safe });
+  res.json({ token, user: safeUser(user), isAdmin: false });
 });
 
 // POST /api/auth/sso/mint  (development helper)

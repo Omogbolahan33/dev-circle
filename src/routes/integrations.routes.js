@@ -1,8 +1,7 @@
 const express = require('express');
-const crypto = require('crypto');
-const bcrypt = require('bcryptjs');
 const db = require('../db');
 const { uuid, parseJSON } = require('../utils/helpers');
+const identity = require('../utils/identity');
 const { requireApiKey } = require('../middleware/auth');
 const engagement = require('../services/engagement');
 const notifications = require('../services/notifications');
@@ -93,35 +92,41 @@ async function triggerSurveysFor(user, eventType, metadata = {}) {
 // POST /api/integrations/landing-page/ingest
 router.post('/landing-page/ingest', requireApiKey('landing_page'), (req, res) => {
   const {
-    email, name, phone, company, work_sector, password,
+    name, phone, company, work_sector,
     date_of_birth, gender, location_state, api_products, dev_hub_user_id
   } = req.body;
 
+  const email = identity.normalizeEmail(req.body.email);
+
   if (!email || !name) {
-    return res.status(400).json({ error: 'email and name required' });
+    return res.status(400).json({ error: 'A valid email and a name are required' });
   }
 
   const eventId = logIntegrationEvent('landing_page', 'user_registration', { email, name });
 
-  const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(email);
+  // A Credit Direct address belongs to a staff account, which is created by an
+  // administrator and signs in with a password. Letting one in here would make
+  // a participant profile nobody could ever sign in to.
+  if (identity.isStaffEmail(email)) {
+    markProcessed(eventId, 'Credit Direct domain');
+    return res.status(400).json({ error: 'Credit Direct staff accounts are created by an administrator' });
+  }
+
+  const existing = db.prepare('SELECT id FROM users WHERE lower(email) = ?').get(email);
   if (existing) {
     markProcessed(eventId, 'Duplicate registration');
     return res.status(409).json({ error: 'User already exists', user_id: existing.id });
   }
 
   const id = uuid();
-  // The landing page collects the member's own password. When it does not,
-  // we mint a temporary one — safe to return now that the caller is an
-  // authenticated first-party integration rather than the open internet.
-  const generated = password ? null : crypto.randomBytes(9).toString('base64url');
-  const password_hash = bcrypt.hashSync(password || generated, 10);
 
   db.prepare(`
-    INSERT INTO users (id, email, name, phone, company, work_sector, password_hash,
+    INSERT INTO users (id, email, name, phone, phone_normalized, company, work_sector, password_hash,
                        date_of_birth, gender, location_state, api_products, dev_hub_user_id)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
-    id, email, name, phone || null, company || null, work_sector || null, password_hash,
+    id, email, name, phone || null, identity.normalizePhone(phone),
+    company || null, work_sector || null, identity.NO_PASSWORD,
     date_of_birth || null, gender || null, location_state || null,
     JSON.stringify(Array.isArray(api_products) ? api_products : []),
     dev_hub_user_id || null
@@ -151,10 +156,12 @@ router.post('/landing-page/ingest', requireApiKey('landing_page'), (req, res) =>
   cohortRules.syncAll();
   markProcessed(eventId);
 
+  // No credential to hand back: the member signs in with a one-time code sent
+  // to the address or number they just registered.
   res.status(201).json({
     message: 'User created',
     user_id: id,
-    temp_password: generated
+    sign_in: { method: 'code', identifier: email }
   });
 });
 

@@ -8,148 +8,103 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/assets/css/tokens.css">
+  <link rel="stylesheet" href="/assets/css/app.css">
   <style>
-    .topnav { position:sticky;top:0;z-index:100;background:var(--ink);border-bottom:1px solid rgba(160,160,184,0.06);padding:0 var(--sp-6); }
-    .topnav-inner { max-width:720px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;height:56px; }
-    .topnav-logo { font-family:var(--font-display);font-weight:var(--fw-black);font-size:var(--fs-md);letter-spacing:-0.03em;color:var(--white);text-decoration:none; }
-    .topnav-logo span { color:var(--cd-blue); }
-    .topnav-links { display:flex;gap:var(--sp-1); }
-    .topnav-link { padding:var(--sp-2) var(--sp-3);border-radius:var(--r-md);font-size:var(--fs-sm);font-weight:var(--fw-medium);color:var(--ash);cursor:pointer;border:none;background:none;transition:all var(--duration-fast) var(--ease-out);text-decoration:none; }
-    .topnav-link:hover { color:var(--white);background:rgba(160,160,184,0.05); }
-    .topnav-link.active { color:var(--white);background:var(--cd-blue-dim); }
-    .topnav-user { display:flex;align-items:center;gap:var(--sp-2);font-size:var(--fs-sm);color:var(--ash);cursor:pointer;padding:var(--sp-1) var(--sp-2);border-radius:var(--r-md);border:none;background:none; }
-    .topnav-user:hover { background:rgba(160,160,184,0.05); }
-    .topnav-avatar { width:28px;height:28px;border-radius:50%;background:var(--cd-blue-dim);color:var(--cd-blue);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:var(--fw-bold);font-family:var(--font-display); }
+    .page-title-lg { font-family: var(--font-display); font-weight: var(--fw-bold); font-size: var(--fs-2xl); letter-spacing: -0.03em; }
+    .lede { color: var(--ash); font-size: var(--fs-sm); margin-top: var(--sp-1); max-width: 54ch; }
 
-    .page { max-width:720px;margin:0 auto;padding:var(--sp-8) var(--sp-6); }
-    .page-header { margin-bottom:var(--sp-8); }
-    .page-title { font-family:var(--font-display);font-weight:var(--fw-bold);font-size:var(--fs-2xl);letter-spacing:-0.03em;margin-bottom:var(--sp-1); }
-    .page-subtitle { color:var(--ash);font-size:var(--fs-sm);line-height:var(--lh-loose); }
+    .panel { display: none; }
+    .panel.active { display: block; }
 
-    .section { margin-bottom:var(--sp-8); }
-    .section-title { font-family:var(--font-display);font-weight:var(--fw-semibold);font-size:var(--fs-md);letter-spacing:-0.01em;margin-bottom:var(--sp-4); }
+    .note { display: flex; gap: var(--sp-3); padding: var(--sp-4) 0; border-bottom: 1px solid var(--line-faint); }
+    .note:last-child { border-bottom: none; }
+    .note.read { opacity: 0.55; }
+    .note-unread { width: 6px; height: 6px; border-radius: 50%; background: var(--cd-gold); margin-top: 7px; flex-shrink: 0; }
+    .note-title { font-size: var(--fs-sm); font-weight: var(--fw-medium); }
+    .note-body { font-size: var(--fs-xs); color: var(--ash); margin-top: 2px; }
+    .note-time { font-size: var(--fs-xs); color: var(--ash-dim); margin-top: var(--sp-1); }
 
-    .toggle-list { list-style:none; }
-    .toggle-item {
-      display:flex;align-items:center;justify-content:space-between;
-      padding:var(--sp-4) 0;border-bottom:1px solid rgba(160,160,184,0.04);
-    }
-    .toggle-item:last-child { border-bottom:none; }
-    .toggle-info { flex:1; }
-    .toggle-label { font-weight:var(--fw-medium);font-size:var(--fs-sm);margin-bottom:2px; }
-    .toggle-desc { font-size:var(--fs-xs);color:var(--ash); }
-
-    .toggle-switch {
-      width:44px;height:24px;border-radius:12px;background:rgba(160,160,184,0.15);
-      cursor:pointer;position:relative;transition:background var(--duration-fast) var(--ease-out);flex-shrink:0;
-    }
-    .toggle-switch::after {
-      content:'';position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:50%;
-      background:var(--ash);transition:all var(--duration-fast) var(--ease-out);
-    }
-    .toggle-switch.on { background:var(--cd-blue); }
-    .toggle-switch.on::after { left:22px;background:var(--white); }
-
-    .consent-row { display:flex;align-items:center;justify-content:space-between;padding:var(--sp-3) 0;border-bottom:1px solid rgba(160,160,184,0.03); }
-    .consent-row:last-child { border-bottom:none; }
-    .consent-channel { font-size:var(--fs-sm);font-weight:var(--fw-medium); }
-    .consent-status { font-size:var(--fs-xs);font-family:var(--font-mono); }
-    .consent-status.granted { color:var(--emerald); }
-    .consent-status.pending { color:var(--cd-gold); }
-    .consent-status.withdrawn { color:var(--rose); }
-
-    .btn { display:inline-flex;align-items:center;justify-content:center;gap:var(--sp-2);font-family:var(--font-body);font-size:var(--fs-sm);font-weight:var(--fw-medium);padding:var(--sp-2) var(--sp-4);border-radius:var(--r-md);transition:all var(--duration-fast) var(--ease-out);white-space:nowrap;cursor:pointer;border:none; }
-    .btn-primary { background:var(--cd-blue);color:var(--white); }
-    .btn-primary:hover { background:var(--cd-blue-deep); }
-    .btn-secondary { background:none;color:var(--ash);border:1px solid rgba(160,160,184,0.10); }
-    .btn-secondary:hover { color:var(--white);border-color:rgba(160,160,184,0.25); }
-    .btn-sm { font-size:var(--fs-xs);padding:var(--sp-1) var(--sp-3); }
-    .btn-danger { background:none;color:var(--rose);border:1px solid rgba(225,29,72,0.20); }
-    .btn-danger:hover { background:var(--rose-dim); }
-
-    .save-bar { display:flex;gap:var(--sp-3);padding-top:var(--sp-4);border-top:1px solid rgba(160,160,184,0.06);margin-top:var(--sp-4); }
-
-    @media (max-width:640px) { .page{padding:var(--sp-6) var(--sp-4);} .page-title{font-size:var(--fs-xl);} }
+    /* Consent is a promise, so the current state is spelled out in words. */
+    .consent-row { display: flex; align-items: center; gap: var(--sp-4); padding: var(--sp-4) 0; border-bottom: 1px solid var(--line-faint); }
+    .consent-row:last-child { border-bottom: none; }
+    .consent-channel { font-size: var(--fs-sm); font-weight: var(--fw-medium); }
+    .consent-note { font-size: var(--fs-xs); color: var(--ash-dim); margin-top: 2px; }
   </style>
 </head>
 <body>
 
-  <nav class="topnav">
-    <div class="topnav-inner">
-      <a href="/member/dashboard.html" class="topnav-logo">dev<span>.</span>circle</a>
-      <div class="topnav-links">
-        <a href="/member/dashboard.html" class="topnav-link">Home</a>
-        <a href="/member/dashboard.html" class="topnav-link" onclick="localStorage.setItem('devcircle_view','surveys')">Surveys</a>
-        <a href="/member/profile.html" class="topnav-link">Profile</a>
-        <a href="/member/notifications.html" class="topnav-link active">Notifications</a>
-      </div>
-      <button class="topnav-user" onclick="Auth.logout()">
-        <div class="topnav-avatar" id="navAvatar">—</div>
-      </button>
-    </div>
-  </nav>
+<div class="portal">
+  <div class="portal-body">
 
-  <div class="page">
-    <header class="page-header">
-      <h1 class="page-title">Notifications</h1>
-      <p class="page-subtitle">Control how and when Credit Direct reaches you. You're in charge — adjust any time.</p>
+    <header class="mb-6">
+      <h1 class="page-title-lg">Notifications</h1>
+      <p class="lede">What we have sent you, and how you would like to be reached from here on.</p>
     </header>
 
-    <section class="section">
-      <div style="display:flex;align-items:baseline;justify-content:space-between;gap:var(--sp-4)">
-        <h2 class="section-title">Your inbox</h2>
+    <nav class="tabs mb-6">
+      <button class="tab active" data-panel="inbox">Inbox <span class="count" id="unreadCount"></span></button>
+      <button class="tab" data-panel="channels">Channels &amp; consent</button>
+      <button class="tab" data-panel="prefs">What we send</button>
+    </nav>
+
+    <div class="panel active" id="panel-inbox">
+      <div class="toolbar">
+        <span class="spacer"></span>
         <button class="btn btn-sm btn-secondary" id="readAllBtn" onclick="markAllRead()" hidden>Mark all read</button>
       </div>
-      <ul class="toggle-list" id="inboxList"></ul>
-    </section>
-
-    <section class="section">
-      <h2 class="section-title">Notification types</h2>
-      <ul class="toggle-list" id="notifToggles"></ul>
-    </section>
-
-    <section class="section">
-      <h2 class="section-title">Channel consent</h2>
-      <p style="font-size:var(--fs-sm);color:var(--ash);margin-bottom:var(--sp-4)">These are the channels we can use to reach you. Withdraw consent anytime — we'll respect it immediately.</p>
-      <div id="consentList"></div>
-    </section>
-
-    <section class="section">
-      <h2 class="section-title">Quiet hours</h2>
-      <p style="font-size:var(--fs-sm);color:var(--ash);margin-bottom:var(--sp-4)">We won't send notifications during your quiet hours (West Africa Time).</p>
-      <div style="display:flex;gap:var(--sp-4);align-items:center">
-        <div>
-          <label style="font-size:var(--fs-xs);color:var(--ash-dim);display:block;margin-bottom:4px">From</label>
-          <input type="time" class="form-input" id="quietStart" value="22:00" style="background:var(--slate);border:1px solid rgba(160,160,184,0.08);border-radius:var(--r-md);padding:var(--sp-2) var(--sp-3);color:var(--white);font-size:var(--fs-sm);">
-        </div>
-        <div>
-          <label style="font-size:var(--fs-xs);color:var(--ash-dim);display:block;margin-bottom:4px">To</label>
-          <input type="time" class="form-input" id="quietEnd" value="08:00" style="background:var(--slate);border:1px solid rgba(160,160,184,0.08);border-radius:var(--r-md);padding:var(--sp-2) var(--sp-3);color:var(--white);font-size:var(--fs-sm);">
-        </div>
-      </div>
-    </section>
-
-    <div class="save-bar">
-      <button class="btn btn-primary" onclick="savePreferences()">Save preferences</button>
+      <div id="inbox"></div>
     </div>
+
+    <div class="panel" id="panel-channels">
+      <p class="text-sm muted mb-6" style="max-width:54ch">
+        We only contact you on channels you have agreed to. Withdraw any of them at any
+        time — it takes effect immediately, including for messages already queued.
+      </p>
+      <div id="consent"></div>
+    </div>
+
+    <div class="panel" id="panel-prefs">
+      <div id="categories"></div>
+
+      <section class="card mt-6">
+        <div class="card-title mb-2">Quiet hours</div>
+        <p class="hint mb-4" style="margin-top:0">
+          Nothing will reach you between these times. Anything due is held until the window ends.
+        </p>
+        <div class="field-row">
+          <div class="field">
+            <label class="label">From</label>
+            <input type="time" class="input" id="quietStart">
+          </div>
+          <div class="field">
+            <label class="label">Until</label>
+            <input type="time" class="input" id="quietEnd">
+          </div>
+        </div>
+        <button class="btn btn-primary" onclick="savePreferences()">Save preferences</button>
+      </section>
+    </div>
+
   </div>
+</div>
 
 <script src="/assets/js/api.js"></script>
+<script src="/assets/js/shell.js"></script>
 <script>
-  if (!Auth.requireAuth(false)) throw new Error('Redirecting');
+  Shell.portal('notifications');
 
   const ALL_CHANNELS = ['email', 'whatsapp', 'sms', 'calls', 'in_portal'];
-  const channelLabels = { email: 'Email', whatsapp: 'WhatsApp', sms: 'SMS', calls: 'Phone calls', in_portal: 'In-portal' };
+  const CHANNEL_LABELS = { email: 'Email', whatsapp: 'WhatsApp', sms: 'SMS', calls: 'Phone calls', in_portal: 'In-portal' };
 
   // Descriptions live here; the category list itself comes from the API so the
   // two cannot drift apart.
   const TYPE_DESC = {
-    survey_invites: 'Get notified when a new survey is available for you',
-    survey_reminders: 'Gentle reminders for surveys you haven\'t completed',
-    gift_notifications: 'Notifications when you earn a reward',
-    feedback_updates: 'When your feedback is reviewed or resolved',
-    platform_updates: 'New features, API changes, and developer news',
-    engagement_streaks: 'Know when you\'re on a streak (or about to lose one)'
+    survey_invites: 'When a new survey is available for you',
+    survey_reminders: 'Gentle reminders for surveys you have not finished',
+    gift_notifications: 'When you earn a reward',
+    feedback_updates: 'When your feedback is read or resolved',
+    platform_updates: 'New features, API changes, developer news',
+    engagement_streaks: 'When you are on a streak, or about to lose one'
   };
 
   let preferences = {};
@@ -162,24 +117,10 @@
         api.get('/users/notifications?limit=25')
       ]);
 
-      document.getElementById('navAvatar').textContent =
-        profile.user.name.split(' ').map(n => n[0]).join('').toUpperCase();
-
       preferences = {};
       prefs.categories.forEach(c => { preferences[c.key] = c.enabled; });
 
-      document.getElementById('notifToggles').innerHTML = prefs.categories.map(c => `
-        <li class="toggle-item">
-          <div class="toggle-info">
-            <div class="toggle-label">${c.label}</div>
-            <div class="toggle-desc">${TYPE_DESC[c.key] || ''}${
-              c.locked ? ' — always on, this is about your own tickets' : ''}</div>
-          </div>
-          <div class="toggle-switch ${c.enabled ? 'on' : ''}${c.locked ? ' locked' : ''}"
-               data-key="${c.key}" ${c.locked ? '' : 'onclick="toggleNotif(this)"'}
-               style="${c.locked ? 'opacity:.45;cursor:not-allowed' : ''}"></div>
-        </li>`).join('');
-
+      renderCategories(prefs.categories);
       document.getElementById('quietStart').value = prefs.quiet_hours.start;
       document.getElementById('quietEnd').value = prefs.quiet_hours.end;
 
@@ -190,22 +131,46 @@
     }
   }
 
+  function renderCategories(categories) {
+    document.getElementById('categories').innerHTML = categories.map(c => `
+      <div class="switch-row">
+        <div class="switch-meta">
+          <div class="switch-name">${escapeHtml(c.label)}</div>
+          <div class="switch-desc">
+            ${escapeHtml(TYPE_DESC[c.key] || '')}${c.locked ? ' — always on, this is about your own tickets' : ''}
+          </div>
+        </div>
+        <button class="switch ${c.enabled ? 'on' : ''}" data-key="${c.key}"
+                ${c.locked ? 'disabled style="opacity:.45;cursor:not-allowed"' : 'onclick="toggleCategory(this)"'}></button>
+      </div>`).join('');
+  }
+
+  function toggleCategory(el) {
+    el.classList.toggle('on');
+    preferences[el.dataset.key] = el.classList.contains('on');
+  }
+
   function renderInbox(inbox) {
     document.getElementById('readAllBtn').hidden = inbox.unread_count === 0;
+    document.getElementById('unreadCount').textContent = inbox.unread_count || '';
 
-    document.getElementById('inboxList').innerHTML = inbox.notifications.length
+    document.getElementById('inbox').innerHTML = inbox.notifications.length
       ? inbox.notifications.map(n => `
-        <li class="toggle-item" style="${n.read_at ? 'opacity:.55' : ''}">
-          <div class="toggle-info">
-            <div class="toggle-label">${n.read_at ? '' : '<span style="color:var(--cd-gold)">● </span>'}${escapeHtml(n.title)}</div>
-            <div class="toggle-desc">${escapeHtml(n.body || '')}</div>
-            <div class="toggle-desc" style="opacity:.6">${formatDate(n.created_at)}</div>
+        <div class="note ${n.read_at ? 'read' : ''}">
+          ${n.read_at ? '<span style="width:6px;flex-shrink:0"></span>' : '<span class="note-unread"></span>'}
+          <div style="flex:1;min-width:0">
+            <div class="note-title">${escapeHtml(n.title)}</div>
+            ${n.body ? `<div class="note-body">${escapeHtml(n.body)}</div>` : ''}
+            <div class="note-time">${formatDate(n.created_at)}</div>
           </div>
           ${n.action_url
-            ? `<a class="btn btn-sm btn-secondary" href="${n.action_url}" onclick="markRead('${n.id}')">Open</a>`
-            : (n.read_at ? '' : `<button class="btn btn-sm btn-secondary" onclick="markRead('${n.id}')">Mark read</button>`)}
-        </li>`).join('')
-      : '<li class="toggle-item"><div class="toggle-info"><div class="toggle-desc">Nothing here yet. Survey invites and updates will land in this inbox.</div></div></li>';
+            ? `<a class="btn btn-sm btn-secondary" href="${escapeHtml(n.action_url)}" onclick="markRead('${n.id}')">Open</a>`
+            : (n.read_at ? '' : `<button class="btn btn-sm btn-ghost" onclick="markRead('${n.id}')">Mark read</button>`)}
+        </div>`).join('')
+      : emptyState({
+          title: 'Nothing here yet',
+          text: 'Survey invitations, session reminders and reward notices land in this inbox.'
+        });
   }
 
   async function markRead(id) {
@@ -222,40 +187,38 @@
     } catch (err) { showToast(err.message, 'error'); }
   }
 
-  function toggleNotif(el) {
-    el.classList.toggle('on');
-    preferences[el.dataset.key] = el.classList.contains('on');
-  }
-
   function renderConsent(consent) {
-    const consentMap = {};
-    consent.forEach(c => consentMap[c.channel] = c);
+    const byChannel = {};
+    consent.forEach(c => { byChannel[c.channel] = c; });
 
-    document.getElementById('consentList').innerHTML = ALL_CHANNELS.map(ch => {
-      const c = consentMap[ch];
-      const status = c ? c.status : 'pending';
-      const statusClass = status === 'granted' ? 'granted' : status === 'withdrawn' ? 'withdrawn' : 'pending';
-      const actionLabel = status === 'granted' ? 'Withdraw' : 'Grant';
+    document.getElementById('consent').innerHTML = ALL_CHANNELS.map(ch => {
+      const status = byChannel[ch] ? byChannel[ch].status : 'pending';
+      const granted = status === 'granted';
 
       return `
         <div class="consent-row">
-          <div>
-            <div class="consent-channel">${channelLabels[ch]}</div>
-            <div class="consent-status ${statusClass}">${status}</div>
+          <div style="flex:1">
+            <div class="consent-channel">${CHANNEL_LABELS[ch]}</div>
+            <div class="consent-note">
+              ${granted ? 'You have agreed to be contacted here.'
+                : status === 'withdrawn' ? 'You have withdrawn this. We will not use it.'
+                : 'Not decided yet — we will not use this until you agree.'}
+            </div>
           </div>
-          <button class="btn btn-sm ${status === 'granted' ? 'btn-danger' : 'btn-secondary'}" onclick="toggleConsent('${ch}','${status}')">${actionLabel}</button>
+          <button class="btn btn-sm ${granted ? 'btn-ghost' : 'btn-secondary'}"
+                  onclick="toggleConsent('${ch}', '${status}')">${granted ? 'Withdraw' : 'Allow'}</button>
         </div>`;
     }).join('');
   }
 
-  async function toggleConsent(channel, currentStatus) {
+  async function toggleConsent(channel, status) {
     try {
-      if (currentStatus === 'granted') {
+      if (status === 'granted') {
         await api.del(`/users/consent/${channel}`);
-        showToast(`${channelLabels[channel]} consent withdrawn`);
+        showToast(`${CHANNEL_LABELS[channel]} withdrawn`);
       } else {
         await api.post('/users/consent', { channel });
-        showToast(`${channelLabels[channel]} consent granted`);
+        showToast(`${CHANNEL_LABELS[channel]} allowed`);
       }
       const data = await api.get('/users/consent');
       renderConsent(data.consent);
@@ -274,9 +237,19 @@
       // Reflect what the server actually stored — locked categories stay on
       // regardless of what the toggles were set to.
       saved.categories.forEach(c => { preferences[c.key] = c.enabled; });
+      renderCategories(saved.categories);
       showToast('Preferences saved');
     } catch (err) { showToast(err.message, 'error'); }
   }
+
+  document.querySelectorAll('.tab[data-panel]').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+      tab.classList.add('active');
+      document.getElementById('panel-' + tab.dataset.panel).classList.add('active');
+    });
+  });
 
   load();
 </script>

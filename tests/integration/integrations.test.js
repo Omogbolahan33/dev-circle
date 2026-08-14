@@ -12,7 +12,7 @@ beforeEach(async () => {
   h.reset();
   h.makeRootCircle();
   const role = h.makeRole('Super Admin', ['*']);
-  const admin = h.makeAdmin({ email: 'boss@cd.ng', roleId: role });
+  const admin = h.makeAdmin({ email: 'boss@creditdirect.ng', roleId: role });
   token = await h.loginAdmin(admin.email, admin.password);
   apiKey = h.makeApiKey(['*']);
 });
@@ -67,9 +67,9 @@ test('the plaintext key is never stored', async () => {
 
 test('a landing-page registration creates a profile, cohort and circle membership', async () => {
   const res = await h.post('/api/integrations/landing-page/ingest', {
-    email: 'tola@stitch.ng', name: 'Tola Bello', company: 'Stitch',
+    email: 'tola@stitch.ng', name: 'Tola Bello', company: 'Stitch', phone: '0803 111 2222',
     work_sector: 'Fintech', location_state: 'Lagos', api_products: ['payments'],
-    consent_channels: ['email', 'in_portal'], password: 'chosen-at-signup'
+    consent_channels: ['email', 'in_portal']
   }, { apiKey });
 
   assert.equal(res.status, 201);
@@ -85,9 +85,21 @@ test('a landing-page registration creates a profile, cohort and circle membershi
   const inCircle = h.db.prepare('SELECT COUNT(*) as c FROM circle_members WHERE user_id = ?').get(user.id).c;
   assert.equal(inCircle, 1);
 
-  // The member can sign in with the password they chose on the landing page
-  const login = await h.post('/api/auth/login', { email: 'tola@stitch.ng', password: 'chosen-at-signup' });
-  assert.equal(login.status, 200);
+  // Registration hands out no credential — the member signs in with a code,
+  // on either the address or the number they gave
+  assert.equal(res.body.temp_password, undefined);
+  assert.equal(user.phone_normalized, '+2348031112222');
+
+  assert.ok(await h.loginUser('tola@stitch.ng'));
+  assert.ok(await h.loginUser('+234 803 111 2222'));
+});
+
+test('a Credit Direct address cannot arrive as a landing-page registration', async () => {
+  const res = await h.post('/api/integrations/landing-page/ingest',
+    { email: 'tunde@creditdirect.ng', name: 'Tunde Bakare' }, { apiKey });
+
+  assert.equal(res.status, 400);
+  assert.equal(h.db.prepare('SELECT COUNT(*) as c FROM users').get().c, 0);
 });
 
 test('a duplicate registration is refused rather than creating a second profile', async () => {
@@ -223,8 +235,8 @@ test('Dev Circle will not edit a ticket that belongs to Feex', async () => {
 });
 
 test('feedback raised inside Dev Circle can still be triaged', async () => {
-  const user = h.makeUser({ password: 'dev-password' });
-  const userToken = await h.loginUser(user.email, 'dev-password');
+  const user = h.makeUser();
+  const userToken = await h.loginUser(user.email);
 
   const created = await h.post('/api/feedback',
     { content: 'The webhook retry intervals are undocumented.', category: 'documentation' },

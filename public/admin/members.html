@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dev Circle — Members</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/css/tokens.css">
+  <link rel="stylesheet" href="/assets/css/app.css">
+</head>
+<body>
+
+<div class="app">
+  <div class="app-main">
+
+    <header class="page-head">
+      <div class="page-head-row">
+        <div>
+          <h1 class="page-title">Members</h1>
+          <p class="page-subtitle" id="subtitle">Every developer in the Credit Direct ecosystem.</p>
+        </div>
+        <div class="page-actions">
+          <button class="btn btn-sm btn-secondary" onclick="Shell.openDrawer('importDrawer')">Import</button>
+          <button class="btn btn-sm btn-secondary" onclick="exportMembers()">Export CSV</button>
+          <button class="btn btn-sm btn-gold" onclick="openBroadcast('all')">Broadcast</button>
+        </div>
+      </div>
+    </header>
+
+    <div class="app-body">
+
+      <!-- Filters act on the query the table runs, so the view always
+           explains itself: what you see is what the chips say. -->
+      <div class="toolbar">
+        <label class="search-box">
+          <span class="icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.35-4.35"/></svg></span>
+          <input type="search" id="search" placeholder="Search name, email, or company…" autocomplete="off">
+        </label>
+
+        <button class="chip active" data-filter="" data-value="">All</button>
+        <button class="chip" data-filter="api_status" data-value="production"><span class="dot" style="color:var(--teal)"></span>Production</button>
+        <button class="chip" data-filter="api_status" data-value="sandbox"><span class="dot" style="color:var(--cd-gold)"></span>Sandbox</button>
+        <button class="chip" data-filter="kyb_completed" data-value="1">KYB done</button>
+        <button class="chip" data-filter="status" data-value="suspended">Suspended</button>
+
+        <select class="input" id="cohortFilter" style="width:auto;min-width:150px;padding:var(--sp-2) var(--sp-3)">
+          <option value="">All cohorts</option>
+        </select>
+
+        <span class="result-count" id="count"></span>
+      </div>
+
+      <!-- Selection turns the list into an audience you can act on. -->
+      <div class="bulk-bar" id="bulkBar">
+        <span class="count" id="bulkCount">0 selected</span>
+        <span class="dim text-xs">Selected members can be messaged directly.</span>
+        <span class="actions">
+          <button class="btn btn-sm btn-ghost" onclick="clearSelection()">Clear</button>
+          <button class="btn btn-sm btn-primary" onclick="openBroadcast('specific')">Message selected</button>
+        </span>
+      </div>
+
+      <div class="table-shell">
+        <div class="table-scroll">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th class="col-tight"><button class="check" id="checkAll" onclick="toggleAll()"></button></th>
+                <th>Member</th>
+                <th>Stage</th>
+                <th class="hide-sm">Cohorts</th>
+                <th class="hide-sm">Surveys</th>
+                <th class="hide-sm">Streak</th>
+                <th>Last active</th>
+              </tr>
+            </thead>
+            <tbody id="rows"></tbody>
+          </table>
+        </div>
+        <div class="pagination" id="pagination"></div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ─── Broadcast drawer ───────────────────────────────────
+     A drawer, not a modal: the audience you are writing to stays on screen
+     behind it while you compose. -->
+<aside class="drawer" id="broadcastDrawer">
+  <div class="drawer-head">
+    <div>
+      <div class="drawer-title">Send a broadcast</div>
+      <div class="drawer-sub" id="broadcastAudience">To all members</div>
+    </div>
+    <button class="icon-btn" onclick="Shell.closeDrawer('broadcastDrawer')">×</button>
+  </div>
+  <div class="drawer-body">
+    <div class="field">
+      <label class="label">Subject</label>
+      <input type="text" class="input" id="bSubject" placeholder="Survey invitation, product update…">
+    </div>
+    <div class="field">
+      <label class="label">Message</label>
+      <textarea class="input" id="bContent" style="min-height:160px" placeholder="Write your message…"></textarea>
+    </div>
+    <div class="field-row">
+      <div class="field">
+        <label class="label">Channel</label>
+        <select class="input" id="bChannel">
+          <option value="email">Email</option>
+          <option value="whatsapp">WhatsApp</option>
+          <option value="sms">SMS</option>
+          <option value="in_portal">In-portal</option>
+          <option value="all">All channels</option>
+        </select>
+      </div>
+      <div class="field">
+        <label class="label">Audience</label>
+        <select class="input" id="bTarget" onchange="syncBroadcastTarget()">
+          <option value="all">All members</option>
+          <option value="cohort">A cohort</option>
+          <option value="specific">Selected members</option>
+        </select>
+      </div>
+    </div>
+    <div class="field hide" id="bCohortField">
+      <label class="label">Cohort</label>
+      <select class="input" id="bCohort"></select>
+    </div>
+    <p class="hint">
+      Consent is enforced on send. Members who withdrew this channel are skipped,
+      and anyone outside their preferred hours is held until quiet hours end.
+    </p>
+  </div>
+  <div class="drawer-foot">
+    <button class="btn btn-secondary" onclick="Shell.closeDrawer('broadcastDrawer')">Cancel</button>
+    <button class="btn btn-primary" id="bSend" onclick="sendBroadcast()">Send broadcast</button>
+  </div>
+</aside>
+
+<!-- ─── Import drawer ──────────────────────────────────── -->
+<aside class="drawer drawer-lg" id="importDrawer">
+  <div class="drawer-head">
+    <div>
+      <div class="drawer-title">Import members</div>
+      <div class="drawer-sub">From a spreadsheet export or pasted rows</div>
+    </div>
+    <button class="icon-btn" onclick="Shell.closeDrawer('importDrawer')">×</button>
+  </div>
+  <div class="drawer-body">
+    <div class="field">
+      <label class="label">Upload a CSV</label>
+      <input type="file" id="importFile" accept=".csv,text/csv" onchange="loadImportFile(this)" class="text-xs muted">
+    </div>
+    <div class="field">
+      <label class="label">Or paste CSV / JSON</label>
+      <textarea class="input mono text-xs" id="importData" style="min-height:180px"
+        placeholder="email,name,company,work_sector,api_products&#10;dev@company.ng,Ada Obi,Company,Fintech,payments;lending"></textarea>
+    </div>
+    <p class="hint">
+      Requires <code>email</code> and <code>name</code>. Optional: phone, company, work_sector,
+      state, gender, date_of_birth, api_products (semicolon-separated). Imported members sign in
+      with a one-time code sent to their email or phone — there is no password to issue. Credit
+      Direct addresses are rejected here; staff are added under Roles.
+    </p>
+    <div id="importSummary" class="text-xs muted mt-4"></div>
+  </div>
+  <div class="drawer-foot">
+    <button class="btn btn-secondary" onclick="Shell.closeDrawer('importDrawer')">Cancel</button>
+    <button class="btn btn-secondary" onclick="doImport(true)">Check first</button>
+    <button class="btn btn-primary" onclick="doImport(false)">Import</button>
+  </div>
+</aside>
+
+<script src="/assets/js/api.js"></script>
+<script src="/assets/js/shell.js"></script>
+<script>
+  Shell.admin('members');
+
+  const PAGE_SIZE = 20;
+  let filters = {};          // Active query filters, mirrored by the chips
+  let currentPage = 1;
+  let lastPage = 1;
+  let selection = new Set();
+  let pageIds = [];
+  let searchTimer = null;
+
+  // ─── Query ──────────────────────────────────────────────
+  function queryString(page) {
+    const params = new URLSearchParams({ page, limit: PAGE_SIZE });
+    Object.entries(filters).forEach(([k, v]) => { if (v) params.set(k, v); });
+    return params.toString();
+  }
+
+  async function load(page = 1) {
+    currentPage = page;
+    document.getElementById('rows').innerHTML = skeletonRows(6, 7);
+    try {
+      const data = await api.get(`/admin/members?${queryString(page)}`);
+      render(data);
+    } catch (err) {
+      document.getElementById('rows').innerHTML =
+        `<tr><td colspan="7">${emptyState({ title: 'Could not load members', text: err.message })}</td></tr>`;
+    }
+  }
+
+  function render({ members, pagination }) {
+    pageIds = members.map(m => m.id);
+    const tbody = document.getElementById('rows');
+
+    if (!members.length) {
+      tbody.innerHTML = `<tr><td colspan="7">${emptyState({
+        title: 'No members match these filters',
+        text: 'Try clearing a filter, or import members from a spreadsheet.',
+        action: '<button class="btn btn-sm btn-secondary" onclick="resetFilters()">Clear filters</button>'
+      })}</td></tr>`;
+    } else {
+      tbody.innerHTML = members.map(m => {
+        const tags = m.cohorts.slice(0, 2).map(c =>
+          `<span class="tag" style="background:${c.color}1F;color:${c.color}">${escapeHtml(c.name)}</span>`).join(' ');
+        const more = m.cohorts.length > 2 ? `<span class="tag">+${m.cohorts.length - 2}</span>` : '';
+        return `
+          <tr class="row-link${selection.has(m.id) ? ' selected' : ''}" data-id="${m.id}" onclick="openMember(event, '${m.id}')">
+            <td class="col-tight" onclick="event.stopPropagation()">
+              <button class="check${selection.has(m.id) ? ' on' : ''}" onclick="toggleOne('${m.id}')">✓</button>
+            </td>
+            <td>${identityCell(m.name, m.company || m.email, orbitLevel(m.engagement_streak))}</td>
+            <td>
+              ${badge(m.api_status, m.api_status)}
+              ${m.status === 'suspended' ? badge('suspended', 'suspended') : ''}
+            </td>
+            <td class="hide-sm">${tags}${more}</td>
+            <td class="hide-sm mono text-xs tnum">${m.surveys_completed}/${m.surveys_invited}</td>
+            <td class="hide-sm">${m.engagement_streak ? `<span class="streak">${m.engagement_streak}d</span>` : '<span class="dim">—</span>'}</td>
+            <td class="text-xs muted nowrap">${formatDate(m.last_active_at)}</td>
+          </tr>`;
+      }).join('');
+    }
+
+    const { page, pages, total } = pagination;
+    lastPage = pages;
+    document.getElementById('count').textContent = `${total} member${total === 1 ? '' : 's'}`;
+    document.getElementById('subtitle').textContent =
+      Object.keys(filters).filter(k => filters[k]).length
+        ? 'Filtered view — clear the chips to see everyone.'
+        : 'Every developer in the Credit Direct ecosystem.';
+
+    document.getElementById('pagination').innerHTML = total ? `
+      <span>${((page - 1) * PAGE_SIZE) + 1}–${Math.min(page * PAGE_SIZE, total)} of ${total}</span>
+      <span class="pages">
+        <button class="btn btn-sm btn-ghost" ${page <= 1 ? 'disabled' : ''} onclick="load(${page - 1})">← Prev</button>
+        <span class="mono">${page} / ${pages}</span>
+        <button class="btn btn-sm btn-ghost" ${page >= pages ? 'disabled' : ''} onclick="load(${page + 1})">Next →</button>
+      </span>` : '';
+
+    syncCheckAll();
+  }
+
+  // A click anywhere on the row opens the member; the checkbox cell stops
+  // propagation so selecting never navigates away.
+  function openMember(event, id) {
+    if (event.target.closest('.check')) return;
+    window.location.href = `/admin/member.html?id=${id}`;
+  }
+
+  // ─── Filters ────────────────────────────────────────────
+  document.querySelectorAll('.chip[data-filter]').forEach(chip => {
+    chip.addEventListener('click', () => {
+      const { filter, value } = chip.dataset;
+
+      if (!filter) { resetFilters(); return; }
+
+      // Chips within the same dimension are mutually exclusive.
+      const wasActive = chip.classList.contains('active');
+      document.querySelectorAll(`.chip[data-filter="${filter}"]`).forEach(c => c.classList.remove('active'));
+
+      if (wasActive) { delete filters[filter]; }
+      else { filters[filter] = value; chip.classList.add('active'); }
+
+      syncAllChip();
+      load(1);
+    });
+  });
+
+  document.getElementById('cohortFilter').addEventListener('change', e => {
+    filters.cohort_id = e.target.value;
+    syncAllChip();
+    load(1);
+  });
+
+  document.getElementById('search').addEventListener('input', e => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => { filters.search = e.target.value.trim(); load(1); }, 280);
+  });
+
+  function syncAllChip() {
+    const any = Object.values(filters).some(Boolean);
+    document.querySelector('.chip[data-filter=""]').classList.toggle('active', !any);
+  }
+
+  function resetFilters() {
+    filters = {};
+    document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+    document.querySelector('.chip[data-filter=""]').classList.add('active');
+    document.getElementById('search').value = '';
+    document.getElementById('cohortFilter').value = '';
+    load(1);
+  }
+
+  // ─── Selection ──────────────────────────────────────────
+  function toggleOne(id) {
+    selection.has(id) ? selection.delete(id) : selection.add(id);
+    document.querySelector(`tr[data-id="${id}"]`)?.classList.toggle('selected', selection.has(id));
+    document.querySelector(`tr[data-id="${id}"] .check`)?.classList.toggle('on', selection.has(id));
+    syncBulkBar();
+    syncCheckAll();
+  }
+
+  function toggleAll() {
+    const allSelected = pageIds.every(id => selection.has(id));
+    pageIds.forEach(id => allSelected ? selection.delete(id) : selection.add(id));
+    load(currentPage);
+    syncBulkBar();
+  }
+
+  function clearSelection() { selection.clear(); load(currentPage); syncBulkBar(); }
+
+  function syncBulkBar() {
+    const bar = document.getElementById('bulkBar');
+    bar.classList.toggle('open', selection.size > 0);
+    document.getElementById('bulkCount').textContent =
+      `${selection.size} member${selection.size === 1 ? '' : 's'} selected`;
+  }
+
+  function syncCheckAll() {
+    const all = pageIds.length && pageIds.every(id => selection.has(id));
+    document.getElementById('checkAll').classList.toggle('on', !!all);
+    document.getElementById('checkAll').textContent = all ? '✓' : '';
+  }
+
+  // ─── Broadcast ──────────────────────────────────────────
+  function openBroadcast(mode) {
+    if (mode === 'specific' && !selection.size) { showToast('Select members first', 'warning'); return; }
+    document.getElementById('bTarget').value = mode;
+    syncBroadcastTarget();
+    Shell.openDrawer('broadcastDrawer');
+  }
+
+  function syncBroadcastTarget() {
+    const target = document.getElementById('bTarget').value;
+    document.getElementById('bCohortField').classList.toggle('hide', target !== 'cohort');
+
+    const label = target === 'specific'
+      ? `To ${selection.size} selected member${selection.size === 1 ? '' : 's'}`
+      : target === 'cohort' ? 'To one cohort' : 'To all members';
+    document.getElementById('broadcastAudience').textContent = label;
+  }
+
+  async function sendBroadcast() {
+    const content = document.getElementById('bContent').value.trim();
+    if (!content) { showToast('Message required', 'warning'); return; }
+
+    const target_type = document.getElementById('bTarget').value;
+    const body = {
+      subject: document.getElementById('bSubject').value.trim(),
+      content,
+      channel: document.getElementById('bChannel').value,
+      target_type
+    };
+    if (target_type === 'cohort') body.target_ids = [document.getElementById('bCohort').value];
+    if (target_type === 'specific') body.target_ids = [...selection];
+
+    const btn = document.getElementById('bSend');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Sending';
+
+    try {
+      const blast = await api.post('/admin/blasts', body);
+      const result = await api.post(`/admin/blasts/${blast.blast.id}/send`);
+      Shell.closeDrawer('broadcastDrawer');
+
+      // Report what actually happened per recipient rather than just "sent" —
+      // members who withdrew consent are skipped, and quiet hours defer sends.
+      const notes = [];
+      if (result.skipped) notes.push(`${result.skipped} skipped (consent or preference)`);
+      if (result.queued_for_quiet_hours) notes.push(`${result.queued_for_quiet_hours} held for quiet hours`);
+      if (result.failed) notes.push(`${result.failed} failed`);
+      showToast(`${result.delivered} delivered${notes.length ? ' · ' + notes.join(' · ') : ''}`,
+                result.failed ? 'warning' : 'success');
+
+      document.getElementById('bSubject').value = '';
+      document.getElementById('bContent').value = '';
+    } catch (err) {
+      showToast(err.message, 'error');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Send broadcast';
+    }
+  }
+
+  // ─── Import / export ────────────────────────────────────
+  async function loadImportFile(input) {
+    const file = input.files && input.files[0];
+    if (!file) return;
+    document.getElementById('importData').value = await file.text();
+    document.getElementById('importSummary').textContent =
+      `Loaded ${file.name}. Run "Check first" to validate before importing.`;
+  }
+
+  async function doImport(dryRun) {
+    const raw = document.getElementById('importData').value.trim();
+    if (!raw) { showToast('Paste CSV or choose a file first', 'warning'); return; }
+
+    // Accept a spreadsheet export directly; a JSON array still works
+    const body = raw.startsWith('[')
+      ? (() => { try { return { users: JSON.parse(raw) }; } catch { return null; } })()
+      : { csv: raw };
+
+    if (!body) { showToast('That looks like JSON but could not be parsed', 'error'); return; }
+    body.dry_run = dryRun;
+
+    try {
+      const result = await api.post('/admin/import', body);
+      const summary = document.getElementById('importSummary');
+
+      if (result.errors.length) {
+        summary.innerHTML = `<strong>${escapeHtml(result.message)}</strong><br>` +
+          result.errors.slice(0, 5).map(e => `· ${escapeHtml(e.error)}`).join('<br>') +
+          (result.errors.length > 5 ? `<br>· and ${result.errors.length - 5} more` : '');
+      } else {
+        summary.textContent = result.message;
+      }
+
+      if (!dryRun) {
+        showToast(result.message);
+        if (!result.errors.length) Shell.closeDrawer('importDrawer');
+        load(1);
+      }
+    } catch (err) { showToast(err.message, 'error'); }
+  }
+
+  async function exportMembers() {
+    try {
+      const res = await fetch(`${API_BASE}/admin/export?format=csv`, { headers: Auth.headers() });
+      const blob = await res.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'devcircle-export.csv';
+      a.click();
+      showToast('Exported');
+    } catch { showToast('Export failed', 'error'); }
+  }
+
+  // ─── Boot ───────────────────────────────────────────────
+  (async function boot() {
+    // A cohort can be deep-linked into this view from anywhere in the product.
+    const cohort = param('cohort_id');
+    if (cohort) filters.cohort_id = cohort;
+
+    load(1);
+
+    try {
+      const { cohorts } = await api.get('/admin/cohorts');
+      const options = cohorts.map(c =>
+        `<option value="${c.id}"${c.id === cohort ? ' selected' : ''}>${escapeHtml(c.name)} (${c.member_count})</option>`).join('');
+      document.getElementById('cohortFilter').insertAdjacentHTML('beforeend', options);
+      document.getElementById('bCohort').innerHTML = cohorts.map(c =>
+        `<option value="${c.id}">${escapeHtml(c.name)} (${c.member_count})</option>`).join('');
+    } catch { /* filters degrade to search-only */ }
+  })();
+</script>
+</body>
+</html>

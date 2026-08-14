@@ -3,257 +3,254 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Dev Circle — New Cohort</title>
+  <title>Dev Circle — New cohort</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/assets/css/tokens.css">
+  <link rel="stylesheet" href="/assets/css/app.css">
   <style>
-    .topnav { position:sticky;top:0;z-index:100;background:var(--ink);border-bottom:1px solid rgba(160,160,184,0.06);padding:0 var(--sp-6); }
-    .topnav-inner { max-width:720px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;height:56px; }
-    .topnav-logo { font-family:var(--font-display);font-weight:var(--fw-black);font-size:var(--fs-md);letter-spacing:-0.03em;color:var(--white);text-decoration:none; }
-    .topnav-logo span { color:var(--cd-blue); }
-    .topnav-logo .badge { font-family:var(--font-mono);font-size:10px;color:var(--cd-blue);background:var(--cd-blue-dim);padding:2px 6px;border-radius:var(--r-sm);margin-left:var(--sp-2); }
-    .topnav-back { font-size:var(--fs-sm);color:var(--ash);text-decoration:none; }
-    .topnav-back:hover { color:var(--white); }
-
-    .page { max-width:720px;margin:0 auto;padding:var(--sp-8) var(--sp-6); }
-    .page-header { margin-bottom:var(--sp-8); }
-    .page-title { font-family:var(--font-display);font-weight:var(--fw-bold);font-size:var(--fs-2xl);letter-spacing:-0.03em;margin-bottom:var(--sp-1); }
-    .page-subtitle { color:var(--ash);font-size:var(--fs-sm);line-height:var(--lh-loose); }
-
-    .section { margin-bottom:var(--sp-8); }
-    .section-title { font-family:var(--font-display);font-weight:var(--fw-semibold);font-size:var(--fs-md);letter-spacing:-0.01em;margin-bottom:var(--sp-4); }
-    .section-hint { font-size:var(--fs-xs);color:var(--ash-dim);margin-bottom:var(--sp-3); }
-
-    .form-group { margin-bottom:var(--sp-4); }
-    .form-label { display:block;font-size:var(--fs-xs);font-weight:var(--fw-medium);color:var(--ash);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:var(--sp-1); }
-    .form-input { width:100%;background:var(--slate);border:1px solid rgba(160,160,184,0.08);border-radius:var(--r-md);padding:var(--sp-2) var(--sp-3);color:var(--white);font-size:var(--fs-sm);transition:border-color var(--duration-fast) var(--ease-out); }
-    .form-input::placeholder { color:var(--ash-dim); }
-    .form-input:focus { border-color:var(--cd-blue);outline:none; }
-    select.form-input { cursor:pointer; }
-    textarea.form-input { min-height:80px;font-family:var(--font-body);resize:vertical; }
-
-    .color-options { display:flex;gap:var(--sp-2);flex-wrap:wrap; }
-    .color-swatch {
-      width:32px;height:32px;border-radius:50%;cursor:pointer;border:3px solid transparent;
-      transition:all var(--duration-fast) var(--ease-out);
-    }
-    .color-swatch:hover { transform:scale(1.1); }
-    .color-swatch.selected { border-color:var(--white);box-shadow:0 0 0 2px var(--ink); }
+    /* Builder on the left, the audience it produces on the right. The count
+       updates as you type, so a rule is never written blind. */
+    .builder { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: var(--sp-6); align-items: start; }
+    @media (max-width: 1000px) { .builder { grid-template-columns: minmax(0, 1fr); } }
 
     .rule-row {
-      display:flex;align-items:center;gap:var(--sp-2);padding:var(--sp-2) 0;
-      border-bottom:1px solid rgba(160,160,184,0.03);
+      display: grid;
+      grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.7fr) minmax(0, 1.2fr) auto;
+      gap: var(--sp-2);
+      align-items: center;
+      margin-bottom: var(--sp-2);
     }
-    .rule-row select, .rule-row input { background:var(--ink);border:1px solid rgba(160,160,184,0.10);border-radius:var(--r-md);padding:var(--sp-1) var(--sp-2);color:var(--white);font-size:var(--fs-xs); }
-    .rule-row select { cursor:pointer; }
-    .rule-row input:focus, .rule-row select:focus { border-color:var(--cd-blue);outline:none; }
-    .rule-remove { background:none;border:none;color:var(--ash-dim);cursor:pointer;font-size:var(--fs-md);padding:var(--sp-1); }
-    .rule-remove:hover { color:var(--rose); }
+    @media (max-width: 620px) { .rule-row { grid-template-columns: 1fr 1fr; } }
+    .rule-row .input { padding: var(--sp-2) var(--sp-3); }
 
-    .btn { display:inline-flex;align-items:center;justify-content:center;gap:var(--sp-2);font-family:var(--font-body);font-size:var(--fs-sm);font-weight:var(--fw-medium);padding:var(--sp-2) var(--sp-4);border-radius:var(--r-md);transition:all var(--duration-fast) var(--ease-out);white-space:nowrap;cursor:pointer;border:none; }
-    .btn-primary { background:var(--cd-blue);color:var(--white); }
-    .btn-primary:hover { background:var(--cd-blue-deep); }
-    .btn-secondary { background:none;color:var(--ash);border:1px solid rgba(160,160,184,0.10); }
-    .btn-secondary:hover { color:var(--white);border-color:rgba(160,160,184,0.25); }
-    .btn-ghost { background:none;color:var(--ash);border:none; }
-    .btn-ghost:hover { color:var(--white); }
-    .btn-sm { font-size:var(--fs-xs);padding:var(--sp-1) var(--sp-3); }
-
-    .preview-box {
-      background:var(--slate);border:1px solid rgba(160,160,184,0.06);border-radius:var(--r-lg);
-      padding:var(--sp-4);margin-top:var(--sp-4);
+    .rule-join {
+      display: flex;
+      align-items: center;
+      gap: var(--sp-2);
+      font-size: var(--fs-sm);
+      color: var(--ash);
+      margin-bottom: var(--sp-4);
     }
-    .preview-title { font-size:var(--fs-xs);color:var(--ash-dim);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:var(--sp-2); }
 
-    .save-bar { display:flex;gap:var(--sp-3);padding-top:var(--sp-4);border-top:1px solid rgba(160,160,184,0.06);margin-top:var(--sp-4); }
+    .swatches { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
+    .swatch {
+      width: 28px; height: 28px; border-radius: var(--r-md);
+      border: 2px solid transparent;
+      transition: transform var(--duration-fast) var(--ease-out);
+    }
+    .swatch:hover { transform: scale(1.08); }
+    .swatch.selected { border-color: var(--white); }
 
-    @media (max-width:640px) {
-      .page { padding:var(--sp-6) var(--sp-4); }
-      .page-title { font-size:var(--fs-xl); }
+    .preview-count {
+      font-family: var(--font-display);
+      font-weight: var(--fw-bold);
+      font-size: var(--fs-2xl);
+      letter-spacing: -0.03em;
+      line-height: 1;
     }
   </style>
 </head>
 <body>
 
-  <nav class="topnav">
-    <div class="topnav-inner">
-      <a href="/admin/dashboard.html" class="topnav-logo">dev<span>.</span>circle <span class="badge">Admin</span></a>
-      <a href="/admin/dashboard.html" class="topnav-back">← Back</a>
-    </div>
-  </nav>
+<div class="app">
+  <div class="app-main">
 
-  <div class="page">
-    <header class="page-header">
-      <h1 class="page-title">Create cohort</h1>
-      <p class="page-subtitle">Group members by shared properties. You can add members manually or define rules for automatic assignment.</p>
-    </header>
-
-    <section class="section">
-      <h2 class="section-title">Details</h2>
-      <div class="form-group">
-        <label class="form-label">Name</label>
-        <input type="text" class="form-input" id="cName" placeholder="e.g. Weekend Warriors">
+    <header class="page-head">
+      <div class="breadcrumb">
+        <a href="/admin/cohorts.html">Cohorts</a>
+        <span class="sep">/</span>
+        <span>New cohort</span>
       </div>
-      <div class="form-group">
-        <label class="form-label">Description</label>
-        <textarea class="form-input" id="cDesc" placeholder="Who is this cohort for?"></textarea>
-      </div>
-      <div class="form-group">
-        <label class="form-label">Color</label>
-        <div class="color-options" id="colorOptions">
-          <div class="color-swatch selected" style="background:#107EBC" data-color="#107EBC"></div>
-          <div class="color-swatch" style="background:#E6B473" data-color="#E6B473"></div>
-          <div class="color-swatch" style="background:#945A39" data-color="#945A39"></div>
-          <div class="color-swatch" style="background:#0D9488" data-color="#0D9488"></div>
-          <div class="color-swatch" style="background:#16A34A" data-color="#16A34A"></div>
-          <div class="color-swatch" style="background:#E11D48" data-color="#E11D48"></div>
-          <div class="color-swatch" style="background:#0B5A8A" data-color="#0B5A8A"></div>
-          <div class="color-swatch" style="background:#6B6B80" data-color="#6B6B80"></div>
+      <div class="page-head-row">
+        <div>
+          <h1 class="page-title">New cohort</h1>
+          <p class="page-subtitle">A cohort is an audience. Give it rules and it stays current on its own; leave the rules empty and you curate it by hand.</p>
+        </div>
+        <div class="page-actions">
+          <a href="/admin/cohorts.html" class="btn btn-sm btn-secondary">Cancel</a>
+          <button class="btn btn-sm btn-primary" onclick="createCohort()">Create cohort</button>
         </div>
       </div>
-    </section>
+    </header>
 
-    <section class="section">
-      <h2 class="section-title">Rules <span style="font-size:var(--fs-xs);color:var(--ash-dim);font-weight:400">(optional)</span></h2>
-      <p class="section-hint">Rule-based cohorts stay current on their own — members are added and removed as they qualify.</p>
-      <p class="section-hint" style="display:flex;align-items:center;gap:var(--sp-2);margin-bottom:var(--sp-3)">
-        Members must match
-        <select id="matchMode" onchange="matchMode=this.value;previewMatch()"
-                style="background:var(--slate);border:1px solid rgba(160,160,184,0.12);border-radius:var(--r-sm);color:var(--white);padding:2px 6px;font-size:var(--fs-xs)">
-          <option value="all">all</option>
-          <option value="any">any</option>
-        </select>
-        of the rules below.
-      </p>
-      <div id="rulesContainer"></div>
-      <button class="btn btn-sm btn-ghost" onclick="addRule()">+ Add rule</button>
+    <div class="app-body">
+      <div class="builder">
 
-      <div class="preview-box">
-        <div class="preview-title">Matching members</div>
-        <div id="previewCount" style="font-family:var(--font-display);font-weight:var(--fw-bold);font-size:var(--fs-lg)">—</div>
-        <div id="previewList" style="font-size:var(--fs-xs);color:var(--ash);margin-top:var(--sp-1)"></div>
+        <div class="stack">
+          <section class="card">
+            <div class="card-title mb-4">Identity</div>
+            <div class="field">
+              <label class="label">Name</label>
+              <input type="text" class="input" id="cName" placeholder="e.g. Weekend warriors">
+            </div>
+            <div class="field">
+              <label class="label">Description</label>
+              <textarea class="input" id="cDesc" placeholder="Who is this cohort for, and why does it exist?"></textarea>
+            </div>
+            <div class="field" style="margin-bottom:0">
+              <label class="label">Colour</label>
+              <div class="swatches" id="swatches">
+                <button class="swatch selected" style="background:#107EBC" data-color="#107EBC" title="Denim blue"></button>
+                <button class="swatch" style="background:#E6B473" data-color="#E6B473" title="Harvest gold"></button>
+                <button class="swatch" style="background:#945A39" data-color="#945A39" title="Potters clay"></button>
+                <button class="swatch" style="background:#0D9488" data-color="#0D9488" title="Teal"></button>
+                <button class="swatch" style="background:#16A34A" data-color="#16A34A" title="Emerald"></button>
+                <button class="swatch" style="background:#E11D48" data-color="#E11D48" title="Rose"></button>
+                <button class="swatch" style="background:#0B5A8A" data-color="#0B5A8A" title="Deep blue"></button>
+                <button class="swatch" style="background:#6B6B80" data-color="#6B6B80" title="Ash"></button>
+              </div>
+            </div>
+          </section>
+
+          <section class="card">
+            <div class="row mb-2">
+              <span class="card-title">Rules</span>
+              <span class="dim text-xs">optional</span>
+            </div>
+            <p class="hint mb-4" style="margin-top:0">
+              Rule-based cohorts re-evaluate themselves — members join and leave as they qualify.
+            </p>
+
+            <div class="rule-join">
+              Members must match
+              <select class="input" id="matchMode" style="width:auto;padding:var(--sp-1) var(--sp-2)">
+                <option value="all">all</option>
+                <option value="any">any</option>
+              </select>
+              of these rules.
+            </div>
+
+            <div id="rules"></div>
+            <button class="btn btn-sm btn-ghost mt-2" onclick="addRule()">+ Add rule</button>
+          </section>
+        </div>
+
+        <!-- The audience, evaluated by the same engine that will fill the
+             cohort — so what you see here is what you get. -->
+        <aside class="rail">
+          <section class="card">
+            <div class="card-title mb-4">Matching members</div>
+            <div class="preview-count" id="previewCount">—</div>
+            <p class="hint" id="previewList">Add a rule to see who qualifies.</p>
+            <div class="row wrap mt-4" style="gap:var(--sp-2)" id="previewFaces"></div>
+          </section>
+        </aside>
+
       </div>
-    </section>
-
-    <div class="save-bar">
-      <button class="btn btn-primary" onclick="createCohort()">Create cohort</button>
-      <a href="/admin/dashboard.html" class="btn btn-secondary">Cancel</a>
     </div>
   </div>
+</div>
 
 <script src="/assets/js/api.js"></script>
+<script src="/assets/js/shell.js"></script>
 <script>
-  if (!Auth.requireAuth(true)) throw new Error('Redirecting');
+  Shell.admin('cohorts');
 
   let selectedColor = '#107EBC';
-  let matchMode = 'all';
   let ruleCount = 0;
-
-  // Color selection
-  document.querySelectorAll('.color-swatch').forEach(s => {
-    s.addEventListener('click', () => {
-      document.querySelectorAll('.color-swatch').forEach(x => x.classList.remove('selected'));
-      s.classList.add('selected');
-      selectedColor = s.dataset.color;
-    });
-  });
+  let previewTimer = null;
 
   // Every criterion the blueprint calls for: engagement history, available
   // days, work sector, integration product types, sandbox/production, custom.
   const RULE_FIELDS = [
-    { value: 'api_status', label: 'API Status', type: 'select', options: ['sandbox', 'production'] },
-    { value: 'kyb_completed', label: 'KYB Completed', type: 'select', options: ['yes', 'no'] },
-    { value: 'work_sector', label: 'Work Sector', type: 'select', options: ['Fintech', 'Banking', 'Lending', 'Payments', 'Insurance', 'Other'] },
-    { value: 'api_products', label: 'API Product', type: 'select', options: ['payments', 'lending', 'identity', 'credit_scoring'] },
-    { value: 'preferred_days', label: 'Available Day', type: 'select', options: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] },
-    { value: 'preferred_channels', label: 'Preferred Channel', type: 'select', options: ['email', 'whatsapp', 'sms', 'calls', 'in_portal'] },
+    { value: 'api_status', label: 'API status', type: 'select', options: ['sandbox', 'production'] },
+    { value: 'kyb_completed', label: 'KYB completed', type: 'select', options: ['yes', 'no'] },
+    { value: 'work_sector', label: 'Work sector', type: 'select', options: ['Fintech', 'Banking', 'Lending', 'Payments', 'Insurance', 'Other'] },
+    { value: 'api_products', label: 'API product', type: 'select', options: ['payments', 'lending', 'identity', 'credit_scoring'] },
+    { value: 'preferred_days', label: 'Available day', type: 'select', options: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] },
+    { value: 'preferred_channels', label: 'Preferred channel', type: 'select', options: ['email', 'whatsapp', 'sms', 'calls', 'in_portal'] },
     { value: 'location_state', label: 'State', type: 'text' },
     { value: 'gender', label: 'Gender', type: 'select', options: ['male', 'female', 'other'] },
     { value: 'age', label: 'Age', type: 'number' },
-    { value: 'engagement_streak', label: 'Engagement Streak', type: 'number' },
-    { value: 'surveys_completed', label: 'Surveys Completed', type: 'number' },
-    { value: 'gifts_claimed', label: 'Gifts Claimed', type: 'number' },
-    { value: 'days_since_active', label: 'Days Since Active', type: 'number' },
-    { value: 'days_since_joined', label: 'Days Since Joined', type: 'number' }
+    { value: 'engagement_streak', label: 'Engagement streak', type: 'number' },
+    { value: 'surveys_completed', label: 'Surveys completed', type: 'number' },
+    { value: 'gifts_claimed', label: 'Gifts claimed', type: 'number' },
+    { value: 'days_since_active', label: 'Days since active', type: 'number' },
+    { value: 'days_since_joined', label: 'Days since joined', type: 'number' }
   ];
 
   const OPERATORS = {
     select: [{ value: 'eq', label: 'is' }, { value: 'neq', label: 'is not' }],
-    text: [{ value: 'eq', label: 'is' }, { value: 'neq', label: 'is not' }, { value: 'contains', label: 'contains' }],
-    number: [{ value: 'gte', label: '≥' }, { value: 'lte', label: '≤' }, { value: 'eq', label: '=' }]
+    text:   [{ value: 'eq', label: 'is' }, { value: 'neq', label: 'is not' }, { value: 'contains', label: 'contains' }],
+    number: [{ value: 'gte', label: 'at least' }, { value: 'lte', label: 'at most' }, { value: 'eq', label: 'exactly' }]
   };
 
   function addRule() {
     ruleCount++;
-    const container = document.getElementById('rulesContainer');
     const row = document.createElement('div');
     row.className = 'rule-row';
     row.id = `rule-${ruleCount}`;
-
-    const fieldOpts = RULE_FIELDS.map(f => `<option value="${f.value}">${f.label}</option>`).join('');
     row.innerHTML = `
-      <select onchange="updateRuleOps(this)" style="width:140px">${fieldOpts}</select>
-      <select class="rule-op" style="width:80px"></select>
-      <input type="text" class="rule-val" placeholder="Value" style="flex:1">
-      <button class="rule-remove" onclick="this.parentElement.remove();previewMatch()">×</button>
-    `;
+      <select class="input rule-field" onchange="updateRuleOps(this)">
+        ${RULE_FIELDS.map(f => `<option value="${f.value}">${f.label}</option>`).join('')}
+      </select>
+      <select class="input rule-op"></select>
+      <input type="text" class="input rule-val" placeholder="Value">
+      <button class="icon-btn" onclick="this.parentElement.remove();previewMatch()" aria-label="Remove rule">×</button>`;
 
-    container.appendChild(row);
-    updateRuleOps(row.querySelector('select'));
+    document.getElementById('rules').appendChild(row);
+    updateRuleOps(row.querySelector('.rule-field'));
   }
 
   function updateRuleOps(fieldSelect) {
     const field = RULE_FIELDS.find(f => f.value === fieldSelect.value);
-    const opSelect = fieldSelect.parentElement.querySelector('.rule-op');
-    const valInput = fieldSelect.parentElement.querySelector('.rule-val');
+    const row = fieldSelect.parentElement;
+    row.querySelector('.rule-op').innerHTML =
+      OPERATORS[field.type].map(o => `<option value="${o.value}">${o.label}</option>`).join('');
 
-    opSelect.innerHTML = OPERATORS[field.type].map(o => `<option value="${o.value}">${o.label}</option>`).join('');
-
+    const val = row.querySelector('.rule-val');
     if (field.type === 'select') {
-      valInput.outerHTML = `<select class="rule-val" style="flex:1">${field.options.map(o => `<option value="${o}">${o}</option>`).join('')}</select>`;
-    } else if (field.type === 'text') {
-      valInput.outerHTML = `<input type="text" class="rule-val" placeholder="e.g. Lagos" style="flex:1">`;
+      val.outerHTML = `<select class="input rule-val">${field.options.map(o => `<option value="${o}">${o}</option>`).join('')}</select>`;
+    } else if (field.type === 'number') {
+      val.outerHTML = '<input type="number" class="input rule-val" placeholder="Value">';
     } else {
-      valInput.outerHTML = `<input type="number" class="rule-val" placeholder="Value" style="flex:1">`;
+      val.outerHTML = '<input type="text" class="input rule-val" placeholder="e.g. Lagos">';
     }
 
     previewMatch();
   }
 
+  function getRules() {
+    return Array.from(document.querySelectorAll('.rule-row')).map(row => ({
+      field: row.querySelector('.rule-field').value,
+      op: row.querySelector('.rule-op').value,
+      value: row.querySelector('.rule-val').value
+    })).filter(r => r.value !== '');
+  }
+
   async function previewMatch() {
     const rules = getRules();
-    if (rules.length === 0) {
-      document.getElementById('previewCount').textContent = '—';
-      document.getElementById('previewList').textContent = 'Add rules to see matching members';
+    const count = document.getElementById('previewCount');
+    const list = document.getElementById('previewList');
+    const faces = document.getElementById('previewFaces');
+
+    if (!rules.length) {
+      count.textContent = '—';
+      list.textContent = 'Add a rule to see who qualifies.';
+      faces.innerHTML = '';
       return;
     }
 
     // The same engine that will populate the cohort evaluates the preview, so
-    // what you see here is what you get. This used to be an approximation
-    // computed in the browser over the first 100 members.
+    // what you see here is what you get.
     try {
-      const data = await api.post('/admin/cohorts/preview', { filter_rules: { match: matchMode, rules } });
+      const data = await api.post('/admin/cohorts/preview', {
+        filter_rules: { match: document.getElementById('matchMode').value, rules }
+      });
 
-      document.getElementById('previewCount').textContent =
-        `${data.total} member${data.total === 1 ? '' : 's'}`;
-      document.getElementById('previewList').textContent = data.total
-        ? data.members.slice(0, 5).map(m => m.name).join(', ') +
-          (data.total > 5 ? ` +${data.total - 5} more` : '')
+      count.textContent = data.total.toLocaleString();
+      list.textContent = data.total
+        ? `member${data.total === 1 ? '' : 's'} match right now`
         : 'No members match these rules yet';
+      faces.innerHTML = data.members.slice(0, 8)
+        .map(m => `<span title="${escapeHtml(m.name)}">${avatar(m.name, 'avatar-sm')}</span>`).join('');
     } catch (err) {
-      document.getElementById('previewCount').textContent = '—';
-      document.getElementById('previewList').textContent = err.message;
+      count.textContent = '—';
+      list.textContent = err.message;
+      faces.innerHTML = '';
     }
-  }
-
-  function getRules() {
-    return Array.from(document.querySelectorAll('.rule-row')).map(row => ({
-      field: row.querySelector('select').value,
-      op: row.querySelector('.rule-op').value,
-      value: row.querySelector('.rule-val').value
-    })).filter(r => r.value !== '');
   }
 
   async function createCohort() {
@@ -268,7 +265,7 @@
         description: document.getElementById('cDesc').value.trim(),
         color: selectedColor,
         type: 'custom',
-        filter_rules: rules.length ? { match: matchMode, rules } : null,
+        filter_rules: rules.length ? { match: document.getElementById('matchMode').value, rules } : null,
         auto_sync: true
       });
 
@@ -278,15 +275,26 @@
         ? `"${name}" created with ${data.sync.added} member${data.sync.added === 1 ? '' : 's'}`
         : `Cohort "${name}" created — add members manually`);
 
-      setTimeout(() => window.location.href = '/admin/dashboard.html', 1200);
+      setTimeout(() => window.location.href = `/admin/cohort-detail.html?id=${data.cohort.id}`, 900);
     } catch (err) {
       showToast(err.message, 'error');
     }
   }
 
-  // Auto-preview on rule change
-  document.addEventListener('input', previewMatch);
-  document.addEventListener('change', previewMatch);
+  document.querySelectorAll('.swatch').forEach(s => {
+    s.addEventListener('click', () => {
+      document.querySelectorAll('.swatch').forEach(x => x.classList.remove('selected'));
+      s.classList.add('selected');
+      selectedColor = s.dataset.color;
+    });
+  });
+
+  // Debounced so typing a value does not fire a request per keystroke.
+  function schedulePreview() { clearTimeout(previewTimer); previewTimer = setTimeout(previewMatch, 300); }
+  document.addEventListener('input', schedulePreview);
+  document.addEventListener('change', schedulePreview);
+
+  addRule();
 </script>
 </body>
 </html>

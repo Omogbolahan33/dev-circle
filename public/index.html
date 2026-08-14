@@ -3,173 +3,398 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Dev Circle — Sign In</title>
+  <title>Dev Circle — Sign in</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/assets/css/tokens.css">
+  <link rel="stylesheet" href="/assets/css/app.css">
   <style>
-    body { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: var(--sp-4); }
+    /* Two panels: what this is on the left, the way in on the right. On a
+       phone the explanation gets out of the way and the form leads. */
+    .split-screen { display: grid; grid-template-columns: 1fr 1fr; min-height: 100vh; }
+    @media (max-width: 900px) { .split-screen { grid-template-columns: 1fr; } }
 
-    .login-container { width: 100%; max-width: 380px; }
-
-    .login-header { text-align: center; margin-bottom: var(--sp-10); }
-    .login-logo { font-family: var(--font-display); font-weight: var(--fw-black); font-size: var(--fs-2xl); letter-spacing: -0.04em; }
-    .login-logo span { color: var(--cd-blue); }
-    .login-subtitle { font-size: var(--fs-sm); color: var(--ash); margin-top: var(--sp-2); }
-
-    .login-tabs { display: flex; gap: 0; margin-bottom: var(--sp-8); border-bottom: 1px solid rgba(160, 160, 184, 0.08); }
-    .login-tab {
-      flex: 1; padding: var(--sp-3); text-align: center; font-size: var(--fs-sm); font-weight: var(--fw-medium);
-      color: var(--ash); cursor: pointer; border: none; background: none;
-      border-bottom: 2px solid transparent; transition: all var(--duration-fast) var(--ease-out);
+    .pitch {
+      background: var(--surface-1);
+      border-right: 1px solid var(--line-faint);
+      padding: var(--sp-12) var(--sp-10);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
     }
-    .login-tab:hover { color: var(--white); }
-    .login-tab.active { color: var(--cd-blue); border-bottom-color: var(--cd-blue); }
+    @media (max-width: 900px) { .pitch { display: none; } }
 
-    .form-group { margin-bottom: var(--sp-5); }
-    .form-label { display: block; font-size: var(--fs-xs); font-weight: var(--fw-medium); color: var(--ash); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: var(--sp-2); }
-    .form-input {
-      width: 100%; background: var(--slate); border: 1px solid rgba(160, 160, 184, 0.10);
-      border-radius: var(--r-md); padding: var(--sp-3); color: var(--white); font-size: var(--fs-base);
-      transition: border-color var(--duration-fast) var(--ease-out);
+    .pitch-inner { max-width: 420px; }
+    .pitch-title {
+      font-family: var(--font-display);
+      font-weight: var(--fw-black);
+      font-size: var(--fs-3xl);
+      letter-spacing: -0.04em;
+      line-height: 1.1;
+      margin: var(--sp-8) 0 var(--sp-4);
     }
-    .form-input::placeholder { color: var(--ash-dim); }
-    .form-input:focus { border-color: var(--cd-blue); outline: none; }
+    .pitch-body { color: var(--ash); font-size: var(--fs-base); line-height: var(--lh-loose); margin-bottom: var(--sp-8); }
 
-    .form-error { font-size: var(--fs-xs); color: var(--rose); margin-top: var(--sp-1); display: none; }
-    .form-error.visible { display: block; }
+    .point { display: flex; gap: var(--sp-3); padding: var(--sp-3) 0; font-size: var(--fs-sm); color: var(--ash); }
+    .point-mark { color: var(--cd-blue); flex-shrink: 0; }
 
-    .login-btn {
-      width: 100%; padding: var(--sp-3); border-radius: var(--r-md); font-size: var(--fs-base);
-      font-weight: var(--fw-semibold); cursor: pointer; border: none;
-      transition: all var(--duration-fast) var(--ease-out); margin-top: var(--sp-2);
+    .signin { display: flex; align-items: center; justify-content: center; padding: var(--sp-8) var(--sp-6); }
+    .signin-inner { width: 100%; max-width: 360px; }
+
+    .signin-title { font-family: var(--font-display); font-weight: var(--fw-bold); font-size: var(--fs-xl); letter-spacing: -0.03em; margin-bottom: var(--sp-2); }
+    .signin-sub { color: var(--ash); font-size: var(--fs-sm); margin-bottom: var(--sp-6); }
+
+    /* Step two opens on whoever the backend says this is, so the identifier
+       stays on screen — with the way back to change it. */
+    .whoami {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--sp-3);
+      background: var(--surface-2);
+      border: 1px solid var(--line);
+      border-radius: var(--r-md);
+      padding: var(--sp-3);
+      margin-bottom: var(--sp-5);
+      font-size: var(--fs-sm);
     }
-    .login-btn.primary { background: var(--cd-blue); color: var(--white); }
-    .login-btn.primary:hover { background: var(--cd-blue-deep); }
-    .login-btn.primary:disabled { opacity: 0.5; cursor: not-allowed; }
+    .whoami .value { font-family: var(--font-mono); color: var(--white); overflow-wrap: anywhere; }
+    .whoami button { color: var(--cd-blue); font-size: var(--fs-xs); flex-shrink: 0; }
+    .whoami button:hover { text-decoration: underline; }
 
-    .divider { display: flex; align-items: center; gap: var(--sp-3); margin: var(--sp-5) 0; font-size: var(--fs-xs); color: var(--ash-dim); }
-    .divider::before, .divider::after { content: ''; flex: 1; height: 1px; background: rgba(160, 160, 184, 0.06); }
-
-    .sso-btn {
-      width: 100%; padding: var(--sp-3); border-radius: var(--r-md); font-size: var(--fs-sm); font-weight: var(--fw-medium);
-      cursor: pointer; border: 1px solid rgba(160, 160, 184, 0.10); background: none; color: var(--ash);
-      transition: all var(--duration-fast) var(--ease-out); display: flex; align-items: center; justify-content: center; gap: var(--sp-2);
+    .code-input {
+      font-family: var(--font-mono);
+      font-size: var(--fs-xl);
+      letter-spacing: 0.5em;
+      text-align: center;
     }
-    .sso-btn:hover { color: var(--white); border-color: rgba(160, 160, 184, 0.25); }
 
-    .register-link { text-align: center; margin-top: var(--sp-5); font-size: var(--fs-sm); color: var(--ash); }
-    .register-link a { color: var(--cd-blue); font-weight: var(--fw-medium); }
+    .divider { display: flex; align-items: center; gap: var(--sp-3); color: var(--ash-dim); font-size: var(--fs-xs); margin: var(--sp-5) 0; }
+    .divider::before, .divider::after { content: ''; flex: 1; height: 1px; background: var(--line-faint); }
 
-    .demo-creds {
-      margin-top: var(--sp-10); padding-top: var(--sp-6);
-      border-top: 1px solid rgba(160, 160, 184, 0.06);
+    .error-box {
+      display: none;
+      background: var(--rose-dim);
+      border: 1px solid rgba(225, 29, 72, 0.3);
+      border-radius: var(--r-md);
+      padding: var(--sp-3);
+      font-size: var(--fs-xs);
+      color: var(--rose);
+      margin-bottom: var(--sp-4);
     }
-    .demo-creds-title { font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--ash-dim); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: var(--sp-3); }
-    .demo-cred {
-      display: flex; justify-content: space-between; align-items: center;
-      padding: var(--sp-2) 0; font-size: var(--fs-xs); cursor: pointer;
-      border-radius: var(--r-sm); transition: opacity var(--duration-fast) var(--ease-out);
-    }
-    .demo-cred:hover { opacity: 0.7; }
-    .demo-cred .email { color: var(--white); font-family: var(--font-mono); }
-    .demo-cred .role { color: var(--ash-dim); }
+    .error-box.visible { display: block; }
 
-    .footer-text { text-align: center; margin-top: var(--sp-8); font-size: var(--fs-xs); color: var(--ash-dim); }
-    .footer-text a { color: var(--cd-blue); }
+    .note {
+      display: none;
+      background: var(--surface-2);
+      border: 1px dashed var(--line);
+      border-radius: var(--r-md);
+      padding: var(--sp-3);
+      font-size: var(--fs-xs);
+      color: var(--ash);
+      margin-bottom: var(--sp-4);
+    }
+    .note.visible { display: block; }
+    .note code { font-family: var(--font-mono); color: var(--white); }
+
+    .demo { margin-top: var(--sp-8); padding-top: var(--sp-5); border-top: 1px solid var(--line-faint); }
+    .demo-title { font-size: var(--fs-xs); color: var(--ash-dim); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: var(--sp-3); }
+    .demo-row {
+      display: flex;
+      justify-content: space-between;
+      gap: var(--sp-3);
+      padding: var(--sp-2) 0;
+      font-size: var(--fs-xs);
+      cursor: pointer;
+      color: var(--ash);
+    }
+    .demo-row:hover { color: var(--white); }
+    .demo-row .email { font-family: var(--font-mono); }
+    .demo-row .role { color: var(--ash-dim); }
+
+    .legal { margin-top: var(--sp-8); font-size: var(--fs-xs); color: var(--ash-dim); text-align: center; }
   </style>
 </head>
 <body>
-  <div class="login-container">
-    <div class="login-header">
-      <div class="login-logo">dev<span>.</span>circle</div>
-      <div class="login-subtitle">Credit Direct Developer Engagement</div>
-    </div>
 
-    <div class="login-tabs">
-      <button class="login-tab active" onclick="switchTab('developer',this)">Developer</button>
-      <button class="login-tab" onclick="switchTab('admin',this)">Admin</button>
-    </div>
+<div class="split-screen">
 
-    <form id="loginForm" onsubmit="handleLogin(event)">
-      <div class="form-group">
-        <label class="form-label" for="email">Email</label>
-        <input type="email" id="email" class="form-input" placeholder="you@company.ng" required autocomplete="email">
+  <aside class="pitch">
+    <div class="pitch-inner">
+      <div class="row-tight">
+        <span class="brand-mark" style="font-size:var(--fs-lg)">dev<span>.</span>circle</span>
       </div>
-      <div class="form-group">
-        <label class="form-label" for="password">Password</label>
-        <input type="password" id="password" class="form-input" placeholder="••••••••" required autocomplete="current-password">
+
+      <h1 class="pitch-title">Where Credit Direct listens to the people building on it.</h1>
+
+      <p class="pitch-body">
+        Dev Circle is the engagement layer beside the Developer Hub. You integrate there —
+        here is where you tell us how it is going, and where that actually reaches someone.
+      </p>
+
+      <div>
+        <div class="point"><span class="point-mark">→</span><span>Short surveys that respect your time, with the estimate stated up front.</span></div>
+        <div class="point"><span class="point-mark">→</span><span>Your full engagement history — sandbox to production, KYB, every reward claimed.</span></div>
+        <div class="point"><span class="point-mark">→</span><span>You choose the channels and hours. We do not message you outside them.</span></div>
       </div>
-      <div class="form-error" id="loginError"></div>
-      <button type="submit" class="login-btn primary" id="loginBtn">Sign In</button>
-    </form>
-
-    <div class="divider" id="ssoDivider">or</div>
-    <button class="sso-btn" id="ssoBtn" onclick="handleSSO()">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
-      Continue with Developer Hub
-    </button>
-    <div class="register-link" id="registerLink">New? <a href="#" onclick="alert('Registration via Credit Direct landing page')">Create an account</a></div>
-
-    <div class="demo-creds">
-      <div class="demo-creds-title">Demo accounts</div>
-      <div class="demo-cred" onclick="fill('admin@creditdirect.ng','admin123','admin')"><span class="email">admin@creditdirect.ng</span><span class="role">Super Admin</span></div>
-      <div class="demo-cred" onclick="fill('engagement@creditdirect.ng','engagement123','admin')"><span class="email">engagement@creditdirect.ng</span><span class="role">CDL Rep</span></div>
-      <div class="demo-cred" onclick="fill('adebayo@paystack.dev','dev123','dev')"><span class="email">adebayo@paystack.dev</span><span class="role">Developer</span></div>
-      <div class="demo-cred" onclick="fill('emeka@kuda.ng','dev123','dev')"><span class="email">emeka@kuda.ng</span><span class="role">Developer</span></div>
     </div>
+  </aside>
 
-    <div class="footer-text">Credit Direct Limited · CBN Licensed · <a href="https://creditdirect.ng">creditdirect.ng</a></div>
-  </div>
+  <main class="signin">
+    <div class="signin-inner">
+      <h2 class="signin-title">Sign in</h2>
+      <p class="signin-sub" id="signinSub">Enter the email or phone number you are known by. We work out the rest.</p>
 
-  <script src="/assets/js/api.js"></script>
-  <script>
-    let currentTab = 'developer';
-    if (Auth.isLoggedIn()) {
-      window.location.href = Auth.isAdmin() ? '/admin/dashboard.html' : '/member/dashboard.html';
+      <div class="error-box" id="error"></div>
+      <div class="note" id="note"></div>
+
+      <!-- Step one: one field, everybody -->
+      <form id="stepIdentify" onsubmit="handleIdentify(event)">
+        <div class="field">
+          <label class="label" for="identifier">Email or phone number</label>
+          <input type="text" id="identifier" class="input" placeholder="you@company.ng or 0803 000 0000"
+                 required autocomplete="username" autocapitalize="off" spellcheck="false">
+        </div>
+        <button type="submit" class="btn btn-primary btn-block btn-lg" id="identifyBtn">Continue</button>
+
+        <div class="divider">or</div>
+        <button type="button" class="btn btn-secondary btn-block" onclick="handleSSO()">Continue with Developer Hub</button>
+        <p class="hint" style="text-align:center">
+          New here? You are registered through the
+          <a href="https://creditdirect.ng">Credit Direct</a> developer landing page.
+        </p>
+      </form>
+
+      <!-- Step two, staff: the password half of the same form -->
+      <form id="stepPassword" onsubmit="handlePassword(event)" style="display:none">
+        <div class="whoami">
+          <span class="value" id="passwordWho"></span>
+          <button type="button" onclick="startOver()">Change</button>
+        </div>
+
+        <div class="field">
+          <label class="label" for="password">Password</label>
+          <input type="password" id="password" class="input" placeholder="••••••••" autocomplete="current-password">
+        </div>
+
+        <button type="submit" class="btn btn-primary btn-block btn-lg" id="passwordBtn">Sign in</button>
+      </form>
+
+      <!-- Step two, participants: the code we just sent -->
+      <form id="stepCode" onsubmit="handleCode(event)" style="display:none">
+        <div class="whoami">
+          <span class="value" id="codeWho"></span>
+          <button type="button" onclick="startOver()">Change</button>
+        </div>
+
+        <div class="field">
+          <label class="label" for="code">Sign-in code</label>
+          <input type="text" id="code" class="input code-input" placeholder="000000" maxlength="6"
+                 inputmode="numeric" pattern="[0-9]*" autocomplete="one-time-code">
+          <p class="hint" id="codeHint"></p>
+        </div>
+
+        <button type="submit" class="btn btn-primary btn-block btn-lg" id="codeBtn">Sign in</button>
+
+        <div class="divider">or</div>
+        <button type="button" class="btn btn-secondary btn-block" id="resendBtn" onclick="resendCode()">Send a new code</button>
+        <button type="button" class="btn btn-ghost btn-block" onclick="handleSSO()" style="margin-top:var(--sp-2)">Continue with Developer Hub</button>
+      </form>
+
+      <div class="demo">
+        <div class="demo-title">Demo accounts</div>
+        <div class="demo-row" onclick="fill('admin@creditdirect.ng','admin123')"><span class="email">admin@creditdirect.ng</span><span class="role">Super admin · password</span></div>
+        <div class="demo-row" onclick="fill('engagement@creditdirect.ng','engagement123')"><span class="email">engagement@creditdirect.ng</span><span class="role">CDL rep · password</span></div>
+        <div class="demo-row" onclick="fill('adebayo@paystack.dev')"><span class="email">adebayo@paystack.dev</span><span class="role">Developer · code</span></div>
+        <div class="demo-row" onclick="fill('emeka@kuda.ng')"><span class="email">emeka@kuda.ng</span><span class="role">Developer · code</span></div>
+      </div>
+
+      <p class="legal">Credit Direct Limited · CBN Licensed · <a href="https://creditdirect.ng">creditdirect.ng</a></p>
+    </div>
+  </main>
+
+</div>
+
+<script src="/assets/js/api.js"></script>
+<script>
+  // One field, then whatever the backend says this person needs. The page
+  // never decides who you are — it only renders the challenge it is handed.
+  let who = null;
+  let resendTimer = null;
+
+  if (Auth.isLoggedIn()) {
+    window.location.href = Auth.isAdmin() ? '/admin/dashboard.html' : '/member/dashboard.html';
+  }
+
+  const $ = id => document.getElementById(id);
+
+  async function post(path, body) {
+    const res = await fetch(API_BASE + path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    return { ok: res.ok, data: await res.json().catch(() => ({})) };
+  }
+
+  function showStep(name) {
+    for (const step of ['stepIdentify', 'stepPassword', 'stepCode']) {
+      $(step).style.display = step === name ? 'block' : 'none';
+    }
+  }
+
+  function startOver() {
+    who = null;
+    hideError();
+    hideNote();
+    $('password').value = '';
+    $('code').value = '';
+    $('signinSub').textContent = 'Enter the email or phone number you are known by. We work out the rest.';
+    showStep('stepIdentify');
+    $('identifier').focus();
+  }
+
+  async function handleIdentify(e) {
+    e.preventDefault();
+    const identifier = $('identifier').value.trim();
+    if (!identifier) return;
+
+    await busy($('identifyBtn'), 'Checking', async () => {
+      const { ok, data } = await post('/auth/identify', { identifier });
+      if (!ok) { showError(data.error || 'Could not read that. Check it and try again.'); return; }
+
+      who = data;
+
+      if (data.method === 'password') {
+        $('passwordWho').textContent = data.identifier;
+        $('signinSub').textContent = 'Credit Direct staff — your password, please.';
+        showStep('stepPassword');
+        $('password').focus();
+        return;
+      }
+
+      await requestCode({ firstTime: true });
+    });
+  }
+
+  // Participants never type a password; they receive a code on the channel
+  // they were identified by.
+  async function requestCode({ firstTime = false } = {}) {
+    const { ok, data } = await post('/auth/code/request', { identifier: who.identifier });
+    if (!ok) { showError(data.error || 'Could not send a code just now.'); return; }
+
+    $('codeWho').textContent = data.masked;
+    $('codeHint').textContent = `${data.code_length}-digit code, good for ${Math.round(data.expires_in_sec / 60)} minutes.`;
+    $('signinSub').textContent = data.channel === 'sms'
+      ? 'We sent a code by text message.'
+      : 'We sent a code to your email.';
+
+    // Outside production nothing is actually delivered, so the server hands
+    // the code back and we fill it in rather than leaving a dead end.
+    if (data.dev_code) {
+      $('code').value = data.dev_code;
+      showNote(`Development only — nothing was really sent. Your code is <code>${data.dev_code}</code>.`);
+    } else {
+      hideNote();
+      if (!firstTime) showNote('A new code is on its way.');
     }
 
-    function switchTab(tab, el) {
-      currentTab = tab;
-      document.querySelectorAll('.login-tab').forEach(t => t.classList.remove('active'));
-      el.classList.add('active');
-      const isDev = tab === 'developer';
-      document.getElementById('ssoDivider').style.display = isDev ? 'flex' : 'none';
-      document.getElementById('ssoBtn').style.display = isDev ? 'flex' : 'none';
-      document.getElementById('registerLink').style.display = isDev ? 'block' : 'none';
-      document.getElementById('loginError').classList.remove('visible');
-    }
+    showStep('stepCode');
+    $('code').focus();
+    startResendCooldown();
+  }
 
-    async function handleLogin(e) {
-      e.preventDefault();
-      const btn = document.getElementById('loginBtn');
-      btn.disabled = true; btn.textContent = 'Signing in…';
-      document.getElementById('loginError').classList.remove('visible');
+  async function resendCode() {
+    hideError();
+    await busy($('resendBtn'), 'Sending', () => requestCode());
+  }
 
-      try {
-        const endpoint = currentTab === 'admin' ? '/auth/admin/login' : '/auth/login';
-        const res = await fetch(API_BASE + endpoint, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: document.getElementById('email').value.trim(), password: document.getElementById('password').value })
-        });
-        const data = await res.json();
-        if (!res.ok) { showError(data.error || 'Login failed'); return; }
-        const isAdmin = currentTab === 'admin';
-        Auth.save(data.token, isAdmin ? data.admin : data.user, isAdmin);
-        window.location.href = isAdmin ? '/admin/dashboard.html' : '/member/dashboard.html';
-      } catch { showError('Network error'); }
-      finally { btn.disabled = false; btn.textContent = 'Sign In'; }
-    }
+  function startResendCooldown(seconds = 30) {
+    clearInterval(resendTimer);
+    const btn = $('resendBtn');
+    let left = seconds;
 
-    function handleSSO() { alert('SSO redirects to Developer Hub in production.'); }
-    function fill(email, pw, type) {
-      document.getElementById('email').value = email;
-      document.getElementById('password').value = pw;
-      const tab = type === 'admin' ? 1 : 0;
-      document.querySelectorAll('.login-tab')[tab].click();
+    const tick = () => {
+      btn.disabled = left > 0;
+      btn.textContent = left > 0 ? `Send a new code (${left}s)` : 'Send a new code';
+      if (left-- <= 0) clearInterval(resendTimer);
+    };
+
+    tick();
+    resendTimer = setInterval(tick, 1000);
+  }
+
+  async function handleCode(e) {
+    e.preventDefault();
+    await busy($('codeBtn'), 'Signing in', async () => {
+      const { ok, data } = await post('/auth/code/verify', {
+        identifier: who.identifier,
+        code: $('code').value.trim()
+      });
+      if (!ok) { showError(data.error || 'That code did not work.'); return; }
+
+      Auth.save(data.token, data.user, false);
+      window.location.href = '/member/dashboard.html';
+    });
+  }
+
+  async function handlePassword(e) {
+    e.preventDefault();
+    await busy($('passwordBtn'), 'Signing in', async () => {
+      const { ok, data } = await post('/auth/login', {
+        identifier: who.identifier,
+        password: $('password').value
+      });
+      if (!ok) { showError(data.error || 'Sign in failed'); return; }
+
+      Auth.save(data.token, data.admin || data.user, true);
+      window.location.href = '/admin/dashboard.html';
+    });
+  }
+
+  function handleSSO() {
+    showError('Single sign-on hands off to the Developer Hub in production.');
+  }
+
+  async function busy(btn, label, work) {
+    const original = btn.textContent;
+    btn.disabled = true;
+    btn.innerHTML = `<span class="spinner"></span> ${label}`;
+    hideError();
+    try {
+      await work();
+    } catch {
+      showError('Could not reach Dev Circle. Check your connection and try again.');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = original;
     }
-    function showError(msg) { const el = document.getElementById('loginError'); el.textContent = msg; el.classList.add('visible'); }
-  </script>
+  }
+
+  // Demo rows fill the one field and walk the same path a real visitor does.
+  function fill(identifier, password) {
+    startOver();
+    $('identifier').value = identifier;
+    if (password) $('password').value = password;
+    $('stepIdentify').requestSubmit();
+  }
+
+  function showError(msg) {
+    const el = $('error');
+    el.textContent = msg;
+    el.classList.add('visible');
+  }
+
+  function hideError() { $('error').classList.remove('visible'); }
+
+  function showNote(html) {
+    const el = $('note');
+    el.innerHTML = html;
+    el.classList.add('visible');
+  }
+
+  function hideNote() { $('note').classList.remove('visible'); }
+</script>
 </body>
 </html>

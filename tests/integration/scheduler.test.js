@@ -13,7 +13,7 @@ beforeEach(async () => {
   h.reset();
   h.makeRootCircle();
   const role = h.makeRole('Super Admin', ['*']);
-  const admin = h.makeAdmin({ email: 'boss@cd.ng', roleId: role });
+  const admin = h.makeAdmin({ email: 'boss@creditdirect.ng', roleId: role });
   token = await h.loginAdmin(admin.email, admin.password);
 });
 
@@ -186,14 +186,14 @@ test('a session scoped to a sub-circle only reaches that circle', async () => {
 });
 
 test('a member sees their upcoming sessions with clashes flagged', async () => {
-  const user = h.makeUser({ password: 'dev-password', preferred_days: ['Mon'] });
+  const user = h.makeUser({ preferred_days: ['Mon'] });
   circles.joinRoot(user.id);
 
   await h.post('/api/admin/sessions', {
     title: 'Thursday thing', scheduled_for: nextWatSlot('Thu', 11), target_type: 'all'
   }, { token });
 
-  const userToken = await h.loginUser(user.email, 'dev-password');
+  const userToken = await h.loginUser(user.email);
   const res = await h.get('/api/users/sessions', { token: userToken });
 
   assert.equal(res.body.sessions.length, 1);

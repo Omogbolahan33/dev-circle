@@ -3,244 +3,252 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Dev Circle — New Survey</title>
+  <title>Dev Circle — New survey</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/assets/css/tokens.css">
+  <link rel="stylesheet" href="/assets/css/app.css">
   <style>
-    .topnav { position:sticky;top:0;z-index:100;background:var(--ink);border-bottom:1px solid rgba(160,160,184,0.06);padding:0 var(--sp-6); }
-    .topnav-inner { max-width:720px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;height:56px; }
-    .topnav-logo { font-family:var(--font-display);font-weight:var(--fw-black);font-size:var(--fs-md);letter-spacing:-0.03em;color:var(--white);text-decoration:none; }
-    .topnav-logo span { color:var(--cd-blue); }
-    .topnav-logo .badge { font-family:var(--font-mono);font-size:10px;color:var(--cd-blue);background:var(--cd-blue-dim);padding:2px 6px;border-radius:var(--r-sm);margin-left:var(--sp-2); }
-    .topnav-back { font-size:var(--fs-sm);color:var(--ash);text-decoration:none; }
-    .topnav-back:hover { color:var(--white); }
+    /* Editor on the left, the member's view of it on the right. A survey is
+       written for someone else to answer, so their view stays on screen. */
+    .composer { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: var(--sp-6); align-items: start; }
+    @media (max-width: 1080px) { .composer { grid-template-columns: minmax(0, 1fr); } }
 
-    .page { max-width:720px;margin:0 auto;padding:var(--sp-8) var(--sp-6); }
-    .page-header { margin-bottom:var(--sp-8); }
-    .page-title { font-family:var(--font-display);font-weight:var(--fw-bold);font-size:var(--fs-2xl);letter-spacing:-0.03em;margin-bottom:var(--sp-1); }
-    .page-subtitle { color:var(--ash);font-size:var(--fs-sm); }
-
-    .section { margin-bottom:var(--sp-8); }
-    .section-title { font-family:var(--font-display);font-weight:var(--fw-semibold);font-size:var(--fs-md);letter-spacing:-0.01em;margin-bottom:var(--sp-4); }
-
-    .form-group { margin-bottom:var(--sp-4); }
-    .form-label { display:block;font-size:var(--fs-xs);font-weight:var(--fw-medium);color:var(--ash);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:var(--sp-1); }
-    .form-input { width:100%;background:var(--slate);border:1px solid rgba(160,160,184,0.08);border-radius:var(--r-md);padding:var(--sp-2) var(--sp-3);color:var(--white);font-size:var(--fs-sm);transition:border-color var(--duration-fast) var(--ease-out); }
-    .form-input::placeholder { color:var(--ash-dim); }
-    .form-input:focus { border-color:var(--cd-blue);outline:none; }
-    select.form-input { cursor:pointer; }
-    textarea.form-input { min-height:60px;font-family:var(--font-body);resize:vertical; }
-    .form-row { display:grid;grid-template-columns:1fr 1fr;gap:var(--sp-4); }
-
-    .question-card {
-      background:var(--slate);border:1px solid rgba(160,160,184,0.06);border-radius:var(--r-lg);
-      padding:var(--sp-4);margin-bottom:var(--sp-3);position:relative;
+    .q-card {
+      background: var(--surface-2);
+      border: 1px solid var(--line-faint);
+      border-radius: var(--r-lg);
+      padding: var(--sp-5);
+      margin-bottom: var(--sp-3);
+      position: relative;
     }
-    .question-card .q-num { font-family:var(--font-mono);font-size:var(--fs-xs);color:var(--cd-blue);margin-bottom:var(--sp-2); }
-    .question-card .q-remove { position:absolute;top:var(--sp-3);right:var(--sp-3);background:none;border:none;color:var(--ash-dim);cursor:pointer;font-size:var(--fs-md); }
-    .question-card .q-remove:hover { color:var(--rose); }
+    .q-head { display: flex; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-4); }
+    .q-num { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--cd-blue); }
+    .q-kind { font-size: var(--fs-xs); color: var(--ash-dim); text-transform: uppercase; letter-spacing: 0.08em; }
 
-    .options-list { margin-top:var(--sp-2); }
-    .option-row { display:flex;align-items:center;gap:var(--sp-2);margin-bottom:var(--sp-1); }
-    .option-row input { flex:1;background:var(--ink);border:1px solid rgba(160,160,184,0.08);border-radius:var(--r-md);padding:var(--sp-1) var(--sp-2);color:var(--white);font-size:var(--fs-xs); }
-    .option-row input:focus { border-color:var(--cd-blue);outline:none; }
-    .option-row button { background:none;border:none;color:var(--ash-dim);cursor:pointer;font-size:var(--fs-sm); }
-    .option-row button:hover { color:var(--rose); }
+    .option-row { display: flex; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-2); }
+    .option-row input { flex: 1; }
 
-    .btn { display:inline-flex;align-items:center;justify-content:center;gap:var(--sp-2);font-family:var(--font-body);font-size:var(--fs-sm);font-weight:var(--fw-medium);padding:var(--sp-2) var(--sp-4);border-radius:var(--r-md);transition:all var(--duration-fast) var(--ease-out);white-space:nowrap;cursor:pointer;border:none; }
-    .btn-primary { background:var(--cd-blue);color:var(--white); }
-    .btn-primary:hover { background:var(--cd-blue-deep); }
-    .btn-secondary { background:none;color:var(--ash);border:1px solid rgba(160,160,184,0.10); }
-    .btn-secondary:hover { color:var(--white);border-color:rgba(160,160,184,0.25); }
-    .btn-ghost { background:none;color:var(--ash);border:none; }
-    .btn-ghost:hover { color:var(--white); }
-    .btn-sm { font-size:var(--fs-xs);padding:var(--sp-1) var(--sp-3); }
-    .btn-gold { background:var(--cd-gold);color:var(--ink);font-weight:var(--fw-semibold); }
-    .btn-gold:hover { background:var(--cd-gold-deep); }
-
-    .save-bar { display:flex;gap:var(--sp-3);padding-top:var(--sp-4);border-top:1px solid rgba(160,160,184,0.06);margin-top:var(--sp-4); }
-
-    @media (max-width:640px) {
-      .page { padding:var(--sp-6) var(--sp-4); }
-      .page-title { font-size:var(--fs-xl); }
-      .form-row { grid-template-columns:1fr; }
+    /* Phone-shaped preview so the question length is judged honestly. */
+    .preview-frame {
+      background: var(--surface-0);
+      border: 1px solid var(--line);
+      border-radius: var(--r-lg);
+      padding: var(--sp-5);
+      min-height: 220px;
     }
+    .pv-title { font-family: var(--font-display); font-weight: var(--fw-bold); font-size: var(--fs-md); margin-bottom: var(--sp-2); }
+    .pv-desc { font-size: var(--fs-xs); color: var(--ash); margin-bottom: var(--sp-5); }
+    .pv-q { font-size: var(--fs-sm); font-weight: var(--fw-medium); margin-bottom: var(--sp-3); }
+    .pv-scale { display: flex; gap: var(--sp-1); margin-bottom: var(--sp-2); }
+    .pv-dot { width: 26px; height: 26px; border-radius: 50%; border: 1px solid var(--line); display: flex; align-items: center; justify-content: center; font-size: 10px; color: var(--ash-dim); }
+    .pv-opt { border: 1px solid var(--line); border-radius: var(--r-md); padding: var(--sp-2) var(--sp-3); font-size: var(--fs-xs); color: var(--ash); margin-bottom: var(--sp-2); }
+    .pv-ends { display: flex; justify-content: space-between; font-size: 10px; color: var(--ash-dim); }
   </style>
 </head>
 <body>
 
-  <nav class="topnav">
-    <div class="topnav-inner">
-      <a href="/admin/dashboard.html" class="topnav-logo">dev<span>.</span>circle <span class="badge">Admin</span></a>
-      <a href="/admin/dashboard.html" class="topnav-back">← Back</a>
-    </div>
-  </nav>
+<div class="app">
+  <div class="app-main">
 
-  <div class="page">
-    <header class="page-header">
-      <h1 class="page-title">Create survey</h1>
-      <p class="page-subtitle">Design a survey to send to developers. Add questions below.</p>
+    <header class="page-head">
+      <div class="breadcrumb">
+        <a href="/admin/surveys.html">Surveys</a>
+        <span class="sep">/</span>
+        <span>New survey</span>
+      </div>
+      <div class="page-head-row">
+        <div>
+          <h1 class="page-title">New survey</h1>
+          <p class="page-subtitle">Keep it short. Developers answer what respects their time — the estimate you set is shown to them before they start.</p>
+        </div>
+        <div class="page-actions">
+          <a href="/admin/surveys.html" class="btn btn-sm btn-secondary">Cancel</a>
+          <button class="btn btn-sm btn-secondary" onclick="createSurvey('draft')">Save draft</button>
+          <button class="btn btn-sm btn-gold" onclick="createSurvey('active')">Publish</button>
+        </div>
+      </div>
     </header>
 
-    <section class="section">
-      <h2 class="section-title">Details</h2>
-      <div class="form-group">
-        <label class="form-label">Title</label>
-        <input type="text" class="form-input" id="sTitle" placeholder="e.g. API Documentation Feedback">
-      </div>
-      <div class="form-group">
-        <label class="form-label">Description</label>
-        <textarea class="form-input" id="sDesc" placeholder="Brief description for respondents"></textarea>
-      </div>
-      <div class="form-row">
-        <div class="form-group">
-          <label class="form-label">Target</label>
-          <select class="form-input" id="sTarget" onchange="toggleCohortTarget()">
-            <option value="all">All members</option>
-            <option value="cohort">Specific cohort</option>
-          </select>
-        </div>
-        <div class="form-group" id="cohortTargetGroup" style="display:none">
-          <label class="form-label">Cohort</label>
-          <select class="form-input" id="sCohortId"></select>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Channel</label>
-          <select class="form-input" id="sChannel">
-            <option value="in_portal">In-Portal</option>
-            <option value="email">Email</option>
-            <option value="whatsapp">WhatsApp</option>
-            <option value="1-on-1">1-on-1</option>
-          </select>
-        </div>
-      </div>
-      <div class="form-group">
-        <label class="form-label">Time estimate (minutes)</label>
-        <input type="number" class="form-input" id="sTime" value="5" min="1" max="30" style="width:100px">
-      </div>
-    </section>
+    <div class="app-body">
+      <div class="composer">
 
-    <section class="section">
-      <h2 class="section-title">Questions</h2>
-      <div id="questionsContainer"></div>
-      <div style="display:flex;gap:var(--sp-2);margin-top:var(--sp-3)">
-        <button class="btn btn-sm btn-secondary" onclick="addQuestion('rating')">+ Rating</button>
-        <button class="btn btn-sm btn-secondary" onclick="addQuestion('choice')">+ Choice</button>
-        <button class="btn btn-sm btn-secondary" onclick="addQuestion('text')">+ Text</button>
-      </div>
-    </section>
+        <div class="stack">
+          <section class="card">
+            <div class="card-title mb-4">About this survey</div>
+            <div class="field">
+              <label class="label">Title</label>
+              <input type="text" class="input" id="sTitle" placeholder="e.g. Sandbox onboarding experience">
+            </div>
+            <div class="field">
+              <label class="label">Description</label>
+              <textarea class="input" id="sDesc" placeholder="One line on why you are asking."></textarea>
+            </div>
+            <div class="field-row">
+              <div class="field">
+                <label class="label">Audience</label>
+                <select class="input" id="sTarget" onchange="toggleCohortTarget()">
+                  <option value="all">All members</option>
+                  <option value="cohort">A cohort</option>
+                </select>
+              </div>
+              <div class="field hide" id="cohortField">
+                <label class="label">Cohort</label>
+                <select class="input" id="sCohortId"></select>
+              </div>
+            </div>
+            <div class="field-row" style="margin-bottom:0">
+              <div class="field" style="margin-bottom:0">
+                <label class="label">Engagement mode</label>
+                <select class="input" id="sChannel">
+                  <option value="in_portal">In-portal</option>
+                  <option value="email">Email</option>
+                  <option value="whatsapp">WhatsApp</option>
+                  <option value="1-on-1">1-on-1</option>
+                </select>
+              </div>
+              <div class="field" style="margin-bottom:0">
+                <label class="label">Time estimate (min)</label>
+                <input type="number" class="input" id="sTime" value="5" min="1" max="30">
+              </div>
+            </div>
+          </section>
 
-    <div class="save-bar">
-      <button class="btn btn-primary" onclick="createSurvey('draft')">Save as draft</button>
-      <button class="btn btn-gold" onclick="createSurvey('active')">Publish</button>
-      <a href="/admin/dashboard.html" class="btn btn-secondary">Cancel</a>
+          <section>
+            <div class="section-head">
+              <h2 class="section-title">Questions</h2>
+              <span class="dim text-xs" id="qCount">No questions yet</span>
+            </div>
+
+            <div id="questions"></div>
+
+            <div class="row wrap mt-4" style="gap:var(--sp-2)">
+              <button class="btn btn-sm btn-secondary" onclick="addQuestion('rating')">+ Rating</button>
+              <button class="btn btn-sm btn-secondary" onclick="addQuestion('choice')">+ Choice</button>
+              <button class="btn btn-sm btn-secondary" onclick="addQuestion('text')">+ Text</button>
+            </div>
+          </section>
+        </div>
+
+        <aside class="rail">
+          <section class="card">
+            <div class="card-title mb-4">What the member sees</div>
+            <div class="preview-frame" id="preview"></div>
+          </section>
+        </aside>
+
+      </div>
     </div>
   </div>
+</div>
 
 <script src="/assets/js/api.js"></script>
+<script src="/assets/js/shell.js"></script>
 <script>
-  if (!Auth.requireAuth(true)) throw new Error('Redirecting');
+  Shell.admin('surveys');
 
   let questionCount = 0;
 
   function toggleCohortTarget() {
-    document.getElementById('cohortTargetGroup').style.display = document.getElementById('sTarget').value === 'cohort' ? 'block' : 'none';
+    document.getElementById('cohortField')
+      .classList.toggle('hide', document.getElementById('sTarget').value !== 'cohort');
   }
 
   async function loadCohorts() {
     try {
       const data = await api.get('/admin/cohorts');
-      document.getElementById('sCohortId').innerHTML = data.cohorts.map(c => `<option value="${c.id}">${escapeHtml(c.name)} (${c.member_count})</option>`).join('');
-    } catch {}
+      document.getElementById('sCohortId').innerHTML = data.cohorts
+        .map(c => `<option value="${c.id}">${escapeHtml(c.name)} (${c.member_count})</option>`).join('');
+    } catch { /* audience falls back to everyone */ }
   }
 
   function addQuestion(type) {
     questionCount++;
-    const container = document.getElementById('questionsContainer');
     const card = document.createElement('div');
-    card.className = 'question-card';
-    card.id = `q-${questionCount}`;
+    card.className = 'q-card';
 
     let body = '';
     if (type === 'rating') {
       body = `
-        <div class="form-group">
-          <label class="form-label">Question text</label>
-          <input type="text" class="form-input q-text" placeholder="e.g. How clear is the documentation?">
+        <div class="field">
+          <label class="label">Question</label>
+          <input type="text" class="input q-text" placeholder="e.g. How clear is the documentation?">
         </div>
-        <div class="form-row">
-          <div class="form-group">
-            <label class="form-label">Scale</label>
-            <select class="form-input q-scale"><option value="5">1–5</option><option value="7">1–7</option><option value="10">1–10</option></select>
+        <div class="field-row" style="margin-bottom:0">
+          <div class="field" style="margin-bottom:0">
+            <label class="label">Scale</label>
+            <select class="input q-scale"><option value="5">1–5</option><option value="7">1–7</option><option value="10">1–10</option></select>
           </div>
-          <div class="form-group">
-            <label class="form-label">Low label</label>
-            <input type="text" class="form-input q-label-low" placeholder="e.g. Unclear">
+          <div class="field" style="margin-bottom:0">
+            <label class="label">Low label</label>
+            <input type="text" class="input q-label-low" placeholder="Unclear">
           </div>
         </div>
-        <div class="form-group">
-          <label class="form-label">High label</label>
-          <input type="text" class="form-input q-label-high" placeholder="e.g. Very clear">
+        <div class="field mt-4" style="margin-bottom:0">
+          <label class="label">High label</label>
+          <input type="text" class="input q-label-high" placeholder="Very clear">
         </div>`;
     } else if (type === 'choice') {
       body = `
-        <div class="form-group">
-          <label class="form-label">Question text</label>
-          <input type="text" class="form-input q-text" placeholder="e.g. What brought you here?">
+        <div class="field">
+          <label class="label">Question</label>
+          <input type="text" class="input q-text" placeholder="e.g. What brought you here?">
         </div>
-        <div class="form-group">
-          <label class="form-label">Options</label>
-          <div class="options-list">
-            <div class="option-row"><input type="text" placeholder="Option 1"><button onclick="this.parentElement.remove()">×</button></div>
-            <div class="option-row"><input type="text" placeholder="Option 2"><button onclick="this.parentElement.remove()">×</button></div>
+        <div class="field" style="margin-bottom:0">
+          <label class="label">Options</label>
+          <div class="options">
+            <div class="option-row"><input type="text" class="input" placeholder="Option 1"><button class="icon-btn" onclick="this.parentElement.remove();renderPreview()">×</button></div>
+            <div class="option-row"><input type="text" class="input" placeholder="Option 2"><button class="icon-btn" onclick="this.parentElement.remove();renderPreview()">×</button></div>
           </div>
-          <button class="btn btn-sm btn-ghost" onclick="addOption(this)" style="margin-top:var(--sp-1)">+ Add option</button>
+          <button class="btn btn-sm btn-ghost mt-2" onclick="addOption(this)">+ Add option</button>
         </div>`;
-    } else if (type === 'text') {
+    } else {
       body = `
-        <div class="form-group">
-          <label class="form-label">Question text</label>
-          <input type="text" class="form-input q-text" placeholder="e.g. Any additional feedback?">
+        <div class="field">
+          <label class="label">Question</label>
+          <input type="text" class="input q-text" placeholder="e.g. Anything else we should know?">
         </div>
-        <div class="form-group">
-          <label class="form-label"><input type="checkbox" class="q-optional" style="margin-right:var(--sp-1)"> Optional</label>
-        </div>`;
+        <label class="row-tight text-sm" style="margin-bottom:0;cursor:pointer">
+          <input type="checkbox" class="q-optional"> Answering is optional
+        </label>`;
     }
 
     card.innerHTML = `
-      <div class="q-num">Q${questionCount} · ${type}</div>
-      <button class="q-remove" onclick="this.parentElement.remove()">×</button>
+      <div class="q-head">
+        <span class="q-num">Q${questionCount}</span>
+        <span class="q-kind">${type}</span>
+        <span class="spacer"></span>
+        <button class="icon-btn" onclick="this.closest('.q-card').remove();renderPreview()" aria-label="Remove question">×</button>
+      </div>
       <input type="hidden" class="q-type" value="${type}">
-      ${body}
-    `;
+      ${body}`;
 
-    container.appendChild(card);
+    document.getElementById('questions').appendChild(card);
+    card.querySelector('.q-text').focus();
+    renderPreview();
   }
 
   function addOption(btn) {
     const list = btn.previousElementSibling;
     const row = document.createElement('div');
     row.className = 'option-row';
-    const count = list.children.length + 1;
-    row.innerHTML = `<input type="text" placeholder="Option ${count}"><button onclick="this.parentElement.remove()">×</button>`;
+    row.innerHTML = `<input type="text" class="input" placeholder="Option ${list.children.length + 1}"><button class="icon-btn" onclick="this.parentElement.remove();renderPreview()">×</button>`;
     list.appendChild(row);
   }
 
   function getQuestions() {
-    return Array.from(document.querySelectorAll('.question-card')).map((card, i) => {
+    return Array.from(document.querySelectorAll('.q-card')).map((card, i) => {
       const type = card.querySelector('.q-type').value;
-      const text = card.querySelector('.q-text').value.trim();
-      const q = { id: `q${i + 1}`, type, text };
+      const q = { id: `q${i + 1}`, type, text: card.querySelector('.q-text').value.trim() };
 
       if (type === 'rating') {
-        q.scale = parseInt(card.querySelector('.q-scale').value);
+        q.scale = parseInt(card.querySelector('.q-scale').value, 10);
         const low = card.querySelector('.q-label-low').value;
         const high = card.querySelector('.q-label-high').value;
         if (low || high) q.labels = [low, '', '', '', high];
       } else if (type === 'choice') {
-        q.options = Array.from(card.querySelectorAll('.option-row input')).map(inp => inp.value.trim()).filter(Boolean);
+        q.options = Array.from(card.querySelectorAll('.options input')).map(i => i.value.trim()).filter(Boolean);
       } else if (type === 'text') {
         q.optional = card.querySelector('.q-optional').checked;
       }
@@ -249,37 +257,82 @@
     });
   }
 
+  // The preview is rendered from the same shape that gets posted, so it
+  // cannot drift from what the member will actually be asked.
+  function renderPreview() {
+    const questions = getQuestions();
+    document.getElementById('qCount').textContent = questions.length
+      ? `${questions.length} question${questions.length === 1 ? '' : 's'} · ~${document.getElementById('sTime').value || 5} min`
+      : 'No questions yet';
+
+    const title = document.getElementById('sTitle').value.trim() || 'Untitled survey';
+    const desc = document.getElementById('sDesc').value.trim();
+
+    document.getElementById('preview').innerHTML = `
+      <div class="pv-title">${escapeHtml(title)}</div>
+      ${desc ? `<div class="pv-desc">${escapeHtml(desc)}</div>` : ''}
+      ${questions.length ? questions.map(q => {
+        if (q.type === 'rating') {
+          const scale = q.scale || 5;
+          return `
+            <div class="mb-4">
+              <div class="pv-q">${escapeHtml(q.text || 'Your question')}</div>
+              <div class="pv-scale">${Array.from({ length: scale }, (_, i) => `<span class="pv-dot">${i + 1}</span>`).join('')}</div>
+              ${q.labels ? `<div class="pv-ends"><span>${escapeHtml(q.labels[0] || '')}</span><span>${escapeHtml(q.labels[4] || '')}</span></div>` : ''}
+            </div>`;
+        }
+        if (q.type === 'choice') {
+          return `
+            <div class="mb-4">
+              <div class="pv-q">${escapeHtml(q.text || 'Your question')}</div>
+              ${(q.options || []).map(o => `<div class="pv-opt">${escapeHtml(o)}</div>`).join('') || '<div class="pv-opt dim">Add options…</div>'}
+            </div>`;
+        }
+        return `
+          <div class="mb-4">
+            <div class="pv-q">${escapeHtml(q.text || 'Your question')}${q.optional ? ' <span class="dim text-xs">(optional)</span>' : ''}</div>
+            <div class="pv-opt" style="min-height:52px">Their answer…</div>
+          </div>`;
+      }).join('') : '<div class="dim text-sm">Add a question to see it here.</div>'}`;
+  }
+
   async function createSurvey(status) {
     const title = document.getElementById('sTitle').value.trim();
     if (!title) { showToast('Title required', 'warning'); return; }
 
     const questions = getQuestions();
     if (!questions.length) { showToast('Add at least one question', 'warning'); return; }
-    if (questions.some(q => !q.text)) { showToast('All questions need text', 'warning'); return; }
-    if (questions.some(q => q.type === 'choice' && (!q.options || q.options.length < 2))) { showToast('Choice questions need at least 2 options', 'warning'); return; }
+    if (questions.some(q => !q.text)) { showToast('Every question needs text', 'warning'); return; }
+    if (questions.some(q => q.type === 'choice' && (!q.options || q.options.length < 2))) {
+      showToast('Choice questions need at least two options', 'warning'); return;
+    }
 
     const targetType = document.getElementById('sTarget').value;
-    const body = {
-      title,
-      description: document.getElementById('sDesc').value.trim(),
-      questions,
-      target_type: targetType,
-      target_ids: targetType === 'cohort' ? [document.getElementById('sCohortId').value] : [],
-      engagement_mode: document.getElementById('sChannel').value,
-      time_estimate_min: parseInt(document.getElementById('sTime').value) || 5,
-      status
-    };
 
     try {
-      await api.post('/admin/surveys', body);
+      await api.post('/admin/surveys', {
+        title,
+        description: document.getElementById('sDesc').value.trim(),
+        questions,
+        target_type: targetType,
+        target_ids: targetType === 'cohort' ? [document.getElementById('sCohortId').value] : [],
+        engagement_mode: document.getElementById('sChannel').value,
+        time_estimate_min: parseInt(document.getElementById('sTime').value, 10) || 5,
+        status
+      });
+
       showToast(`Survey ${status === 'active' ? 'published' : 'saved as draft'}`);
-      setTimeout(() => window.location.href = '/admin/dashboard.html', 1000);
+      setTimeout(() => window.location.href = '/admin/surveys.html', 900);
     } catch (err) {
       showToast(err.message, 'error');
     }
   }
 
+  document.addEventListener('input', renderPreview);
+  document.addEventListener('change', renderPreview);
+
   loadCohorts();
+  renderPreview();
 </script>
 </body>
 </html>

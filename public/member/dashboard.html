@@ -8,549 +8,345 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/assets/css/tokens.css">
+  <link rel="stylesheet" href="/assets/css/app.css">
   <style>
-    /* ── Top Nav ─────────────────────────────── */
-    .topnav {
-      position: sticky; top: 0; z-index: 100;
-      background: var(--ink); border-bottom: 1px solid rgba(160, 160, 184, 0.06);
-      padding: 0 var(--sp-6);
-    }
+    .greeting { font-family: var(--font-display); font-weight: var(--fw-bold); font-size: var(--fs-2xl); letter-spacing: -0.03em; }
+    .greeting-sub { color: var(--ash); font-size: var(--fs-sm); margin-top: var(--sp-1); }
 
-    .topnav-inner {
-      max-width: 720px; margin: 0 auto;
-      display: flex; align-items: center; justify-content: space-between;
-      height: 56px;
+    /* Standing facts about this developer's relationship with Credit Direct.
+       Stated once, quietly, rather than as a wall of tiles. */
+    .standing {
+      display: flex;
+      align-items: center;
+      gap: var(--sp-4);
+      flex-wrap: wrap;
+      padding: var(--sp-4) 0;
+      border-top: 1px solid var(--line-faint);
+      border-bottom: 1px solid var(--line-faint);
+      margin: var(--sp-6) 0 var(--sp-8);
+      font-size: var(--fs-sm);
+      color: var(--ash);
     }
+    .standing .val { color: var(--white); font-weight: var(--fw-semibold); }
+    .standing .divider { width: 1px; height: 14px; background: var(--line); }
 
-    .topnav-logo {
-      font-family: var(--font-display); font-weight: var(--fw-black);
-      font-size: var(--fs-md); letter-spacing: -0.03em; color: var(--white);
+    .item {
+      display: flex;
+      align-items: center;
+      gap: var(--sp-4);
+      padding: var(--sp-4) 0;
+      border-bottom: 1px solid var(--line-faint);
       text-decoration: none;
     }
-    .topnav-logo span { color: var(--cd-blue); }
+    .item:last-child { border-bottom: none; }
+    .item:hover { text-decoration: none; }
+    .item-title { font-size: var(--fs-sm); font-weight: var(--fw-medium); color: var(--white); }
+    .item-meta { font-size: var(--fs-xs); color: var(--ash-dim); margin-top: 2px; }
 
-    .topnav-links { display: flex; gap: var(--sp-1); }
+    /* A session that lands outside the hours they chose says so plainly. */
+    .clash { color: var(--cd-gold); }
 
-    .topnav-link {
-      padding: var(--sp-2) var(--sp-3); border-radius: var(--r-md);
-      font-size: var(--fs-sm); font-weight: var(--fw-medium); color: var(--ash);
-      text-decoration: none; cursor: pointer; border: none; background: none;
-      transition: all var(--duration-fast) var(--ease-out);
-    }
-    .topnav-link:hover { color: var(--white); background: rgba(160, 160, 184, 0.05); }
-    .topnav-link.active { color: var(--white); background: var(--cd-blue-dim); }
-
-    .topnav-user {
-      display: flex; align-items: center; gap: var(--sp-2);
-      font-size: var(--fs-sm); color: var(--ash); cursor: pointer;
-      padding: var(--sp-1) var(--sp-2); border-radius: var(--r-md);
-      transition: background var(--duration-fast) var(--ease-out); border: none; background: none;
-    }
-    .topnav-user:hover { background: rgba(160, 160, 184, 0.05); }
-
-    .topnav-avatar {
-      width: 28px; height: 28px; border-radius: 50%;
-      background: var(--cd-blue-dim); color: var(--cd-blue);
-      display: flex; align-items: center; justify-content: center;
-      font-size: 11px; font-weight: var(--fw-bold); font-family: var(--font-display);
-    }
-
-    /* ── Layout ──────────────────────────────── */
-    .page {
-      max-width: 720px; margin: 0 auto;
-      padding: var(--sp-8) var(--sp-6);
-    }
-
-    /* ── Page Header ─────────────────────────── */
-    .page-header { margin-bottom: var(--sp-10); }
-
-    .page-title {
-      font-family: var(--font-display); font-weight: var(--fw-bold);
-      font-size: var(--fs-2xl); letter-spacing: -0.03em;
-      line-height: var(--lh-tight); margin-bottom: var(--sp-2);
-    }
-
-    .page-subtitle {
-      color: var(--ash); font-size: var(--fs-base);
-    }
-
-    .page-subtitle .mono { font-family: var(--font-mono); font-size: var(--fs-xs); }
-
-    /* ── Status Strip ────────────────────────── */
-    .status-strip {
-      display: flex; align-items: center; gap: var(--sp-4);
-      padding: var(--sp-3) 0; margin-bottom: var(--sp-8);
-      border-bottom: 1px solid rgba(160, 160, 184, 0.06);
-      font-size: var(--fs-sm); color: var(--ash);
-    }
-
-    .status-strip .state-label { font-size: 11px; }
-
-    .status-strip .sep {
-      width: 1px; height: 16px; background: rgba(160, 160, 184, 0.10);
-    }
-
-    .status-strip .val {
-      font-family: var(--font-display); font-weight: var(--fw-bold);
-      font-size: var(--fs-md); color: var(--white); margin-right: var(--sp-1);
-    }
-
-    /* ── Section ─────────────────────────────── */
-    .section { margin-bottom: var(--sp-10); }
-
-    .section-head {
-      display: flex; align-items: baseline; justify-content: space-between;
-      margin-bottom: var(--sp-4);
-    }
-
-    .section-title {
-      font-family: var(--font-display); font-weight: var(--fw-semibold);
-      font-size: var(--fs-md); letter-spacing: -0.01em;
-    }
-
-    .section-action {
-      font-size: var(--fs-xs); color: var(--cd-blue); cursor: pointer;
-      background: none; border: none; font-weight: var(--fw-medium);
-    }
-    .section-action:hover { text-decoration: underline; }
-
-    /* ── Survey List ─────────────────────────── */
-    .survey-list { list-style: none; }
-
-    .survey-item {
-      display: flex; align-items: center; gap: var(--sp-3);
-      padding: var(--sp-3) 0;
-      border-bottom: 1px solid rgba(160, 160, 184, 0.04);
-      cursor: pointer; transition: opacity var(--duration-fast) var(--ease-out);
-    }
-    .survey-item:last-child { border-bottom: none; }
-    .survey-item:hover { opacity: 0.8; }
-    .survey-item.completed { opacity: 0.45; cursor: default; }
-
-    .survey-item-title { flex: 1; font-weight: var(--fw-medium); font-size: var(--fs-sm); }
-    .survey-item-meta { font-size: var(--fs-xs); color: var(--ash-dim); font-family: var(--font-mono); white-space: nowrap; }
-    .survey-item-status {
-      font-size: 11px; font-family: var(--font-mono); font-weight: var(--fw-medium);
-      padding: 2px 8px; border-radius: var(--r-sm); white-space: nowrap;
-    }
-    .survey-item-status.available { color: var(--cd-blue); background: var(--cd-blue-dim); }
-    .survey-item-status.done { color: var(--ash-dim); background: rgba(160, 160, 184, 0.06); }
-
-    /* ── Timeline ────────────────────────────── */
-    .timeline { list-style: none; }
-
-    .timeline-item {
-      display: flex; gap: var(--sp-3); padding: var(--sp-3) 0;
-      border-bottom: 1px solid rgba(160, 160, 184, 0.03);
-    }
-    .timeline-item:last-child { border-bottom: none; }
-
-    .timeline-dot {
-      width: 7px; height: 7px; border-radius: 50%; margin-top: 7px; flex-shrink: 0;
-    }
-    .timeline-dot.survey { background: var(--cd-blue); }
-    .timeline-dot.gift { background: var(--emerald); }
-    .timeline-dot.feedback { background: var(--cd-gold); }
-    .timeline-dot.system { background: var(--ash-dim); }
-
-    .timeline-body { flex: 1; }
-    .timeline-text { font-size: var(--fs-sm); }
-    .timeline-time { font-size: var(--fs-xs); color: var(--ash-dim); font-family: var(--font-mono); margin-top: 2px; }
-
-    /* ── Preferences ─────────────────────────── */
-    .pref-table { width: 100%; font-size: var(--fs-sm); }
-    .pref-table td { padding: var(--sp-2) 0; vertical-align: top; }
-    .pref-table td:first-child { color: var(--ash); width: 140px; padding-right: var(--sp-4); }
-    .pref-table .tag {
-      display: inline-block; font-size: var(--fs-xs); padding: 1px 8px;
-      border-radius: var(--r-sm); background: rgba(160, 160, 184, 0.06); color: var(--ash);
-      margin-right: var(--sp-1);
-    }
-
-    /* ── Consent ─────────────────────────────── */
-    .consent-notice {
-      padding: var(--sp-4); margin-bottom: var(--sp-8);
-      border-left: 3px solid var(--cd-gold);
-      font-size: var(--fs-sm); color: var(--ash);
-      line-height: var(--lh-loose);
-    }
-    .consent-notice strong { color: var(--white); font-weight: var(--fw-semibold); }
-    .consent-notice .actions { margin-top: var(--sp-3); display: flex; gap: var(--sp-2); }
-
-    /* ── Buttons ─────────────────────────────── */
-    .btn {
-      display: inline-flex; align-items: center; justify-content: center; gap: var(--sp-2);
-      font-family: var(--font-body); font-size: var(--fs-sm); font-weight: var(--fw-medium);
-      padding: var(--sp-2) var(--sp-4); border-radius: var(--r-md);
-      transition: all var(--duration-fast) var(--ease-out); white-space: nowrap; cursor: pointer; border: none;
-    }
-    .btn-primary { background: var(--cd-blue); color: var(--white); }
-    .btn-primary:hover { background: var(--cd-blue-deep); }
-    .btn-secondary { background: none; color: var(--ash); border: 1px solid rgba(160, 160, 184, 0.10); }
-    .btn-secondary:hover { color: var(--white); border-color: rgba(160, 160, 184, 0.25); }
-    .btn-ghost { background: none; color: var(--ash); border: none; }
-    .btn-ghost:hover { color: var(--white); }
-    .btn-sm { font-size: var(--fs-xs); padding: var(--sp-1) var(--sp-3); }
-
-    /* ── Empty State ─────────────────────────── */
-    .empty { text-align: center; padding: var(--sp-6); color: var(--ash-dim); font-size: var(--fs-sm); }
-
-    /* ── Feedback Modal ──────────────────────── */
-    .modal-overlay {
-      display: none; position: fixed; inset: 0; z-index: 999;
-      background: rgba(26, 26, 46, 0.85); align-items: center; justify-content: center;
-    }
-    .modal-overlay.open { display: flex; }
-    .modal-box {
-      background: var(--slate); border-radius: var(--r-lg); padding: var(--sp-6);
-      max-width: 480px; width: 90%; max-height: 80vh; overflow-y: auto;
-    }
-    .modal-title { font-family: var(--font-display); font-weight: var(--fw-bold); font-size: var(--fs-lg); margin-bottom: var(--sp-5); }
-
-    /* ── Loading ─────────────────────────────── */
-    .skeleton { background: linear-gradient(90deg, var(--slate) 25%, var(--slate-mid) 50%, var(--slate) 75%); background-size: 200% 100%; animation: shimmer 1.5s infinite; border-radius: var(--r-md); }
-    @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
-
-    /* ── Responsive ──────────────────────────── */
-    @media (max-width: 640px) {
-      .topnav-inner { padding: 0 var(--sp-3); }
-      .topnav-links { gap: 0; }
-      .topnav-link { padding: var(--sp-2); font-size: var(--fs-xs); }
-      .page { padding: var(--sp-6) var(--sp-4); }
-      .page-title { font-size: var(--fs-xl); }
-      .status-strip { flex-wrap: wrap; gap: var(--sp-2); }
-      .status-strip .sep { display: none; }
+    .when-chip {
+      font-family: var(--font-mono);
+      font-size: var(--fs-xs);
+      color: var(--cd-blue);
+      background: var(--cd-blue-dim);
+      padding: var(--sp-1) var(--sp-2);
+      border-radius: var(--r-sm);
+      white-space: nowrap;
     }
   </style>
 </head>
 <body>
 
-  <!-- TOP NAV -->
-  <nav class="topnav">
-    <div class="topnav-inner">
-      <a href="/member/dashboard.html" class="topnav-logo">dev<span>.</span>circle</a>
-      <div class="topnav-links">
-        <button class="topnav-link active" data-view="home">Home</button>
-        <button class="topnav-link" data-view="surveys">Surveys</button>
-        <button class="topnav-link" onclick="showFeedback()">Feedback</button>
+<div class="portal">
+  <div class="portal-body">
+
+    <header>
+      <h1 class="greeting" id="greeting">Welcome back</h1>
+      <p class="greeting-sub" id="greetingSub"></p>
+    </header>
+
+    <div class="standing" id="standing"></div>
+
+    <!-- The one thing worth doing next, if there is one. -->
+    <div id="nextAction"></div>
+
+    <section class="section" id="sessionsSection" hidden>
+      <div class="section-head">
+        <h2 class="section-title">Coming up</h2>
       </div>
-      <button class="topnav-user" id="userMenu" onclick="Auth.logout()">
-        <div class="topnav-avatar" id="navAvatar">—</div>
-        <span id="navName">—</span>
-      </button>
-    </div>
-  </nav>
+      <div id="sessions"></div>
+    </section>
 
-  <!-- PAGE -->
-  <div class="page">
-
-    <!-- CONSENT -->
-    <div class="consent-notice" id="consentNotice" style="display:none">
-      <strong>Channel consent pending.</strong> You have pending consent requests. Grant to receive engagement reminders via your preferred channels.
-      <div class="actions">
-        <button class="btn btn-sm btn-primary" id="consentGrantBtn">Grant consent</button>
-        <button class="btn btn-sm btn-ghost" onclick="document.getElementById('consentNotice').style.display='none'">Not now</button>
+    <section class="section">
+      <div class="section-head">
+        <h2 class="section-title">Surveys</h2>
+        <span class="dim text-xs" id="surveyCount"></span>
       </div>
-    </div>
+      <div id="surveys"></div>
+    </section>
 
-    <!-- HOME VIEW -->
-    <div id="homeView">
-      <header class="page-header">
-        <h1 class="page-title" id="pageTitle">Welcome back</h1>
-        <p class="page-subtitle" id="pageSubtitle">Loading…</p>
-      </header>
+    <section class="section">
+      <div class="section-head">
+        <h2 class="section-title">Recent activity</h2>
+        <a href="/member/engagement.html" class="section-link">Full history →</a>
+      </div>
+      <div class="timeline" id="timeline"></div>
+    </section>
 
-      <div class="status-strip" id="statusStrip"></div>
-
-      <!-- Upcoming sessions lead, because they are the thing with a deadline -->
-      <section class="section" id="sessionsSection" hidden>
-        <div class="section-head">
-          <h2 class="section-title">Coming up</h2>
-        </div>
-        <ul class="survey-list" id="sessionListHome"></ul>
-      </section>
-
-      <section class="section">
-        <div class="section-head">
-          <h2 class="section-title">Active surveys</h2>
-        </div>
-        <ul class="survey-list" id="surveyListHome">
-          <li><div class="skeleton" style="height:32px;margin-bottom:8px"></div></li>
-          <li><div class="skeleton" style="height:32px"></div></li>
-        </ul>
-      </section>
-
-      <section class="section">
-        <div class="section-head">
-          <h2 class="section-title">Recent activity</h2>
-        </div>
-        <ul class="timeline" id="timeline">
-          <li><div class="skeleton" style="height:28px;margin-bottom:8px"></div></li>
-          <li><div class="skeleton" style="height:28px;margin-bottom:8px"></div></li>
-          <li><div class="skeleton" style="height:28px"></div></li>
-        </ul>
-      </section>
-
-      <section class="section">
-        <div class="section-head">
-          <h2 class="section-title">Your preferences</h2>
-        </div>
-        <table class="pref-table" id="prefsTable">
-          <tr><td>Loading…</td><td></td></tr>
-        </table>
-      </section>
-    </div>
-
-    <!-- SURVEYS VIEW -->
-    <div id="surveysView" style="display:none">
-      <header class="page-header">
-        <h1 class="page-title">Surveys</h1>
-        <p class="page-subtitle">Your feedback shapes the developer experience. Each survey takes a few minutes.</p>
-      </header>
-      <section class="section">
-        <div class="section-head">
-          <h2 class="section-title">Available</h2>
-        </div>
-        <ul class="survey-list" id="surveyListAvailable"></ul>
-      </section>
-      <section class="section">
-        <div class="section-head">
-          <h2 class="section-title">Completed</h2>
-        </div>
-        <ul class="survey-list" id="surveyListCompleted"></ul>
-      </section>
-    </div>
+    <section class="section">
+      <div class="card">
+        <div class="card-title mb-2">Something on your mind?</div>
+        <p class="text-sm muted mb-4">
+          Tell us what is working and what is not. It goes straight to the team that
+          builds the APIs you integrate with — no ticket queue, no forms.
+        </p>
+        <button class="btn btn-primary" onclick="Shell.openDrawer('feedbackDrawer')">Give feedback</button>
+      </div>
+    </section>
 
   </div>
+</div>
 
-  <!-- FEEDBACK MODAL -->
-  <div class="modal-overlay" id="feedbackModal">
-    <div class="modal-box">
-      <h3 class="modal-title">Give feedback</h3>
-      <div class="form-group" style="margin-bottom:var(--sp-4)">
-        <label class="form-label" style="display:block;margin-bottom:var(--sp-1)">Category</label>
-        <select id="fbCategory" style="width:100%;background:var(--ink);border:1px solid rgba(160,160,184,0.10);border-radius:var(--r-md);padding:var(--sp-2) var(--sp-3);color:var(--white);font-size:var(--fs-sm)">
-          <option>Documentation</option><option>Developer Experience</option><option>Bug Report</option>
-          <option>Feature Request</option><option>Support</option><option>Other</option>
-        </select>
-      </div>
-      <div class="form-group" style="margin-bottom:var(--sp-4)">
-        <label class="form-label" style="display:block;margin-bottom:var(--sp-1)">Your feedback</label>
-        <textarea id="fbContent" style="width:100%;min-height:100px;background:var(--ink);border:1px solid rgba(160,160,184,0.10);border-radius:var(--r-md);padding:var(--sp-3);color:var(--white);font-family:var(--font-body);font-size:var(--fs-sm);resize:vertical" placeholder="Tell us what's on your mind…"></textarea>
-      </div>
-      <div style="display:flex;gap:var(--sp-3);justify-content:flex-end">
-        <button class="btn btn-secondary" onclick="closeModal('feedbackModal')">Cancel</button>
-        <button class="btn btn-primary" onclick="submitFeedback()">Submit</button>
-      </div>
+<aside class="drawer" id="feedbackDrawer">
+  <div class="drawer-head">
+    <div>
+      <div class="drawer-title">Give feedback</div>
+      <div class="drawer-sub">Straight to the Credit Direct developer team</div>
+    </div>
+    <button class="icon-btn" onclick="Shell.closeDrawer('feedbackDrawer')">×</button>
+  </div>
+  <div class="drawer-body">
+    <div class="field">
+      <label class="label">What is this about?</label>
+      <select class="input" id="fbCategory">
+        <option value="api">The APIs</option>
+        <option value="documentation">Documentation</option>
+        <option value="sandbox">Sandbox</option>
+        <option value="onboarding">Onboarding &amp; KYB</option>
+        <option value="support">Support</option>
+        <option value="other">Something else</option>
+      </select>
+    </div>
+    <div class="field">
+      <label class="label">Your feedback</label>
+      <textarea class="input" id="fbContent" style="min-height:180px" placeholder="Be as direct as you like."></textarea>
     </div>
   </div>
+  <div class="drawer-foot">
+    <button class="btn btn-secondary" onclick="Shell.closeDrawer('feedbackDrawer')">Cancel</button>
+    <button class="btn btn-primary" onclick="submitFeedback()">Send feedback</button>
+  </div>
+</aside>
 
 <script src="/assets/js/api.js"></script>
+<script src="/assets/js/shell.js"></script>
+<script src="/assets/js/activity.js"></script>
 <script>
-  if (!Auth.requireAuth(false)) throw new Error('Redirecting');
+  Shell.portal('dashboard');
 
-  const typeLabels = {
-    survey_completed: { dot: 'survey', text: 'Completed a survey' },
-    survey_started: { dot: 'survey', text: 'Started a survey' },
-    survey_invited: { dot: 'system', text: 'Invited to a survey' },
-    gift_claimed: { dot: 'gift', text: 'Claimed a gift' },
-    feedback_submitted: { dot: 'feedback', text: 'Submitted feedback' },
-    complaint_received: { dot: 'feedback', text: 'Complaint logged' },
-    account_created: { dot: 'system', text: 'Joined Dev Circle' },
-    api_key_generated: { dot: 'system', text: 'Generated API keys' },
-    first_sandbox_call: { dot: 'system', text: 'First sandbox call' },
-    first_production_call: { dot: 'survey', text: 'First production call' },
-    kyb_completed: { dot: 'system', text: 'KYB completed' }
-  };
+  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
-  // ─── Tab Navigation ─────────────────────────
-  document.querySelectorAll('.topnav-link[data-view]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('.topnav-link').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      document.getElementById('homeView').style.display = btn.dataset.view === 'home' ? 'block' : 'none';
-      document.getElementById('surveysView').style.display = btn.dataset.view === 'surveys' ? 'block' : 'none';
-    });
-  });
+  function watLabel(stored) {
+    const utc = new Date(String(stored).replace(' ', 'T') + 'Z');
+    const wat = new Date(utc.getTime() + 3600000);
+    return `${wat.getUTCDate()} ${MONTHS[wat.getUTCMonth()]}, ` +
+           `${String(wat.getUTCHours()).padStart(2, '0')}:${String(wat.getUTCMinutes()).padStart(2, '0')} WAT`;
+  }
 
-  // ─── Load ───────────────────────────────────
   async function load() {
     try {
       const [profile, surveys, engagement, sessions] = await Promise.all([
         api.get('/users/profile'),
         api.get('/users/surveys'),
-        api.get('/users/engagement?limit=15'),
+        api.get('/users/engagement?limit=8'),
         api.get('/users/sessions')
       ]);
 
-      renderNav(profile.user);
-      renderHome(profile, surveys.surveys, engagement.history);
+      renderHeader(profile);
+      renderStanding(profile);
+      renderNextAction(profile, surveys.surveys, sessions.sessions);
       renderSessions(sessions.sessions);
-      renderSurveysView(surveys.surveys);
-      renderPrefs(profile.user);
-      checkConsent(profile.consent);
+      renderSurveys(surveys.surveys);
+      renderTimeline(engagement.history);
     } catch (err) {
       showToast('Failed to load: ' + err.message, 'error');
     }
   }
 
-  // Scheduled info sessions, tests and workshops the member is invited to.
-  // A clash against the availability they chose is called out here rather
-  // than left for them to notice on the day.
-  function renderSessions(sessions) {
-    const section = document.getElementById('sessionsSection');
-    section.hidden = sessions.length === 0;
-    if (!sessions.length) return;
-
-    const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-
-    document.getElementById('sessionListHome').innerHTML = sessions.slice(0, 4).map(s => {
-      const utc = new Date(String(s.scheduled_for).replace(' ', 'T') + 'Z');
-      const wat = new Date(utc.getTime() + 3600000);
-      const when = `${wat.getUTCDate()} ${MONTHS[wat.getUTCMonth()]}, ` +
-        `${String(wat.getUTCHours()).padStart(2, '0')}:${String(wat.getUTCMinutes()).padStart(2, '0')} WAT`;
-
-      return `
-        <li class="survey-item">
-          <div class="survey-body">
-            <div class="survey-title">${escapeHtml(s.title)}</div>
-            <div class="survey-meta">
-              <span class="mono">${when}</span> ·
-              <span>${s.duration_min} min</span>
-              ${s.location ? ` · <span>${escapeHtml(s.location)}</span>` : ''}
-              ${s.clashes_with_availability
-                ? ` · <span style="color:var(--cd-gold)">${escapeHtml(s.clash_reason)}</span>`
-                : ''}
-            </div>
-          </div>
-          ${s.survey_id
-            ? `<a class="btn btn-sm btn-secondary" href="/member/survey.html?id=${s.survey_id}">Open survey</a>`
-            : ''}
-        </li>`;
-    }).join('');
+  function renderHeader({ user }) {
+    document.getElementById('greeting').textContent = `Welcome back, ${user.name.split(' ')[0]}`;
+    document.getElementById('greetingSub').innerHTML =
+      `Last active ${user.last_active_at ? formatDate(user.last_active_at) : 'just now'} · <span class="mono">${escapeHtml(user.email)}</span>`;
   }
 
-  function renderNav(user) {
-    const initials = user.name.split(' ').map(n => n[0]).join('').toUpperCase();
-    document.getElementById('navAvatar').textContent = initials;
-    document.getElementById('navName').textContent = user.name.split(' ')[0];
+  function renderStanding({ user, stats }) {
+    document.getElementById('standing').innerHTML = `
+      ${badge(user.api_status, user.api_status)}
+      <span class="divider"></span>
+      <span><span class="val">${stats.surveys_completed}</span> survey${stats.surveys_completed === 1 ? '' : 's'} answered</span>
+      <span class="divider"></span>
+      <span><span class="val">${stats.gifts_claimed}</span> reward${stats.gifts_claimed === 1 ? '' : 's'} claimed</span>
+      <span class="divider"></span>
+      <span><span class="val">${stats.streak}</span> day streak</span>
+      <span class="divider"></span>
+      <span>KYB ${user.kyb_completed
+        ? '<span class="val" style="color:var(--emerald)">complete</span>'
+        : '<span class="val" style="color:var(--cd-gold)">pending</span>'}</span>`;
   }
 
-  function renderHome(profile, surveys, history) {
-    const { user, stats } = profile;
-    const firstName = user.name.split(' ')[0];
-
-    document.getElementById('pageTitle').textContent = `Welcome back, ${firstName}`;
-    document.getElementById('pageSubtitle').innerHTML = `Last active ${user.last_active_at ? formatDate(user.last_active_at) : 'just now'} · <span class="mono">${user.email}</span>`;
-
-    // Status strip
-    const statusLabel = user.api_status === 'production'
-      ? '<span class="state-label state-production">● Production</span>'
-      : '<span class="state-label state-sandbox">● Sandbox</span>';
-
-    document.getElementById('statusStrip').innerHTML = `
-      ${statusLabel}
-      <div class="sep"></div>
-      <span><span class="val">${stats.surveys_completed}</span> surveys</span>
-      <div class="sep"></div>
-      <span><span class="val">${stats.gifts_claimed}</span> gifts</span>
-      <div class="sep"></div>
-      <span><span class="val">${stats.streak}</span> streak</span>
-      <div class="sep"></div>
-      <span>KYB: ${user.kyb_completed ? '<span style="color:var(--emerald)">Done</span>' : '<span style="color:var(--cd-gold)">Pending</span>'}</span>
-    `;
-
-    // Surveys (home — show first 3 available)
-    const available = surveys.filter(s => !s.completed);
-    const homeSurveys = available.slice(0, 3);
-    document.getElementById('surveyListHome').innerHTML = homeSurveys.length
-      ? homeSurveys.map(s => `
-        <li class="survey-item" onclick="window.location.href='/member/survey.html?id=${s.id}'">
-          <span class="survey-item-title">${escapeHtml(s.title)}</span>
-          <span class="survey-item-meta">~${s.time_estimate_min}m</span>
-          <span class="survey-item-status available">Start</span>
-        </li>`).join('')
-      : '<li class="empty">No active surveys. Check back soon.</li>';
-
-    // Timeline
-    document.getElementById('timeline').innerHTML = history.length
-      ? history.map(h => {
-        const info = typeLabels[h.type] || { dot: 'system', text: h.type };
-        return `
-          <li class="timeline-item">
-            <div class="timeline-dot ${info.dot}"></div>
-            <div class="timeline-body">
-              <div class="timeline-text">${info.text}</div>
-              <div class="timeline-time">${formatDate(h.created_at)}</div>
-            </div>
-          </li>`;
-      }).join('')
-      : '<li class="empty">No activity yet.</li>';
-  }
-
-  function renderSurveysView(surveys) {
-    const available = surveys.filter(s => !s.completed);
-    const completed = surveys.filter(s => s.completed);
-
-    document.getElementById('surveyListAvailable').innerHTML = available.length
-      ? available.map(s => `
-        <li class="survey-item" onclick="window.location.href='/member/survey.html?id=${s.id}'">
-          <span class="survey-item-title">${escapeHtml(s.title)}</span>
-          <span class="survey-item-meta">~${s.time_estimate_min}m · ${s.questions.length}q</span>
-          <span class="survey-item-status available">Start</span>
-        </li>`).join('')
-      : '<li class="empty">No available surveys.</li>';
-
-    document.getElementById('surveyListCompleted').innerHTML = completed.length
-      ? completed.map(s => `
-        <li class="survey-item completed">
-          <span class="survey-item-title">${escapeHtml(s.title)}</span>
-          <span class="survey-item-meta">${s.questions.length}q</span>
-          <span class="survey-item-status done">Done</span>
-        </li>`).join('')
-      : '<li class="empty">No completed surveys yet.</li>';
-  }
-
-  function renderPrefs(user) {
-    const ch = user.preferred_channels.map(c => `<span class="tag">${c}</span>`).join('') || '—';
-    const dy = user.preferred_days.map(d => `<span class="tag">${d}</span>`).join('') || '—';
-    document.getElementById('prefsTable').innerHTML = `
-      <tr><td>Channels</td><td>${ch}</td></tr>
-      <tr><td>Days</td><td>${dy}</td></tr>
-      <tr><td>Time</td><td>${user.preferred_time_start || '10:00'} – ${user.preferred_time_end || '14:00'} WAT</td></tr>
-    `;
-  }
-
-  function checkConsent(consent) {
+  // Exactly one call to action, chosen by what actually matters most:
+  // consent we never got, then a session today, then a waiting survey.
+  function renderNextAction({ consent }, surveys, sessions) {
+    const el = document.getElementById('nextAction');
     const pending = consent.filter(c => c.status === 'pending');
+    const waiting = surveys.filter(s => !s.completed);
+
     if (pending.length) {
-      const el = document.getElementById('consentNotice');
-      el.style.display = 'block';
-      document.getElementById('consentGrantBtn').onclick = async () => {
-        for (const c of pending) await api.post('/users/consent', { channel: c.channel });
-        el.style.display = 'none';
-        showToast('Consent granted');
-      };
+      el.innerHTML = `
+        <div class="next-action">
+          <div class="eyebrow">Before we contact you</div>
+          <div class="headline">Tell us how we may reach you</div>
+          <p class="detail">
+            We will not message you on a channel you have not agreed to. Choose the ones
+            that suit you — you can withdraw any of them at any time.
+          </p>
+          <div class="row-tight wrap">
+            <button class="btn btn-primary" onclick="grantConsent()">Allow ${pending.map(c => c.channel.replace('_', '-')).join(', ')}</button>
+            <a class="btn btn-ghost" href="/member/notifications.html">Choose individually</a>
+          </div>
+        </div>`;
+      return;
     }
+
+    const soon = sessions[0];
+    if (soon) {
+      el.innerHTML = `
+        <div class="next-action">
+          <div class="eyebrow">Coming up</div>
+          <div class="headline">${escapeHtml(soon.title)}</div>
+          <p class="detail">
+            ${watLabel(soon.scheduled_for)} · ${soon.duration_min} min${soon.location ? ' · ' + escapeHtml(soon.location) : ''}
+            ${soon.clashes_with_availability ? `<br><span class="clash">${escapeHtml(soon.clash_reason)}</span>` : ''}
+          </p>
+          ${soon.survey_id ? `<a class="btn btn-primary" href="/member/survey.html?id=${soon.survey_id}">Open the survey</a>` : ''}
+        </div>`;
+      return;
+    }
+
+    if (waiting.length) {
+      const s = waiting[0];
+      el.innerHTML = `
+        <div class="next-action">
+          <div class="eyebrow">${waiting.length} survey${waiting.length === 1 ? '' : 's'} waiting</div>
+          <div class="headline">${escapeHtml(s.title)}</div>
+          <p class="detail">${escapeHtml(s.description || 'Your answers shape what we build next.')} About ${s.time_estimate_min} minutes, ${s.questions.length} question${s.questions.length === 1 ? '' : 's'}.</p>
+          <a class="btn btn-primary" href="/member/survey.html?id=${s.id}">Start survey</a>
+        </div>`;
+      return;
+    }
+
+    el.innerHTML = '';
   }
 
-  // ─── Feedback ───────────────────────────────
-  function showFeedback() { document.getElementById('feedbackModal').classList.add('open'); document.getElementById('fbContent').focus(); }
-  function closeModal(id) { document.getElementById(id).classList.remove('open'); }
-  async function submitFeedback() {
-    const content = document.getElementById('fbContent').value.trim();
-    if (!content) { showToast('Write your feedback first', 'warning'); return; }
+  async function grantConsent() {
     try {
-      await api.post('/feedback', { content, category: document.getElementById('fbCategory').value });
-      closeModal('feedbackModal');
-      document.getElementById('fbContent').value = '';
-      showToast('Feedback submitted — thank you');
+      const { consent } = await api.get('/users/profile');
+      for (const c of consent.filter(c => c.status === 'pending')) {
+        await api.post('/users/consent', { channel: c.channel });
+      }
+      showToast('Thank you — preferences saved');
+      load();
     } catch (err) { showToast(err.message, 'error'); }
   }
 
-  document.querySelectorAll('.modal-overlay').forEach(m => {
-    m.addEventListener('click', e => { if (e.target === m) m.classList.remove('open'); });
-  });
+  function renderSessions(sessions) {
+    const section = document.getElementById('sessionsSection');
+    section.hidden = !sessions.length;
+    if (!sessions.length) return;
+
+    document.getElementById('sessions').innerHTML = sessions.slice(0, 4).map(s => `
+      <div class="item">
+        <span class="when-chip">${watLabel(s.scheduled_for)}</span>
+        <div style="flex:1;min-width:0">
+          <div class="item-title">${escapeHtml(s.title)}</div>
+          <div class="item-meta">
+            ${s.duration_min} min${s.location ? ' · ' + escapeHtml(s.location) : ''}
+            ${s.clashes_with_availability ? ` · <span class="clash">${escapeHtml(s.clash_reason)}</span>` : ''}
+          </div>
+        </div>
+        ${s.survey_id ? `<a class="btn btn-sm btn-secondary" href="/member/survey.html?id=${s.survey_id}">Open survey</a>` : ''}
+      </div>`).join('');
+  }
+
+  function renderSurveys(surveys) {
+    const waiting = surveys.filter(s => !s.completed);
+    const done = surveys.filter(s => s.completed);
+
+    document.getElementById('surveyCount').textContent =
+      `${done.length} answered${waiting.length ? ` · ${waiting.length} waiting` : ''}`;
+
+    document.getElementById('surveys').innerHTML = waiting.length
+      ? waiting.map(s => `
+        <a class="item" href="/member/survey.html?id=${s.id}">
+          <div style="flex:1;min-width:0">
+            <div class="item-title">${escapeHtml(s.title)}</div>
+            <div class="item-meta">~${s.time_estimate_min} min · ${s.questions.length} question${s.questions.length === 1 ? '' : 's'}</div>
+          </div>
+          <span class="btn btn-sm btn-primary">Start</span>
+        </a>`).join('')
+      : emptyState({
+          title: 'Nothing to answer right now',
+          text: done.length
+            ? 'You are all caught up. We will let you know when something new comes round.'
+            : 'When we have a question for you, it will show up here.'
+        });
+  }
+
+  function renderTimeline(history) {
+    const el = document.getElementById('timeline');
+    if (!history.length) {
+      el.innerHTML = emptyState({ title: 'Nothing here yet', text: 'Your engagement history builds up as you take part.' });
+      return;
+    }
+
+    let lastDay = null;
+    el.innerHTML = history.map(h => {
+      const info = activityInfo(h.type);
+      const day = activityDayLabel(h.created_at);
+      const divider = day !== lastDay ? `<div class="tl-divider">${day}</div>` : '';
+      lastDay = day;
+
+      // Written back to the member in the second person.
+      const text = info.text
+        .replace(/^was /, 'You were ')
+        .replace(/^(joined|completed|started|claimed|received|submitted|logged|made|went|requested)/, 'You $1');
+
+      return `
+        ${divider}
+        <div class="tl-item">
+          <div class="tl-dot ${info.tone}"></div>
+          <div class="tl-head">
+            <span class="tl-title">${text.charAt(0).toUpperCase() + text.slice(1)}</span>
+            <span class="tl-time">${formatDate(h.created_at)}</span>
+          </div>
+        </div>`;
+    }).join('');
+  }
+
+  async function submitFeedback() {
+    const content = document.getElementById('fbContent').value.trim();
+    if (!content) { showToast('Write your feedback first', 'warning'); return; }
+
+    try {
+      await api.post('/feedback', { content, category: document.getElementById('fbCategory').value });
+      Shell.closeDrawer('feedbackDrawer');
+      document.getElementById('fbContent').value = '';
+      showToast('Thank you — that went straight to the team');
+      load();
+    } catch (err) { showToast(err.message, 'error'); }
+  }
 
   load();
 </script>

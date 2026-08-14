@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dev Circle — Cohorts</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/css/tokens.css">
+  <link rel="stylesheet" href="/assets/css/app.css">
+  <style>
+    .swatch { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
+  </style>
+</head>
+<body>
+
+<div class="app">
+  <div class="app-main">
+
+    <header class="page-head">
+      <div class="page-head-row">
+        <div>
+          <h1 class="page-title">Cohorts</h1>
+          <p class="page-subtitle">Groups of members sharing a property or a rule. Cohorts are the audience for surveys, broadcasts and rewards.</p>
+        </div>
+        <div class="page-actions">
+          <a href="/admin/cohort-new.html" class="btn btn-sm btn-primary">New cohort</a>
+        </div>
+      </div>
+    </header>
+
+    <div class="app-body">
+
+      <div class="toolbar">
+        <label class="search-box">
+          <span class="icon">⌕</span>
+          <input type="search" id="search" placeholder="Search cohorts…" autocomplete="off">
+        </label>
+        <button class="chip active" data-type="">All</button>
+        <button class="chip" data-type="system">System</button>
+        <button class="chip" data-type="custom">Custom</button>
+        <span class="result-count" id="count"></span>
+      </div>
+
+      <div class="table-shell">
+        <div class="table-scroll">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Cohort</th>
+                <th>Type</th>
+                <th class="hide-sm">Rule</th>
+                <th>Members</th>
+                <th class="col-actions"></th>
+              </tr>
+            </thead>
+            <tbody id="rows"></tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script src="/assets/js/api.js"></script>
+<script src="/assets/js/shell.js"></script>
+<script>
+  Shell.admin('cohorts');
+
+  let cohorts = [];
+  let typeFilter = '';
+  let term = '';
+
+  async function load() {
+    document.getElementById('rows').innerHTML = skeletonRows(5, 5);
+    try {
+      const data = await api.get('/admin/cohorts');
+      cohorts = data.cohorts;
+      render();
+    } catch (err) {
+      document.getElementById('rows').innerHTML =
+        `<tr><td colspan="5">${emptyState({ title: 'Could not load cohorts', text: err.message })}</td></tr>`;
+    }
+  }
+
+  function render() {
+    const list = cohorts.filter(c =>
+      (!typeFilter || c.type === typeFilter) &&
+      (!term || c.name.toLowerCase().includes(term) || (c.description || '').toLowerCase().includes(term)));
+
+    document.getElementById('count').textContent = `${list.length} cohort${list.length === 1 ? '' : 's'}`;
+
+    const tbody = document.getElementById('rows');
+    if (!list.length) {
+      tbody.innerHTML = `<tr><td colspan="5">${emptyState({
+        title: 'No cohorts here yet',
+        text: 'A cohort groups members by a rule — API stage, sector, streak — so you can survey or reward them together.',
+        action: '<a href="/admin/cohort-new.html" class="btn btn-sm btn-primary">Create a cohort</a>'
+      })}</td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = list.map(c => {
+      // A rule-backed cohort re-evaluates; a manual one is a fixed list.
+      const rules = c.filter_rules && c.filter_rules.rules ? c.filter_rules.rules.length : 0;
+      return `
+        <tr class="row-link" onclick="window.location.href='/admin/cohort-detail.html?id=${c.id}'">
+          <td>
+            <div class="row-tight">
+              <span class="swatch" style="background:${c.color}"></span>
+              <div class="identity-meta">
+                <div class="identity-name">${escapeHtml(c.name)}</div>
+                <div class="identity-sub">${escapeHtml(c.description || 'No description')}</div>
+              </div>
+            </div>
+          </td>
+          <td>${badge(c.type, c.type === 'system' ? 'info' : '')}</td>
+          <td class="hide-sm text-xs muted">${rules ? `${rules} rule${rules === 1 ? '' : 's'}` : 'Manual list'}</td>
+          <td class="mono tnum">${c.member_count}</td>
+          <td class="col-actions" onclick="event.stopPropagation()">
+            <div class="row-actions">
+              <a class="btn btn-sm btn-ghost" href="/admin/members.html?cohort_id=${c.id}">Members</a>
+              ${rules ? `<button class="btn btn-sm btn-ghost" onclick="sync('${c.id}')">Sync</button>` : ''}
+            </div>
+          </td>
+        </tr>`;
+    }).join('');
+  }
+
+  // Re-runs a rule-based cohort's filter and updates its membership.
+  async function sync(id) {
+    try {
+      const res = await api.post(`/admin/cohorts/${id}/sync`, {});
+      showToast(res.message || 'Cohort synced');
+      load();
+    } catch (err) { showToast(err.message, 'error'); }
+  }
+
+  document.querySelectorAll('.chip[data-type]').forEach(chip => {
+    chip.addEventListener('click', () => {
+      document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+      typeFilter = chip.dataset.type;
+      render();
+    });
+  });
+
+  document.getElementById('search').addEventListener('input', e => {
+    term = e.target.value.trim().toLowerCase();
+    render();
+  });
+
+  load();
+</script>
+</body>
+</html>

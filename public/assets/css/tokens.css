@@ -1,6 +1,10 @@
 /* ============================================
    CREDIT DIRECT DEV CIRCLE — DESIGN TOKENS
-   Grounded in Credit Direct brand system
+   Grounded in Credit Direct brand system.
+
+   This file holds variables, the reset, and base element styles only.
+   Every reusable component lives in app.css. Pages should declare nothing
+   that a second page would also need.
    ============================================ */
 
 :root {
@@ -29,6 +33,20 @@
   --cream:     #FAF8F5;      /* Lightest surface */
   --white:     #FFFFFF;
 
+  /* ── SURFACE SCALE ───────────────────────── */
+  /* One ladder of elevation. A component picks a rung; it never invents
+     its own background, so nesting stays legible. */
+  --surface-0: #16162A;      /* App canvas — deepest */
+  --surface-1: var(--ink);   /* Sidebar, sticky bars */
+  --surface-2: var(--slate); /* Cards, table shells */
+  --surface-3: var(--slate-mid); /* Drawers, popovers, hover */
+  --surface-4: #383850;      /* Inputs on drawers, active rows */
+
+  /* ── BORDERS ─────────────────────────────── */
+  --line-faint:  rgba(160, 160, 184, 0.06);
+  --line:        rgba(160, 160, 184, 0.12);
+  --line-strong: rgba(160, 160, 184, 0.22);
+
   /* ── SEMANTIC STATES ─────────────────────── */
   --teal:        #0D9488;    /* Production state — trust, live */
   --teal-dim:    rgba(13, 148, 136, 0.12);
@@ -39,6 +57,9 @@
   --rose:        #E11D48;    /* Error, urgent */
   --rose-dim:    rgba(225, 29, 72, 0.10);
 
+  --violet:      #8B7CF6;    /* Informational, system events */
+  --violet-dim:  rgba(139, 124, 246, 0.12);
+
   /* Sandbox = harvest gold (warm, experimental) */
   --sandbox:     var(--cd-gold);
   --sandbox-dim: var(--cd-gold-dim);
@@ -47,7 +68,7 @@
   --production:     var(--teal);
   --production-dim: var(--teal-dim);
 
-  /* ── COHORT ARC SYSTEM ───────────────────── */
+  /* ── ORBIT / COHORT ARC SYSTEM ───────────── */
   --cohort-1: rgba(16, 126, 188, 0.25);   /* Blue family */
   --cohort-2: rgba(16, 126, 188, 0.45);
   --cohort-3: rgba(230, 180, 115, 0.35);  /* Gold family */
@@ -102,11 +123,24 @@
   --shadow-sm:  0 1px 2px rgba(0, 0, 0, 0.25);
   --shadow-md:  0 4px 12px rgba(0, 0, 0, 0.35);
   --shadow-lg:  0 8px 24px rgba(0, 0, 0, 0.45);
+  --shadow-xl:  0 24px 64px rgba(0, 0, 0, 0.55);
 
   /* ── LAYOUT ──────────────────────────────── */
-  --sidebar-w:  240px;
-  --topbar-h:   56px;
-  --max-content: 1200px;
+  --sidebar-w:   248px;
+  --topbar-h:    56px;
+  --drawer-w:    460px;
+  --drawer-w-lg: 640px;
+  --max-content: 1240px;
+  --max-reading: 720px;   /* Member portal single column */
+
+  /* ── Z-INDEX ─────────────────────────────── */
+  /* Named rungs, so no page has to guess a number. */
+  --z-sticky:  100;
+  --z-sidebar: 200;
+  --z-overlay: 900;
+  --z-drawer:  950;
+  --z-palette: 1000;
+  --z-toast:   1100;
 
   /* ── TRANSITIONS ─────────────────────────── */
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
@@ -135,7 +169,7 @@ body {
   font-size: var(--fs-base);
   line-height: var(--lh-normal);
   color: var(--white);
-  background: var(--ink);
+  background: var(--surface-0);
 }
 
 a { color: var(--cd-blue); text-decoration: none; }
@@ -143,173 +177,11 @@ a:hover { text-decoration: underline; }
 
 button { font-family: inherit; cursor: pointer; border: none; background: none; color: inherit; }
 input, textarea, select { font-family: inherit; font-size: inherit; color: inherit; background: none; border: none; outline: none; }
+textarea { resize: vertical; }
 
 :focus-visible { outline: 2px solid var(--cd-blue); outline-offset: 2px; }
 
-/* ── STATE LABELS ──────────────────────────── */
-.state-label {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--sp-1);
-  font-family: var(--font-mono);
-  font-size: var(--fs-xs);
-  font-weight: var(--fw-medium);
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  padding: var(--sp-1) var(--sp-2);
-  border-radius: var(--r-sm);
-}
-
-.state-sandbox {
-  color: var(--cd-gold);
-  background: var(--cd-gold-dim);
-}
-
-.state-production {
-  color: var(--teal);
-  background: var(--teal-dim);
-}
-
-.state-active {
-  color: var(--emerald);
-  background: var(--emerald-dim);
-}
-
-.state-inactive {
-  color: var(--ash);
-  background: rgba(160, 160, 184, 0.08);
-}
-
-/* ── BUTTONS ───────────────────────────────── */
-.btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--sp-2);
-  font-family: var(--font-body);
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-medium);
-  padding: var(--sp-2) var(--sp-4);
-  border-radius: var(--r-md);
-  transition: all var(--duration-fast) var(--ease-out);
-  white-space: nowrap;
-}
-
-.btn-primary {
-  background: var(--cd-blue);
-  color: var(--white);
-}
-.btn-primary:hover { background: var(--cd-blue-deep); }
-
-.btn-secondary {
-  background: var(--slate-mid);
-  color: var(--ash);
-  border: 1px solid rgba(160, 160, 184, 0.12);
-}
-.btn-secondary:hover { color: var(--white); border-color: rgba(160, 160, 184, 0.25); }
-
-.btn-ghost { color: var(--ash); }
-.btn-ghost:hover { color: var(--white); background: var(--slate-mid); }
-
-.btn-gold {
-  background: var(--cd-gold);
-  color: var(--ink);
-  font-weight: var(--fw-semibold);
-}
-.btn-gold:hover { background: var(--cd-gold-deep); }
-
-.btn-sm { font-size: var(--fs-xs); padding: var(--sp-1) var(--sp-3); }
-.btn-lg { font-size: var(--fs-base); padding: var(--sp-3) var(--sp-6); }
-
-/* ── CARDS ─────────────────────────────────── */
-.card {
-  background: var(--slate);
-  border: 1px solid rgba(160, 160, 184, 0.06);
-  border-radius: var(--r-lg);
-  padding: var(--sp-5);
-}
-
-/* ── COHORT ARC (Signature Element) ────────── */
-.cohort-arc {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.cohort-arc .ring {
-  position: absolute;
-  border-radius: 50%;
-  border: 2.5px solid transparent;
-  pointer-events: none;
-}
-
-.cohort-arc .ring:nth-child(1) { width: 110%; height: 110%; border-color: var(--cohort-1); }
-.cohort-arc .ring:nth-child(2) { width: 125%; height: 125%; border-color: var(--cohort-2); }
-.cohort-arc .ring:nth-child(3) { width: 140%; height: 140%; border-color: var(--cohort-3); }
-.cohort-arc .ring:nth-child(4) { width: 155%; height: 155%; border-color: var(--cohort-4); }
-
-/* ── INPUTS ────────────────────────────────── */
-.input-group { display: flex; flex-direction: column; gap: var(--sp-1); }
-
-.input-label {
-  font-size: var(--fs-xs);
-  font-weight: var(--fw-medium);
-  color: var(--ash);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-}
-
-.input-field {
-  background: var(--ink);
-  border: 1px solid rgba(160, 160, 184, 0.12);
-  border-radius: var(--r-md);
-  padding: var(--sp-2) var(--sp-3);
-  color: var(--white);
-  transition: border-color var(--duration-fast) var(--ease-out);
-}
-
-.input-field::placeholder { color: var(--ash-dim); }
-.input-field:focus { border-color: var(--cd-blue); }
-
-/* ── TABLE ─────────────────────────────────── */
-.data-table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
-
-.data-table th {
-  text-align: left;
-  font-family: var(--font-display);
-  font-weight: var(--fw-semibold);
-  font-size: var(--fs-xs);
-  color: var(--ash);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  padding: var(--sp-2) var(--sp-3);
-  border-bottom: 1px solid rgba(160, 160, 184, 0.08);
-}
-
-.data-table td {
-  padding: var(--sp-3);
-  border-bottom: 1px solid rgba(160, 160, 184, 0.04);
-  vertical-align: middle;
-}
-
-.data-table tr:hover td { background: rgba(160, 160, 184, 0.02); }
-
-/* ── PROGRESS BAR ──────────────────────────── */
-.progress-bar { height: 3px; background: rgba(160, 160, 184, 0.08); border-radius: var(--r-full); overflow: hidden; }
-.progress-bar .fill { height: 100%; background: var(--cd-blue); border-radius: var(--r-full); transition: width var(--duration-normal) var(--ease-out); }
-
-/* ── TAGS ──────────────────────────────────── */
-.tag {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--sp-1);
-  font-size: var(--fs-xs);
-  padding: var(--sp-1) var(--sp-2);
-  border-radius: var(--r-sm);
-  background: rgba(160, 160, 184, 0.06);
-  color: var(--ash);
-}
+h1, h2, h3, h4 { font-family: var(--font-display); letter-spacing: -0.02em; line-height: var(--lh-tight); }
 
 /* ── SCROLLBAR ─────────────────────────────── */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
