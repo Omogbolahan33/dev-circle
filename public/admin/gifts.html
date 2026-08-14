@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dev Circle — Gifts</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/css/tokens.css">
+  <style>
+    .topnav { position:sticky;top:0;z-index:100;background:var(--ink);border-bottom:1px solid rgba(160,160,184,0.06);padding:0 var(--sp-6); }
+    .topnav-inner { max-width:960px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;height:56px; }
+    .topnav-logo { font-family:var(--font-display);font-weight:var(--fw-black);font-size:var(--fs-md);letter-spacing:-0.03em;color:var(--white);text-decoration:none; }
+    .topnav-logo span { color:var(--cd-blue); }
+    .topnav-logo .badge { font-family:var(--font-mono);font-size:10px;color:var(--cd-blue);background:var(--cd-blue-dim);padding:2px 6px;border-radius:var(--r-sm);margin-left:var(--sp-2); }
+    .topnav-back { font-size:var(--fs-sm);color:var(--ash);text-decoration:none; }
+    .topnav-back:hover { color:var(--white); }
+
+    .page { max-width:960px;margin:0 auto;padding:var(--sp-8) var(--sp-6); }
+    .page-header { margin-bottom:var(--sp-8); }
+    .page-title { font-family:var(--font-display);font-weight:var(--fw-bold);font-size:var(--fs-2xl);letter-spacing:-0.03em;margin-bottom:var(--sp-1); }
+    .page-subtitle { color:var(--ash);font-size:var(--fs-sm); }
+    .page-actions { display:flex;gap:var(--sp-2);margin-top:var(--sp-4); }
+
+    .gift-list { list-style:none; }
+    .gift-item {
+      display:flex;align-items:center;gap:var(--sp-4);
+      padding:var(--sp-4) 0;border-bottom:1px solid rgba(160,160,184,0.04);
+    }
+    .gift-item:last-child { border-bottom:none; }
+    .gift-icon { font-size:var(--fs-xl);width:40px;text-align:center;flex-shrink:0; }
+    .gift-body { flex:1; }
+    .gift-name { font-weight:var(--fw-semibold);font-size:var(--fs-sm);margin-bottom:2px; }
+    .gift-desc { font-size:var(--fs-xs);color:var(--ash); }
+    .gift-value { font-family:var(--font-display);font-weight:var(--fw-bold);font-size:var(--fs-lg);white-space:nowrap; }
+    .gift-value .currency { font-size:var(--fs-xs);color:var(--ash);font-weight:400; }
+    .gift-status { font-size:11px;font-family:var(--font-mono);padding:2px 8px;border-radius:var(--r-sm);white-space:nowrap; }
+    .gift-status.available { color:var(--emerald);background:var(--emerald-dim); }
+    .gift-status.claimed { color:var(--cd-gold);background:var(--cd-gold-dim); }
+    .gift-status.delivered { color:var(--ash-dim);background:rgba(160,160,184,0.06); }
+
+    .btn { display:inline-flex;align-items:center;justify-content:center;gap:var(--sp-2);font-family:var(--font-body);font-size:var(--fs-sm);font-weight:var(--fw-medium);padding:var(--sp-2) var(--sp-4);border-radius:var(--r-md);transition:all var(--duration-fast) var(--ease-out);white-space:nowrap;cursor:pointer;border:none; }
+    .btn-primary { background:var(--cd-blue);color:var(--white); }
+    .btn-primary:hover { background:var(--cd-blue-deep); }
+    .btn-secondary { background:none;color:var(--ash);border:1px solid rgba(160,160,184,0.10); }
+    .btn-secondary:hover { color:var(--white);border-color:rgba(160,160,184,0.25); }
+    .btn-gold { background:var(--cd-gold);color:var(--ink);font-weight:var(--fw-semibold); }
+    .btn-gold:hover { background:var(--cd-gold-deep); }
+    .btn-sm { font-size:var(--fs-xs);padding:var(--sp-1) var(--sp-3); }
+
+    .modal-overlay { display:none;position:fixed;inset:0;z-index:999;background:rgba(26,26,46,0.85);align-items:center;justify-content:center; }
+    .modal-overlay.open { display:flex; }
+    .modal-box { background:var(--slate);border-radius:var(--r-lg);padding:var(--sp-6);max-width:480px;width:90%; }
+    .modal-title { font-family:var(--font-display);font-weight:var(--fw-bold);font-size:var(--fs-lg);margin-bottom:var(--sp-5); }
+    .form-group { margin-bottom:var(--sp-4); }
+    .form-label { display:block;font-size:var(--fs-xs);font-weight:var(--fw-medium);color:var(--ash);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:var(--sp-1); }
+    .form-input { width:100%;background:var(--ink);border:1px solid rgba(160,160,184,0.10);border-radius:var(--r-md);padding:var(--sp-2) var(--sp-3);color:var(--white);font-size:var(--fs-sm); }
+    .form-input:focus { border-color:var(--cd-blue);outline:none; }
+    .form-row { display:grid;grid-template-columns:1fr 1fr;gap:var(--sp-3); }
+
+    .empty { text-align:center;padding:var(--sp-8);color:var(--ash-dim);font-size:var(--fs-sm); }
+
+    @media (max-width:640px) { .page{padding:var(--sp-6) var(--sp-4);} .page-title{font-size:var(--fs-xl);} .gift-item{flex-wrap:wrap;} .form-row{grid-template-columns:1fr;} }
+  </style>
+</head>
+<body>
+
+  <nav class="topnav">
+    <div class="topnav-inner">
+      <a href="/admin/dashboard.html" class="topnav-logo">dev<span>.</span>circle <span class="badge">Admin</span></a>
+      <a href="/admin/dashboard.html" class="topnav-back">← Back</a>
+    </div>
+  </nav>
+
+  <div class="page">
+    <header class="page-header">
+      <h1 class="page-title">Gifts</h1>
+      <p class="page-subtitle">Manage rewards for developer engagement.</p>
+      <div class="page-actions">
+        <button class="btn btn-sm btn-primary" onclick="showCreateModal()">+ New gift</button>
+      </div>
+    </header>
+
+    <section>
+      <ul class="gift-list" id="giftList"></ul>
+    </section>
+  </div>
+
+  <div class="modal-overlay" id="createModal">
+    <div class="modal-box">
+      <h3 class="modal-title">Create gift</h3>
+      <div class="form-group">
+        <label class="form-label">Name</label>
+        <input type="text" class="form-input" id="gName" placeholder="e.g. ₦5,000 Airtime Credit">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Description</label>
+        <input type="text" class="form-input" id="gDesc" placeholder="Brief description">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Value</label>
+          <input type="number" class="form-input" id="gValue" placeholder="5000">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Currency</label>
+          <select class="form-input" id="gCurrency">
+            <option value="NGN">NGN</option><option value="USD">USD</option>
+          </select>
+        </div>
+      </div>
+      <div style="display:flex;gap:var(--sp-3);justify-content:flex-end">
+        <button class="btn btn-secondary" onclick="closeModal('createModal')">Cancel</button>
+        <button class="btn btn-primary" onclick="createGift()">Create</button>
+      </div>
+    </div>
+  </div>
+
+<script src="/assets/js/api.js"></script>
+<script>
+  if (!Auth.requireAuth(true)) throw new Error('Redirecting');
+
+  const GIFT_ICONS = ['🎁', '📱', '💳', '🎫', '🎧', '⌚', '🎮', '💡'];
+
+  async function loadGifts() {
+    try {
+      const data = await api.get('/admin/gifts');
+      const container = document.getElementById('giftList');
+
+      container.innerHTML = data.gifts.length ? data.gifts.map((g, i) => `
+        <li class="gift-item">
+          <div class="gift-icon">${GIFT_ICONS[i % GIFT_ICONS.length]}</div>
+          <div class="gift-body">
+            <div class="gift-name">${escapeHtml(g.name)}</div>
+            <div class="gift-desc">${escapeHtml(g.description || 'No description')}</div>
+          </div>
+          <div class="gift-value">${g.currency === 'NGN' ? '₦' : '$'}${g.value.toLocaleString()}<span class="currency"> ${g.currency}</span></div>
+          <span class="gift-status ${g.status}">${g.status}</span>
+        </li>
+      `).join('') : '<li class="empty">No gifts created yet.</li>';
+    } catch (err) {
+      showToast('Failed to load gifts', 'error');
+    }
+  }
+
+  function showCreateModal() { document.getElementById('createModal').classList.add('open'); document.getElementById('gName').focus(); }
+  function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+  async function createGift() {
+    const name = document.getElementById('gName').value.trim();
+    if (!name) { showToast('Name required', 'warning'); return; }
+
+    try {
+      await api.post('/admin/gifts', {
+        name,
+        description: document.getElementById('gDesc').value.trim(),
+        value: parseFloat(document.getElementById('gValue').value) || 0,
+        currency: document.getElementById('gCurrency').value
+      });
+      closeModal('createModal');
+      document.getElementById('gName').value = '';
+      document.getElementById('gDesc').value = '';
+      document.getElementById('gValue').value = '';
+      showToast(`Gift "${name}" created`);
+      loadGifts();
+    } catch (err) { showToast(err.message, 'error'); }
+  }
+
+  document.querySelectorAll('.modal-overlay').forEach(m => { m.addEventListener('click', e => { if (e.target === m) m.classList.remove('open'); }); });
+
+  loadGifts();
+</script>
+</body>
+</html>

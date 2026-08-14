@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dev Circle — Profile</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/css/tokens.css">
+  <style>
+    .topnav { position: sticky; top: 0; z-index: 100; background: var(--ink); border-bottom: 1px solid rgba(160,160,184,0.06); padding: 0 var(--sp-6); }
+    .topnav-inner { max-width: 720px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; height: 56px; }
+    .topnav-logo { font-family: var(--font-display); font-weight: var(--fw-black); font-size: var(--fs-md); letter-spacing: -0.03em; color: var(--white); text-decoration: none; }
+    .topnav-logo span { color: var(--cd-blue); }
+    .topnav-links { display: flex; gap: var(--sp-1); }
+    .topnav-link { padding: var(--sp-2) var(--sp-3); border-radius: var(--r-md); font-size: var(--fs-sm); font-weight: var(--fw-medium); color: var(--ash); cursor: pointer; border: none; background: none; transition: all var(--duration-fast) var(--ease-out); text-decoration: none; }
+    .topnav-link:hover { color: var(--white); background: rgba(160,160,184,0.05); }
+    .topnav-link.active { color: var(--white); background: var(--cd-blue-dim); }
+    .topnav-user { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-sm); color: var(--ash); cursor: pointer; padding: var(--sp-1) var(--sp-2); border-radius: var(--r-md); border: none; background: none; }
+    .topnav-user:hover { background: rgba(160,160,184,0.05); }
+    .topnav-avatar { width: 28px; height: 28px; border-radius: 50%; background: var(--cd-blue-dim); color: var(--cd-blue); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: var(--fw-bold); font-family: var(--font-display); }
+
+    .page { max-width: 720px; margin: 0 auto; padding: var(--sp-8) var(--sp-6); }
+    .page-header { margin-bottom: var(--sp-8); }
+    .page-title { font-family: var(--font-display); font-weight: var(--fw-bold); font-size: var(--fs-2xl); letter-spacing: -0.03em; margin-bottom: var(--sp-1); }
+    .page-subtitle { color: var(--ash); font-size: var(--fs-sm); }
+
+    .section { margin-bottom: var(--sp-10); }
+    .section-title { font-family: var(--font-display); font-weight: var(--fw-semibold); font-size: var(--fs-md); letter-spacing: -0.01em; margin-bottom: var(--sp-4); }
+
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-4); margin-bottom: var(--sp-4); }
+    .form-row.single { grid-template-columns: 1fr; }
+    .form-group { display: flex; flex-direction: column; gap: var(--sp-1); }
+    .form-label { font-size: var(--fs-xs); font-weight: var(--fw-medium); color: var(--ash); text-transform: uppercase; letter-spacing: 0.06em; }
+    .form-input { width: 100%; background: var(--slate); border: 1px solid rgba(160,160,184,0.08); border-radius: var(--r-md); padding: var(--sp-2) var(--sp-3); color: var(--white); font-size: var(--fs-sm); transition: border-color var(--duration-fast) var(--ease-out); }
+    .form-input::placeholder { color: var(--ash-dim); }
+    .form-input:focus { border-color: var(--cd-blue); outline: none; }
+    select.form-input { cursor: pointer; }
+    .form-hint { font-size: var(--fs-xs); color: var(--ash-dim); margin-top: 2px; }
+
+    .checkbox-group { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+    .checkbox-item {
+      display: flex; align-items: center; gap: var(--sp-2);
+      padding: var(--sp-2) var(--sp-3); border: 1px solid rgba(160,160,184,0.08);
+      border-radius: var(--r-md); cursor: pointer; font-size: var(--fs-sm);
+      transition: all var(--duration-fast) var(--ease-out); user-select: none;
+    }
+    .checkbox-item:hover { border-color: rgba(160,160,184,0.20); }
+    .checkbox-item.selected { border-color: var(--cd-blue); background: var(--cd-blue-dim); color: var(--white); }
+    .checkbox-item input { display: none; }
+    .checkbox-dot { width: 14px; height: 14px; border-radius: 50%; border: 2px solid rgba(160,160,184,0.20); transition: all var(--duration-fast) var(--ease-out); display: flex; align-items: center; justify-content: center; }
+    .checkbox-item.selected .checkbox-dot { border-color: var(--cd-blue); background: var(--cd-blue); }
+    .checkbox-item.selected .checkbox-dot::after { content: ''; width: 6px; height: 6px; border-radius: 50%; background: white; }
+
+    .consent-section { margin-bottom: var(--sp-4); }
+    .consent-row { display: flex; align-items: center; justify-content: space-between; padding: var(--sp-3) 0; border-bottom: 1px solid rgba(160,160,184,0.03); }
+    .consent-row:last-child { border-bottom: none; }
+    .consent-channel { font-size: var(--fs-sm); font-weight: var(--fw-medium); }
+    .consent-status { font-size: var(--fs-xs); font-family: var(--font-mono); }
+    .consent-status.granted { color: var(--emerald); }
+    .consent-status.pending { color: var(--cd-gold); }
+    .consent-status.withdrawn { color: var(--rose); }
+
+    .btn { display: inline-flex; align-items: center; justify-content: center; gap: var(--sp-2); font-family: var(--font-body); font-size: var(--fs-sm); font-weight: var(--fw-medium); padding: var(--sp-2) var(--sp-4); border-radius: var(--r-md); transition: all var(--duration-fast) var(--ease-out); white-space: nowrap; cursor: pointer; border: none; }
+    .btn-primary { background: var(--cd-blue); color: var(--white); }
+    .btn-primary:hover { background: var(--cd-blue-deep); }
+    .btn-secondary { background: none; color: var(--ash); border: 1px solid rgba(160,160,184,0.10); }
+    .btn-secondary:hover { color: var(--white); border-color: rgba(160,160,184,0.25); }
+    .btn-ghost { background: none; color: var(--ash); border: none; }
+    .btn-ghost:hover { color: var(--white); }
+    .btn-sm { font-size: var(--fs-xs); padding: var(--sp-1) var(--sp-3); }
+    .btn-danger { background: none; color: var(--rose); border: 1px solid rgba(225,29,72,0.20); }
+    .btn-danger:hover { background: var(--rose-dim); }
+
+    .save-bar { display: flex; gap: var(--sp-3); padding-top: var(--sp-4); border-top: 1px solid rgba(160,160,184,0.06); margin-top: var(--sp-4); }
+
+    .stat-strip { display: flex; gap: var(--sp-6); flex-wrap: wrap; padding: var(--sp-4) 0; margin-bottom: var(--sp-6); border-bottom: 1px solid rgba(160,160,184,0.06); }
+    .stat-item .val { font-family: var(--font-display); font-weight: var(--fw-black); font-size: var(--fs-xl); letter-spacing: -0.03em; }
+    .stat-item .label { font-size: var(--fs-xs); color: var(--ash-dim); margin-top: 2px; }
+
+    @media (max-width: 640px) {
+      .topnav-inner { padding: 0 var(--sp-3); }
+      .topnav-links { gap: 0; }
+      .topnav-link { padding: var(--sp-2); font-size: var(--fs-xs); }
+      .page { padding: var(--sp-6) var(--sp-4); }
+      .page-title { font-size: var(--fs-xl); }
+      .form-row { grid-template-columns: 1fr; }
+      .stat-strip { gap: var(--sp-4); }
+    }
+  </style>
+</head>
+<body>
+
+  <nav class="topnav">
+    <div class="topnav-inner">
+      <a href="/member/dashboard.html" class="topnav-logo">dev<span>.</span>circle</a>
+      <div class="topnav-links">
+        <a href="/member/dashboard.html" class="topnav-link">Home</a>
+        <a href="/member/dashboard.html" class="topnav-link" onclick="localStorage.setItem('devcircle_view','surveys')">Surveys</a>
+        <a href="/member/profile.html" class="topnav-link active">Profile</a>
+      </div>
+      <button class="topnav-user" onclick="Auth.logout()">
+        <div class="topnav-avatar" id="navAvatar">—</div>
+      </button>
+    </div>
+  </nav>
+
+  <div class="page">
+    <header class="page-header">
+      <h1 class="page-title">Your profile</h1>
+      <p class="page-subtitle">Manage your account, preferences, and consent.</p>
+    </header>
+
+    <div class="stat-strip" id="statStrip"></div>
+
+    <!-- ACCOUNT -->
+    <section class="section">
+      <h2 class="section-title">Account</h2>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Full name</label>
+          <input type="text" class="form-input" id="fName">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Email</label>
+          <input type="email" class="form-input" id="fEmail" disabled style="opacity:0.5">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Phone</label>
+          <input type="tel" class="form-input" id="fPhone" placeholder="+234…">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Company</label>
+          <input type="text" class="form-input" id="fCompany">
+        </div>
+      </div>
+      <div class="form-row single">
+        <div class="form-group">
+          <label class="form-label">Work sector</label>
+          <select class="form-input" id="fSector">
+            <option value="">Select…</option>
+            <option>Fintech</option><option>Banking</option><option>Lending</option>
+            <option>Payments</option><option>Insurance</option><option>Healthcare</option>
+            <option>E-commerce</option><option>Education</option><option>Other</option>
+          </select>
+        </div>
+      </div>
+    </section>
+
+    <!-- PREFERENCES -->
+    <section class="section">
+      <h2 class="section-title">Engagement preferences</h2>
+      <div class="form-row single">
+        <div class="form-group">
+          <label class="form-label">Preferred channels</label>
+          <div class="checkbox-group" id="channelGroup">
+            <label class="checkbox-item" data-value="email"><div class="checkbox-dot"></div>Email</label>
+            <label class="checkbox-item" data-value="whatsapp"><div class="checkbox-dot"></div>WhatsApp</label>
+            <label class="checkbox-item" data-value="sms"><div class="checkbox-dot"></div>SMS</label>
+            <label class="checkbox-item" data-value="calls"><div class="checkbox-dot"></div>Calls</label>
+            <label class="checkbox-item" data-value="in_portal"><div class="checkbox-dot"></div>In-Portal</label>
+          </div>
+        </div>
+      </div>
+      <div class="form-row single">
+        <div class="form-group">
+          <label class="form-label">Available days</label>
+          <div class="checkbox-group" id="dayGroup">
+            <label class="checkbox-item" data-value="Mon"><div class="checkbox-dot"></div>Mon</label>
+            <label class="checkbox-item" data-value="Tue"><div class="checkbox-dot"></div>Tue</label>
+            <label class="checkbox-item" data-value="Wed"><div class="checkbox-dot"></div>Wed</label>
+            <label class="checkbox-item" data-value="Thu"><div class="checkbox-dot"></div>Thu</label>
+            <label class="checkbox-item" data-value="Fri"><div class="checkbox-dot"></div>Fri</label>
+            <label class="checkbox-item" data-value="Sat"><div class="checkbox-dot"></div>Sat</label>
+            <label class="checkbox-item" data-value="Sun"><div class="checkbox-dot"></div>Sun</label>
+          </div>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Preferred start time</label>
+          <input type="time" class="form-input" id="fTimeStart" value="10:00">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Preferred end time</label>
+          <input type="time" class="form-input" id="fTimeEnd" value="14:00">
+        </div>
+      </div>
+      <div class="form-hint">WAT (West Africa Time). We'll schedule surveys and reminders within your preferred window.</div>
+    </section>
+
+    <!-- CONSENT -->
+    <section class="section">
+      <h2 class="section-title">Consent</h2>
+      <p style="font-size:var(--fs-sm);color:var(--ash);margin-bottom:var(--sp-4)">Control which channels Credit Direct can use to contact you for engagement activities. You can withdraw consent at any time.</p>
+      <div id="consentList"></div>
+    </section>
+
+    <!-- SAVE -->
+    <div class="save-bar">
+      <button class="btn btn-primary" onclick="saveProfile()">Save changes</button>
+      <button class="btn btn-secondary" onclick="loadProfile()">Discard</button>
+    </div>
+  </div>
+
+<script src="/assets/js/api.js"></script>
+<script>
+  if (!Auth.requireAuth(false)) throw new Error('Redirecting');
+
+  const ALL_CHANNELS = ['email', 'whatsapp', 'sms', 'calls', 'in_portal'];
+  const channelLabels = { email: 'Email', whatsapp: 'WhatsApp', sms: 'SMS', calls: 'Calls', in_portal: 'In-Portal' };
+
+  async function loadProfile() {
+    try {
+      const data = await api.get('/users/profile');
+      const { user, stats, consent } = data;
+
+      // Nav
+      document.getElementById('navAvatar').textContent = user.name.split(' ').map(n => n[0]).join('').toUpperCase();
+
+      // Stats
+      document.getElementById('statStrip').innerHTML = `
+        <div class="stat-item"><div class="val">${stats.surveys_completed}</div><div class="label">Surveys</div></div>
+        <div class="stat-item"><div class="val">${stats.gifts_claimed}</div><div class="label">Gifts</div></div>
+        <div class="stat-item"><div class="val">${stats.streak}</div><div class="label">Streak</div></div>
+        <div class="stat-item"><div class="val">${stats.best_streak}</div><div class="label">Best streak</div></div>
+      `;
+
+      // Form
+      document.getElementById('fName').value = user.name || '';
+      document.getElementById('fEmail').value = user.email || '';
+      document.getElementById('fPhone').value = user.phone || '';
+      document.getElementById('fCompany').value = user.company || '';
+      document.getElementById('fSector').value = user.work_sector || '';
+      document.getElementById('fTimeStart').value = user.preferred_time_start || '10:00';
+      document.getElementById('fTimeEnd').value = user.preferred_time_end || '14:00';
+
+      // Checkboxes
+      setCheckboxGroup('channelGroup', user.preferred_channels || []);
+      setCheckboxGroup('dayGroup', user.preferred_days || []);
+
+      // Consent
+      renderConsent(consent);
+    } catch (err) {
+      showToast('Failed to load profile: ' + err.message, 'error');
+    }
+  }
+
+  function setCheckboxGroup(groupId, selected) {
+    document.querySelectorAll(`#${groupId} .checkbox-item`).forEach(item => {
+      const val = item.dataset.value;
+      const isSelected = selected.includes(val);
+      item.classList.toggle('selected', isSelected);
+      item.onclick = (e) => {
+        e.preventDefault();
+        item.classList.toggle('selected');
+      };
+    });
+  }
+
+  function getCheckboxGroup(groupId) {
+    return Array.from(document.querySelectorAll(`#${groupId} .checkbox-item.selected`)).map(el => el.dataset.value);
+  }
+
+  function renderConsent(consent) {
+    const container = document.getElementById('consentList');
+    const consentMap = {};
+    consent.forEach(c => consentMap[c.channel] = c);
+
+    container.innerHTML = ALL_CHANNELS.map(ch => {
+      const c = consentMap[ch];
+      const status = c ? c.status : 'pending';
+      const statusClass = status === 'granted' ? 'granted' : status === 'withdrawn' ? 'withdrawn' : 'pending';
+      const actionLabel = status === 'granted' ? 'Withdraw' : 'Grant';
+
+      return `
+        <div class="consent-row">
+          <div>
+            <div class="consent-channel">${channelLabels[ch]}</div>
+            <div class="consent-status ${statusClass}">${status}</div>
+          </div>
+          <button class="btn btn-sm ${status === 'granted' ? 'btn-danger' : 'btn-secondary'}" onclick="toggleConsent('${ch}', '${status}')">${actionLabel}</button>
+        </div>`;
+    }).join('');
+  }
+
+  async function toggleConsent(channel, currentStatus) {
+    try {
+      if (currentStatus === 'granted') {
+        await api.del(`/users/consent/${channel}`);
+        showToast(`${channelLabels[channel]} consent withdrawn`);
+      } else {
+        await api.post('/users/consent', { channel });
+        showToast(`${channelLabels[channel]} consent granted`);
+      }
+      const data = await api.get('/users/consent');
+      renderConsent(data.consent);
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  }
+
+  async function saveProfile() {
+    try {
+      await api.put('/users/profile', {
+        name: document.getElementById('fName').value.trim(),
+        phone: document.getElementById('fPhone').value.trim(),
+        company: document.getElementById('fCompany').value.trim(),
+        work_sector: document.getElementById('fSector').value,
+        preferred_channels: getCheckboxGroup('channelGroup'),
+        preferred_days: getCheckboxGroup('dayGroup'),
+        preferred_time_start: document.getElementById('fTimeStart').value,
+        preferred_time_end: document.getElementById('fTimeEnd').value
+      });
+      showToast('Profile saved');
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  }
+
+  loadProfile();
+</script>
+</body>
+</html>

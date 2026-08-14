@@ -43,7 +43,7 @@ jobs:
 
       - name: Check the server boots
         run: |
-          node server/index.js &
+          node src/server.js &
           SERVER_PID=$!
           for i in $(seq 1 20); do
             if curl -sf http://localhost:3000/api/health > /dev/null; then

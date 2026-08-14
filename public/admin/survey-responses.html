@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dev Circle — Survey Responses</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/css/tokens.css">
+  <style>
+    .topnav { position:sticky;top:0;z-index:100;background:var(--ink);border-bottom:1px solid rgba(160,160,184,0.06);padding:0 var(--sp-6); }
+    .topnav-inner { max-width:960px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;height:56px; }
+    .topnav-logo { font-family:var(--font-display);font-weight:var(--fw-black);font-size:var(--fs-md);letter-spacing:-0.03em;color:var(--white);text-decoration:none; }
+    .topnav-logo span { color:var(--cd-blue); }
+    .topnav-logo .badge { font-family:var(--font-mono);font-size:10px;color:var(--cd-blue);background:var(--cd-blue-dim);padding:2px 6px;border-radius:var(--r-sm);margin-left:var(--sp-2); }
+    .topnav-back { font-size:var(--fs-sm);color:var(--ash);text-decoration:none; }
+    .topnav-back:hover { color:var(--white); }
+
+    .page { max-width:960px;margin:0 auto;padding:var(--sp-8) var(--sp-6); }
+    .page-header { margin-bottom:var(--sp-8); }
+    .page-title { font-family:var(--font-display);font-weight:var(--fw-bold);font-size:var(--fs-2xl);letter-spacing:-0.03em;margin-bottom:var(--sp-1); }
+    .page-subtitle { color:var(--ash);font-size:var(--fs-sm); }
+
+    .stat-strip { display:flex;gap:var(--sp-6);flex-wrap:wrap;padding:var(--sp-4) 0;margin-bottom:var(--sp-6);border-bottom:1px solid rgba(160,160,184,0.06); }
+    .stat-item .val { font-family:var(--font-display);font-weight:var(--fw-black);font-size:var(--fs-xl);letter-spacing:-0.03em; }
+    .stat-item .label { font-size:var(--fs-xs);color:var(--ash-dim);margin-top:2px; }
+
+    .section { margin-bottom:var(--sp-10); }
+    .section-title { font-family:var(--font-display);font-weight:var(--fw-semibold);font-size:var(--fs-md);letter-spacing:-0.01em;margin-bottom:var(--sp-4); }
+
+    .question-summary { margin-bottom:var(--sp-6); }
+    .question-text { font-weight:var(--fw-semibold);font-size:var(--fs-sm);margin-bottom:var(--sp-2); }
+    .question-type { font-size:var(--fs-xs);color:var(--ash-dim);font-family:var(--font-mono);margin-bottom:var(--sp-2); }
+
+    .rating-bar { display:flex;align-items:flex-end;gap:var(--sp-1);height:120px;margin-bottom:var(--sp-2); }
+    .rating-bar-col { flex:1;display:flex;flex-direction:column;align-items:center;gap:var(--sp-1); }
+    .rating-bar-fill { width:100%;border-radius:var(--r-sm) var(--r-sm) 0 0;transition:height var(--duration-normal) var(--ease-out);min-height:4px; }
+    .rating-bar-label { font-size:10px;font-family:var(--font-mono);color:var(--ash-dim); }
+    .rating-bar-count { font-size:10px;font-family:var(--font-mono);color:var(--ash); }
+
+    .choice-bar { margin-bottom:var(--sp-2); }
+    .choice-bar-row { display:flex;align-items:center;gap:var(--sp-3);margin-bottom:var(--sp-1); }
+    .choice-bar-label { font-size:var(--fs-xs);width:120px;flex-shrink:0;text-align:right;color:var(--ash); }
+    .choice-bar-track { flex:1;height:20px;background:rgba(160,160,184,0.04);border-radius:var(--r-sm);overflow:hidden;position:relative; }
+    .choice-bar-fill { height:100%;border-radius:var(--r-sm);transition:width var(--duration-normal) var(--ease-out); }
+    .choice-bar-count { font-size:10px;font-family:var(--font-mono);color:var(--ash);width:30px; }
+
+    .text-responses { list-style:none; }
+    .text-response {
+      padding:var(--sp-3);margin-bottom:var(--sp-2);
+      border-left:2px solid rgba(160,160,184,0.10);font-size:var(--fs-sm);color:var(--ash);
+      line-height:var(--lh-loose);
+    }
+    .text-response .author { font-size:var(--fs-xs);color:var(--ash-dim);font-weight:var(--fw-medium);margin-bottom:2px; }
+
+    .response-table { width:100%;border-collapse:collapse;font-size:var(--fs-sm); }
+    .response-table th { text-align:left;font-family:var(--font-display);font-weight:var(--fw-semibold);font-size:11px;color:var(--ash-dim);text-transform:uppercase;letter-spacing:0.08em;padding:var(--sp-2) var(--sp-3);border-bottom:1px solid rgba(160,160,184,0.06); }
+    .response-table td { padding:var(--sp-3);border-bottom:1px solid rgba(160,160,184,0.03);vertical-align:top; }
+    .response-table tr:hover td { background:rgba(160,160,184,0.02); }
+    .mono-sm { font-family:var(--font-mono);font-size:var(--fs-xs);color:var(--ash); }
+
+    .btn { display:inline-flex;align-items:center;justify-content:center;gap:var(--sp-2);font-family:var(--font-body);font-size:var(--fs-sm);font-weight:var(--fw-medium);padding:var(--sp-2) var(--sp-4);border-radius:var(--r-md);transition:all var(--duration-fast) var(--ease-out);white-space:nowrap;cursor:pointer;border:none; }
+    .btn-primary { background:var(--cd-blue);color:var(--white); }
+    .btn-primary:hover { background:var(--cd-blue-deep); }
+    .btn-secondary { background:none;color:var(--ash);border:1px solid rgba(160,160,184,0.10); }
+    .btn-secondary:hover { color:var(--white);border-color:rgba(160,160,184,0.25); }
+    .btn-sm { font-size:var(--fs-xs);padding:var(--sp-1) var(--sp-3); }
+
+    @media (max-width:768px) { .page{padding:var(--sp-6) var(--sp-4);} .page-title{font-size:var(--fs-xl);} .stat-strip{gap:var(--sp-4);} .choice-bar-label{width:80px;} }
+  </style>
+</head>
+<body>
+
+  <nav class="topnav">
+    <div class="topnav-inner">
+      <a href="/admin/dashboard.html" class="topnav-logo">dev<span>.</span>circle <span class="badge">Admin</span></a>
+      <a href="/admin/dashboard.html" class="topnav-back">← Back</a>
+    </div>
+  </nav>
+
+  <div class="page" id="surveyPage">
+    <div style="text-align:center;padding:var(--sp-16);color:var(--ash)">Loading…</div>
+  </div>
+
+<script src="/assets/js/api.js"></script>
+<script>
+  if (!Auth.requireAuth(true)) throw new Error('Redirecting');
+
+  async function load() {
+    const params = new URLSearchParams(window.location.search);
+    const id = params.get('id');
+    if (!id) { window.location.href = '/admin/dashboard.html'; return; }
+
+    try {
+      const data = await api.get(`/admin/surveys/${id}/responses`);
+      const s = data.survey;
+      const responses = data.responses;
+      const completed = responses.filter(r => r.completed_at);
+      const questions = s.questions;
+
+      document.getElementById('surveyPage').innerHTML = `
+        <header class="page-header">
+          <h1 class="page-title">${escapeHtml(s.title)}</h1>
+          <p class="page-subtitle">${escapeHtml(s.description || '')} · ${s.status} · ${s.engagement_mode}</p>
+        </header>
+
+        <div class="stat-strip">
+          <div class="stat-item"><div class="val">${responses.length}</div><div class="label">Invited</div></div>
+          <div class="stat-item"><div class="val">${completed.length}</div><div class="label">Completed</div></div>
+          <div class="stat-item"><div class="val">${responses.length ? Math.round((completed.length / responses.length) * 100) : 0}%</div><div class="label">Rate</div></div>
+          <div class="stat-item"><div class="val">~${s.time_estimate_min}m</div><div class="label">Estimate</div></div>
+        </div>
+
+        <section class="section">
+          <h2 class="section-title">Question analysis</h2>
+          ${questions.map((q, i) => renderQuestionAnalysis(q, i, completed)).join('')}
+        </section>
+
+        <section class="section">
+          <h2 class="section-title">Individual responses</h2>
+          <table class="response-table">
+            <thead>
+              <tr>
+                <th>Respondent</th>
+                ${questions.map(q => `<th>${escapeHtml(q.text.slice(0, 30))}${q.text.length > 30 ? '…' : ''}</th>`).join('')}
+                <th>Submitted</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${completed.map(r => `
+                <tr>
+                  <td><strong>${escapeHtml(r.user_name)}</strong><br><span class="mono-sm">${escapeHtml(r.user_email)}</span></td>
+                  ${questions.map(q => {
+                    const val = r.answers[q.id];
+                    if (val === undefined) return '<td class="mono-sm">—</td>';
+                    if (q.type === 'rating') return `<td class="mono-sm">${val}/${q.scale || 5}</td>`;
+                    if (q.type === 'choice') return `<td>${escapeHtml(String(val))}</td>`;
+                    return `<td style="font-size:var(--fs-xs);color:var(--ash);max-width:200px">${escapeHtml(String(val).slice(0, 80))}${String(val).length > 80 ? '…' : ''}</td>`;
+                  }).join('')}
+                  <td class="mono-sm">${formatDate(r.completed_at)}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </section>
+      `;
+    } catch (err) {
+      document.getElementById('surveyPage').innerHTML = `<div style="text-align:center;padding:var(--sp-16);color:var(--rose)">${err.message}</div>`;
+    }
+  }
+
+  function renderQuestionAnalysis(q, index, completed) {
+    const answers = completed.map(r => r.answers[q.id]).filter(a => a !== undefined && a !== null && a !== '');
+    if (!answers.length) return `<div class="question-summary"><div class="question-text">Q${index + 1}. ${escapeHtml(q.text)}</div><div style="color:var(--ash-dim);font-size:var(--fs-xs)">No responses</div></div>`;
+
+    let analysis = '';
+
+    if (q.type === 'rating') {
+      const scale = q.scale || 5;
+      const counts = {};
+      for (let i = 1; i <= scale; i++) counts[i] = 0;
+      answers.forEach(a => { const v = Math.round(a); if (counts[v] !== undefined) counts[v]++; });
+      const max = Math.max(...Object.values(counts), 1);
+      const avg = (answers.reduce((s, a) => s + a, 0) / answers.length).toFixed(1);
+
+      analysis = `
+        <div style="font-family:var(--font-display);font-weight:var(--fw-black);font-size:var(--fs-2xl);margin-bottom:var(--sp-2)">${avg}<span style="font-size:var(--fs-sm);color:var(--ash);font-weight:400">/${scale} avg</span></div>
+        <div class="rating-bar">
+          ${Array.from({length: scale}, (_, i) => {
+            const v = i + 1;
+            const pct = (counts[v] / max) * 100;
+            return `<div class="rating-bar-col">
+              <div class="rating-bar-count">${counts[v]}</div>
+              <div class="rating-bar-fill" style="height:${Math.max(pct, 3)}%;background:var(--cd-blue)"></div>
+              <div class="rating-bar-label">${v}</div>
+            </div>`;
+          }).join('')}
+        </div>`;
+    } else if (q.type === 'choice') {
+      const counts = {};
+      answers.forEach(a => { counts[a] = (counts[a] || 0) + 1; });
+      const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+      const max = sorted[0][1];
+
+      analysis = `<div class="choice-bar">
+        ${sorted.map(([label, count]) => `
+          <div class="choice-bar-row">
+            <div class="choice-bar-label">${escapeHtml(label)}</div>
+            <div class="choice-bar-track"><div class="choice-bar-fill" style="width:${(count / max) * 100}%;background:var(--cd-blue)"></div></div>
+            <div class="choice-bar-count">${count}</div>
+          </div>
+        `).join('')}
+      </div>`;
+    } else if (q.type === 'text') {
+      analysis = `<ul class="text-responses">
+        ${answers.slice(0, 10).map(a => `<li class="text-response">"${escapeHtml(String(a))}"</li>`).join('')}
+        ${answers.length > 10 ? `<li style="font-size:var(--fs-xs);color:var(--ash-dim)">+${answers.length - 10} more responses</li>` : ''}
+      </ul>`;
+    }
+
+    return `
+      <div class="question-summary">
+        <div class="question-type">${q.type} · ${answers.length} responses</div>
+        <div class="question-text">Q${index + 1}. ${escapeHtml(q.text)}</div>
+        ${analysis}
+      </div>`;
+  }
+
+  load();
+</script>
+</body>
+</html>

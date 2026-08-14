@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dev Circle — Gifts</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/css/tokens.css">
+  <style>
+    .topnav { position:sticky;top:0;z-index:100;background:var(--ink);border-bottom:1px solid rgba(160,160,184,0.06);padding:0 var(--sp-6); }
+    .topnav-inner { max-width:720px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;height:56px; }
+    .topnav-logo { font-family:var(--font-display);font-weight:var(--fw-black);font-size:var(--fs-md);letter-spacing:-0.03em;color:var(--white);text-decoration:none; }
+    .topnav-logo span { color:var(--cd-blue); }
+    .topnav-links { display:flex;gap:var(--sp-1); }
+    .topnav-link { padding:var(--sp-2) var(--sp-3);border-radius:var(--r-md);font-size:var(--fs-sm);font-weight:var(--fw-medium);color:var(--ash);cursor:pointer;border:none;background:none;transition:all var(--duration-fast) var(--ease-out);text-decoration:none; }
+    .topnav-link:hover { color:var(--white);background:rgba(160,160,184,0.05); }
+    .topnav-link.active { color:var(--white);background:var(--cd-blue-dim); }
+    .topnav-user { display:flex;align-items:center;gap:var(--sp-2);font-size:var(--fs-sm);color:var(--ash);cursor:pointer;padding:var(--sp-1) var(--sp-2);border-radius:var(--r-md);border:none;background:none; }
+    .topnav-user:hover { background:rgba(160,160,184,0.05); }
+    .topnav-avatar { width:28px;height:28px;border-radius:50%;background:var(--cd-blue-dim);color:var(--cd-blue);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:var(--fw-bold);font-family:var(--font-display); }
+
+    .page { max-width:720px;margin:0 auto;padding:var(--sp-8) var(--sp-6); }
+    .page-header { margin-bottom:var(--sp-8); }
+    .page-title { font-family:var(--font-display);font-weight:var(--fw-bold);font-size:var(--fs-2xl);letter-spacing:-0.03em;margin-bottom:var(--sp-1); }
+    .page-subtitle { color:var(--ash);font-size:var(--fs-sm); }
+
+    .stat-strip { display:flex;gap:var(--sp-6);flex-wrap:wrap;padding:var(--sp-4) 0;margin-bottom:var(--sp-6);border-bottom:1px solid rgba(160,160,184,0.06); }
+    .stat-item .val { font-family:var(--font-display);font-weight:var(--fw-black);font-size:var(--fs-xl);letter-spacing:-0.03em; }
+    .stat-item .label { font-size:var(--fs-xs);color:var(--ash-dim);margin-top:2px; }
+
+    .section { margin-bottom:var(--sp-10); }
+    .section-title { font-family:var(--font-display);font-weight:var(--fw-semibold);font-size:var(--fs-md);letter-spacing:-0.01em;margin-bottom:var(--sp-4); }
+
+    .gift-list { list-style:none; }
+    .gift-item {
+      display:flex;align-items:center;gap:var(--sp-4);
+      padding:var(--sp-4) 0;border-bottom:1px solid rgba(160,160,184,0.04);
+    }
+    .gift-item:last-child { border-bottom:none; }
+    .gift-icon { font-size:var(--fs-2xl);width:48px;text-align:center;flex-shrink:0; }
+    .gift-body { flex:1; }
+    .gift-name { font-weight:var(--fw-semibold);font-size:var(--fs-base);margin-bottom:2px; }
+    .gift-desc { font-size:var(--fs-sm);color:var(--ash); }
+    .gift-value { font-family:var(--font-display);font-weight:var(--fw-bold);font-size:var(--fs-lg);white-space:nowrap; }
+
+    .btn { display:inline-flex;align-items:center;justify-content:center;gap:var(--sp-2);font-family:var(--font-body);font-size:var(--fs-sm);font-weight:var(--fw-medium);padding:var(--sp-2) var(--sp-4);border-radius:var(--r-md);transition:all var(--duration-fast) var(--ease-out);white-space:nowrap;cursor:pointer;border:none; }
+    .btn-primary { background:var(--cd-blue);color:var(--white); }
+    .btn-primary:hover { background:var(--cd-blue-deep); }
+    .btn-gold { background:var(--cd-gold);color:var(--ink);font-weight:var(--fw-semibold); }
+    .btn-gold:hover { background:var(--cd-gold-deep); }
+    .btn-secondary { background:none;color:var(--ash);border:1px solid rgba(160,160,184,0.10); }
+    .btn-secondary:hover { color:var(--white);border-color:rgba(160,160,184,0.25); }
+    .btn-sm { font-size:var(--fs-xs);padding:var(--sp-1) var(--sp-3); }
+
+    .claimed-badge { font-size:var(--fs-xs);font-family:var(--font-mono);color:var(--emerald);background:var(--emerald-dim);padding:2px 8px;border-radius:var(--r-sm); }
+    .empty { text-align:center;padding:var(--sp-8);color:var(--ash-dim);font-size:var(--fs-sm); }
+
+    @media (max-width:640px) { .page{padding:var(--sp-6) var(--sp-4);} .page-title{font-size:var(--fs-xl);} .gift-item{flex-wrap:wrap;} }
+  </style>
+</head>
+<body>
+
+  <nav class="topnav">
+    <div class="topnav-inner">
+      <a href="/member/dashboard.html" class="topnav-logo">dev<span>.</span>circle</a>
+      <div class="topnav-links">
+        <a href="/member/dashboard.html" class="topnav-link">Home</a>
+        <a href="/member/dashboard.html" class="topnav-link" onclick="localStorage.setItem('devcircle_view','surveys')">Surveys</a>
+        <a href="/member/profile.html" class="topnav-link">Profile</a>
+        <a href="/member/gifts.html" class="topnav-link active">Gifts</a>
+      </div>
+      <button class="topnav-user" onclick="Auth.logout()">
+        <div class="topnav-avatar" id="navAvatar">—</div>
+      </button>
+    </div>
+  </nav>
+
+  <div class="page">
+    <header class="page-header">
+      <h1 class="page-title">Your gifts</h1>
+      <p class="page-subtitle">Rewards for your engagement with the Credit Direct developer ecosystem.</p>
+    </header>
+
+    <div class="stat-strip" id="statStrip"></div>
+
+    <section class="section">
+      <h2 class="section-title">Ready to claim</h2>
+      <ul class="gift-list" id="availableGifts"></ul>
+    </section>
+
+    <section class="section" id="lockedSection" hidden>
+      <h2 class="section-title">Keep going to unlock</h2>
+      <ul class="gift-list" id="lockedGifts"></ul>
+    </section>
+
+    <section class="section">
+      <h2 class="section-title">Claimed</h2>
+      <ul class="gift-list" id="claimedGifts"></ul>
+    </section>
+  </div>
+
+<script src="/assets/js/api.js"></script>
+<script>
+  if (!Auth.requireAuth(false)) throw new Error('Redirecting');
+
+  const GIFT_ICONS = ['🎁', '📱', '💳', '🎫', '🎧', '⌚', '🎮', '💡'];
+
+  const money = g => `${g.currency === 'NGN' ? '₦' : '$'}${Number(g.value || 0).toLocaleString()}`;
+
+  function giftRow(g, index, trailing) {
+    return `
+      <li class="gift-item">
+        <div class="gift-icon">${GIFT_ICONS[index % GIFT_ICONS.length]}</div>
+        <div class="gift-body">
+          <div class="gift-name">${escapeHtml(g.name)}</div>
+          <div class="gift-desc">${escapeHtml(g.description || '')}</div>
+          ${g.remaining !== null && g.remaining !== undefined
+            ? `<div class="gift-desc" style="opacity:.7">${g.remaining} left</div>` : ''}
+        </div>
+        <div style="text-align:right">
+          <div class="gift-value">${money(g)}</div>
+          ${trailing}
+        </div>
+      </li>`;
+  }
+
+  async function loadGifts() {
+    try {
+      const [profile, gifts] = await Promise.all([
+        api.get('/users/profile'),
+        api.get('/users/gifts')
+      ]);
+
+      const user = profile.user;
+      document.getElementById('navAvatar').textContent =
+        user.name.split(' ').map(n => n[0]).join('').toUpperCase();
+
+      document.getElementById('statStrip').innerHTML = `
+        <div class="stat-item"><div class="val">${gifts.claimed.length}</div><div class="label">Claimed</div></div>
+        <div class="stat-item"><div class="val">${gifts.progress.surveys_completed}</div><div class="label">Surveys done</div></div>
+        <div class="stat-item"><div class="val">${gifts.progress.streak}</div><div class="label">Streak</div></div>
+      `;
+
+      document.getElementById('availableGifts').innerHTML = gifts.available.length
+        ? gifts.available.map((g, i) => giftRow(g, i,
+            `<button class="btn btn-sm btn-gold" onclick="claimGift('${g.id}', this)">Claim</button>`
+          )).join('')
+        : '<li class="empty">Nothing ready to claim yet — complete a survey to unlock your first reward.</li>';
+
+      // Show what's still out of reach and exactly what it takes, rather than
+      // hiding it or pretending it's available.
+      const lockedSection = document.getElementById('lockedSection');
+      lockedSection.hidden = gifts.locked.length === 0;
+      document.getElementById('lockedGifts').innerHTML = gifts.locked.map((g, i) =>
+        giftRow(g, i + gifts.available.length,
+          `<div class="gift-desc" style="max-width:180px">${g.requirements.map(escapeHtml).join(' · ')}</div>`
+        )).join('');
+
+      document.getElementById('claimedGifts').innerHTML = gifts.claimed.length
+        ? gifts.claimed.map((g, i) => giftRow(g, i,
+            `<span class="claimed-badge">${g.delivered_at ? '✓ Delivered' : '✓ Claimed'}</span>`
+          )).join('')
+        : '<li class="empty">No gifts claimed yet.</li>';
+    } catch (err) {
+      showToast('Failed to load gifts: ' + err.message, 'error');
+    }
+  }
+
+  async function claimGift(id, button) {
+    button.disabled = true;
+    button.textContent = 'Claiming…';
+    try {
+      const res = await api.post(`/users/gifts/${id}/claim`, {});
+      showToast(`${res.gift.name} claimed — we'll be in touch with delivery details.`);
+      await loadGifts();
+    } catch (err) {
+      showToast(err.message, 'error');
+      button.disabled = false;
+      button.textContent = 'Claim';
+    }
+  }
+
+  loadGifts();
+</script>
+</body>
+</html>

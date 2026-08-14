@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dev Circle — Member</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/css/tokens.css">
+  <style>
+    .topnav { position:sticky;top:0;z-index:100;background:var(--ink);border-bottom:1px solid rgba(160,160,184,0.06);padding:0 var(--sp-6); }
+    .topnav-inner { max-width:960px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;height:56px; }
+    .topnav-logo { font-family:var(--font-display);font-weight:var(--fw-black);font-size:var(--fs-md);letter-spacing:-0.03em;color:var(--white);text-decoration:none; }
+    .topnav-logo span { color:var(--cd-blue); }
+    .topnav-logo .badge { font-family:var(--font-mono);font-size:10px;color:var(--cd-blue);background:var(--cd-blue-dim);padding:2px 6px;border-radius:var(--r-sm);margin-left:var(--sp-2);letter-spacing:0.06em;text-transform:uppercase; }
+    .topnav-back { font-size:var(--fs-sm);color:var(--ash);text-decoration:none;display:flex;align-items:center;gap:var(--sp-1); }
+    .topnav-back:hover { color:var(--white); }
+
+    .page { max-width:960px;margin:0 auto;padding:var(--sp-8) var(--sp-6); }
+
+    .member-header { display:flex;align-items:flex-start;gap:var(--sp-5);margin-bottom:var(--sp-8); }
+    .member-avatar { width:56px;height:56px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-weight:var(--fw-bold);font-size:var(--fs-lg);flex-shrink:0; }
+    .member-name { font-family:var(--font-display);font-weight:var(--fw-bold);font-size:var(--fs-xl);letter-spacing:-0.02em;margin-bottom:var(--sp-1); }
+    .member-meta { font-size:var(--fs-sm);color:var(--ash);display:flex;gap:var(--sp-3);flex-wrap:wrap; }
+    .member-meta .sep { color:var(--ash-dim); }
+    .member-actions { margin-left:auto;display:flex;gap:var(--sp-2);flex-shrink:0; }
+
+    .stat-strip { display:flex;gap:var(--sp-6);flex-wrap:wrap;padding:var(--sp-4) 0;margin-bottom:var(--sp-6);border-bottom:1px solid rgba(160,160,184,0.06); }
+    .stat-item .val { font-family:var(--font-display);font-weight:var(--fw-black);font-size:var(--fs-xl);letter-spacing:-0.03em; }
+    .stat-item .label { font-size:var(--fs-xs);color:var(--ash-dim);margin-top:2px; }
+
+    .section { margin-bottom:var(--sp-10); }
+    .section-title { font-family:var(--font-display);font-weight:var(--fw-semibold);font-size:var(--fs-md);letter-spacing:-0.01em;margin-bottom:var(--sp-4); }
+
+    .info-grid { display:grid;grid-template-columns:1fr 1fr;gap:var(--sp-3);margin-bottom:var(--sp-4); }
+    .info-item .label { font-size:var(--fs-xs);color:var(--ash-dim);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:2px; }
+    .info-item .value { font-size:var(--fs-sm);font-weight:var(--fw-medium); }
+
+    .tag { display:inline-block;font-size:var(--fs-xs);padding:2px 8px;border-radius:var(--r-sm);background:rgba(160,160,184,0.06);color:var(--ash);margin-right:4px;margin-bottom:4px; }
+    .tag.cohort { cursor:default; }
+
+    .timeline { list-style:none; }
+    .timeline-item { display:flex;gap:var(--sp-3);padding:var(--sp-2) 0;border-bottom:1px solid rgba(160,160,184,0.02);font-size:var(--fs-sm); }
+    .timeline-item:last-child { border-bottom:none; }
+    .timeline-dot { width:7px;height:7px;border-radius:50%;margin-top:7px;flex-shrink:0; }
+    .timeline-dot.survey { background:var(--cd-blue); }
+    .timeline-dot.gift { background:var(--emerald); }
+    .timeline-dot.feedback { background:var(--cd-gold); }
+    .timeline-dot.system { background:var(--ash-dim); }
+    .timeline-body { flex:1; }
+    .timeline-text { }
+    .timeline-time { font-size:var(--fs-xs);color:var(--ash-dim);font-family:var(--font-mono);margin-top:2px; }
+
+    .feedback-item { padding:var(--sp-3) 0;border-bottom:1px solid rgba(160,160,184,0.03); }
+    .feedback-item:last-child { border-bottom:none; }
+    .feedback-head { display:flex;align-items:center;gap:var(--sp-2);margin-bottom:var(--sp-1); }
+    .feedback-cat { font-size:var(--fs-xs);font-weight:var(--fw-medium);color:var(--cd-blue); }
+    .feedback-status { font-size:10px;font-family:var(--font-mono);padding:2px 6px;border-radius:var(--r-sm); }
+    .feedback-status.open { color:var(--cd-gold);background:var(--cd-gold-dim); }
+    .feedback-status.reviewed { color:var(--ash);background:rgba(160,160,184,0.06); }
+    .feedback-status.resolved { color:var(--emerald);background:var(--emerald-dim); }
+    .feedback-content { font-size:var(--fs-sm);color:var(--ash);line-height:var(--lh-loose); }
+    .feedback-time { font-size:var(--fs-xs);color:var(--ash-dim);font-family:var(--font-mono);margin-top:var(--sp-1); }
+
+    .btn { display:inline-flex;align-items:center;justify-content:center;gap:var(--sp-2);font-family:var(--font-body);font-size:var(--fs-sm);font-weight:var(--fw-medium);padding:var(--sp-2) var(--sp-4);border-radius:var(--r-md);transition:all var(--duration-fast) var(--ease-out);white-space:nowrap;cursor:pointer;border:none; }
+    .btn-primary { background:var(--cd-blue);color:var(--white); }
+    .btn-primary:hover { background:var(--cd-blue-deep); }
+    .btn-secondary { background:none;color:var(--ash);border:1px solid rgba(160,160,184,0.10); }
+    .btn-secondary:hover { color:var(--white);border-color:rgba(160,160,184,0.25); }
+    .btn-ghost { background:none;color:var(--ash);border:none; }
+    .btn-ghost:hover { color:var(--white); }
+    .btn-sm { font-size:var(--fs-xs);padding:var(--sp-1) var(--sp-3); }
+    .btn-danger { background:none;color:var(--rose);border:1px solid rgba(225,29,72,0.20); }
+    .btn-danger:hover { background:var(--rose-dim); }
+
+    .modal-overlay { display:none;position:fixed;inset:0;z-index:999;background:rgba(26,26,46,0.85);align-items:center;justify-content:center; }
+    .modal-overlay.open { display:flex; }
+    .modal-box { background:var(--slate);border-radius:var(--r-lg);padding:var(--sp-6);max-width:400px;width:90%; }
+    .modal-title { font-family:var(--font-display);font-weight:var(--fw-bold);font-size:var(--fs-lg);margin-bottom:var(--sp-4); }
+    .form-group { margin-bottom:var(--sp-4); }
+    .form-label { display:block;font-size:var(--fs-xs);font-weight:var(--fw-medium);color:var(--ash);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:var(--sp-1); }
+    .form-input { width:100%;background:var(--ink);border:1px solid rgba(160,160,184,0.10);border-radius:var(--r-md);padding:var(--sp-2) var(--sp-3);color:var(--white);font-size:var(--fs-sm); }
+    .form-input:focus { border-color:var(--cd-blue);outline:none; }
+
+    @media (max-width:768px) {
+      .member-header { flex-direction:column; }
+      .member-actions { margin-left:0; }
+      .info-grid { grid-template-columns:1fr; }
+    }
+  </style>
+</head>
+<body>
+
+  <nav class="topnav">
+    <div class="topnav-inner">
+      <a href="/admin/dashboard.html" class="topnav-logo">dev<span>.</span>circle <span class="badge">Admin</span></a>
+      <a href="/admin/dashboard.html" class="topnav-back">← Back to members</a>
+    </div>
+  </nav>
+
+  <div class="page" id="memberPage">
+    <div style="text-align:center;padding:var(--sp-16);color:var(--ash)">Loading member…</div>
+  </div>
+
+  <!-- RESET PASSWORD MODAL -->
+  <div class="modal-overlay" id="resetModal">
+    <div class="modal-box">
+      <h3 class="modal-title">Reset password</h3>
+      <div class="form-group">
+        <label class="form-label">New password</label>
+        <input type="password" class="form-input" id="newPassword" placeholder="Minimum 8 characters">
+      </div>
+      <div style="display:flex;gap:var(--sp-3);justify-content:flex-end">
+        <button class="btn btn-secondary" onclick="closeModal('resetModal')">Cancel</button>
+        <button class="btn btn-primary" onclick="doResetPassword()">Reset</button>
+      </div>
+    </div>
+  </div>
+
+<script src="/assets/js/api.js"></script>
+<script>
+  if (!Auth.requireAuth(true)) throw new Error('Redirecting');
+
+  const typeLabels = {
+    survey_completed:{dot:'survey',text:'Completed survey'},survey_started:{dot:'survey',text:'Started survey'},
+    survey_invited:{dot:'system',text:'Invited to survey'},gift_claimed:{dot:'gift',text:'Claimed gift'},
+    feedback_submitted:{dot:'feedback',text:'Submitted feedback'},complaint_received:{dot:'feedback',text:'Complaint logged'},
+    account_created:{dot:'system',text:'Joined'},api_key_generated:{dot:'system',text:'Generated API keys'},
+    first_sandbox_call:{dot:'system',text:'First sandbox call'},first_production_call:{dot:'survey',text:'First production call'},
+    kyb_completed:{dot:'system',text:'KYB completed'}
+  };
+
+  async function loadMember() {
+    const params = new URLSearchParams(window.location.search);
+    const id = params.get('id');
+    if (!id) { window.location.href = '/admin/dashboard.html'; return; }
+
+    try {
+      const data = await api.get(`/admin/members/${id}`);
+      const u = data.user;
+      const initials = u.name.split(' ').map(n => n[0]).join('').toUpperCase();
+      const statusColor = u.api_status === 'production' ? 'var(--teal)' : 'var(--cd-gold)';
+
+      document.getElementById('memberPage').innerHTML = `
+        <div class="member-header">
+          <div class="member-avatar" style="background:${statusColor}18;color:${statusColor}">${initials}</div>
+          <div>
+            <div class="member-name">${escapeHtml(u.name)}</div>
+            <div class="member-meta">
+              <span>${escapeHtml(u.email)}</span>
+              <span class="sep">·</span>
+              <span>${escapeHtml(u.company || '—')}</span>
+              <span class="sep">·</span>
+              <span class="state-label state-${u.api_status}">● ${u.api_status}</span>
+              ${u.kyb_completed ? '<span class="state-label state-active">● KYB ✓</span>' : ''}
+            </div>
+          </div>
+          <div class="member-actions">
+            <button class="btn btn-sm btn-secondary" onclick="showResetModal()">Reset password</button>
+            <button class="btn btn-sm ${u.status === 'active' ? 'btn-danger' : 'btn-primary'}" onclick="toggleStatus('${u.id}','${u.status}')">${u.status === 'active' ? 'Deactivate' : 'Activate'}</button>
+          </div>
+        </div>
+
+        <div class="stat-strip">
+          <div class="stat-item"><div class="val">${data.survey_responses.filter(r => r.completed_at).length}</div><div class="label">Surveys done</div></div>
+          <div class="stat-item"><div class="val">${data.engagement.filter(e => e.type === 'gift_claimed').length}</div><div class="label">Gifts claimed</div></div>
+          <div class="stat-item"><div class="val">${u.engagement_streak}</div><div class="label">Streak</div></div>
+          <div class="stat-item"><div class="val">${u.best_streak}</div><div class="label">Best streak</div></div>
+        </div>
+
+        <div class="section">
+          <h2 class="section-title">Details</h2>
+          <div class="info-grid">
+            <div class="info-item"><div class="label">Phone</div><div class="value">${escapeHtml(u.phone || '—')}</div></div>
+            <div class="info-item"><div class="label">Sector</div><div class="value">${escapeHtml(u.work_sector || '—')}</div></div>
+            <div class="info-item"><div class="label">Hub ID</div><div class="value" style="font-family:var(--font-mono);font-size:var(--fs-xs)">${u.dev_hub_user_id || 'Not linked'}</div></div>
+            <div class="info-item"><div class="label">Joined</div><div class="value">${formatDate(u.created_at)}</div></div>
+            <div class="info-item"><div class="label">Last active</div><div class="value">${formatDate(u.last_active_at)}</div></div>
+            <div class="info-item"><div class="label">Status</div><div class="value">${u.status}</div></div>
+          </div>
+        </div>
+
+        <div class="section">
+          <h2 class="section-title">Cohorts</h2>
+          <div>${data.cohorts.length ? data.cohorts.map(c => `<span class="tag cohort" style="background:${c.color}18;color:${c.color}">${escapeHtml(c.name)}</span>`).join('') : '<span style="color:var(--ash-dim);font-size:var(--fs-sm)">Not in any cohorts</span>'}</div>
+        </div>
+
+        <div class="section">
+          <h2 class="section-title">Consent</h2>
+          <div class="info-grid">
+            ${data.consent.map(c => `
+              <div class="info-item">
+                <div class="label">${c.channel}</div>
+                <div class="value" style="color:${c.status === 'granted' ? 'var(--emerald)' : c.status === 'withdrawn' ? 'var(--rose)' : 'var(--cd-gold)'}">${c.status}</div>
+              </div>`).join('') || '<div style="color:var(--ash-dim);font-size:var(--fs-sm)">No consent records</div>'}
+          </div>
+        </div>
+
+        <div class="section">
+          <h2 class="section-title">Activity</h2>
+          <ul class="timeline">
+            ${data.engagement.slice(0, 15).map(e => {
+              const info = typeLabels[e.type] || { dot: 'system', text: e.type };
+              return `<li class="timeline-item">
+                <div class="timeline-dot ${info.dot}"></div>
+                <div class="timeline-body">
+                  <div class="timeline-text">${info.text}</div>
+                  <div class="timeline-time">${formatDate(e.created_at)}</div>
+                </div>
+              </li>`;
+            }).join('') || '<li style="color:var(--ash-dim);font-size:var(--fs-sm)">No activity</li>'}
+          </ul>
+        </div>
+
+        <div class="section">
+          <h2 class="section-title">Feedback</h2>
+          ${data.feedback.length ? data.feedback.map(f => `
+            <div class="feedback-item">
+              <div class="feedback-head">
+                <span class="feedback-cat">${escapeHtml(f.category || 'General')}</span>
+                <span class="feedback-status ${f.status}">${f.status}</span>
+                ${f.external_ticket_id ? `<span style="font-family:var(--font-mono);font-size:10px;color:var(--ash-dim)">${f.external_ticket_id}</span>` : ''}
+              </div>
+              <div class="feedback-content">${escapeHtml(f.content)}</div>
+              <div class="feedback-time">${formatDate(f.created_at)}</div>
+            </div>`).join('') : '<div style="color:var(--ash-dim);font-size:var(--fs-sm)">No feedback</div>'}
+        </div>
+      `;
+    } catch (err) {
+      document.getElementById('memberPage').innerHTML = `<div style="text-align:center;padding:var(--sp-16);color:var(--rose)">${err.message}</div>`;
+    }
+  }
+
+  async function toggleStatus(id, current) {
+    const newStatus = current === 'active' ? 'inactive' : 'active';
+    if (!confirm(`${newStatus === 'inactive' ? 'Deactivate' : 'Activate'} this member?`)) return;
+    try {
+      await api.put(`/admin/members/${id}`, { status: newStatus });
+      showToast(`Member ${newStatus === 'active' ? 'activated' : 'deactivated'}`);
+      loadMember();
+    } catch (err) { showToast(err.message, 'error'); }
+  }
+
+  function showResetModal() { document.getElementById('resetModal').classList.add('open'); document.getElementById('newPassword').focus(); }
+  function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+  async function doResetPassword() {
+    const pw = document.getElementById('newPassword').value;
+    if (pw.length < 8) { showToast('Password must be at least 8 characters', 'warning'); return; }
+    const params = new URLSearchParams(window.location.search);
+    try {
+      await api.post(`/admin/members/${params.get('id')}/reset-password`, { new_password: pw });
+      closeModal('resetModal');
+      document.getElementById('newPassword').value = '';
+      showToast('Password reset');
+    } catch (err) { showToast(err.message, 'error'); }
+  }
+
+  document.querySelectorAll('.modal-overlay').forEach(m => { m.addEventListener('click', e => { if (e.target === m) m.classList.remove('open'); }); });
+
+  loadMember();
+</script>
+</body>
+</html>
