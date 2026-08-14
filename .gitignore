@@ -1,0 +1,40 @@
+# Dependencies
+node_modules/
+
+# Secrets — .env.example is committed, .env never is
+.env
+.env.*
+!.env.example
+
+# The SQLite database is local state, rebuilt with `npm run seed`.
+# Committing it would publish member records and password hashes.
+data/
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# Logs
+*.log
+npm-debug.log*
+logs/
+
+# Test and coverage output
+coverage/
+.nyc_output/
+
+# Editor and OS noise
+.DS_Store
+Thumbs.db
+.idea/
+*.swp
+*.swo
+.vscode/*
+!.vscode/settings.json
+
+# Build and temp
+dist/
+build/
+tmp/
+*.tgz

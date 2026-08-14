@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dev Circle — New Cohort</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="tokens.css">
+  <style>
+    .topnav { position:sticky;top:0;z-index:100;background:var(--ink);border-bottom:1px solid rgba(160,160,184,0.06);padding:0 var(--sp-6); }
+    .topnav-inner { max-width:720px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;height:56px; }
+    .topnav-logo { font-family:var(--font-display);font-weight:var(--fw-black);font-size:var(--fs-md);letter-spacing:-0.03em;color:var(--white);text-decoration:none; }
+    .topnav-logo span { color:var(--cd-blue); }
+    .topnav-logo .badge { font-family:var(--font-mono);font-size:10px;color:var(--cd-blue);background:var(--cd-blue-dim);padding:2px 6px;border-radius:var(--r-sm);margin-left:var(--sp-2); }
+    .topnav-back { font-size:var(--fs-sm);color:var(--ash);text-decoration:none; }
+    .topnav-back:hover { color:var(--white); }
+
+    .page { max-width:720px;margin:0 auto;padding:var(--sp-8) var(--sp-6); }
+    .page-header { margin-bottom:var(--sp-8); }
+    .page-title { font-family:var(--font-display);font-weight:var(--fw-bold);font-size:var(--fs-2xl);letter-spacing:-0.03em;margin-bottom:var(--sp-1); }
+    .page-subtitle { color:var(--ash);font-size:var(--fs-sm);line-height:var(--lh-loose); }
+
+    .section { margin-bottom:var(--sp-8); }
+    .section-title { font-family:var(--font-display);font-weight:var(--fw-semibold);font-size:var(--fs-md);letter-spacing:-0.01em;margin-bottom:var(--sp-4); }
+    .section-hint { font-size:var(--fs-xs);color:var(--ash-dim);margin-bottom:var(--sp-3); }
+
+    .form-group { margin-bottom:var(--sp-4); }
+    .form-label { display:block;font-size:var(--fs-xs);font-weight:var(--fw-medium);color:var(--ash);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:var(--sp-1); }
+    .form-input { width:100%;background:var(--slate);border:1px solid rgba(160,160,184,0.08);border-radius:var(--r-md);padding:var(--sp-2) var(--sp-3);color:var(--white);font-size:var(--fs-sm);transition:border-color var(--duration-fast) var(--ease-out); }
+    .form-input::placeholder { color:var(--ash-dim); }
+    .form-input:focus { border-color:var(--cd-blue);outline:none; }
+    select.form-input { cursor:pointer; }
+    textarea.form-input { min-height:80px;font-family:var(--font-body);resize:vertical; }
+
+    .color-options { display:flex;gap:var(--sp-2);flex-wrap:wrap; }
+    .color-swatch {
+      width:32px;height:32px;border-radius:50%;cursor:pointer;border:3px solid transparent;
+      transition:all var(--duration-fast) var(--ease-out);
+    }
+    .color-swatch:hover { transform:scale(1.1); }
+    .color-swatch.selected { border-color:var(--white);box-shadow:0 0 0 2px var(--ink); }
+
+    .rule-row {
+      display:flex;align-items:center;gap:var(--sp-2);padding:var(--sp-2) 0;
+      border-bottom:1px solid rgba(160,160,184,0.03);
+    }
+    .rule-row select, .rule-row input { background:var(--ink);border:1px solid rgba(160,160,184,0.10);border-radius:var(--r-md);padding:var(--sp-1) var(--sp-2);color:var(--white);font-size:var(--fs-xs); }
+    .rule-row select { cursor:pointer; }
+    .rule-row input:focus, .rule-row select:focus { border-color:var(--cd-blue);outline:none; }
+    .rule-remove { background:none;border:none;color:var(--ash-dim);cursor:pointer;font-size:var(--fs-md);padding:var(--sp-1); }
+    .rule-remove:hover { color:var(--rose); }
+
+    .btn { display:inline-flex;align-items:center;justify-content:center;gap:var(--sp-2);font-family:var(--font-body);font-size:var(--fs-sm);font-weight:var(--fw-medium);padding:var(--sp-2) var(--sp-4);border-radius:var(--r-md);transition:all var(--duration-fast) var(--ease-out);white-space:nowrap;cursor:pointer;border:none; }
+    .btn-primary { background:var(--cd-blue);color:var(--white); }
+    .btn-primary:hover { background:var(--cd-blue-deep); }
+    .btn-secondary { background:none;color:var(--ash);border:1px solid rgba(160,160,184,0.10); }
+    .btn-secondary:hover { color:var(--white);border-color:rgba(160,160,184,0.25); }
+    .btn-ghost { background:none;color:var(--ash);border:none; }
+    .btn-ghost:hover { color:var(--white); }
+    .btn-sm { font-size:var(--fs-xs);padding:var(--sp-1) var(--sp-3); }
+
+    .preview-box {
+      background:var(--slate);border:1px solid rgba(160,160,184,0.06);border-radius:var(--r-lg);
+      padding:var(--sp-4);margin-top:var(--sp-4);
+    }
+    .preview-title { font-size:var(--fs-xs);color:var(--ash-dim);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:var(--sp-2); }
+
+    .save-bar { display:flex;gap:var(--sp-3);padding-top:var(--sp-4);border-top:1px solid rgba(160,160,184,0.06);margin-top:var(--sp-4); }
+
+    @media (max-width:640px) {
+      .page { padding:var(--sp-6) var(--sp-4); }
+      .page-title { font-size:var(--fs-xl); }
+    }
+  </style>
+</head>
+<body>
+
+  <nav class="topnav">
+    <div class="topnav-inner">
+      <a href="admin-dashboard.html" class="topnav-logo">dev<span>.</span>circle <span class="badge">Admin</span></a>
+      <a href="admin-dashboard.html" class="topnav-back">← Back</a>
+    </div>
+  </nav>
+
+  <div class="page">
+    <header class="page-header">
+      <h1 class="page-title">Create cohort</h1>
+      <p class="page-subtitle">Group members by shared properties. You can add members manually or define rules for automatic assignment.</p>
+    </header>
+
+    <section class="section">
+      <h2 class="section-title">Details</h2>
+      <div class="form-group">
+        <label class="form-label">Name</label>
+        <input type="text" class="form-input" id="cName" placeholder="e.g. Weekend Warriors">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Description</label>
+        <textarea class="form-input" id="cDesc" placeholder="Who is this cohort for?"></textarea>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Color</label>
+        <div class="color-options" id="colorOptions">
+          <div class="color-swatch selected" style="background:#107EBC" data-color="#107EBC"></div>
+          <div class="color-swatch" style="background:#E6B473" data-color="#E6B473"></div>
+          <div class="color-swatch" style="background:#945A39" data-color="#945A39"></div>
+          <div class="color-swatch" style="background:#0D9488" data-color="#0D9488"></div>
+          <div class="color-swatch" style="background:#16A34A" data-color="#16A34A"></div>
+          <div class="color-swatch" style="background:#E11D48" data-color="#E11D48"></div>
+          <div class="color-swatch" style="background:#0B5A8A" data-color="#0B5A8A"></div>
+          <div class="color-swatch" style="background:#6B6B80" data-color="#6B6B80"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2 class="section-title">Rules <span style="font-size:var(--fs-xs);color:var(--ash-dim);font-weight:400">(optional)</span></h2>
+      <p class="section-hint">Rule-based cohorts stay current on their own — members are added and removed as they qualify.</p>
+      <p class="section-hint" style="display:flex;align-items:center;gap:var(--sp-2);margin-bottom:var(--sp-3)">
+        Members must match
+        <select id="matchMode" onchange="matchMode=this.value;previewMatch()"
+                style="background:var(--slate);border:1px solid rgba(160,160,184,0.12);border-radius:var(--r-sm);color:var(--white);padding:2px 6px;font-size:var(--fs-xs)">
+          <option value="all">all</option>
+          <option value="any">any</option>
+        </select>
+        of the rules below.
+      </p>
+      <div id="rulesContainer"></div>
+      <button class="btn btn-sm btn-ghost" onclick="addRule()">+ Add rule</button>
+
+      <div class="preview-box">
+        <div class="preview-title">Matching members</div>
+        <div id="previewCount" style="font-family:var(--font-display);font-weight:var(--fw-bold);font-size:var(--fs-lg)">—</div>
+        <div id="previewList" style="font-size:var(--fs-xs);color:var(--ash);margin-top:var(--sp-1)"></div>
+      </div>
+    </section>
+
+    <div class="save-bar">
+      <button class="btn btn-primary" onclick="createCohort()">Create cohort</button>
+      <a href="admin-dashboard.html" class="btn btn-secondary">Cancel</a>
+    </div>
+  </div>
+
+<script src="auth.js"></script>
+<script>
+  if (!Auth.requireAuth(true)) throw new Error('Redirecting');
+
+  let selectedColor = '#107EBC';
+  let matchMode = 'all';
+  let ruleCount = 0;
+
+  // Color selection
+  document.querySelectorAll('.color-swatch').forEach(s => {
+    s.addEventListener('click', () => {
+      document.querySelectorAll('.color-swatch').forEach(x => x.classList.remove('selected'));
+      s.classList.add('selected');
+      selectedColor = s.dataset.color;
+    });
+  });
+
+  // Every criterion the blueprint calls for: engagement history, available
+  // days, work sector, integration product types, sandbox/production, custom.
+  const RULE_FIELDS = [
+    { value: 'api_status', label: 'API Status', type: 'select', options: ['sandbox', 'production'] },
+    { value: 'kyb_completed', label: 'KYB Completed', type: 'select', options: ['yes', 'no'] },
+    { value: 'work_sector', label: 'Work Sector', type: 'select', options: ['Fintech', 'Banking', 'Lending', 'Payments', 'Insurance', 'Other'] },
+    { value: 'api_products', label: 'API Product', type: 'select', options: ['payments', 'lending', 'identity', 'credit_scoring'] },
+    { value: 'preferred_days', label: 'Available Day', type: 'select', options: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] },
+    { value: 'preferred_channels', label: 'Preferred Channel', type: 'select', options: ['email', 'whatsapp', 'sms', 'calls', 'in_portal'] },
+    { value: 'location_state', label: 'State', type: 'text' },
+    { value: 'gender', label: 'Gender', type: 'select', options: ['male', 'female', 'other'] },
+    { value: 'age', label: 'Age', type: 'number' },
+    { value: 'engagement_streak', label: 'Engagement Streak', type: 'number' },
+    { value: 'surveys_completed', label: 'Surveys Completed', type: 'number' },
+    { value: 'gifts_claimed', label: 'Gifts Claimed', type: 'number' },
+    { value: 'days_since_active', label: 'Days Since Active', type: 'number' },
+    { value: 'days_since_joined', label: 'Days Since Joined', type: 'number' }
+  ];
+
+  const OPERATORS = {
+    select: [{ value: 'eq', label: 'is' }, { value: 'neq', label: 'is not' }],
+    text: [{ value: 'eq', label: 'is' }, { value: 'neq', label: 'is not' }, { value: 'contains', label: 'contains' }],
+    number: [{ value: 'gte', label: '≥' }, { value: 'lte', label: '≤' }, { value: 'eq', label: '=' }]
+  };
+
+  function addRule() {
+    ruleCount++;
+    const container = document.getElementById('rulesContainer');
+    const row = document.createElement('div');
+    row.className = 'rule-row';
+    row.id = `rule-${ruleCount}`;
+
+    const fieldOpts = RULE_FIELDS.map(f => `<option value="${f.value}">${f.label}</option>`).join('');
+    row.innerHTML = `
+      <select onchange="updateRuleOps(this)" style="width:140px">${fieldOpts}</select>
+      <select class="rule-op" style="width:80px"></select>
+      <input type="text" class="rule-val" placeholder="Value" style="flex:1">
+      <button class="rule-remove" onclick="this.parentElement.remove();previewMatch()">×</button>
+    `;
+
+    container.appendChild(row);
+    updateRuleOps(row.querySelector('select'));
+  }
+
+  function updateRuleOps(fieldSelect) {
+    const field = RULE_FIELDS.find(f => f.value === fieldSelect.value);
+    const opSelect = fieldSelect.parentElement.querySelector('.rule-op');
+    const valInput = fieldSelect.parentElement.querySelector('.rule-val');
+
+    opSelect.innerHTML = OPERATORS[field.type].map(o => `<option value="${o.value}">${o.label}</option>`).join('');
+
+    if (field.type === 'select') {
+      valInput.outerHTML = `<select class="rule-val" style="flex:1">${field.options.map(o => `<option value="${o}">${o}</option>`).join('')}</select>`;
+    } else if (field.type === 'text') {
+      valInput.outerHTML = `<input type="text" class="rule-val" placeholder="e.g. Lagos" style="flex:1">`;
+    } else {
+      valInput.outerHTML = `<input type="number" class="rule-val" placeholder="Value" style="flex:1">`;
+    }
+
+    previewMatch();
+  }
+
+  async function previewMatch() {
+    const rules = getRules();
+    if (rules.length === 0) {
+      document.getElementById('previewCount').textContent = '—';
+      document.getElementById('previewList').textContent = 'Add rules to see matching members';
+      return;
+    }
+
+    // The same engine that will populate the cohort evaluates the preview, so
+    // what you see here is what you get. This used to be an approximation
+    // computed in the browser over the first 100 members.
+    try {
+      const data = await api.post('/admin/cohorts/preview', { filter_rules: { match: matchMode, rules } });
+
+      document.getElementById('previewCount').textContent =
+        `${data.total} member${data.total === 1 ? '' : 's'}`;
+      document.getElementById('previewList').textContent = data.total
+        ? data.members.slice(0, 5).map(m => m.name).join(', ') +
+          (data.total > 5 ? ` +${data.total - 5} more` : '')
+        : 'No members match these rules yet';
+    } catch (err) {
+      document.getElementById('previewCount').textContent = '—';
+      document.getElementById('previewList').textContent = err.message;
+    }
+  }
+
+  function getRules() {
+    return Array.from(document.querySelectorAll('.rule-row')).map(row => ({
+      field: row.querySelector('select').value,
+      op: row.querySelector('.rule-op').value,
+      value: row.querySelector('.rule-val').value
+    })).filter(r => r.value !== '');
+  }
+
+  async function createCohort() {
+    const name = document.getElementById('cName').value.trim();
+    if (!name) { showToast('Name required', 'warning'); return; }
+
+    const rules = getRules();
+
+    try {
+      const data = await api.post('/admin/cohorts', {
+        name,
+        description: document.getElementById('cDesc').value.trim(),
+        color: selectedColor,
+        type: 'custom',
+        filter_rules: rules.length ? { match: matchMode, rules } : null,
+        auto_sync: true
+      });
+
+      // The server populates membership from the rules on create and reports
+      // how many members landed in the cohort.
+      showToast(data.sync && data.sync.rule_based
+        ? `"${name}" created with ${data.sync.added} member${data.sync.added === 1 ? '' : 's'}`
+        : `Cohort "${name}" created — add members manually`);
+
+      setTimeout(() => window.location.href = 'admin-dashboard.html', 1200);
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  }
+
+  // Auto-preview on rule change
+  document.addEventListener('input', previewMatch);
+  document.addEventListener('change', previewMatch);
+</script>
+</body>
+</html>

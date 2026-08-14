@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dev Circle — Scheduled sessions</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="tokens.css">
+  <style>
+    .topnav { position:sticky;top:0;z-index:100;background:var(--ink);border-bottom:1px solid rgba(160,160,184,0.06);padding:0 var(--sp-6); }
+    .topnav-inner { max-width:960px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;height:56px; }
+    .topnav-logo { font-family:var(--font-display);font-weight:var(--fw-black);font-size:var(--fs-md);letter-spacing:-0.03em;color:var(--white);text-decoration:none; }
+    .topnav-logo span { color:var(--cd-blue); }
+    .topnav-logo .badge { font-family:var(--font-mono);font-size:10px;color:var(--cd-blue);background:var(--cd-blue-dim);padding:2px 6px;border-radius:var(--r-sm);margin-left:var(--sp-2); }
+    .topnav-back { font-size:var(--fs-sm);color:var(--ash);text-decoration:none; }
+    .topnav-back:hover { color:var(--white); }
+
+    .page { max-width:960px;margin:0 auto;padding:var(--sp-8) var(--sp-6); }
+    .page-header { margin-bottom:var(--sp-8); }
+    .page-title { font-family:var(--font-display);font-weight:var(--fw-bold);font-size:var(--fs-2xl);letter-spacing:-0.03em;margin-bottom:var(--sp-1); }
+    .page-subtitle { color:var(--ash);font-size:var(--fs-sm);max-width:60ch; }
+    .page-actions { display:flex;gap:var(--sp-2);margin-top:var(--sp-4); }
+
+    .section { margin-bottom:var(--sp-10); }
+    .section-title { font-family:var(--font-display);font-weight:var(--fw-semibold);font-size:var(--fs-md);letter-spacing:-0.01em;margin-bottom:var(--sp-4); }
+
+    /* A schedule reads best as a dated list, not a grid of cards */
+    .session-list { list-style:none; }
+    .session-item {
+      display:flex;gap:var(--sp-5);align-items:flex-start;
+      padding:var(--sp-4) 0;border-bottom:1px solid rgba(160,160,184,0.06);
+    }
+    .session-when {
+      flex-shrink:0;width:88px;text-align:right;font-family:var(--font-mono);
+    }
+    .session-date { font-size:var(--fs-md);color:var(--white);font-weight:var(--fw-medium);letter-spacing:-0.02em; }
+    .session-day { font-size:var(--fs-xs);color:var(--ash-dim);text-transform:uppercase;letter-spacing:0.08em; }
+    .session-time { font-size:var(--fs-xs);color:var(--ash);margin-top:2px; }
+    .session-body { flex:1;min-width:0; }
+    .session-title { font-family:var(--font-display);font-weight:var(--fw-semibold);font-size:var(--fs-md);margin-bottom:2px; }
+    .session-desc { font-size:var(--fs-sm);color:var(--ash);margin-bottom:var(--sp-2); }
+    .session-meta { font-size:var(--fs-xs);color:var(--ash-dim);font-family:var(--font-mono);display:flex;gap:var(--sp-3);flex-wrap:wrap; }
+    .session-actions { display:flex;gap:var(--sp-2);flex-shrink:0;align-items:center; }
+
+    .pill { font-size:10px;font-family:var(--font-mono);padding:2px 8px;border-radius:var(--r-sm);text-transform:uppercase;letter-spacing:0.06em; }
+    .pill.scheduled { background:rgba(160,160,184,0.08);color:var(--ash); }
+    .pill.announced { background:var(--cd-blue-dim);color:var(--cd-blue); }
+    .pill.completed { background:rgba(160,160,184,0.05);color:var(--ash-dim); }
+    .pill.cancelled { background:rgba(225,29,72,0.12);color:var(--rose); }
+
+    /* Availability is the reason this screen exists — give it real weight */
+    .avail { margin-top:var(--sp-3);padding:var(--sp-3);border-left:2px solid var(--cd-blue);background:rgba(16,126,188,0.04); }
+    .avail-line { font-size:var(--fs-xs);color:var(--ash);margin-bottom:2px; }
+    .avail-line strong { color:var(--white);font-family:var(--font-mono); }
+    .avail-warn { color:var(--cd-gold); }
+    .avail-names { font-size:var(--fs-xs);color:var(--ash-dim);margin-top:var(--sp-1);line-height:1.5; }
+
+    .empty { padding:var(--sp-8) 0;color:var(--ash-dim);font-size:var(--fs-sm); }
+
+    .btn { display:inline-flex;align-items:center;justify-content:center;gap:var(--sp-2);font-family:var(--font-body);font-size:var(--fs-sm);font-weight:var(--fw-medium);padding:var(--sp-2) var(--sp-4);border-radius:var(--r-md);transition:all var(--duration-fast) var(--ease-out);white-space:nowrap;cursor:pointer;border:none; }
+    .btn-primary { background:var(--cd-blue);color:var(--white); }
+    .btn-primary:hover { background:var(--cd-blue-deep); }
+    .btn-secondary { background:none;color:var(--ash);border:1px solid rgba(160,160,184,0.10); }
+    .btn-secondary:hover { color:var(--white);border-color:rgba(160,160,184,0.25); }
+    .btn-gold { background:var(--cd-gold);color:var(--ink); }
+    .btn-danger { background:none;color:var(--rose);border:1px solid rgba(225,29,72,0.25); }
+    .btn-sm { font-size:var(--fs-xs);padding:var(--sp-1) var(--sp-3); }
+    .btn:disabled { opacity:.5;cursor:not-allowed; }
+
+    .modal-overlay { display:none;position:fixed;inset:0;z-index:999;background:rgba(26,26,46,0.85);align-items:center;justify-content:center; }
+    .modal-overlay.open { display:flex; }
+    .modal-box { background:var(--slate);border-radius:var(--r-lg);padding:var(--sp-6);max-width:560px;width:90%;max-height:86vh;overflow-y:auto; }
+    .modal-title { font-family:var(--font-display);font-weight:var(--fw-bold);font-size:var(--fs-lg);margin-bottom:var(--sp-5); }
+    .form-group { margin-bottom:var(--sp-4); }
+    .form-label { display:block;font-size:var(--fs-xs);font-weight:var(--fw-medium);color:var(--ash);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:var(--sp-1); }
+    .form-input { width:100%;background:var(--ink);border:1px solid rgba(160,160,184,0.10);border-radius:var(--r-md);padding:var(--sp-2) var(--sp-3);color:var(--white);font-size:var(--fs-sm);font-family:var(--font-body); }
+    .form-input:focus { outline:2px solid var(--cd-blue);outline-offset:1px; }
+    .form-hint { font-size:var(--fs-xs);color:var(--ash-dim);margin-top:var(--sp-1); }
+    .form-row { display:grid;grid-template-columns:1fr 1fr;gap:var(--sp-3); }
+    .check-row { display:flex;gap:var(--sp-3);flex-wrap:wrap; }
+    .check-item { display:flex;align-items:center;gap:var(--sp-2);font-size:var(--fs-sm);color:var(--ash);cursor:pointer; }
+    .check-item input { accent-color:var(--cd-blue); }
+
+    @media (max-width:768px) {
+      .page{padding:var(--sp-6) var(--sp-4);} .page-title{font-size:var(--fs-xl);}
+      .session-item{flex-wrap:wrap;} .session-when{width:auto;text-align:left;display:flex;gap:var(--sp-2);align-items:baseline;}
+      .form-row{grid-template-columns:1fr;}
+    }
+    @media (prefers-reduced-motion:reduce) { * { transition:none !important;animation:none !important; } }
+  </style>
+</head>
+<body>
+
+  <nav class="topnav">
+    <div class="topnav-inner">
+      <a href="admin-dashboard.html" class="topnav-logo">dev<span>.</span>circle <span class="badge">Admin</span></a>
+      <a href="admin-dashboard.html" class="topnav-back">← Back</a>
+    </div>
+  </nav>
+
+  <div class="page">
+    <header class="page-header">
+      <h1 class="page-title">Scheduled sessions</h1>
+      <p class="page-subtitle">
+        Dated engagements — info sessions, tests, workshops, 1-on-1s. Members are reminded automatically
+        on the lead times you set, and we check the slot against the days they said they're free.
+      </p>
+      <div class="page-actions">
+        <button class="btn btn-primary" onclick="openCreate()">Schedule a session</button>
+        <button class="btn btn-secondary" onclick="runScheduler()">Run reminders now</button>
+      </div>
+    </header>
+
+    <section class="section">
+      <h2 class="section-title">Upcoming</h2>
+      <ul class="session-list" id="upcomingList"></ul>
+    </section>
+
+    <section class="section">
+      <h2 class="section-title">Past</h2>
+      <ul class="session-list" id="pastList"></ul>
+    </section>
+  </div>
+
+  <!-- CREATE -->
+  <div class="modal-overlay" id="createModal">
+    <div class="modal-box">
+      <h3 class="modal-title">Schedule a session</h3>
+
+      <div class="form-group">
+        <label class="form-label" for="sTitle">Title</label>
+        <input type="text" class="form-input" id="sTitle" placeholder="e.g. Q3 API roadmap walkthrough">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="sDesc">What it's for</label>
+        <textarea class="form-input" id="sDesc" rows="2" placeholder="One line members will read in the invite"></textarea>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label" for="sType">Type</label>
+          <select class="form-input" id="sType">
+            <option value="info">Info session</option>
+            <option value="test">Test</option>
+            <option value="workshop">Workshop</option>
+            <option value="survey">Survey</option>
+            <option value="1-on-1">1-on-1</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="sCircle">Circle</label>
+          <select class="form-input" id="sCircle"></select>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label" for="sWhen">When (WAT)</label>
+          <input type="datetime-local" class="form-input" id="sWhen" onchange="checkSlot()">
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="sDuration">Minutes</label>
+          <input type="number" class="form-input" id="sDuration" value="45" min="5" step="5">
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="sLocation">Where</label>
+        <input type="text" class="form-input" id="sLocation" placeholder="Google Meet, Lagos office, …">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Channels</label>
+        <div class="check-row">
+          <label class="check-item"><input type="checkbox" value="in_portal" checked> In-portal</label>
+          <label class="check-item"><input type="checkbox" value="email" checked> Email</label>
+          <label class="check-item"><input type="checkbox" value="whatsapp"> WhatsApp</label>
+          <label class="check-item"><input type="checkbox" value="sms"> SMS</label>
+        </div>
+        <p class="form-hint">Consent and quiet hours are applied per member at send time.</p>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="sReminders">Remind before</label>
+        <input type="text" class="form-input" id="sReminders" value="1 day, 1 hour">
+        <p class="form-hint">Comma-separated lead times, e.g. "2 days, 1 day, 1 hour".</p>
+      </div>
+
+      <div id="slotCheck"></div>
+
+      <div style="display:flex;gap:var(--sp-3);justify-content:flex-end;margin-top:var(--sp-5)">
+        <button class="btn btn-secondary" onclick="closeModal('createModal')">Cancel</button>
+        <button class="btn btn-primary" onclick="createSession()">Schedule</button>
+      </div>
+    </div>
+  </div>
+
+<script src="auth.js"></script>
+<script>
+  if (!Auth.requireAuth(true)) throw new Error('Redirecting');
+
+  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
+  let circles = [];
+
+  // Timestamps are stored UTC; members and admins both think in WAT (UTC+1)
+  function toWat(stored) {
+    const utc = new Date(String(stored).replace(' ', 'T') + 'Z');
+    return new Date(utc.getTime() + 60 * 60 * 1000);
+  }
+
+  function formatLead(minutes) {
+    if (minutes >= 1440) { const d = Math.round(minutes / 1440); return `${d} day${d > 1 ? 's' : ''}`; }
+    if (minutes >= 60) { const h = Math.round(minutes / 60); return `${h} hour${h > 1 ? 's' : ''}`; }
+    return `${minutes} min`;
+  }
+
+  // Accepts "2 days, 1 hour, 30" and returns minutes
+  function parseLeads(text) {
+    return text.split(',').map(part => {
+      const m = /(\d+)\s*(day|hour|hr|min)?/i.exec(part.trim());
+      if (!m) return null;
+      const n = Number(m[1]);
+      const unit = (m[2] || 'min').toLowerCase();
+      if (unit.startsWith('day')) return n * 1440;
+      if (unit.startsWith('h')) return n * 60;
+      return n;
+    }).filter(n => n && n > 0);
+  }
+
+  function sessionRow(s, isPast) {
+    const when = toWat(s.scheduled_for);
+    const reminders = (s.reminder_offsets || []).map(formatLead).join(', ');
+
+    const actions = isPast || s.status === 'cancelled' ? '' : `
+      <div class="session-actions">
+        ${s.status === 'scheduled'
+          ? `<button class="btn btn-sm btn-primary" onclick="announce('${s.id}', this)">Announce</button>`
+          : `<button class="btn btn-sm btn-secondary" onclick="remind('${s.id}', this)">Remind now</button>`}
+        <button class="btn btn-sm btn-danger" onclick="cancelSession('${s.id}','${escapeHtml(s.title)}')">Cancel</button>
+      </div>`;
+
+    return `
+      <li class="session-item">
+        <div class="session-when">
+          <div class="session-day">${DAYS[when.getUTCDay()]}</div>
+          <div class="session-date">${when.getUTCDate()} ${MONTHS[when.getUTCMonth()]}</div>
+          <div class="session-time">${String(when.getUTCHours()).padStart(2,'0')}:${String(when.getUTCMinutes()).padStart(2,'0')} WAT</div>
+        </div>
+        <div class="session-body">
+          <div class="session-title">${escapeHtml(s.title)} <span class="pill ${s.status}">${s.status}</span></div>
+          ${s.description ? `<div class="session-desc">${escapeHtml(s.description)}</div>` : ''}
+          <div class="session-meta">
+            <span>${s.type}</span>
+            <span>${s.duration_min} min</span>
+            ${s.location ? `<span>${escapeHtml(s.location)}</span>` : ''}
+            <span>${escapeHtml(s.circle_name || 'Dev Circle')}</span>
+            ${reminders ? `<span>reminders: ${reminders}</span>` : ''}
+          </div>
+          ${isPast ? '' : `<div id="avail-${s.id}"></div>`}
+        </div>
+        ${actions}
+      </li>`;
+  }
+
+  async function load() {
+    try {
+      const [sessions, circleData] = await Promise.all([
+        api.get('/admin/sessions'),
+        api.get('/admin/circles')
+      ]);
+
+      circles = circleData.circles.filter(c => c.status === 'active');
+      document.getElementById('sCircle').innerHTML = circles
+        .map(c => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('');
+
+      const now = Date.now();
+      const upcoming = sessions.sessions.filter(s =>
+        s.status !== 'completed' && toWat(s.scheduled_for).getTime() > now - 3600000);
+      const past = sessions.sessions.filter(s => !upcoming.includes(s));
+
+      document.getElementById('upcomingList').innerHTML = upcoming.length
+        ? upcoming.map(s => sessionRow(s, false)).join('')
+        : '<li class="empty">Nothing scheduled. Members see upcoming sessions in their portal and get reminded automatically.</li>';
+
+      document.getElementById('pastList').innerHTML = past.length
+        ? past.map(s => sessionRow(s, true)).join('')
+        : '<li class="empty">No past sessions yet.</li>';
+
+      // Availability is fetched per session so the list itself stays fast
+      for (const s of upcoming) loadAvailability(s.id);
+    } catch (err) {
+      showToast('Failed to load sessions: ' + err.message, 'error');
+    }
+  }
+
+  async function loadAvailability(id) {
+    try {
+      const a = await api.get(`/admin/sessions/${id}/preview`);
+      const box = document.getElementById('avail-' + id);
+      if (!box) return;
+
+      const clashNames = a.unavailable.slice(0, 4).map(u => u.name).join(', ');
+
+      box.innerHTML = `
+        <div class="avail">
+          <div class="avail-line"><strong>${a.available.length}</strong> of ${a.total} are free on ${a.weekday}</div>
+          ${a.unavailable.length ? `<div class="avail-line avail-warn"><strong>${a.unavailable.length}</strong> have this outside the availability they set</div>
+            <div class="avail-names">${escapeHtml(clashNames)}${a.unavailable.length > 4 ? ` +${a.unavailable.length - 4} more` : ''}</div>` : ''}
+          ${a.unreachable.length ? `<div class="avail-line avail-warn"><strong>${a.unreachable.length}</strong> can't be reached on the chosen channels</div>` : ''}
+        </div>`;
+    } catch { /* availability is supplementary — a failure must not blank the row */ }
+  }
+
+  // ─── Create ─────────────────────────────────────────────
+
+  function openCreate() {
+    document.getElementById('slotCheck').innerHTML = '';
+    document.getElementById('createModal').classList.add('open');
+    document.getElementById('sTitle').focus();
+  }
+
+  function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+  function selectedChannels() {
+    return Array.from(document.querySelectorAll('#createModal .check-item input:checked')).map(i => i.value);
+  }
+
+  // The datetime-local input is WAT in the operator's head; convert to UTC
+  function watInputToUtc(value) {
+    if (!value) return null;
+    const [date, time] = value.split('T');
+    const [y, m, d] = date.split('-').map(Number);
+    const [hh, mm] = time.split(':').map(Number);
+    return new Date(Date.UTC(y, m - 1, d, hh - 1, mm)).toISOString().replace('T', ' ').slice(0, 19);
+  }
+
+  // Check the slot against members' stated availability before committing
+  async function checkSlot() {
+    const when = watInputToUtc(document.getElementById('sWhen').value);
+    if (!when) return;
+
+    try {
+      const a = await api.post('/admin/sessions/preview', {
+        scheduled_for: when,
+        circle_id: document.getElementById('sCircle').value,
+        target_type: 'all',
+        channels: selectedChannels()
+      });
+
+      document.getElementById('slotCheck').innerHTML = `
+        <div class="avail">
+          <div class="avail-line"><strong>${a.available.length}</strong> of ${a.total} members are free on ${a.weekday} at that time</div>
+          ${a.unavailable.length ? `<div class="avail-line avail-warn">${a.unavailable.length} said they're not available then</div>` : ''}
+          ${a.unreachable.length ? `<div class="avail-line avail-warn">${a.unreachable.length} can't be reached on those channels</div>` : ''}
+        </div>`;
+    } catch (err) {
+      document.getElementById('slotCheck').innerHTML =
+        `<div class="avail"><div class="avail-line avail-warn">${escapeHtml(err.message)}</div></div>`;
+    }
+  }
+
+  async function createSession() {
+    const title = document.getElementById('sTitle').value.trim();
+    const when = watInputToUtc(document.getElementById('sWhen').value);
+
+    if (!title) { showToast('Give the session a title', 'warning'); return; }
+    if (!when) { showToast('Pick a date and time', 'warning'); return; }
+
+    const channels = selectedChannels();
+    if (!channels.length) { showToast('Pick at least one channel', 'warning'); return; }
+
+    try {
+      const res = await api.post('/admin/sessions', {
+        title,
+        description: document.getElementById('sDesc').value.trim() || null,
+        type: document.getElementById('sType').value,
+        circle_id: document.getElementById('sCircle').value,
+        scheduled_for: when,
+        duration_min: Number(document.getElementById('sDuration').value) || 30,
+        location: document.getElementById('sLocation').value.trim() || null,
+        target_type: 'all',
+        channels,
+        reminder_offsets: parseLeads(document.getElementById('sReminders').value)
+      });
+
+      closeModal('createModal');
+      const p = res.preview;
+      showToast(`Scheduled — ${p.available.length} of ${p.total} members are free then`);
+      document.getElementById('sTitle').value = '';
+      document.getElementById('sDesc').value = '';
+      load();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  }
+
+  // ─── Actions ────────────────────────────────────────────
+
+  async function announce(id, button) {
+    button.disabled = true;
+    try {
+      const res = await api.post(`/admin/sessions/${id}/announce`, {});
+      showToast(res.message);
+      load();
+    } catch (err) {
+      showToast(err.message, 'error');
+      button.disabled = false;
+    }
+  }
+
+  async function remind(id, button) {
+    button.disabled = true;
+    try {
+      const res = await api.post(`/admin/sessions/${id}/remind`, {});
+      showToast(res.message);
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+    button.disabled = false;
+  }
+
+  async function cancelSession(id, title) {
+    if (!confirm(`Cancel "${title}"? Anyone already invited will be told.`)) return;
+    try {
+      const res = await api.del(`/admin/sessions/${id}`);
+      showToast(`Cancelled${res.notified ? ` — ${res.notified} member(s) notified` : ''}`);
+      load();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  }
+
+  async function runScheduler() {
+    try {
+      const res = await api.post('/admin/sessions/run-scheduler', {});
+      const fired = res.reminders.length;
+      const nudged = res.survey_reminders.reduce((n, r) => n + r.reminded, 0);
+      showToast(fired || nudged
+        ? `${fired} session reminder(s), ${nudged} survey nudge(s) sent`
+        : 'Nothing was due');
+      load();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  }
+
+  document.querySelectorAll('.modal-overlay').forEach(m => {
+    m.addEventListener('click', e => { if (e.target === m) m.classList.remove('open'); });
+  });
+
+  load();
+</script>
+</body>
+</html>

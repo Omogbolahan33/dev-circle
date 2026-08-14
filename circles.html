@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dev Circle — Circles</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="tokens.css">
+  <style>
+    .topnav { position:sticky;top:0;z-index:100;background:var(--ink);border-bottom:1px solid rgba(160,160,184,0.06);padding:0 var(--sp-6); }
+    .topnav-inner { max-width:960px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;height:56px; }
+    .topnav-logo { font-family:var(--font-display);font-weight:var(--fw-black);font-size:var(--fs-md);letter-spacing:-0.03em;color:var(--white);text-decoration:none; }
+    .topnav-logo span { color:var(--cd-blue); }
+    .topnav-logo .badge { font-family:var(--font-mono);font-size:10px;color:var(--cd-blue);background:var(--cd-blue-dim);padding:2px 6px;border-radius:var(--r-sm);margin-left:var(--sp-2); }
+    .topnav-back { font-size:var(--fs-sm);color:var(--ash);text-decoration:none; }
+    .topnav-back:hover { color:var(--white); }
+
+    .page { max-width:960px;margin:0 auto;padding:var(--sp-8) var(--sp-6); }
+    .page-header { margin-bottom:var(--sp-8); }
+    .page-title { font-family:var(--font-display);font-weight:var(--fw-bold);font-size:var(--fs-2xl);letter-spacing:-0.03em;margin-bottom:var(--sp-1); }
+    .page-subtitle { color:var(--ash);font-size:var(--fs-sm);max-width:62ch; }
+    .page-actions { display:flex;gap:var(--sp-2);margin-top:var(--sp-4); }
+
+    .section { margin-bottom:var(--sp-10); }
+    .section-title { font-family:var(--font-display);font-weight:var(--fw-semibold);font-size:var(--fs-md);letter-spacing:-0.01em;margin-bottom:var(--sp-4); }
+
+    /* The hierarchy is the point, so indentation carries it rather than cards */
+    .circle-list { list-style:none; }
+    .circle-item {
+      display:flex;align-items:baseline;gap:var(--sp-4);
+      padding:var(--sp-4) 0;border-bottom:1px solid rgba(160,160,184,0.06);
+    }
+    .circle-item.child { padding-left:var(--sp-6);position:relative; }
+    .circle-item.child::before {
+      content:'';position:absolute;left:var(--sp-3);top:0;bottom:50%;
+      border-left:1px solid rgba(160,160,184,0.14);border-bottom:1px solid rgba(160,160,184,0.14);
+      width:var(--sp-2);border-bottom-left-radius:4px;
+    }
+    .circle-mark { width:8px;height:8px;border-radius:50%;flex-shrink:0;align-self:center; }
+    .circle-body { flex:1;min-width:0; }
+    .circle-name { font-family:var(--font-display);font-weight:var(--fw-semibold);font-size:var(--fs-md); }
+    .circle-desc { font-size:var(--fs-sm);color:var(--ash);margin-top:2px; }
+    .circle-counts { font-size:var(--fs-xs);color:var(--ash-dim);font-family:var(--font-mono);margin-top:var(--sp-1);display:flex;gap:var(--sp-3);flex-wrap:wrap; }
+    .circle-actions { display:flex;gap:var(--sp-2);flex-shrink:0; }
+
+    .root-tag { font-size:10px;font-family:var(--font-mono);color:var(--cd-blue);background:var(--cd-blue-dim);padding:2px 6px;border-radius:var(--r-sm);margin-left:var(--sp-2);text-transform:uppercase;letter-spacing:0.06em; }
+
+    .member-list { list-style:none;margin-top:var(--sp-3); }
+    .member-row { display:flex;align-items:center;gap:var(--sp-3);padding:var(--sp-2) 0;border-bottom:1px solid rgba(160,160,184,0.04);font-size:var(--fs-sm); }
+    .member-name { flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+    .member-meta { font-family:var(--font-mono);font-size:var(--fs-xs);color:var(--ash-dim); }
+    .lead-tag { font-size:10px;font-family:var(--font-mono);color:var(--cd-gold);background:rgba(230,180,115,0.10);padding:1px 6px;border-radius:var(--r-sm); }
+
+    .empty { padding:var(--sp-6) 0;color:var(--ash-dim);font-size:var(--fs-sm); }
+
+    .btn { display:inline-flex;align-items:center;justify-content:center;gap:var(--sp-2);font-family:var(--font-body);font-size:var(--fs-sm);font-weight:var(--fw-medium);padding:var(--sp-2) var(--sp-4);border-radius:var(--r-md);transition:all var(--duration-fast) var(--ease-out);white-space:nowrap;cursor:pointer;border:none; }
+    .btn-primary { background:var(--cd-blue);color:var(--white); }
+    .btn-primary:hover { background:var(--cd-blue-deep); }
+    .btn-secondary { background:none;color:var(--ash);border:1px solid rgba(160,160,184,0.10); }
+    .btn-secondary:hover { color:var(--white);border-color:rgba(160,160,184,0.25); }
+    .btn-danger { background:none;color:var(--rose);border:1px solid rgba(225,29,72,0.25); }
+    .btn-sm { font-size:var(--fs-xs);padding:var(--sp-1) var(--sp-3); }
+
+    .modal-overlay { display:none;position:fixed;inset:0;z-index:999;background:rgba(26,26,46,0.85);align-items:center;justify-content:center; }
+    .modal-overlay.open { display:flex; }
+    .modal-box { background:var(--slate);border-radius:var(--r-lg);padding:var(--sp-6);max-width:560px;width:90%;max-height:86vh;overflow-y:auto; }
+    .modal-title { font-family:var(--font-display);font-weight:var(--fw-bold);font-size:var(--fs-lg);margin-bottom:var(--sp-5); }
+    .form-group { margin-bottom:var(--sp-4); }
+    .form-label { display:block;font-size:var(--fs-xs);font-weight:var(--fw-medium);color:var(--ash);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:var(--sp-1); }
+    .form-input { width:100%;background:var(--ink);border:1px solid rgba(160,160,184,0.10);border-radius:var(--r-md);padding:var(--sp-2) var(--sp-3);color:var(--white);font-size:var(--fs-sm);font-family:var(--font-body); }
+    .form-input:focus { outline:2px solid var(--cd-blue);outline-offset:1px; }
+    .form-hint { font-size:var(--fs-xs);color:var(--ash-dim);margin-top:var(--sp-1); }
+    .swatches { display:flex;gap:var(--sp-2); }
+    .swatch { width:24px;height:24px;border-radius:50%;cursor:pointer;border:2px solid transparent; }
+    .swatch.selected { border-color:var(--white); }
+
+    @media (max-width:768px) {
+      .page{padding:var(--sp-6) var(--sp-4);} .page-title{font-size:var(--fs-xl);}
+      .circle-item{flex-wrap:wrap;} .circle-actions{width:100%;margin-top:var(--sp-2);}
+    }
+    @media (prefers-reduced-motion:reduce) { * { transition:none !important;animation:none !important; } }
+  </style>
+</head>
+<body>
+
+  <nav class="topnav">
+    <div class="topnav-inner">
+      <a href="admin-dashboard.html" class="topnav-logo">dev<span>.</span>circle <span class="badge">Admin</span></a>
+      <a href="admin-dashboard.html" class="topnav-back">← Back</a>
+    </div>
+  </nav>
+
+  <div class="page">
+    <header class="page-header">
+      <h1 class="page-title">Circles</h1>
+      <p class="page-subtitle">
+        A circle is its own engagement space — members, cohorts, surveys and messaging that stay inside it.
+        Sub-circles are drawn from Dev Circle's membership, so nobody ends up in one without being in the main circle.
+      </p>
+      <div class="page-actions">
+        <button class="btn btn-primary" onclick="openCreate()">New sub-circle</button>
+      </div>
+    </header>
+
+    <section class="section">
+      <ul class="circle-list" id="circleList"></ul>
+    </section>
+
+    <section class="section" id="detailSection" hidden>
+      <h2 class="section-title" id="detailTitle">Members</h2>
+      <div style="display:flex;gap:var(--sp-2);margin-bottom:var(--sp-3);flex-wrap:wrap">
+        <input type="search" class="form-input" id="candidateSearch" placeholder="Search Dev Circle members to add…"
+               style="flex:1;min-width:220px" oninput="searchCandidates()">
+      </div>
+      <ul class="member-list" id="candidateList"></ul>
+      <ul class="member-list" id="memberList"></ul>
+    </section>
+  </div>
+
+  <!-- CREATE -->
+  <div class="modal-overlay" id="createModal">
+    <div class="modal-box">
+      <h3 class="modal-title">New sub-circle</h3>
+
+      <div class="form-group">
+        <label class="form-label" for="cName">Name</label>
+        <input type="text" class="form-input" id="cName" placeholder="e.g. Lending Partners Circle">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="cDesc">What it's for</label>
+        <textarea class="form-input" id="cDesc" rows="2" placeholder="Who belongs here and why"></textarea>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="cSeed">Start from a cohort</label>
+        <select class="form-input" id="cSeed">
+          <option value="">Empty — add members by hand</option>
+        </select>
+        <p class="form-hint">Everyone in the cohort who is also in Dev Circle joins immediately.</p>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Colour</label>
+        <div class="swatches" id="swatches"></div>
+      </div>
+
+      <div style="display:flex;gap:var(--sp-3);justify-content:flex-end;margin-top:var(--sp-5)">
+        <button class="btn btn-secondary" onclick="closeModal('createModal')">Cancel</button>
+        <button class="btn btn-primary" onclick="createCircle()">Create</button>
+      </div>
+    </div>
+  </div>
+
+<script src="auth.js"></script>
+<script>
+  if (!Auth.requireAuth(true)) throw new Error('Redirecting');
+
+  const COLOURS = ['#107EBC', '#E6B473', '#945A39', '#0D9488', '#E11D48', '#6B6B80'];
+  let selectedColour = COLOURS[0];
+  let openCircleId = null;
+
+  function renderSwatches() {
+    document.getElementById('swatches').innerHTML = COLOURS.map((c, i) =>
+      `<div class="swatch ${i === 0 ? 'selected' : ''}" style="background:${c}" data-colour="${c}"
+            onclick="pickColour(this)" role="button" tabindex="0" aria-label="Colour ${c}"></div>`).join('');
+  }
+
+  function pickColour(el) {
+    document.querySelectorAll('.swatch').forEach(s => s.classList.remove('selected'));
+    el.classList.add('selected');
+    selectedColour = el.dataset.colour;
+  }
+
+  async function load() {
+    try {
+      const [data, cohorts] = await Promise.all([
+        api.get('/admin/circles'),
+        api.get('/admin/cohorts')
+      ]);
+
+      document.getElementById('cSeed').innerHTML =
+        '<option value="">Empty — add members by hand</option>' +
+        cohorts.cohorts.map(c => `<option value="${c.id}">${escapeHtml(c.name)} (${c.member_count})</option>`).join('');
+
+      document.getElementById('circleList').innerHTML = data.circles
+        .filter(c => c.status === 'active')
+        .map(c => `
+          <li class="circle-item ${c.is_root ? '' : 'child'}">
+            <div class="circle-mark" style="background:${c.color}"></div>
+            <div class="circle-body">
+              <div class="circle-name">${escapeHtml(c.name)}${c.is_root ? '<span class="root-tag">Root</span>' : ''}</div>
+              ${c.description ? `<div class="circle-desc">${escapeHtml(c.description)}</div>` : ''}
+              <div class="circle-counts">
+                <span>${c.member_count} member${c.member_count === 1 ? '' : 's'}</span>
+                <span>${c.cohort_count} cohort${c.cohort_count === 1 ? '' : 's'}</span>
+                <span>${c.survey_count} survey${c.survey_count === 1 ? '' : 's'}</span>
+              </div>
+            </div>
+            <div class="circle-actions">
+              <button class="btn btn-sm btn-secondary" onclick="openDetail('${c.id}','${escapeHtml(c.name)}')">Members</button>
+              ${c.is_root ? '' : `<button class="btn btn-sm btn-danger" onclick="archiveCircle('${c.id}','${escapeHtml(c.name)}')">Archive</button>`}
+            </div>
+          </li>`).join('');
+    } catch (err) {
+      showToast('Failed to load circles: ' + err.message, 'error');
+    }
+  }
+
+  // ─── Detail ─────────────────────────────────────────────
+
+  async function openDetail(id, name) {
+    openCircleId = id;
+    document.getElementById('detailSection').hidden = false;
+    document.getElementById('detailTitle').textContent = `${name} — members`;
+    document.getElementById('candidateSearch').value = '';
+    document.getElementById('candidateList').innerHTML = '';
+
+    try {
+      const data = await api.get(`/admin/circles/${id}`);
+      const isRoot = data.circle.is_root === 1;
+
+      document.getElementById('memberList').innerHTML = data.members.length
+        ? data.members.map(m => `
+          <li class="member-row">
+            <span class="member-name">${escapeHtml(m.name)}${m.role === 'lead' ? ' <span class="lead-tag">lead</span>' : ''}</span>
+            <span class="member-meta">${escapeHtml(m.company || '')}</span>
+            <span class="member-meta">${m.api_status}</span>
+            ${isRoot ? '' : `<button class="btn btn-sm btn-secondary" onclick="removeMember('${m.id}','${escapeHtml(m.name)}')">Remove</button>`}
+          </li>`).join('')
+        : '<li class="empty">No members yet. Search above to add them from Dev Circle.</li>';
+
+      document.getElementById('detailSection').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  }
+
+  let searchTimer;
+  function searchCandidates() {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(runSearch, 250);
+  }
+
+  async function runSearch() {
+    const term = document.getElementById('candidateSearch').value.trim();
+    if (!openCircleId || term.length < 2) {
+      document.getElementById('candidateList').innerHTML = '';
+      return;
+    }
+
+    try {
+      const data = await api.get(`/admin/circles/${openCircleId}/candidates?search=${encodeURIComponent(term)}`);
+      document.getElementById('candidateList').innerHTML = data.candidates.length
+        ? data.candidates.slice(0, 8).map(c => `
+          <li class="member-row">
+            <span class="member-name">${escapeHtml(c.name)}</span>
+            <span class="member-meta">${escapeHtml(c.company || '')}</span>
+            <button class="btn btn-sm btn-primary" onclick="addMember('${c.id}')">Add</button>
+          </li>`).join('')
+        : '<li class="empty">Nobody matching who isn\'t already in this circle.</li>';
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  }
+
+  async function addMember(userId) {
+    try {
+      const res = await api.post(`/admin/circles/${openCircleId}/members`, { user_ids: [userId] });
+      if (res.rejected.length) {
+        showToast(res.rejected[0].reason, 'warning');
+      } else {
+        showToast('Added');
+      }
+      document.getElementById('candidateSearch').value = '';
+      document.getElementById('candidateList').innerHTML = '';
+      const name = document.getElementById('detailTitle').textContent.replace(' — members', '');
+      openDetail(openCircleId, name);
+      load();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  }
+
+  async function removeMember(userId, name) {
+    if (!confirm(`Remove ${name} from this circle? They stay in Dev Circle.`)) return;
+    try {
+      await api.del(`/admin/circles/${openCircleId}/members/${userId}`);
+      showToast('Removed');
+      const circleName = document.getElementById('detailTitle').textContent.replace(' — members', '');
+      openDetail(openCircleId, circleName);
+      load();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  }
+
+  // ─── Create / archive ───────────────────────────────────
+
+  function openCreate() {
+    document.getElementById('createModal').classList.add('open');
+    document.getElementById('cName').focus();
+  }
+
+  function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+  async function createCircle() {
+    const name = document.getElementById('cName').value.trim();
+    if (!name) { showToast('Give the circle a name', 'warning'); return; }
+
+    try {
+      const res = await api.post('/admin/circles', {
+        name,
+        description: document.getElementById('cDesc').value.trim() || null,
+        color: selectedColour,
+        seed_from_cohort_id: document.getElementById('cSeed').value || null
+      });
+
+      closeModal('createModal');
+      showToast(res.seeded
+        ? `"${name}" created with ${res.seeded.added} member(s)`
+        : `"${name}" created`);
+      document.getElementById('cName').value = '';
+      document.getElementById('cDesc').value = '';
+      load();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  }
+
+  async function archiveCircle(id, name) {
+    if (!confirm(`Archive "${name}"? Its history is kept; it stops receiving new work.`)) return;
+    try {
+      await api.del(`/admin/circles/${id}`);
+      showToast('Archived');
+      document.getElementById('detailSection').hidden = true;
+      load();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  }
+
+  document.querySelectorAll('.modal-overlay').forEach(m => {
+    m.addEventListener('click', e => { if (e.target === m) m.classList.remove('open'); });
+  });
+
+  renderSwatches();
+  load();
+</script>
+</body>
+</html>

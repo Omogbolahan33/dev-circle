@@ -1,0 +1,34 @@
+{
+  "name": "dev-circle",
+  "version": "1.0.0",
+  "description": "Engagement and feedback platform for the Credit Direct developer ecosystem — surveys, cohorts, consent-aware messaging, and engagement history for developers integrating the Credit Direct APIs.",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js",
+    "seed": "node server/seed.js",
+    "migrate": "node server/cli/migrate.js up",
+    "migrate:status": "node server/cli/migrate.js status",
+    "test": "node --test \"test/**/*.test.js\"",
+    "test:watch": "node --test --watch \"test/**/*.test.js\""
+  },
+  "keywords": [
+    "developer-relations",
+    "engagement",
+    "surveys",
+    "fintech",
+    "credit-direct"
+  ],
+  "author": "",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "better-sqlite3": "^13.0.3",
+    "cors": "^2.8.6",
+    "express": "^5.2.1"
+  },
+  "private": true,
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

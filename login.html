@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dev Circle — Sign In</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="tokens.css">
+  <style>
+    body { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: var(--sp-4); }
+
+    .login-container { width: 100%; max-width: 380px; }
+
+    .login-header { text-align: center; margin-bottom: var(--sp-10); }
+    .login-logo { font-family: var(--font-display); font-weight: var(--fw-black); font-size: var(--fs-2xl); letter-spacing: -0.04em; }
+    .login-logo span { color: var(--cd-blue); }
+    .login-subtitle { font-size: var(--fs-sm); color: var(--ash); margin-top: var(--sp-2); }
+
+    .login-tabs { display: flex; gap: 0; margin-bottom: var(--sp-8); border-bottom: 1px solid rgba(160, 160, 184, 0.08); }
+    .login-tab {
+      flex: 1; padding: var(--sp-3); text-align: center; font-size: var(--fs-sm); font-weight: var(--fw-medium);
+      color: var(--ash); cursor: pointer; border: none; background: none;
+      border-bottom: 2px solid transparent; transition: all var(--duration-fast) var(--ease-out);
+    }
+    .login-tab:hover { color: var(--white); }
+    .login-tab.active { color: var(--cd-blue); border-bottom-color: var(--cd-blue); }
+
+    .form-group { margin-bottom: var(--sp-5); }
+    .form-label { display: block; font-size: var(--fs-xs); font-weight: var(--fw-medium); color: var(--ash); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: var(--sp-2); }
+    .form-input {
+      width: 100%; background: var(--slate); border: 1px solid rgba(160, 160, 184, 0.10);
+      border-radius: var(--r-md); padding: var(--sp-3); color: var(--white); font-size: var(--fs-base);
+      transition: border-color var(--duration-fast) var(--ease-out);
+    }
+    .form-input::placeholder { color: var(--ash-dim); }
+    .form-input:focus { border-color: var(--cd-blue); outline: none; }
+
+    .form-error { font-size: var(--fs-xs); color: var(--rose); margin-top: var(--sp-1); display: none; }
+    .form-error.visible { display: block; }
+
+    .login-btn {
+      width: 100%; padding: var(--sp-3); border-radius: var(--r-md); font-size: var(--fs-base);
+      font-weight: var(--fw-semibold); cursor: pointer; border: none;
+      transition: all var(--duration-fast) var(--ease-out); margin-top: var(--sp-2);
+    }
+    .login-btn.primary { background: var(--cd-blue); color: var(--white); }
+    .login-btn.primary:hover { background: var(--cd-blue-deep); }
+    .login-btn.primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .divider { display: flex; align-items: center; gap: var(--sp-3); margin: var(--sp-5) 0; font-size: var(--fs-xs); color: var(--ash-dim); }
+    .divider::before, .divider::after { content: ''; flex: 1; height: 1px; background: rgba(160, 160, 184, 0.06); }
+
+    .sso-btn {
+      width: 100%; padding: var(--sp-3); border-radius: var(--r-md); font-size: var(--fs-sm); font-weight: var(--fw-medium);
+      cursor: pointer; border: 1px solid rgba(160, 160, 184, 0.10); background: none; color: var(--ash);
+      transition: all var(--duration-fast) var(--ease-out); display: flex; align-items: center; justify-content: center; gap: var(--sp-2);
+    }
+    .sso-btn:hover { color: var(--white); border-color: rgba(160, 160, 184, 0.25); }
+
+    .register-link { text-align: center; margin-top: var(--sp-5); font-size: var(--fs-sm); color: var(--ash); }
+    .register-link a { color: var(--cd-blue); font-weight: var(--fw-medium); }
+
+    .demo-creds {
+      margin-top: var(--sp-10); padding-top: var(--sp-6);
+      border-top: 1px solid rgba(160, 160, 184, 0.06);
+    }
+    .demo-creds-title { font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--ash-dim); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: var(--sp-3); }
+    .demo-cred {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: var(--sp-2) 0; font-size: var(--fs-xs); cursor: pointer;
+      border-radius: var(--r-sm); transition: opacity var(--duration-fast) var(--ease-out);
+    }
+    .demo-cred:hover { opacity: 0.7; }
+    .demo-cred .email { color: var(--white); font-family: var(--font-mono); }
+    .demo-cred .role { color: var(--ash-dim); }
+
+    .footer-text { text-align: center; margin-top: var(--sp-8); font-size: var(--fs-xs); color: var(--ash-dim); }
+    .footer-text a { color: var(--cd-blue); }
+  </style>
+</head>
+<body>
+  <div class="login-container">
+    <div class="login-header">
+      <div class="login-logo">dev<span>.</span>circle</div>
+      <div class="login-subtitle">Credit Direct Developer Engagement</div>
+    </div>
+
+    <div class="login-tabs">
+      <button class="login-tab active" onclick="switchTab('developer',this)">Developer</button>
+      <button class="login-tab" onclick="switchTab('admin',this)">Admin</button>
+    </div>
+
+    <form id="loginForm" onsubmit="handleLogin(event)">
+      <div class="form-group">
+        <label class="form-label" for="email">Email</label>
+        <input type="email" id="email" class="form-input" placeholder="you@company.ng" required autocomplete="email">
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="password">Password</label>
+        <input type="password" id="password" class="form-input" placeholder="••••••••" required autocomplete="current-password">
+      </div>
+      <div class="form-error" id="loginError"></div>
+      <button type="submit" class="login-btn primary" id="loginBtn">Sign In</button>
+    </form>
+
+    <div class="divider" id="ssoDivider">or</div>
+    <button class="sso-btn" id="ssoBtn" onclick="handleSSO()">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+      Continue with Developer Hub
+    </button>
+    <div class="register-link" id="registerLink">New? <a href="#" onclick="alert('Registration via Credit Direct landing page')">Create an account</a></div>
+
+    <div class="demo-creds">
+      <div class="demo-creds-title">Demo accounts</div>
+      <div class="demo-cred" onclick="fill('admin@creditdirect.ng','admin123','admin')"><span class="email">admin@creditdirect.ng</span><span class="role">Super Admin</span></div>
+      <div class="demo-cred" onclick="fill('engagement@creditdirect.ng','engagement123','admin')"><span class="email">engagement@creditdirect.ng</span><span class="role">CDL Rep</span></div>
+      <div class="demo-cred" onclick="fill('adebayo@paystack.dev','dev123','dev')"><span class="email">adebayo@paystack.dev</span><span class="role">Developer</span></div>
+      <div class="demo-cred" onclick="fill('emeka@kuda.ng','dev123','dev')"><span class="email">emeka@kuda.ng</span><span class="role">Developer</span></div>
+    </div>
+
+    <div class="footer-text">Credit Direct Limited · CBN Licensed · <a href="https://creditdirect.ng">creditdirect.ng</a></div>
+  </div>
+
+  <script src="auth.js"></script>
+  <script>
+    let currentTab = 'developer';
+    if (Auth.isLoggedIn()) {
+      window.location.href = Auth.isAdmin() ? 'admin-dashboard.html' : 'developer-dashboard.html';
+    }
+
+    function switchTab(tab, el) {
+      currentTab = tab;
+      document.querySelectorAll('.login-tab').forEach(t => t.classList.remove('active'));
+      el.classList.add('active');
+      const isDev = tab === 'developer';
+      document.getElementById('ssoDivider').style.display = isDev ? 'flex' : 'none';
+      document.getElementById('ssoBtn').style.display = isDev ? 'flex' : 'none';
+      document.getElementById('registerLink').style.display = isDev ? 'block' : 'none';
+      document.getElementById('loginError').classList.remove('visible');
+    }
+
+    async function handleLogin(e) {
+      e.preventDefault();
+      const btn = document.getElementById('loginBtn');
+      btn.disabled = true; btn.textContent = 'Signing in…';
+      document.getElementById('loginError').classList.remove('visible');
+
+      try {
+        const endpoint = currentTab === 'admin' ? '/auth/admin/login' : '/auth/login';
+        const res = await fetch(API_BASE + endpoint, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: document.getElementById('email').value.trim(), password: document.getElementById('password').value })
+        });
+        const data = await res.json();
+        if (!res.ok) { showError(data.error || 'Login failed'); return; }
+        const isAdmin = currentTab === 'admin';
+        Auth.save(data.token, isAdmin ? data.admin : data.user, isAdmin);
+        window.location.href = isAdmin ? 'admin-dashboard.html' : 'developer-dashboard.html';
+      } catch { showError('Network error'); }
+      finally { btn.disabled = false; btn.textContent = 'Sign In'; }
+    }
+
+    function handleSSO() { alert('SSO redirects to Developer Hub in production.'); }
+    function fill(email, pw, type) {
+      document.getElementById('email').value = email;
+      document.getElementById('password').value = pw;
+      const tab = type === 'admin' ? 1 : 0;
+      document.querySelectorAll('.login-tab')[tab].click();
+    }
+    function showError(msg) { const el = document.getElementById('loginError'); el.textContent = msg; el.classList.add('visible'); }
+  </script>
+</body>
+</html>

@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dev Circle — Integrations</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="tokens.css">
+  <style>
+    .topnav { position:sticky;top:0;z-index:100;background:var(--ink);border-bottom:1px solid rgba(160,160,184,0.06);padding:0 var(--sp-6); }
+    .topnav-inner { max-width:960px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;height:56px; }
+    .topnav-logo { font-family:var(--font-display);font-weight:var(--fw-black);font-size:var(--fs-md);letter-spacing:-0.03em;color:var(--white);text-decoration:none; }
+    .topnav-logo span { color:var(--cd-blue); }
+    .topnav-logo .badge { font-family:var(--font-mono);font-size:10px;color:var(--cd-blue);background:var(--cd-blue-dim);padding:2px 6px;border-radius:var(--r-sm);margin-left:var(--sp-2); }
+    .topnav-back { font-size:var(--fs-sm);color:var(--ash);text-decoration:none; }
+    .topnav-back:hover { color:var(--white); }
+
+    .page { max-width:960px;margin:0 auto;padding:var(--sp-8) var(--sp-6); }
+    .page-header { margin-bottom:var(--sp-8); }
+    .page-title { font-family:var(--font-display);font-weight:var(--fw-bold);font-size:var(--fs-2xl);letter-spacing:-0.03em;margin-bottom:var(--sp-1); }
+    .page-subtitle { color:var(--ash);font-size:var(--fs-sm); }
+
+    .filter-bar { display:flex;gap:var(--sp-2);margin-bottom:var(--sp-6);flex-wrap:wrap; }
+    .filter-btn {
+      padding:var(--sp-1) var(--sp-3);border-radius:var(--r-full);font-size:var(--fs-xs);font-weight:var(--fw-medium);
+      cursor:pointer;border:1px solid rgba(160,160,184,0.08);background:none;color:var(--ash);
+      transition:all var(--duration-fast) var(--ease-out);
+    }
+    .filter-btn:hover { border-color:rgba(160,160,184,0.20);color:var(--white); }
+    .filter-btn.active { border-color:var(--cd-blue);background:var(--cd-blue-dim);color:var(--cd-blue); }
+
+    .event-list { list-style:none; }
+    .event-item {
+      display:flex;gap:var(--sp-3);padding:var(--sp-3) 0;
+      border-bottom:1px solid rgba(160,160,184,0.03);
+    }
+    .event-item:last-child { border-bottom:none; }
+    .event-dot { width:8px;height:8px;border-radius:50%;margin-top:6px;flex-shrink:0; }
+    .event-dot.customer_io { background:var(--cd-blue); }
+    .event-dot.feex { background:var(--rose); }
+    .event-dot.landing_page { background:var(--cd-gold); }
+    .event-dot.external { background:var(--ash-dim); }
+    .event-body { flex:1;min-width:0; }
+    .event-head { display:flex;align-items:center;gap:var(--sp-2);margin-bottom:2px; }
+    .event-source { font-size:10px;font-family:var(--font-mono);padding:2px 6px;border-radius:var(--r-sm); }
+    .event-source.customer_io { color:var(--cd-blue);background:var(--cd-blue-dim); }
+    .event-source.feex { color:var(--rose);background:var(--rose-dim); }
+    .event-source.landing_page { color:var(--cd-gold);background:var(--cd-gold-dim); }
+    .event-source.external { color:var(--ash);background:rgba(160,160,184,0.06); }
+    .event-type { font-weight:var(--fw-medium);font-size:var(--fs-sm); }
+    .event-status { font-size:10px;font-family:var(--font-mono); }
+    .event-status.processed { color:var(--emerald); }
+    .event-status.pending { color:var(--cd-gold); }
+    .event-time { font-size:var(--fs-xs);color:var(--ash-dim);font-family:var(--font-mono); }
+    .event-payload { font-size:var(--fs-xs);color:var(--ash);font-family:var(--font-mono);margin-top:var(--sp-1);word-break:break-all;max-height:40px;overflow:hidden; }
+    .event-payload.expanded { max-height:none; }
+
+    .empty { text-align:center;padding:var(--sp-8);color:var(--ash-dim);font-size:var(--fs-sm); }
+
+    .btn { display:inline-flex;align-items:center;justify-content:center;gap:var(--sp-2);font-family:var(--font-body);font-size:var(--fs-sm);font-weight:var(--fw-medium);padding:var(--sp-2) var(--sp-4);border-radius:var(--r-md);transition:all var(--duration-fast) var(--ease-out);white-space:nowrap;cursor:pointer;border:none; }
+    .btn-secondary { background:none;color:var(--ash);border:1px solid rgba(160,160,184,0.10); }
+    .btn-secondary:hover { color:var(--white);border-color:rgba(160,160,184,0.25); }
+    .btn-sm { font-size:var(--fs-xs);padding:var(--sp-1) var(--sp-3); }
+
+    @media (max-width:640px) { .page{padding:var(--sp-6) var(--sp-4);} .page-title{font-size:var(--fs-xl);} }
+  </style>
+</head>
+<body>
+
+  <nav class="topnav">
+    <div class="topnav-inner">
+      <a href="admin-dashboard.html" class="topnav-logo">dev<span>.</span>circle <span class="badge">Admin</span></a>
+      <a href="admin-dashboard.html" class="topnav-back">← Back</a>
+    </div>
+  </nav>
+
+  <div class="page">
+    <header class="page-header">
+      <h1 class="page-title">Integration events</h1>
+      <p class="page-subtitle">Events received from Customer.io, Feex, and external systems.</p>
+    </header>
+
+    <div class="filter-bar">
+      <button class="filter-btn active" data-filter="all" onclick="filterEvents('all',this)">All</button>
+      <button class="filter-btn" data-filter="customer_io" onclick="filterEvents('customer_io',this)">Customer.io</button>
+      <button class="filter-btn" data-filter="feex" onclick="filterEvents('feex',this)">Feex</button>
+      <button class="filter-btn" data-filter="landing_page" onclick="filterEvents('landing_page',this)">Landing Page</button>
+      <button class="filter-btn" data-filter="pending" onclick="filterEvents('pending',this)">Pending</button>
+    </div>
+
+    <ul class="event-list" id="eventList"></ul>
+  </div>
+
+<script src="auth.js"></script>
+<script>
+  if (!Auth.requireAuth(true)) throw new Error('Redirecting');
+
+  let allEvents = [];
+  let currentFilter = 'all';
+
+  async function loadEvents() {
+    try {
+      const data = await api.get('/admin/integration-events?limit=100');
+      allEvents = data.events;
+      renderEvents();
+    } catch (err) {
+      showToast('Failed to load events', 'error');
+    }
+  }
+
+  function filterEvents(filter, btn) {
+    currentFilter = filter;
+    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    renderEvents();
+  }
+
+  function renderEvents() {
+    let filtered = allEvents;
+    if (currentFilter === 'pending') {
+      filtered = allEvents.filter(e => !e.processed);
+    } else if (currentFilter !== 'all') {
+      filtered = allEvents.filter(e => e.source === currentFilter);
+    }
+
+    const container = document.getElementById('eventList');
+    container.innerHTML = filtered.length ? filtered.map(e => {
+      let payload = '';
+      try { payload = JSON.stringify(JSON.parse(e.payload), null, 0); } catch { payload = e.payload || ''; }
+      if (payload.length > 120) payload = payload.slice(0, 120) + '…';
+
+      return `
+        <li class="event-item">
+          <div class="event-dot ${e.source}"></div>
+          <div class="event-body">
+            <div class="event-head">
+              <span class="event-source ${e.source}">${e.source}</span>
+              <span class="event-type">${escapeHtml(e.event_type)}</span>
+              <span class="event-status ${e.processed ? 'processed' : 'pending'}">${e.processed ? '✓ processed' : '○ pending'}</span>
+            </div>
+            <div class="event-time">${formatDate(e.created_at)}</div>
+            ${payload ? `<div class="event-payload" onclick="this.classList.toggle('expanded')">${escapeHtml(payload)}</div>` : ''}
+            ${e.error ? `<div style="font-size:var(--fs-xs);color:var(--rose);margin-top:2px">Error: ${escapeHtml(e.error)}</div>` : ''}
+          </div>
+        </li>`;
+    }).join('') : '<li class="empty">No events found.</li>';
+  }
+
+  loadEvents();
+</script>
+</body>
+</html>

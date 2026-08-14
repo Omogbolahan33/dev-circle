@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dev Circle — Message Blasts</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="tokens.css">
+  <style>
+    .topnav { position:sticky;top:0;z-index:100;background:var(--ink);border-bottom:1px solid rgba(160,160,184,0.06);padding:0 var(--sp-6); }
+    .topnav-inner { max-width:960px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;height:56px; }
+    .topnav-logo { font-family:var(--font-display);font-weight:var(--fw-black);font-size:var(--fs-md);letter-spacing:-0.03em;color:var(--white);text-decoration:none; }
+    .topnav-logo span { color:var(--cd-blue); }
+    .topnav-logo .badge { font-family:var(--font-mono);font-size:10px;color:var(--cd-blue);background:var(--cd-blue-dim);padding:2px 6px;border-radius:var(--r-sm);margin-left:var(--sp-2); }
+    .topnav-back { font-size:var(--fs-sm);color:var(--ash);text-decoration:none; }
+    .topnav-back:hover { color:var(--white); }
+
+    .page { max-width:960px;margin:0 auto;padding:var(--sp-8) var(--sp-6); }
+    .page-header { margin-bottom:var(--sp-8); }
+    .page-title { font-family:var(--font-display);font-weight:var(--fw-bold);font-size:var(--fs-2xl);letter-spacing:-0.03em;margin-bottom:var(--sp-1); }
+    .page-subtitle { color:var(--ash);font-size:var(--fs-sm); }
+    .page-actions { display:flex;gap:var(--sp-2);margin-top:var(--sp-4); }
+
+    .blast-list { list-style:none; }
+    .blast-item {
+      padding:var(--sp-4) 0;border-bottom:1px solid rgba(160,160,184,0.04);
+    }
+    .blast-item:last-child { border-bottom:none; }
+    .blast-head { display:flex;align-items:center;gap:var(--sp-3);margin-bottom:var(--sp-1); }
+    .blast-subject { font-weight:var(--fw-semibold);font-size:var(--fs-sm);flex:1; }
+    .blast-status { font-size:11px;font-family:var(--font-mono);padding:2px 8px;border-radius:var(--r-sm); }
+    .blast-status.sent { color:var(--emerald);background:var(--emerald-dim); }
+    .blast-status.draft { color:var(--cd-gold);background:var(--cd-gold-dim); }
+    .blast-status.sending { color:var(--cd-blue);background:var(--cd-blue-dim); }
+    .blast-meta { font-size:var(--fs-xs);color:var(--ash-dim);display:flex;gap:var(--sp-3);flex-wrap:wrap; }
+    .blast-meta .sep { color:rgba(160,160,184,0.3); }
+    .blast-content { font-size:var(--fs-sm);color:var(--ash);margin-top:var(--sp-2);line-height:var(--lh-loose);max-height:60px;overflow:hidden; }
+
+    .empty { text-align:center;padding:var(--sp-8);color:var(--ash-dim);font-size:var(--fs-sm); }
+
+    .btn { display:inline-flex;align-items:center;justify-content:center;gap:var(--sp-2);font-family:var(--font-body);font-size:var(--fs-sm);font-weight:var(--fw-medium);padding:var(--sp-2) var(--sp-4);border-radius:var(--r-md);transition:all var(--duration-fast) var(--ease-out);white-space:nowrap;cursor:pointer;border:none; }
+    .btn-primary { background:var(--cd-blue);color:var(--white); }
+    .btn-primary:hover { background:var(--cd-blue-deep); }
+    .btn-secondary { background:none;color:var(--ash);border:1px solid rgba(160,160,184,0.10); }
+    .btn-secondary:hover { color:var(--white);border-color:rgba(160,160,184,0.25); }
+    .btn-sm { font-size:var(--fs-xs);padding:var(--sp-1) var(--sp-3); }
+
+    @media (max-width:640px) { .page{padding:var(--sp-6) var(--sp-4);} .page-title{font-size:var(--fs-xl);} }
+  </style>
+</head>
+<body>
+
+  <nav class="topnav">
+    <div class="topnav-inner">
+      <a href="admin-dashboard.html" class="topnav-logo">dev<span>.</span>circle <span class="badge">Admin</span></a>
+      <a href="admin-dashboard.html" class="topnav-back">← Back</a>
+    </div>
+  </nav>
+
+  <div class="page">
+    <header class="page-header">
+      <h1 class="page-title">Message blasts</h1>
+      <p class="page-subtitle">History of messages sent to developers.</p>
+      <div class="page-actions">
+        <a href="admin-dashboard.html" class="btn btn-sm btn-primary">+ New blast</a>
+      </div>
+    </header>
+
+    <section>
+      <ul class="blast-list" id="blastList"></ul>
+    </section>
+  </div>
+
+<script src="auth.js"></script>
+<script>
+  if (!Auth.requireAuth(true)) throw new Error('Redirecting');
+
+  const CHANNEL_LABELS = { email: '📧 Email', whatsapp: '💬 WhatsApp', sms: '📱 SMS', in_portal: '🔔 In-Portal', all: '📢 All channels' };
+  const TARGET_LABELS = { all: 'All members', cohort: 'Cohort', specific: 'Specific users' };
+
+  async function load() {
+    try {
+      const data = await api.get('/admin/blasts');
+      const container = document.getElementById('blastList');
+
+      container.innerHTML = data.blasts.length ? data.blasts.map(b => `
+        <li class="blast-item">
+          <div class="blast-head">
+            <span class="blast-subject">${escapeHtml(b.subject || '(No subject)')}</span>
+            <span class="blast-status ${b.status}">${b.status}</span>
+          </div>
+          <div class="blast-meta">
+            <span>${CHANNEL_LABELS[b.channel] || b.channel}</span>
+            <span class="sep">·</span>
+            <span>${TARGET_LABELS[b.target_type] || b.target_type}</span>
+            <span class="sep">·</span>
+            <span>${formatDate(b.sent_at || b.created_at)}</span>
+          </div>
+          <div class="blast-content">${escapeHtml(b.content)}</div>
+        </li>
+      `).join('') : '<li class="empty">No message blasts sent yet.</li>';
+    } catch (err) {
+      showToast('Failed to load blasts', 'error');
+    }
+  }
+
+  load();
+</script>
+</body>
+</html>
