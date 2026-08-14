@@ -9,6 +9,7 @@
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/assets/css/tokens.css">
   <link rel="stylesheet" href="/assets/css/app.css">
+  <script src="/assets/js/theme.js"></script>
   <style>
     /* Answering a survey is a focused mode: no nav, no sidebar, one question
        at a time. The only things on screen are the question and the way out. */
@@ -125,6 +126,7 @@
     <span class="brand-mark">dev<span>.</span>circle</span>
     <span class="survey-name" id="surveyName"></span>
     <span class="spacer"></span>
+    <button class="icon-btn" data-theme-toggle onclick="Theme.toggle()"><span data-theme-icon></span></button>
     <button class="btn btn-sm btn-ghost" onclick="exitSurvey()">Save &amp; exit</button>
   </div>
 

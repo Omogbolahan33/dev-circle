@@ -9,6 +9,7 @@
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/assets/css/tokens.css">
   <link rel="stylesheet" href="/assets/css/app.css">
+  <script src="/assets/js/theme.js"></script>
   <style>
     .panel { display: none; }
     .panel.active { display: block; }
@@ -30,7 +31,7 @@
     .avg .of { font-size: var(--fs-sm); color: var(--ash); font-weight: var(--fw-regular); }
 
     .choice-row { display: grid; grid-template-columns: minmax(90px, 180px) 1fr auto; gap: var(--sp-3); align-items: center; margin-bottom: var(--sp-3); font-size: var(--fs-sm); }
-    .choice-track { height: 6px; background: rgba(160,160,184,0.08); border-radius: var(--r-full); overflow: hidden; }
+    .choice-track { height: 6px; background: var(--tint-2); border-radius: var(--r-full); overflow: hidden; }
     .choice-fill { height: 100%; background: var(--cd-blue); border-radius: var(--r-full); }
 
     .verbatim { padding: var(--sp-3) 0 var(--sp-3) var(--sp-4); border-left: 2px solid var(--cd-clay); margin-bottom: var(--sp-3); font-size: var(--fs-sm); line-height: var(--lh-loose); color: var(--ash); }

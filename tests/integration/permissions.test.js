@@ -126,3 +126,119 @@ test('a role still assigned to an admin cannot be deleted', async () => {
   const res = await h.del(`/api/admin/roles/${role}`, { token: superToken });
   assert.equal(res.status, 409);
 });
+
+// ─── Giving a role to somebody ──────────────────────────────
+// A role nobody holds is a list of words. These are the paths the Roles page
+// drives to turn one into access a colleague actually has.
+
+test('an administrator is created with a role and can sign in with it', async () => {
+  const role = h.makeRole('Engagement lead', ['members.read', 'surveys.write']);
+
+  const created = await h.post('/api/admin/admins', {
+    name: 'Tunde Bakare', email: 'tunde@creditdirect.ng',
+    password: 'a-long-enough-password', role_id: role
+  }, { token: superToken });
+
+  assert.equal(created.status, 201);
+
+  const login = await h.post('/api/auth/login', {
+    identifier: 'tunde@creditdirect.ng', password: 'a-long-enough-password'
+  });
+  assert.equal(login.status, 200);
+  assert.deepEqual(login.body.permissions.sort(), ['members.read', 'surveys.write']);
+
+  // and the role now reports who holds it
+  const roles = await h.get('/api/admin/roles', { token: superToken });
+  assert.equal(roles.body.roles.find(r => r.id === role).admin_count, 1);
+});
+
+test('an administrator on a non-Credit Direct domain is refused', async () => {
+  const role = h.makeRole('Contractor', ['members.read']);
+
+  // The sign-in page reads the domain to decide whether to ask for a password,
+  // so this account could never be used
+  const res = await h.post('/api/admin/admins', {
+    name: 'Outside Consultant', email: 'consultant@agency.ng',
+    password: 'a-long-enough-password', role_id: role
+  }, { token: superToken });
+
+  assert.equal(res.status, 400);
+  assert.match(res.body.error, /Credit Direct/);
+});
+
+test('a weak or roleless administrator is refused', async () => {
+  const role = h.makeRole('Helper', ['members.read']);
+
+  const weak = await h.post('/api/admin/admins', {
+    name: 'Ada', email: 'ada@creditdirect.ng', password: 'short', role_id: role
+  }, { token: superToken });
+  assert.equal(weak.status, 400);
+
+  const roleless = await h.post('/api/admin/admins', {
+    name: 'Ada', email: 'ada@creditdirect.ng', password: 'a-long-enough-password'
+  }, { token: superToken });
+  assert.equal(roleless.status, 400);
+});
+
+test('reassigning a role takes effect on the next sign-in, not at token expiry', async () => {
+  const limited = h.makeRole('Limited', ['members.read']);
+  const wide = h.makeRole('Wide', ['members.read', 'surveys.write']);
+  const colleague = h.makeAdmin({ email: 'ada@creditdirect.ng', roleId: limited });
+
+  const before = await h.loginAdmin(colleague.email, colleague.password);
+  assert.equal((await h.post('/api/admin/surveys', { title: 'x', questions: [] }, { token: before })).status, 403);
+
+  await h.put(`/api/admin/admins/${colleague.id}`, { role_id: wide }, { token: superToken });
+
+  // The old session is gone rather than carrying stale permissions
+  assert.equal((await h.get('/api/admin/members', { token: before })).status, 401);
+
+  const after = await h.loginAdmin(colleague.email, colleague.password);
+  assert.equal((await h.post('/api/admin/surveys', { title: 'x', questions: [] }, { token: after })).status, 201);
+});
+
+test('deactivating an administrator ends their access immediately', async () => {
+  const role = h.makeRole('Helper', ['members.read']);
+  const colleague = h.makeAdmin({ email: 'ada@creditdirect.ng', roleId: role });
+  const token = await h.loginAdmin(colleague.email, colleague.password);
+
+  await h.put(`/api/admin/admins/${colleague.id}`, { status: 'inactive' }, { token: superToken });
+
+  assert.equal((await h.get('/api/admin/members', { token })).status, 401);
+  const login = await h.post('/api/auth/login', { identifier: colleague.email, password: colleague.password });
+  assert.equal(login.status, 403);
+});
+
+test('a staff password can be reset, which signs them out everywhere', async () => {
+  const role = h.makeRole('Helper', ['members.read']);
+  const colleague = h.makeAdmin({ email: 'ada@creditdirect.ng', roleId: role });
+  const token = await h.loginAdmin(colleague.email, colleague.password);
+
+  const res = await h.post(`/api/admin/admins/${colleague.id}/reset-password`,
+    { new_password: 'a-brand-new-password' }, { token: superToken });
+  assert.equal(res.status, 200);
+
+  assert.equal((await h.get('/api/admin/members', { token })).status, 401, 'the old session must not survive');
+
+  const withOld = await h.post('/api/auth/login', { identifier: colleague.email, password: colleague.password });
+  assert.equal(withOld.status, 401);
+
+  const withNew = await h.post('/api/auth/login', { identifier: colleague.email, password: 'a-brand-new-password' });
+  assert.equal(withNew.status, 200);
+});
+
+test('a read-only role can see who has access but not change it', async () => {
+  const role = h.makeRole('Helper', ['members.read']);
+  const colleague = h.makeAdmin({ email: 'ada@creditdirect.ng', roleId: role });
+
+  // Read-only here holds members.read/cohorts.read/surveys.read — no roles.read
+  const list = await h.get('/api/admin/admins', { token: readOnlyToken });
+  assert.equal(list.status, 403);
+
+  const assign = await h.put(`/api/admin/admins/${colleague.id}`, { role_id: role }, { token: readOnlyToken });
+  assert.equal(assign.status, 403);
+
+  const reset = await h.post(`/api/admin/admins/${colleague.id}/reset-password`,
+    { new_password: 'a-long-enough-password' }, { token: readOnlyToken });
+  assert.equal(reset.status, 403);
+});

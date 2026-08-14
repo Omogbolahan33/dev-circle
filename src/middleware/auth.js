@@ -11,21 +11,34 @@ function hashToken(token) {
   return crypto.createHash('sha256').update(token).digest('hex');
 }
 
+// A session is normally 'full'. 'password_change' is issued when staff sign in
+// with a temporary password: it authenticates them and nothing more, so the
+// forced change cannot be walked around by typing a dashboard URL.
+const PASSWORD_CHANGE_SCOPE = 'password_change';
+
+// The only paths a password-change session may reach
+const PASSWORD_CHANGE_ALLOWED = new Set([
+  '/api/auth/password',
+  '/api/auth/me',
+  '/api/auth/logout'
+]);
+
 function createSession(subjectId, isAdmin = false, meta = {}) {
   const token = crypto.randomBytes(32).toString('hex');
   const expiresAt = new Date(Date.now() + config.sessionTtlMs)
     .toISOString().replace('T', ' ').slice(0, 19);
 
   db.prepare(`
-    INSERT INTO sessions (token_hash, subject_id, is_admin, issued_via, user_agent, expires_at)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO sessions (token_hash, subject_id, is_admin, issued_via, user_agent, expires_at, scope)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
   `).run(
     hashToken(token),
     subjectId,
     isAdmin ? 1 : 0,
     meta.issuedVia || 'password',
     meta.userAgent ? String(meta.userAgent).slice(0, 255) : null,
-    expiresAt
+    expiresAt,
+    meta.scope || 'full'
   );
 
   return token;
@@ -38,7 +51,12 @@ function getSession(token) {
   `).get(hashToken(token));
 
   if (!row) return null;
-  return { userId: row.subject_id, isAdmin: row.is_admin === 1, issuedVia: row.issued_via };
+  return {
+    userId: row.subject_id,
+    isAdmin: row.is_admin === 1,
+    issuedVia: row.issued_via,
+    scope: row.scope || 'full'
+  };
 }
 
 function destroySession(token) {
@@ -108,6 +126,18 @@ function requireAuth(req, res, next) {
   const session = getSession(authHeader.slice(7));
   if (!session) {
     return res.status(401).json({ error: 'Invalid or expired token' });
+  }
+
+  // Checked before the account is even loaded: a temporary password gets you
+  // to the "choose a password" screen and nowhere else.
+  if (session.scope === PASSWORD_CHANGE_SCOPE) {
+    const path = req.originalUrl.split('?')[0].replace(/\/+$/, '') || '/';
+    if (!PASSWORD_CHANGE_ALLOWED.has(path)) {
+      return res.status(403).json({
+        error: 'Set your own password before going any further.',
+        must_change_password: true
+      });
+    }
   }
 
   if (session.isAdmin) {
@@ -278,5 +308,6 @@ module.exports = {
   permissionsFor,
   hasPermission,
   PERMISSIONS,
-  PERMISSION_KEYS
+  PERMISSION_KEYS,
+  PASSWORD_CHANGE_SCOPE
 };

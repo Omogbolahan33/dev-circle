@@ -88,8 +88,8 @@
 .brand-badge {
   font-family: var(--font-mono);
   font-size: 10px;
-  color: var(--cd-blue);
-  background: var(--cd-blue-dim);
+  color: var(--blue-ink);
+  background: var(--blue-dim);
   padding: 2px 6px;
   border-radius: var(--r-sm);
 }
@@ -152,14 +152,14 @@
   transition: color var(--duration-fast) var(--ease-out),
               background var(--duration-fast) var(--ease-out);
 }
-.nav-item:hover { color: var(--white); background: rgba(160, 160, 184, 0.05); text-decoration: none; }
+.nav-item:hover { color: var(--white); background: var(--tint-1); text-decoration: none; }
 
 .nav-item.active {
   color: var(--white);
   background: var(--cd-blue-dim);
 }
 /* The active marker reads at a glance from the far edge of the screen. */
-.nav-item.active .nav-icon { color: var(--cd-blue); }
+.nav-item.active .nav-icon { color: var(--blue-ink); }
 
 .nav-icon {
   width: 16px;
@@ -174,11 +174,11 @@
   font-family: var(--font-mono);
   font-size: 10px;
   color: var(--ash-dim);
-  background: rgba(160, 160, 184, 0.08);
+  background: var(--tint-2);
   padding: 1px 6px;
   border-radius: var(--r-full);
 }
-.nav-item.active .nav-count { color: var(--cd-blue); background: var(--cd-blue-dim); }
+.nav-item.active .nav-count { color: var(--blue-ink); background: var(--blue-dim); }
 
 /* User menu pinned to the bottom — account actions are never hunted for. */
 .sidebar-foot {
@@ -198,7 +198,7 @@
   text-align: left;
   transition: background var(--duration-fast) var(--ease-out);
 }
-.user-button:hover { background: rgba(160, 160, 184, 0.05); }
+.user-button:hover { background: var(--tint-1); }
 
 .user-meta { min-width: 0; flex: 1; }
 .user-name {
@@ -236,8 +236,8 @@
   color: var(--ash);
   text-decoration: none;
 }
-.user-menu button:hover, .user-menu a:hover { background: rgba(160, 160, 184, 0.08); color: var(--white); text-decoration: none; }
-.user-menu .danger:hover { color: var(--rose); }
+.user-menu button:hover, .user-menu a:hover { background: var(--tint-2); color: var(--white); text-decoration: none; }
+.user-menu .danger:hover { color: var(--rose-ink); }
 
 /* Mobile: the sidebar slides over the content instead of eating it. */
 .mobile-bar { display: none; }
@@ -246,7 +246,7 @@
   display: none;
   position: fixed;
   inset: 0;
-  background: rgba(10, 10, 20, 0.6);
+  background: var(--scrim);
   z-index: calc(var(--z-sidebar) - 1);
 }
 
@@ -405,7 +405,7 @@
   transition: all var(--duration-fast) var(--ease-out);
 }
 .chip:hover { color: var(--white); border-color: var(--line-strong); }
-.chip.active { color: var(--cd-blue); border-color: var(--cd-blue-40); background: var(--cd-blue-dim); }
+.chip.active { color: var(--blue-ink); border-color: var(--cd-blue-40); background: var(--cd-blue-dim); }
 .chip .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 
 .result-count {
@@ -472,7 +472,7 @@
   font-size: var(--fs-md);
 }
 .section-link { font-size: var(--fs-sm); color: var(--ash); }
-.section-link:hover { color: var(--cd-blue); }
+.section-link:hover { color: var(--blue-ink); }
 
 /* Stat tiles: one number, one label, one trend. Nothing else. */
 .stat-grid {
@@ -504,8 +504,8 @@
 }
 .stat-value .unit { font-size: var(--fs-md); color: var(--ash); font-weight: var(--fw-medium); }
 .stat-foot { font-size: var(--fs-xs); color: var(--ash-dim); margin-top: var(--sp-2); }
-.stat-foot .up { color: var(--emerald); }
-.stat-foot .down { color: var(--rose); }
+.stat-foot .up { color: var(--green-ink); }
+.stat-foot .down { color: var(--rose-ink); }
 
 /* Figures — numbers stated typographically, separated by hairlines rather
    than boxed into tiles. Used where a few standing counts genuinely help
@@ -578,7 +578,7 @@
 .data-table th.sortable { cursor: pointer; user-select: none; }
 .data-table th.sortable:hover { color: var(--white); }
 .data-table th .arrow { opacity: 0.4; margin-left: 2px; }
-.data-table th.sorted .arrow { opacity: 1; color: var(--cd-blue); }
+.data-table th.sorted .arrow { opacity: 1; color: var(--blue-ink); }
 
 .data-table td {
   padding: var(--sp-3) var(--sp-4);
@@ -589,7 +589,7 @@
 
 /* Whole rows are clickable targets into the detail view. */
 .data-table tbody tr.row-link { cursor: pointer; transition: background var(--duration-fast) var(--ease-out); }
-.data-table tbody tr.row-link:hover td { background: rgba(160, 160, 184, 0.04); }
+.data-table tbody tr.row-link:hover td { background: var(--tint-row); }
 .data-table tbody tr.selected td { background: var(--cd-blue-dim); }
 
 .col-tight { width: 1%; white-space: nowrap; }
@@ -642,7 +642,7 @@ tr:hover .row-actions, tr:focus-within .row-actions { opacity: 1; }
   height: 32px;
   border-radius: 50%;
   background: var(--cd-blue-dim);
-  color: var(--cd-blue);
+  color: var(--blue-ink);
   font-family: var(--font-display);
   font-weight: var(--fw-bold);
   font-size: var(--fs-xs);
@@ -652,8 +652,8 @@ tr:hover .row-actions, tr:focus-within .row-actions { opacity: 1; }
 .avatar-sm { width: 24px; height: 24px; font-size: 10px; }
 .avatar-lg { width: 56px; height: 56px; font-size: var(--fs-md); }
 .avatar-xl { width: 72px; height: 72px; font-size: var(--fs-lg); }
-.avatar-gold { background: var(--cd-gold-dim); color: var(--cd-gold); }
-.avatar-teal { background: var(--teal-dim); color: var(--teal); }
+.avatar-gold { background: var(--gold-dim); color: var(--gold-ink); }
+.avatar-teal { background: var(--teal-dim); color: var(--teal-ink); }
 
 /* Orbit ring — engagement depth as concentric arcs around the avatar.
    Level 1 is the outermost, faintest ring; level 4 sits closest in. */
@@ -687,17 +687,17 @@ tr:hover .row-actions, tr:focus-within .row-actions { opacity: 1; }
   padding: 2px 8px;
   border-radius: var(--r-sm);
   white-space: nowrap;
-  background: rgba(160, 160, 184, 0.08);
+  background: var(--tint-2);
   color: var(--ash);
 }
-.badge-sandbox    { color: var(--cd-gold); background: var(--cd-gold-dim); }
-.badge-production { color: var(--teal); background: var(--teal-dim); }
-.badge-active     { color: var(--emerald); background: var(--emerald-dim); }
-.badge-inactive   { color: var(--ash); background: rgba(160, 160, 184, 0.08); }
-.badge-suspended  { color: var(--rose); background: var(--rose-dim); }
-.badge-danger     { color: var(--rose); background: var(--rose-dim); }
-.badge-warn       { color: var(--cd-gold); background: var(--cd-gold-dim); }
-.badge-info       { color: var(--cd-blue); background: var(--cd-blue-dim); }
+.badge-sandbox    { color: var(--gold-ink); background: var(--gold-dim); }
+.badge-production { color: var(--teal-ink); background: var(--teal-dim); }
+.badge-active     { color: var(--green-ink); background: var(--green-dim); }
+.badge-inactive   { color: var(--ash); background: var(--tint-2); }
+.badge-suspended  { color: var(--rose-ink); background: var(--rose-dim); }
+.badge-danger     { color: var(--rose-ink); background: var(--rose-dim); }
+.badge-warn       { color: var(--gold-ink); background: var(--gold-dim); }
+.badge-info       { color: var(--blue-ink); background: var(--blue-dim); }
 .badge-violet     { color: var(--violet); background: var(--violet-dim); }
 
 /* Soft, non-mono label for cohorts and free-form tags. */
@@ -708,7 +708,7 @@ tr:hover .row-actions, tr:focus-within .row-actions { opacity: 1; }
   font-size: var(--fs-xs);
   padding: 2px var(--sp-2);
   border-radius: var(--r-sm);
-  background: rgba(160, 160, 184, 0.06);
+  background: var(--tint-1);
   color: var(--ash);
   white-space: nowrap;
 }
@@ -721,7 +721,7 @@ tr:hover .row-actions, tr:focus-within .row-actions { opacity: 1; }
   font-family: var(--font-display);
   font-weight: var(--fw-bold);
   font-size: var(--fs-sm);
-  color: var(--cd-gold);
+  color: var(--gold-ink);
 }
 
 /* ─────────────────────────────────────────────
@@ -785,7 +785,7 @@ tr:hover .row-actions, tr:focus-within .row-actions { opacity: 1; }
 .scrim {
   position: fixed;
   inset: 0;
-  background: rgba(10, 10, 20, 0.66);
+  background: var(--scrim);
   z-index: var(--z-overlay);
   opacity: 0;
   pointer-events: none;
@@ -847,7 +847,7 @@ tr:hover .row-actions, tr:focus-within .row-actions { opacity: 1; }
   flex-shrink: 0;
   transition: all var(--duration-fast) var(--ease-out);
 }
-.icon-btn:hover { color: var(--white); background: rgba(160, 160, 184, 0.08); }
+.icon-btn:hover { color: var(--white); background: var(--tint-2); }
 
 .modal {
   position: fixed;
@@ -906,7 +906,7 @@ select.input { cursor: pointer; appearance: none; background-image: linear-gradi
 textarea.input { min-height: 90px; line-height: var(--lh-normal); }
 
 .hint { font-size: var(--fs-xs); color: var(--ash-dim); margin-top: var(--sp-2); }
-.error-text { font-size: var(--fs-xs); color: var(--rose); margin-top: var(--sp-2); }
+.error-text { font-size: var(--fs-xs); color: var(--rose-ink); margin-top: var(--sp-2); }
 
 /* Segmented control — for two or three mutually exclusive choices that
    deserve to be visible rather than hidden in a select. */
@@ -926,7 +926,7 @@ textarea.input { min-height: 90px; line-height: var(--lh-normal); }
   color: var(--ash);
   transition: all var(--duration-fast) var(--ease-out);
 }
-.segmented button.active { background: var(--cd-blue); color: var(--white); }
+.segmented button.active { background: var(--cd-blue); color: var(--on-accent); }
 
 /* Consent and preference toggles. */
 .switch-row {
@@ -962,7 +962,7 @@ textarea.input { min-height: 90px; line-height: var(--lh-normal); }
   transition: transform var(--duration-fast) var(--ease-out), background var(--duration-fast) var(--ease-out);
 }
 .switch.on { background: var(--cd-blue); }
-.switch.on::after { transform: translateX(16px); background: var(--white); }
+.switch.on::after { transform: translateX(16px); background: var(--on-accent); }
 
 .check {
   width: 16px;
@@ -977,7 +977,7 @@ textarea.input { min-height: 90px; line-height: var(--lh-normal); }
   color: transparent;
   transition: all var(--duration-fast) var(--ease-out);
 }
-.check.on { background: var(--cd-blue); border-color: var(--cd-blue); color: var(--white); }
+.check.on { background: var(--cd-blue); border-color: var(--cd-blue); color: var(--on-accent); }
 
 /* ─────────────────────────────────────────────
    11. BUTTONS
@@ -1001,19 +1001,19 @@ textarea.input { min-height: 90px; line-height: var(--lh-normal); }
 .btn:hover { text-decoration: none; }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
-.btn-primary { background: var(--cd-blue); color: var(--white); }
+.btn-primary { background: var(--cd-blue); color: var(--on-accent); }
 .btn-primary:hover:not(:disabled) { background: var(--cd-blue-deep); }
 
 .btn-secondary { background: var(--surface-3); color: var(--ash); border-color: var(--line); }
 .btn-secondary:hover:not(:disabled) { color: var(--white); border-color: var(--line-strong); }
 
 .btn-ghost { color: var(--ash); }
-.btn-ghost:hover:not(:disabled) { color: var(--white); background: rgba(160, 160, 184, 0.08); }
+.btn-ghost:hover:not(:disabled) { color: var(--white); background: var(--tint-2); }
 
-.btn-gold { background: var(--cd-gold); color: var(--ink); font-weight: var(--fw-semibold); }
+.btn-gold { background: var(--cd-gold); color: #1A1A2E; font-weight: var(--fw-semibold); }
 .btn-gold:hover:not(:disabled) { background: var(--cd-gold-deep); }
 
-.btn-danger { background: var(--rose); color: var(--white); }
+.btn-danger { background: var(--rose); color: var(--on-accent); }
 .btn-danger:hover:not(:disabled) { filter: brightness(1.1); }
 
 .btn-sm { font-size: var(--fs-xs); padding: var(--sp-1) var(--sp-3); }
@@ -1036,7 +1036,7 @@ textarea.input { min-height: 90px; line-height: var(--lh-normal); }
 .empty-text { font-size: var(--fs-sm); max-width: 42ch; margin: 0 auto var(--sp-5); }
 
 .skeleton {
-  background: linear-gradient(90deg, rgba(160,160,184,0.05) 25%, rgba(160,160,184,0.10) 37%, rgba(160,160,184,0.05) 63%);
+  background: linear-gradient(90deg, var(--tint-1) 25%, var(--tint-3) 37%, var(--tint-1) 63%);
   background-size: 400% 100%;
   animation: shimmer 1.4s ease infinite;
   border-radius: var(--r-sm);
@@ -1083,7 +1083,7 @@ textarea.input { min-height: 90px; line-height: var(--lh-normal); }
   width: 100%;
   padding: var(--sp-4) var(--sp-5);
   font-size: var(--fs-md);
-  color: var(--white);
+  color: var(--text);
   border-bottom: 1px solid var(--line-faint);
 }
 .palette-input::placeholder { color: var(--ash-dim); }
@@ -1175,7 +1175,7 @@ textarea.input { min-height: 90px; line-height: var(--lh-normal); }
   white-space: nowrap;
   text-decoration: none;
 }
-.portal-link:hover { color: var(--white); background: rgba(160, 160, 184, 0.05); text-decoration: none; }
+.portal-link:hover { color: var(--white); background: var(--tint-1); text-decoration: none; }
 .portal-link.active { color: var(--white); background: var(--cd-blue-dim); }
 
 .portal-body {
@@ -1200,6 +1200,220 @@ textarea.input { min-height: 90px; line-height: var(--lh-normal); }
   border: 2px solid var(--surface-1);
 }
 
+/* Account menu — profile and consent settings live here rather than eating a
+   slot in the bar, which belongs to the things a developer came to do. */
+.account { position: relative; flex-shrink: 0; }
+.account-button {
+  display: flex;
+  align-items: center;
+  padding: var(--sp-1);
+  border-radius: var(--r-full);
+  transition: opacity var(--duration-fast) var(--ease-out);
+}
+.account-button:hover { opacity: 0.8; }
+
+.account-menu {
+  display: none;
+  position: absolute;
+  top: calc(100% + var(--sp-2));
+  right: 0;
+  min-width: 220px;
+  background: var(--surface-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-lg);
+  padding: var(--sp-1);
+  z-index: var(--z-sidebar);
+}
+.account-menu.open { display: block; }
+.account-head { padding: var(--sp-3); border-bottom: 1px solid var(--line-faint); margin-bottom: var(--sp-1); }
+.account-name { font-size: var(--fs-sm); font-weight: var(--fw-semibold); }
+.account-mail { font-size: var(--fs-xs); color: var(--ash-dim); overflow-wrap: anywhere; }
+.account-menu a, .account-menu button {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--r-sm);
+  font-size: var(--fs-sm);
+  color: var(--ash);
+  text-decoration: none;
+  text-align: left;
+}
+.account-menu a:hover, .account-menu button:hover { background: var(--tint-2); color: var(--white); text-decoration: none; }
+.account-menu .danger:hover { color: var(--rose-ink); }
+
+/* ── Developer-facing pieces ─────────────────────────────── */
+
+/* The masthead. A developer arriving should see who the product thinks they
+   are before anything else — name, company, and the two facts that define
+   their relationship with the platform. */
+.masthead {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-5);
+  padding: var(--sp-8) 0 var(--sp-6);
+}
+.masthead-name {
+  font-family: var(--font-display);
+  font-weight: var(--fw-black);
+  font-size: var(--fs-3xl);
+  letter-spacing: -0.04em;
+  line-height: 1.05;
+}
+.masthead-line {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+  margin-top: var(--sp-3);
+  font-size: var(--fs-sm);
+  color: var(--text-2);
+}
+@media (max-width: 600px) {
+  .masthead { gap: var(--sp-4); padding-top: var(--sp-6); }
+  .masthead-name { font-size: var(--fs-2xl); }
+}
+
+/* Engagement, twelve weeks at a time. Deliberately a record rather than a
+   score: one cell per day, darker where more happened. Precise and earned —
+   the opposite of a badge wall, and legible to anyone who has used a commit
+   graph. */
+.heat {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  grid-auto-flow: column;
+  grid-template-rows: repeat(7, 1fr);
+  gap: 3px;
+  max-width: 100%;
+}
+.heat-cell {
+  aspect-ratio: 1;
+  border-radius: 2px;
+  background: var(--tint-2);
+  min-width: 0;
+}
+.heat-cell.l1 { background: var(--blue-line); }
+.heat-cell.l2 { background: var(--cd-blue); opacity: 0.75; }
+.heat-cell.l3 { background: var(--cd-blue); }
+.heat-cell.gold { background: var(--cd-gold); }
+
+.heat-legend {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+}
+.heat-key { display: inline-flex; gap: 3px; align-items: center; }
+.heat-key span { width: 10px; height: 10px; border-radius: 2px; }
+
+/* A number stated with enough size to be read as a fact, not a label. */
+.big-figure {
+  font-family: var(--font-display);
+  font-weight: var(--fw-black);
+  font-size: var(--fs-3xl);
+  letter-spacing: -0.04em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.big-figure .unit { font-size: var(--fs-md); font-weight: var(--fw-medium); color: var(--text-2); letter-spacing: 0; }
+
+/* Survey invitations carry weight: this is the main thing we ask of a
+   developer, so it is a real surface rather than another list row. */
+.invite {
+  display: block;
+  padding: var(--sp-6);
+  border: 1px solid var(--line);
+  border-radius: var(--r-xl);
+  background: var(--surface-2);
+  margin-bottom: var(--sp-3);
+  text-decoration: none;
+  transition: border-color var(--duration-fast) var(--ease-out),
+              transform var(--duration-fast) var(--ease-out),
+              box-shadow var(--duration-fast) var(--ease-out);
+}
+.invite:hover {
+  text-decoration: none;
+  border-color: var(--blue-line);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+.invite-title { font-family: var(--font-display); font-weight: var(--fw-bold); font-size: var(--fs-md); margin-bottom: var(--sp-2); }
+.invite-desc { font-size: var(--fs-sm); color: var(--text-2); line-height: var(--lh-loose); margin-bottom: var(--sp-4); }
+.invite-foot { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
+.invite-cost { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-3); }
+
+/* The integration journey: sandbox → production, stated as a real position
+   rather than a badge. This is the fact a developer cares most about. */
+.journey {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: var(--sp-4) 0;
+}
+.journey-step {
+  flex: 1;
+  padding: var(--sp-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  font-size: var(--fs-xs);
+  color: var(--ash-dim);
+  text-align: center;
+  position: relative;
+}
+.journey-step .step-name { font-weight: var(--fw-semibold); color: var(--ash); display: block; }
+.journey-step.done { border-color: var(--teal); color: var(--teal-ink); }
+.journey-step.done .step-name { color: var(--teal-ink); }
+.journey-step.current { border-color: var(--gold-ink); background: var(--gold-dim); }
+.journey-step.current .step-name { color: var(--gold-ink); }
+.journey-arrow { color: var(--ash-dim); flex-shrink: 0; font-size: var(--fs-xs); }
+@media (max-width: 560px) { .journey { flex-direction: column; align-items: stretch; } .journey-arrow { display: none; } }
+
+/* A row in any member-facing list: survey, session, reward, submission. */
+.row-item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  padding: var(--sp-4) 0;
+  border-bottom: 1px solid var(--line-faint);
+  text-decoration: none;
+}
+.row-item:last-child { border-bottom: none; }
+.row-item:hover { text-decoration: none; }
+.row-item-title { font-size: var(--fs-sm); font-weight: var(--fw-medium); color: var(--white); }
+.row-item-meta { font-size: var(--fs-xs); color: var(--ash-dim); margin-top: 2px; }
+
+/* Where a scheduled session sits against the hours the member chose. */
+.clash { color: var(--gold-ink); }
+
+.when-chip {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--blue-ink);
+  background: var(--cd-blue-dim);
+  padding: var(--sp-1) var(--sp-2);
+  border-radius: var(--r-sm);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Circles and cohorts a member belongs to. This decides which surveys and
+   sessions reach them, so it is shown to them, not only to the admin. */
+.membership { display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: center; }
+
+/* Quoting the member's own words back to them — their feedback, their
+   complaint — with what happened to it. */
+.submission {
+  padding: var(--sp-5) 0;
+  border-bottom: 1px solid var(--line-faint);
+}
+.submission:last-child { border-bottom: none; }
+.submission-text { font-size: var(--fs-sm); line-height: var(--lh-loose); margin-bottom: var(--sp-3); }
+.submission-meta { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; font-size: var(--fs-xs); color: var(--ash-dim); }
+
 /* The single most important thing a member should do next. */
 .next-action {
   background: linear-gradient(135deg, var(--cd-blue-dim), transparent 70%), var(--surface-2);
@@ -1212,7 +1426,7 @@ textarea.input { min-height: 90px; line-height: var(--lh-normal); }
   font-size: var(--fs-xs);
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  color: var(--cd-blue);
+  color: var(--blue-ink);
   font-weight: var(--fw-semibold);
   margin-bottom: var(--sp-2);
 }
@@ -1255,6 +1469,6 @@ textarea.input { min-height: 90px; line-height: var(--lh-normal); }
 @media (max-width: 700px) { .hide-sm { display: none !important; } }
 
 /* Progress bar, used by surveys and cohort previews. */
-.progress { height: 4px; background: rgba(160, 160, 184, 0.10); border-radius: var(--r-full); overflow: hidden; }
+.progress { height: 4px; background: var(--tint-3); border-radius: var(--r-full); overflow: hidden; }
 .progress .fill { height: 100%; background: var(--cd-blue); border-radius: var(--r-full); transition: width var(--duration-normal) var(--ease-out); }
 .progress .fill.gold { background: var(--cd-gold); }

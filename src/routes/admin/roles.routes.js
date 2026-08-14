@@ -182,4 +182,26 @@ router.put('/admins/:id', requirePermission('roles.write'), (req, res) => {
   res.json({ admin: updated, message: 'Updated. The admin will need to sign in again.' });
 });
 
+// POST /api/admin/admins/:id/reset-password
+// Staff are the only people who hold a password, so they are the only people
+// who can be locked out of one. Members never need this — they sign in with a
+// one-time code.
+router.post('/admins/:id/reset-password', requirePermission('roles.write'), (req, res) => {
+  const target = db.prepare('SELECT * FROM admin_users WHERE id = ?').get(req.params.id);
+  if (!target) return res.status(404).json({ error: 'Admin not found' });
+
+  const { new_password } = req.body;
+  if (!new_password || String(new_password).length < 10) {
+    return res.status(400).json({ error: 'Admin passwords must be at least 10 characters' });
+  }
+
+  db.prepare('UPDATE admin_users SET password_hash = ? WHERE id = ?')
+    .run(bcrypt.hashSync(new_password, 10), target.id);
+
+  // Whoever held the old password loses their sessions with it
+  destroyAllSessionsFor(target.id);
+
+  res.json({ message: 'Password reset. Their existing sessions were signed out.' });
+});
+
 module.exports = router;

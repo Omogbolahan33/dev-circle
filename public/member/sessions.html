@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dev Circle — Sessions</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/css/tokens.css">
+  <link rel="stylesheet" href="/assets/css/app.css">
+  <script src="/assets/js/theme.js"></script>
+  <style>
+    .page-title-lg { font-family: var(--font-display); font-weight: var(--fw-bold); font-size: var(--fs-2xl); letter-spacing: -0.03em; }
+    .lede { color: var(--ash); font-size: var(--fs-sm); margin-top: var(--sp-1); max-width: 56ch; }
+
+    /* Calendar-style date block, the same anatomy the admin sessions list
+       uses, so the two sides of the product describe time identically. */
+    .session { display: flex; gap: var(--sp-5); padding: var(--sp-5) 0; border-bottom: 1px solid var(--line-faint); }
+    .session:last-child { border-bottom: none; }
+
+    .when { width: 64px; flex-shrink: 0; text-align: center; padding: var(--sp-2) 0; border-right: 1px solid var(--line-faint); }
+    .when-day { font-size: var(--fs-xs); color: var(--ash-dim); text-transform: uppercase; letter-spacing: 0.08em; }
+    .when-date { font-family: var(--font-display); font-weight: var(--fw-bold); font-size: var(--fs-lg); line-height: 1.1; }
+    .when-time { font-family: var(--font-mono); font-size: 10px; color: var(--cd-blue); margin-top: 2px; }
+
+    .session-title { font-family: var(--font-display); font-weight: var(--fw-semibold); font-size: var(--fs-base); }
+    .session-desc { font-size: var(--fs-sm); color: var(--ash); margin-top: var(--sp-1); }
+    .session-meta { display: flex; gap: var(--sp-3); flex-wrap: wrap; font-size: var(--fs-xs); color: var(--ash-dim); margin-top: var(--sp-2); }
+
+    /* A clash against the availability the member set is called out to them
+       directly, not left for them to discover on the day. */
+    .clash-note {
+      margin-top: var(--sp-3);
+      padding: var(--sp-3);
+      border-radius: var(--r-md);
+      background: var(--cd-gold-dim);
+      font-size: var(--fs-xs);
+      color: var(--cd-gold);
+    }
+    .clash-note a { color: var(--cd-gold); text-decoration: underline; }
+  </style>
+</head>
+<body>
+
+<div class="portal">
+  <div class="portal-body">
+
+    <header class="mb-6">
+      <h1 class="page-title-lg">Sessions</h1>
+      <p class="lede">
+        Office hours, workshops and 1-on-1s you are invited to. Times are West Africa Time.
+      </p>
+    </header>
+
+    <section class="section">
+      <div class="section-head">
+        <h2 class="section-title">Coming up</h2>
+        <span class="dim text-xs" id="count"></span>
+      </div>
+      <div id="sessions">
+        <div class="session"><div class="skeleton" style="width:60%;height:14px"></div></div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="card">
+        <div class="card-title mb-2">These land in your hours, not ours</div>
+        <p class="text-sm muted mb-4">
+          Sessions are scheduled against the days and times you chose. If something is
+          booked outside them, we flag it here rather than assuming you are free.
+        </p>
+        <a class="btn btn-secondary" href="/member/profile.html">Change when you are available</a>
+      </div>
+    </section>
+
+  </div>
+</div>
+
+<script src="/assets/js/api.js"></script>
+<script src="/assets/js/shell.js"></script>
+<script>
+  Shell.portal('sessions');
+
+  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
+  // Stored UTC, read in WAT — the same conversion the admin console makes.
+  function toWat(stored) {
+    const utc = new Date(String(stored).replace(' ', 'T') + 'Z');
+    return new Date(utc.getTime() + 3600000);
+  }
+
+  async function load() {
+    try {
+      const { sessions } = await api.get('/users/sessions');
+
+      document.getElementById('count').textContent =
+        sessions.length ? `${sessions.length} scheduled` : '';
+
+      document.getElementById('sessions').innerHTML = sessions.length
+        ? sessions.map(s => {
+          const when = toWat(s.scheduled_for);
+          return `
+            <article class="session">
+              <div class="when">
+                <div class="when-day">${DAYS[when.getUTCDay()]}</div>
+                <div class="when-date">${when.getUTCDate()} ${MONTHS[when.getUTCMonth()]}</div>
+                <div class="when-time">${String(when.getUTCHours()).padStart(2, '0')}:${String(when.getUTCMinutes()).padStart(2, '0')}</div>
+              </div>
+              <div style="flex:1;min-width:0">
+                <div class="session-title">${escapeHtml(s.title)}</div>
+                ${s.description ? `<div class="session-desc">${escapeHtml(s.description)}</div>` : ''}
+                <div class="session-meta">
+                  <span>${escapeHtml((s.type || '').replace(/_/g, ' '))}</span>
+                  <span>${s.duration_min} min</span>
+                  ${s.location ? `<span>${escapeHtml(s.location)}</span>` : ''}
+                  ${s.circle_name ? `<span>${escapeHtml(s.circle_name)}</span>` : ''}
+                </div>
+                ${s.clashes_with_availability ? `
+                  <div class="clash-note">
+                    ${escapeHtml(s.clash_reason || 'This falls outside the availability you set.')}
+                    <a href="/member/profile.html">Update your availability</a>
+                  </div>` : ''}
+                ${s.survey_id ? `
+                  <a class="btn btn-sm btn-primary mt-4" href="/member/survey.html?id=${s.survey_id}">
+                    Open the survey${s.survey_title ? ': ' + escapeHtml(s.survey_title) : ''}
+                  </a>` : ''}
+              </div>
+            </article>`;
+        }).join('')
+        : emptyState({
+            title: 'Nothing scheduled',
+            text: 'When the developer relations team runs office hours or invites you to a session, it will show up here and on the channels you allowed.'
+          });
+    } catch (err) {
+      document.getElementById('sessions').innerHTML =
+        emptyState({ title: 'Could not load sessions', text: err.message });
+    }
+  }
+
+  load();
+</script>
+</body>
+</html>

@@ -268,6 +268,41 @@ async function sendDirect(user, {
   return { channel, status: outcome.status, reason: outcome.error || null };
 }
 
+// Mail an address that is not a member — a Credit Direct colleague being
+// invited into the admin console. They have no users row, so there is no
+// consent record to consult and no delivery row to write; the caller is told
+// what actually happened instead, because an invite that only looks sent
+// leaves somebody unable to get in.
+async function sendMail({ to, title, body }) {
+  if (!to || !title) throw new Error('sendMail() requires "to" and a title');
+
+  const { delivery } = config;
+  if (!delivery.enabled) {
+    return { status: 'simulated', reason: 'No Customer.io credentials configured' };
+  }
+
+  try {
+    const res = await fetch('https://api.customer.io/v1/send/triggers', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${delivery.customerIoApiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        transactional_message_id: 'staff_invite',
+        identifiers: { email: to },
+        to,
+        message_data: { title, body }
+      })
+    });
+
+    if (!res.ok) return { status: 'failed', reason: `Provider responded ${res.status}` };
+    return { status: 'sent', reason: null };
+  } catch (err) {
+    return { status: 'failed', reason: err.message };
+  }
+}
+
 // Send the same message to many members
 async function notifyMany(users, message) {
   const summary = { delivered: 0, skipped: 0, queued: 0, failed: 0, per_user: [] };
@@ -380,6 +415,7 @@ module.exports = {
   notify,
   notifyMany,
   sendDirect,
+  sendMail,
   inbox,
   markRead,
   markAllRead,

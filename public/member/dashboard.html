@@ -9,52 +9,58 @@
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/assets/css/tokens.css">
   <link rel="stylesheet" href="/assets/css/app.css">
+  <script src="/assets/js/theme.js"></script>
   <style>
-    .greeting { font-family: var(--font-display); font-weight: var(--fw-bold); font-size: var(--fs-2xl); letter-spacing: -0.03em; }
-    .greeting-sub { color: var(--ash); font-size: var(--fs-sm); margin-top: var(--sp-1); }
+    /* Home is two columns on a desktop: what we are asking of you on the
+       left, what you have built up on the right. It collapses to one column
+       in the order a phone should read it. */
+    .home { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: var(--sp-6); align-items: start; }
+    @media (max-width: 900px) { .home { grid-template-columns: minmax(0, 1fr); } }
 
-    /* Standing facts about this developer's relationship with Credit Direct.
-       Stated once, quietly, rather than as a wall of tiles. */
-    .standing {
-      display: flex;
-      align-items: center;
-      gap: var(--sp-4);
-      flex-wrap: wrap;
-      padding: var(--sp-4) 0;
-      border-top: 1px solid var(--line-faint);
-      border-bottom: 1px solid var(--line-faint);
-      margin: var(--sp-6) 0 var(--sp-8);
-      font-size: var(--fs-sm);
-      color: var(--ash);
+    .panel-card {
+      background: var(--surface-2);
+      border: 1px solid var(--line-faint);
+      border-radius: var(--r-xl);
+      padding: var(--sp-6);
     }
-    .standing .val { color: var(--white); font-weight: var(--fw-semibold); }
-    .standing .divider { width: 1px; height: 14px; background: var(--line); }
-
-    .item {
-      display: flex;
-      align-items: center;
-      gap: var(--sp-4);
-      padding: var(--sp-4) 0;
-      border-bottom: 1px solid var(--line-faint);
-      text-decoration: none;
-    }
-    .item:last-child { border-bottom: none; }
-    .item:hover { text-decoration: none; }
-    .item-title { font-size: var(--fs-sm); font-weight: var(--fw-medium); color: var(--white); }
-    .item-meta { font-size: var(--fs-xs); color: var(--ash-dim); margin-top: 2px; }
-
-    /* A session that lands outside the hours they chose says so plainly. */
-    .clash { color: var(--cd-gold); }
-
-    .when-chip {
-      font-family: var(--font-mono);
+    .panel-title {
       font-size: var(--fs-xs);
-      color: var(--cd-blue);
-      background: var(--cd-blue-dim);
-      padding: var(--sp-1) var(--sp-2);
-      border-radius: var(--r-sm);
-      white-space: nowrap;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--text-3);
+      font-weight: var(--fw-semibold);
+      margin-bottom: var(--sp-4);
     }
+
+    /* Sandbox → KYB → production as one continuous track rather than four
+       disconnected boxes: the point is how far along you are. */
+    .track { display: flex; flex-direction: column; gap: var(--sp-3); }
+    .track-step { display: flex; align-items: flex-start; gap: var(--sp-3); font-size: var(--fs-sm); }
+    .track-mark {
+      width: 18px; height: 18px;
+      border-radius: 50%;
+      border: 2px solid var(--line-strong);
+      flex-shrink: 0;
+      margin-top: 1px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 9px;
+      position: relative;
+    }
+    .track-step:not(:last-child) .track-mark::after {
+      content: '';
+      position: absolute;
+      top: 16px; left: 50%;
+      width: 2px; height: calc(var(--sp-3) + 6px);
+      background: var(--line);
+      transform: translateX(-50%);
+    }
+    .track-step.done .track-mark { border-color: var(--teal); background: var(--teal); color: var(--on-accent); }
+    .track-step.done:not(:last-child) .track-mark::after { background: var(--teal); }
+    .track-step.now .track-mark { border-color: var(--cd-gold); background: var(--gold-dim); }
+    .track-name { font-weight: var(--fw-medium); }
+    .track-note { color: var(--text-3); font-size: var(--fs-xs); }
+    .track-step.done .track-name { color: var(--teal-ink); }
+    .track-step.now .track-name { color: var(--gold-ink); }
   </style>
 </head>
 <body>
@@ -62,83 +68,94 @@
 <div class="portal">
   <div class="portal-body">
 
-    <header>
-      <h1 class="greeting" id="greeting">Welcome back</h1>
-      <p class="greeting-sub" id="greetingSub"></p>
-    </header>
-
-    <div class="standing" id="standing"></div>
+    <!-- Who we think you are, before anything is asked of you. -->
+    <header class="masthead" id="masthead"></header>
 
     <!-- The one thing worth doing next, if there is one. -->
     <div id="nextAction"></div>
 
-    <section class="section" id="sessionsSection" hidden>
-      <div class="section-head">
-        <h2 class="section-title">Coming up</h2>
-      </div>
-      <div id="sessions"></div>
-    </section>
+    <div class="home">
 
-    <section class="section">
-      <div class="section-head">
-        <h2 class="section-title">Surveys</h2>
-        <span class="dim text-xs" id="surveyCount"></span>
-      </div>
-      <div id="surveys"></div>
-    </section>
+      <div class="stack">
+        <section id="invitesSection" hidden>
+          <div class="section-head">
+            <h2 class="section-title">Waiting for you</h2>
+            <a href="/member/surveys.html" class="section-link">All surveys →</a>
+          </div>
+          <div id="invites"></div>
+        </section>
 
-    <section class="section">
-      <div class="section-head">
-        <h2 class="section-title">Recent activity</h2>
-        <a href="/member/engagement.html" class="section-link">Full history →</a>
-      </div>
-      <div class="timeline" id="timeline"></div>
-    </section>
+        <section id="sessionsSection" hidden>
+          <div class="section-head">
+            <h2 class="section-title">Coming up</h2>
+            <a href="/member/sessions.html" class="section-link">All sessions →</a>
+          </div>
+          <div id="sessions"></div>
+        </section>
 
-    <section class="section">
-      <div class="card">
-        <div class="card-title mb-2">Something on your mind?</div>
-        <p class="text-sm muted mb-4">
-          Tell us what is working and what is not. It goes straight to the team that
-          builds the APIs you integrate with — no ticket queue, no forms.
-        </p>
-        <button class="btn btn-primary" onclick="Shell.openDrawer('feedbackDrawer')">Give feedback</button>
+        <section>
+          <div class="section-head">
+            <h2 class="section-title">Recent activity</h2>
+            <a href="/member/engagement.html" class="section-link">Full history →</a>
+          </div>
+          <div class="timeline" id="timeline"></div>
+        </section>
       </div>
-    </section>
 
+      <div class="stack">
+        <!-- Twelve weeks of taking part, as a record rather than a score. -->
+        <section class="panel-card">
+          <div class="panel-title">Your engagement</div>
+          <div class="row" style="align-items:baseline;gap:var(--sp-4);margin-bottom:var(--sp-5)">
+            <div>
+              <div class="big-figure" id="streakValue">—</div>
+              <div class="text-xs dim mt-2" id="streakLabel">day streak</div>
+            </div>
+            <div class="spacer"></div>
+            <div class="text-right">
+              <div class="big-figure" style="font-size:var(--fs-xl)" id="answeredValue">—</div>
+              <div class="text-xs dim mt-2">answered</div>
+            </div>
+          </div>
+          <div class="heat" id="heat"></div>
+          <div class="heat-legend">
+            <span>12 weeks ago</span>
+            <span class="spacer"></span>
+            <span class="heat-key">
+              <span style="background:var(--tint-2)"></span>
+              <span style="background:var(--blue-line)"></span>
+              <span style="background:var(--cd-blue);opacity:.75"></span>
+              <span style="background:var(--cd-blue)"></span>
+            </span>
+            <span>today</span>
+          </div>
+        </section>
+
+        <section class="panel-card">
+          <div class="panel-title">Your integration</div>
+          <div class="track" id="track"></div>
+          <p class="hint" id="products"></p>
+        </section>
+
+        <section class="panel-card">
+          <div class="panel-title">Where you sit</div>
+          <div class="membership" id="membership"></div>
+          <p class="hint">These decide which surveys and sessions reach you.</p>
+        </section>
+
+        <section class="panel-card">
+          <div class="panel-title">Say something</div>
+          <p class="text-sm muted mb-4" style="margin-top:calc(-1 * var(--sp-2))">
+            You do not have to wait to be asked. It reaches the team building the APIs,
+            and you can follow what happens to it.
+          </p>
+          <a class="btn btn-primary btn-block" href="/member/feedback.html">Give feedback</a>
+        </section>
+      </div>
+
+    </div>
   </div>
 </div>
-
-<aside class="drawer" id="feedbackDrawer">
-  <div class="drawer-head">
-    <div>
-      <div class="drawer-title">Give feedback</div>
-      <div class="drawer-sub">Straight to the Credit Direct developer team</div>
-    </div>
-    <button class="icon-btn" onclick="Shell.closeDrawer('feedbackDrawer')">×</button>
-  </div>
-  <div class="drawer-body">
-    <div class="field">
-      <label class="label">What is this about?</label>
-      <select class="input" id="fbCategory">
-        <option value="api">The APIs</option>
-        <option value="documentation">Documentation</option>
-        <option value="sandbox">Sandbox</option>
-        <option value="onboarding">Onboarding &amp; KYB</option>
-        <option value="support">Support</option>
-        <option value="other">Something else</option>
-      </select>
-    </div>
-    <div class="field">
-      <label class="label">Your feedback</label>
-      <textarea class="input" id="fbContent" style="min-height:180px" placeholder="Be as direct as you like."></textarea>
-    </div>
-  </div>
-  <div class="drawer-foot">
-    <button class="btn btn-secondary" onclick="Shell.closeDrawer('feedbackDrawer')">Cancel</button>
-    <button class="btn btn-primary" onclick="submitFeedback()">Send feedback</button>
-  </div>
-</aside>
 
 <script src="/assets/js/api.js"></script>
 <script src="/assets/js/shell.js"></script>
@@ -160,40 +177,109 @@
       const [profile, surveys, engagement, sessions] = await Promise.all([
         api.get('/users/profile'),
         api.get('/users/surveys'),
-        api.get('/users/engagement?limit=8'),
+        api.get('/users/engagement?limit=200'),
         api.get('/users/sessions')
       ]);
 
-      renderHeader(profile);
-      renderStanding(profile);
+      renderMasthead(profile);
       renderNextAction(profile, surveys.surveys, sessions.sessions);
+      renderHeat(engagement.history, profile.stats);
+      renderTrack(profile.user);
+      renderMembership(profile);
+      renderInvites(surveys.surveys);
       renderSessions(sessions.sessions);
-      renderSurveys(surveys.surveys);
-      renderTimeline(engagement.history);
+      renderTimeline(engagement.history.slice(0, 8));
     } catch (err) {
       showToast('Failed to load: ' + err.message, 'error');
     }
   }
 
-  function renderHeader({ user }) {
-    document.getElementById('greeting').textContent = `Welcome back, ${user.name.split(' ')[0]}`;
-    document.getElementById('greetingSub').innerHTML =
-      `Last active ${user.last_active_at ? formatDate(user.last_active_at) : 'just now'} · <span class="mono">${escapeHtml(user.email)}</span>`;
+  function renderMasthead({ user, stats }) {
+    const hour = new Date().getHours();
+    const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+
+    document.getElementById('masthead').innerHTML = `
+      ${orbitAvatar(user.name, orbitLevel(stats.streak),
+        'avatar-xl ' + (user.api_status === 'production' ? 'avatar-teal' : 'avatar-gold'))}
+      <div style="min-width:0">
+        <div class="text-xs dim">${greeting}</div>
+        <h1 class="masthead-name">${escapeHtml(user.name.split(' ')[0])}</h1>
+        <div class="masthead-line">
+          ${user.company ? `<span>${escapeHtml(user.company)}</span><span class="dim">·</span>` : ''}
+          ${badge(user.api_status, user.api_status)}
+          ${user.kyb_completed ? badge('KYB done', 'active') : badge('KYB pending', 'warn')}
+        </div>
+      </div>`;
   }
 
-  function renderStanding({ user, stats }) {
-    document.getElementById('standing').innerHTML = `
-      ${badge(user.api_status, user.api_status)}
-      <span class="divider"></span>
-      <span><span class="val">${stats.surveys_completed}</span> survey${stats.surveys_completed === 1 ? '' : 's'} answered</span>
-      <span class="divider"></span>
-      <span><span class="val">${stats.gifts_claimed}</span> reward${stats.gifts_claimed === 1 ? '' : 's'} claimed</span>
-      <span class="divider"></span>
-      <span><span class="val">${stats.streak}</span> day streak</span>
-      <span class="divider"></span>
-      <span>KYB ${user.kyb_completed
-        ? '<span class="val" style="color:var(--emerald)">complete</span>'
-        : '<span class="val" style="color:var(--cd-gold)">pending</span>'}</span>`;
+  // Twelve weeks of daily activity, counted from the engagement history the
+  // member is entitled to see anyway. Weeks run in columns, days down.
+  function renderHeat(history, stats) {
+    const WEEKS = 12;
+    const counts = new Map();
+    history.forEach(e => {
+      const day = String(e.created_at).slice(0, 10);
+      counts.set(day, (counts.get(day) || 0) + 1);
+    });
+
+    // Start on the Sunday twelve weeks back, so columns are whole weeks.
+    const today = new Date();
+    const start = new Date(today);
+    start.setDate(today.getDate() - (WEEKS * 7 - 1) - today.getDay());
+
+    let cells = '';
+    for (let i = 0; i < WEEKS * 7; i++) {
+      const d = new Date(start);
+      d.setDate(start.getDate() + i);
+      const key = d.toISOString().slice(0, 10);
+      const n = counts.get(key) || 0;
+      const level = n === 0 ? '' : n === 1 ? 'l1' : n <= 3 ? 'l2' : 'l3';
+      const ahead = d > today;
+      const label = ahead ? '' : `${n} event${n === 1 ? '' : 's'} on ${d.toDateString().slice(4)}`;
+      cells += `<span class="heat-cell ${level}"${ahead ? ' style="opacity:.25"' : ''} title="${label}"></span>`;
+    }
+
+    document.getElementById('heat').innerHTML = cells;
+    document.getElementById('streakValue').textContent = stats.streak;
+    document.getElementById('streakLabel').textContent =
+      stats.streak && stats.streak === stats.best_streak
+        ? 'day streak — your best yet'
+        : `day streak · best ${stats.best_streak}`;
+    document.getElementById('answeredValue').textContent = stats.surveys_completed;
+  }
+
+  // Where this developer stands with the platform, as one continuous track.
+  function renderTrack(user) {
+    const live = user.api_status === 'production';
+    const steps = [
+      { name: 'Registered', note: 'Account created', done: true },
+      { name: 'Sandbox', note: 'Building against test keys', done: true, now: !live && !user.kyb_completed },
+      { name: 'KYB', note: user.kyb_completed ? 'Verified' : 'Not completed yet', done: !!user.kyb_completed, now: !live && !!user.kyb_completed },
+      { name: 'Production', note: live ? 'Serving live traffic' : 'Not live yet', done: live, now: live }
+    ];
+
+    document.getElementById('track').innerHTML = steps.map(s => `
+      <div class="track-step ${s.done ? 'done' : ''} ${s.now ? 'now' : ''}">
+        <span class="track-mark">${s.done ? '✓' : ''}</span>
+        <span style="min-width:0">
+          <span class="track-name">${s.name}</span>
+          <span class="track-note" style="display:block">${escapeHtml(s.note)}</span>
+        </span>
+      </div>`).join('');
+
+    document.getElementById('products').textContent = (user.api_products || []).length
+      ? `Integrated with ${user.api_products.join(', ')}.`
+      : 'No API products recorded yet.';
+  }
+
+  function renderMembership({ circles, cohorts }) {
+    const tags = [
+      ...(circles || []).map(c => `<span class="tag" style="background:${c.color}22;color:${c.color}">${escapeHtml(c.name)}</span>`),
+      ...(cohorts || []).map(c => `<span class="tag" style="background:${c.color}22;color:${c.color}">${escapeHtml(c.name)}</span>`)
+    ];
+    document.getElementById('membership').innerHTML = tags.length
+      ? tags.join('')
+      : '<span class="dim text-xs">Not in any group yet.</span>';
   }
 
   // Exactly one call to action, chosen by what actually matters most:
@@ -230,7 +316,10 @@
             ${watLabel(soon.scheduled_for)} · ${soon.duration_min} min${soon.location ? ' · ' + escapeHtml(soon.location) : ''}
             ${soon.clashes_with_availability ? `<br><span class="clash">${escapeHtml(soon.clash_reason)}</span>` : ''}
           </p>
-          ${soon.survey_id ? `<a class="btn btn-primary" href="/member/survey.html?id=${soon.survey_id}">Open the survey</a>` : ''}
+          <div class="row-tight wrap">
+            ${soon.survey_id ? `<a class="btn btn-primary" href="/member/survey.html?id=${soon.survey_id}">Open the survey</a>` : ''}
+            <a class="btn btn-ghost" href="/member/sessions.html">All sessions</a>
+          </div>
         </div>`;
       return;
     }
@@ -241,7 +330,7 @@
         <div class="next-action">
           <div class="eyebrow">${waiting.length} survey${waiting.length === 1 ? '' : 's'} waiting</div>
           <div class="headline">${escapeHtml(s.title)}</div>
-          <p class="detail">${escapeHtml(s.description || 'Your answers shape what we build next.')} About ${s.time_estimate_min} minutes, ${s.questions.length} question${s.questions.length === 1 ? '' : 's'}.</p>
+          <p class="detail">${escapeHtml(s.description || 'Your answers shape what gets built next.')} About ${s.time_estimate_min} minutes, ${s.questions.length} question${s.questions.length === 1 ? '' : 's'}.</p>
           <a class="btn btn-primary" href="/member/survey.html?id=${s.id}">Start survey</a>
         </div>`;
       return;
@@ -261,53 +350,44 @@
     } catch (err) { showToast(err.message, 'error'); }
   }
 
+  function renderInvites(surveys) {
+    const waiting = surveys.filter(s => !s.completed);
+    document.getElementById('invitesSection').hidden = !waiting.length;
+    if (!waiting.length) return;
+
+    document.getElementById('invites').innerHTML = waiting.slice(0, 3).map(s => `
+      <a class="invite" href="/member/survey.html?id=${s.id}">
+        <div class="invite-title">${escapeHtml(s.title)}</div>
+        ${s.description ? `<p class="invite-desc">${escapeHtml(s.description)}</p>` : ''}
+        <div class="invite-foot">
+          <span class="btn btn-sm btn-primary">Start</span>
+          <span class="invite-cost">~${s.time_estimate_min} min · ${s.questions.length} question${s.questions.length === 1 ? '' : 's'}</span>
+        </div>
+      </a>`).join('');
+  }
+
   function renderSessions(sessions) {
-    const section = document.getElementById('sessionsSection');
-    section.hidden = !sessions.length;
+    document.getElementById('sessionsSection').hidden = !sessions.length;
     if (!sessions.length) return;
 
-    document.getElementById('sessions').innerHTML = sessions.slice(0, 4).map(s => `
-      <div class="item">
+    document.getElementById('sessions').innerHTML = sessions.slice(0, 3).map(s => `
+      <div class="row-item">
         <span class="when-chip">${watLabel(s.scheduled_for)}</span>
         <div style="flex:1;min-width:0">
-          <div class="item-title">${escapeHtml(s.title)}</div>
-          <div class="item-meta">
+          <div class="row-item-title">${escapeHtml(s.title)}</div>
+          <div class="row-item-meta">
             ${s.duration_min} min${s.location ? ' · ' + escapeHtml(s.location) : ''}
             ${s.clashes_with_availability ? ` · <span class="clash">${escapeHtml(s.clash_reason)}</span>` : ''}
           </div>
         </div>
-        ${s.survey_id ? `<a class="btn btn-sm btn-secondary" href="/member/survey.html?id=${s.survey_id}">Open survey</a>` : ''}
+        ${s.survey_id ? `<a class="btn btn-sm btn-secondary" href="/member/survey.html?id=${s.survey_id}">Survey</a>` : ''}
       </div>`).join('');
-  }
-
-  function renderSurveys(surveys) {
-    const waiting = surveys.filter(s => !s.completed);
-    const done = surveys.filter(s => s.completed);
-
-    document.getElementById('surveyCount').textContent =
-      `${done.length} answered${waiting.length ? ` · ${waiting.length} waiting` : ''}`;
-
-    document.getElementById('surveys').innerHTML = waiting.length
-      ? waiting.map(s => `
-        <a class="item" href="/member/survey.html?id=${s.id}">
-          <div style="flex:1;min-width:0">
-            <div class="item-title">${escapeHtml(s.title)}</div>
-            <div class="item-meta">~${s.time_estimate_min} min · ${s.questions.length} question${s.questions.length === 1 ? '' : 's'}</div>
-          </div>
-          <span class="btn btn-sm btn-primary">Start</span>
-        </a>`).join('')
-      : emptyState({
-          title: 'Nothing to answer right now',
-          text: done.length
-            ? 'You are all caught up. We will let you know when something new comes round.'
-            : 'When we have a question for you, it will show up here.'
-        });
   }
 
   function renderTimeline(history) {
     const el = document.getElementById('timeline');
     if (!history.length) {
-      el.innerHTML = emptyState({ title: 'Nothing here yet', text: 'Your engagement history builds up as you take part.' });
+      el.innerHTML = emptyState({ title: 'Nothing here yet', text: 'Your history builds up as you take part.' });
       return;
     }
 
@@ -333,19 +413,6 @@
           </div>
         </div>`;
     }).join('');
-  }
-
-  async function submitFeedback() {
-    const content = document.getElementById('fbContent').value.trim();
-    if (!content) { showToast('Write your feedback first', 'warning'); return; }
-
-    try {
-      await api.post('/feedback', { content, category: document.getElementById('fbCategory').value });
-      Shell.closeDrawer('feedbackDrawer');
-      document.getElementById('fbContent').value = '';
-      showToast('Thank you — that went straight to the team');
-      load();
-    } catch (err) { showToast(err.message, 'error'); }
   }
 
   load();

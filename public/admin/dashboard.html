@@ -9,6 +9,7 @@
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/assets/css/tokens.css">
   <link rel="stylesheet" href="/assets/css/app.css">
+  <script src="/assets/js/theme.js"></script>
   <style>
     /* The story on the left, the standing distributions on the right. */
     .overview { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: var(--sp-6); align-items: start; }
@@ -18,7 +19,7 @@
     .bar-row:last-child { margin-bottom: 0; }
     .bar-label { font-size: var(--fs-sm); display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
     .bar-count { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--ash); }
-    .bar-track { grid-column: 1 / -1; height: 4px; background: rgba(160,160,184,0.08); border-radius: var(--r-full); overflow: hidden; }
+    .bar-track { grid-column: 1 / -1; height: 4px; background: var(--tint-2); border-radius: var(--r-full); overflow: hidden; }
     .bar-fill { height: 100%; border-radius: var(--r-full); }
   </style>
 </head>

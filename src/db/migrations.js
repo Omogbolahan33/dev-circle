@@ -390,6 +390,23 @@ function define(db) {
           update.run(normalizePhone(row.phone), row.id);
         }
       }
+    },
+    {
+      id: 17,
+      name: 'staff_invites_and_forced_password_change',
+      up() {
+        // A staff account starts life with a password somebody else chose and
+        // sent by email. It is a handover credential, not theirs, so it buys
+        // exactly one thing: the chance to set a real one.
+        addColumn('admin_users', 'must_change_password', 'INTEGER DEFAULT 0');
+        addColumn('admin_users', 'invited_by', 'TEXT');
+        addColumn('admin_users', 'invited_at', 'TEXT');
+
+        // Signing in with a temporary password issues a session that can do
+        // nothing but replace it. Without this the block would live only in
+        // the browser, and typing /admin/dashboard.html would walk around it.
+        addColumn('sessions', 'scope', "TEXT DEFAULT 'full'");
+      }
     }
   ];
   return migrations;

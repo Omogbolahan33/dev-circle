@@ -77,11 +77,18 @@ const ADMIN_NAV = [
   ]}
 ];
 
+// The developer's side of the product. Every engagement type the blueprint
+// names is a destination here — surveys, sessions, self-initiated feedback,
+// rewards, and the history of all of it — rather than a card buried on Home.
+// Account settings live in the avatar menu, keeping the bar to the things a
+// developer actually came to do.
 const PORTAL_NAV = [
-  { id: 'dashboard',     label: 'Home',       href: '/member/dashboard.html' },
-  { id: 'engagement',    label: 'Activity',   href: '/member/engagement.html' },
-  { id: 'gifts',         label: 'Rewards',    href: '/member/gifts.html' },
-  { id: 'profile',       label: 'Profile',    href: '/member/profile.html' }
+  { id: 'dashboard',   label: 'Home',     href: '/member/dashboard.html' },
+  { id: 'surveys',     label: 'Surveys',  href: '/member/surveys.html' },
+  { id: 'sessions',    label: 'Sessions', href: '/member/sessions.html' },
+  { id: 'feedback',    label: 'Feedback', href: '/member/feedback.html' },
+  { id: 'gifts',       label: 'Rewards',  href: '/member/gifts.html' },
+  { id: 'engagement',  label: 'History',  href: '/member/engagement.html' }
 ];
 
 // ─── Shell ──────────────────────────────────────────────────
@@ -150,13 +157,16 @@ const Shell = {
             <a href="/admin/roles.html">${icon('roles', 14)} Roles &amp; access</a>
             <button class="danger" onclick="Auth.logout()">${icon('logout', 14)} Sign out</button>
           </div>
-          <button class="user-button" onclick="Shell.toggleUserMenu(event)">
-            <span class="avatar avatar-sm">${initials(user.name || 'A')}</span>
-            <span class="user-meta">
-              <span class="user-name">${escapeHtml(user.name || 'Admin')}</span>
-              <span class="user-role">${escapeHtml(user.role || 'Administrator')}</span>
-            </span>
-          </button>
+          <div class="row-tight">
+            <button class="user-button" onclick="Shell.toggleUserMenu(event)">
+              <span class="avatar avatar-sm">${initials(user.name || 'A')}</span>
+              <span class="user-meta">
+                <span class="user-name">${escapeHtml(user.name || 'Admin')}</span>
+                <span class="user-role">${escapeHtml(user.role || 'Administrator')}</span>
+              </span>
+            </button>
+            ${Theme.button()}
+          </div>
         </div>
       </aside>`;
   },
@@ -185,12 +195,33 @@ const Shell = {
             ${PORTAL_NAV.map(i => `
               <a href="${i.href}" class="portal-link${i.id === activeId ? ' active' : ''}">${i.label}</a>`).join('')}
           </nav>
+          ${Theme.button()}
+
           <a href="/member/notifications.html" class="icon-btn bell" aria-label="Notifications" title="Notifications">
             ${icon('bell', 18)}<span class="unread hide" id="bellUnread"></span>
           </a>
-          <button class="icon-btn" onclick="Auth.logout()" aria-label="Sign out" title="Sign out">${icon('logout', 18)}</button>
+
+          <div class="account">
+            <button class="account-button" onclick="Shell.toggleAccount(event)" aria-label="Your account">
+              <span class="avatar avatar-sm">${initials(user.name || '?')}</span>
+            </button>
+            <div class="account-menu" id="accountMenu">
+              <div class="account-head">
+                <div class="account-name">${escapeHtml(user.name || 'You')}</div>
+                <div class="account-mail">${escapeHtml(user.email || '')}</div>
+              </div>
+              <a href="/member/profile.html">${icon('profile', 14)} Your profile</a>
+              <a href="/member/notifications.html">${icon('bell', 14)} Notifications &amp; consent</a>
+              <button class="danger" onclick="Auth.logout()">${icon('logout', 14)} Sign out</button>
+            </div>
+          </div>
         </div>
       </header>`;
+  },
+
+  toggleAccount(e) {
+    e.stopPropagation();
+    document.getElementById('accountMenu').classList.toggle('open');
   },
 
   // Overlay furniture every page needs exactly once.
@@ -229,6 +260,9 @@ const Shell = {
     document.addEventListener('click', e => {
       const menu = document.getElementById('userMenu');
       if (menu && menu.classList.contains('open') && !e.target.closest('.sidebar-foot')) menu.classList.remove('open');
+
+      const account = document.getElementById('accountMenu');
+      if (account && account.classList.contains('open') && !e.target.closest('.account')) account.classList.remove('open');
     });
   },
 

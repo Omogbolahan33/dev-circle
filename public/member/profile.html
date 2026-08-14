@@ -9,6 +9,7 @@
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/assets/css/tokens.css">
   <link rel="stylesheet" href="/assets/css/app.css">
+  <script src="/assets/js/theme.js"></script>
   <style>
     .identity-head { display: flex; align-items: center; gap: var(--sp-4); margin-bottom: var(--sp-6); }
     .identity-title { font-family: var(--font-display); font-weight: var(--fw-bold); font-size: var(--fs-2xl); letter-spacing: -0.03em; }
@@ -51,6 +52,15 @@
     <header class="identity-head" id="identity"></header>
 
     <div class="figures" id="figures"></div>
+
+    <!-- What Credit Direct holds about this developer's integration, and which
+         groups decide what reaches them. Read-only: these are set by the
+         Developer Hub and by the engagement team, not editable here. -->
+    <section class="section">
+      <div class="section-head"><h2 class="section-title">Your standing</h2></div>
+      <div class="kv" id="standing"></div>
+      <div class="membership mt-4" id="membership"></div>
+    </section>
 
     <section class="section">
       <div class="section-head"><h2 class="section-title">About you</h2></div>
@@ -158,9 +168,29 @@
     return Array.from(document.querySelectorAll(`#${groupId} .choice.selected`)).map(el => el.dataset.value);
   }
 
+  function renderStanding(user, circles, cohorts) {
+    document.getElementById('standing').innerHTML = `
+      <div class="kv-row"><span class="kv-key">API stage</span><span class="kv-val">${escapeHtml(user.api_status)}</span></div>
+      <div class="kv-row"><span class="kv-key">KYB</span><span class="kv-val">${user.kyb_completed ? 'Completed' : 'Not yet completed'}</span></div>
+      <div class="kv-row"><span class="kv-key">Products</span><span class="kv-val">${(user.api_products || []).length ? user.api_products.map(escapeHtml).join(', ') : '—'}</span></div>
+      <div class="kv-row"><span class="kv-key">Developer Hub</span><span class="kv-val mono text-xs">${user.dev_hub_user_id ? 'Linked' : 'Not linked'}</span></div>
+      <div class="kv-row"><span class="kv-key">Member since</span><span class="kv-val">${formatDate(user.created_at)}</span></div>`;
+
+    // Membership decides which surveys and sessions reach you, so it is shown
+    // rather than left as something only the admin console can see.
+    const tags = [
+      ...(circles || []).map(c => `<span class="tag" style="background:${c.color}1F;color:${c.color}">${escapeHtml(c.name)}</span>`),
+      ...(cohorts || []).map(c => `<span class="tag" style="background:${c.color}1F;color:${c.color}">${escapeHtml(c.name)}</span>`)
+    ];
+    document.getElementById('membership').innerHTML = tags.length
+      ? `<span class="dim text-xs" style="align-self:center">Groups you belong to:</span> ${tags.join('')}`
+      : '<span class="dim text-xs">You are not in any group yet.</span>';
+  }
+
   async function load() {
     try {
-      const { user, stats, consent } = await api.get('/users/profile');
+      const { user, stats, consent, circles, cohorts } = await api.get('/users/profile');
+      renderStanding(user, circles, cohorts);
 
       document.getElementById('identity').innerHTML = `
         ${orbitAvatar(user.name, orbitLevel(stats.streak), 'avatar-xl' + (user.api_status === 'production' ? ' avatar-teal' : ' avatar-gold'))}

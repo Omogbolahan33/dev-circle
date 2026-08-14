@@ -9,6 +9,7 @@
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/assets/css/tokens.css">
   <link rel="stylesheet" href="/assets/css/app.css">
+  <script src="/assets/js/theme.js"></script>
   <style>
     .panel { display: none; }
     .panel.active { display: block; }
@@ -19,13 +20,18 @@
     .role-name { font-family: var(--font-display); font-weight: var(--fw-semibold); font-size: var(--fs-base); }
     .role-desc { font-size: var(--fs-sm); color: var(--ash); margin-bottom: var(--sp-3); }
     .perms { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+    .role-actions { display: flex; gap: var(--sp-2); margin-top: var(--sp-3); }
 
     /* Permission picker: grouped by area so a role is assembled by capability,
        not by scanning a flat list of dotted keys. */
     .perm-group-label { font-size: var(--fs-xs); color: var(--ash-dim); text-transform: uppercase; letter-spacing: 0.08em; margin: var(--sp-4) 0 var(--sp-2); }
     .perm-option { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-2); border-radius: var(--r-md); cursor: pointer; font-size: var(--fs-sm); }
-    .perm-option:hover { background: rgba(160, 160, 184, 0.05); }
+    .perm-option:hover { background: var(--tint-1); }
     .list { max-width: 780px; }
+
+    /* Assignment happens in the row itself — one select, no drawer round trip. */
+    .role-select { min-width: 170px; padding: var(--sp-2) var(--sp-3); font-size: var(--fs-sm); }
+    .row-actions { display: flex; gap: var(--sp-2); justify-content: flex-end; }
   </style>
 </head>
 <body>
@@ -37,11 +43,9 @@
       <div class="page-head-row">
         <div>
           <h1 class="page-title">Roles &amp; access</h1>
-          <p class="page-subtitle">What each kind of operator is allowed to do. Permissions here are the same ones the API enforces.</p>
+          <p class="page-subtitle">What each kind of operator is allowed to do, and who holds it. Permissions here are the same ones the API enforces.</p>
         </div>
-        <div class="page-actions">
-          <button class="btn btn-sm btn-primary" onclick="openCreate()">New role</button>
-        </div>
+        <div class="page-actions" id="pageActions"></div>
       </div>
       <nav class="tabs">
         <button class="tab active" data-panel="roles">Roles</button>
@@ -55,10 +59,11 @@
       </div>
 
       <div class="panel" id="panel-admins">
+        <p class="hint mb-4" id="adminsNote"></p>
         <div class="table-shell">
           <div class="table-scroll">
             <table class="data-table">
-              <thead><tr><th>Administrator</th><th>Role</th><th>Status</th><th>Added</th></tr></thead>
+              <thead><tr><th>Administrator</th><th>Role</th><th>Status</th><th>Added</th><th></th></tr></thead>
               <tbody id="admins"></tbody>
             </table>
           </div>
@@ -71,7 +76,7 @@
 <aside class="drawer" id="roleDrawer">
   <div class="drawer-head">
     <div>
-      <div class="drawer-title">New role</div>
+      <div class="drawer-title" id="roleDrawerTitle">New role</div>
       <div class="drawer-sub">Pick the capabilities this role should carry</div>
     </div>
     <button class="icon-btn" onclick="Shell.closeDrawer('roleDrawer')">×</button>
@@ -92,7 +97,71 @@
   </div>
   <div class="drawer-foot">
     <button class="btn btn-secondary" onclick="Shell.closeDrawer('roleDrawer')">Cancel</button>
-    <button class="btn btn-primary" onclick="createRole()">Create role</button>
+    <button class="btn btn-primary" id="roleSaveBtn" onclick="saveRole()">Create role</button>
+  </div>
+</aside>
+
+<!-- Adding a colleague is the other half of a role: without this the roles on
+     the left are permissions nobody holds. -->
+<aside class="drawer" id="adminDrawer">
+  <div class="drawer-head">
+    <div>
+      <div class="drawer-title">Add administrator</div>
+      <div class="drawer-sub">A Credit Direct colleague, and what they are allowed to do</div>
+    </div>
+    <button class="icon-btn" onclick="Shell.closeDrawer('adminDrawer')">×</button>
+  </div>
+  <div class="drawer-body">
+    <div class="field">
+      <label class="label">Name</label>
+      <input type="text" class="input" id="aName" placeholder="e.g. Tunde Bakare">
+    </div>
+    <div class="field">
+      <label class="label">Work email</label>
+      <input type="email" class="input" id="aEmail" placeholder="tunde@creditdirect.ng" autocapitalize="off" spellcheck="false">
+      <p class="hint" id="aEmailHint">Must be a Credit Direct address — that domain is what tells the sign-in page to ask for a password.</p>
+    </div>
+    <div class="field">
+      <label class="label">Role</label>
+      <select class="input" id="aRole"></select>
+      <p class="hint">Everything this person can do comes from the role. Change it any time.</p>
+    </div>
+    <div class="field">
+      <label class="label">Temporary password</label>
+      <div class="row-tight" style="gap:var(--sp-2)">
+        <input type="text" class="input mono" id="aPassword" placeholder="At least 10 characters">
+        <button type="button" class="btn btn-secondary" onclick="generatePassword()">Generate</button>
+      </div>
+      <p class="hint">Staff are the only people who hold a password. Share it over a channel you trust — they can be reset from this page.</p>
+    </div>
+  </div>
+  <div class="drawer-foot">
+    <button class="btn btn-secondary" onclick="Shell.closeDrawer('adminDrawer')">Cancel</button>
+    <button class="btn btn-primary" onclick="createAdmin()">Add administrator</button>
+  </div>
+</aside>
+
+<aside class="drawer" id="resetDrawer">
+  <div class="drawer-head">
+    <div>
+      <div class="drawer-title">Reset password</div>
+      <div class="drawer-sub" id="resetFor"></div>
+    </div>
+    <button class="icon-btn" onclick="Shell.closeDrawer('resetDrawer')">×</button>
+  </div>
+  <div class="drawer-body">
+    <div class="field">
+      <label class="label">New password</label>
+      <div class="row-tight" style="gap:var(--sp-2)">
+        <input type="text" class="input mono" id="resetPassword" placeholder="At least 10 characters">
+        <button type="button" class="btn btn-secondary" onclick="generatePassword('resetPassword')">Generate</button>
+      </div>
+      <p class="hint">Their live sessions end the moment this is set, on every device.</p>
+    </div>
+  </div>
+  <div class="drawer-foot">
+    <button class="btn btn-secondary" onclick="Shell.closeDrawer('resetDrawer')">Cancel</button>
+    <button class="btn btn-primary" onclick="doReset()">Set password</button>
   </div>
 </aside>
 
@@ -107,6 +176,23 @@
   let PERM_LABELS = { '*': 'Full access' };
   let PERM_GROUPS = {};
 
+  let roles = [];
+  let admins = [];
+  let me = { user: {}, permissions: [] };
+  let editingRoleId = null;
+  let resettingId = null;
+
+  const $ = id => document.getElementById(id);
+
+  // Write actions are hidden when the signed-in role cannot perform them. The
+  // API refuses them regardless — this only keeps the page honest about it.
+  const can = permission => me.permissions.includes('*') || me.permissions.includes(permission);
+
+  async function loadMe() {
+    const data = await api.get('/auth/me');
+    me = { user: data.user || {}, permissions: data.permissions || [] };
+  }
+
   async function loadPermissions() {
     const data = await api.get('/admin/permissions');
     PERM_LABELS = { '*': 'Full access' };
@@ -114,91 +200,297 @@
     PERM_GROUPS = { 'Full access': [{ key: '*', label: 'Full access' }], ...data.grouped };
   }
 
+  // ─── Roles ────────────────────────────────────────────────
+
   async function loadRoles() {
     const data = await api.get('/admin/roles');
-    const el = document.getElementById('roles');
+    roles = data.roles;
 
-    el.innerHTML = data.roles.length ? data.roles.map(r => `
+    $('roles').innerHTML = roles.length ? roles.map(r => `
       <article class="role">
         <div class="role-head">
           <span class="role-name">${escapeHtml(r.name)}</span>
           ${r.is_system ? badge('system', 'info') : ''}
           <span class="spacer"></span>
-          <span class="dim text-xs">${r.permissions.length} permission${r.permissions.length === 1 ? '' : 's'}</span>
+          <span class="dim text-xs">${r.admin_count} ${r.admin_count === 1 ? 'administrator' : 'administrators'} · ${r.permissions.length} permission${r.permissions.length === 1 ? '' : 's'}</span>
         </div>
         <p class="role-desc">${escapeHtml(r.description || 'No description')}</p>
         <div class="perms">
           ${r.permissions.map(p => `<span class="tag${p === '*' ? ' badge-info' : ''}">${escapeHtml(PERM_LABELS[p] || p)}</span>`).join('')}
         </div>
+        ${can('roles.write') && !r.is_system ? `
+          <div class="role-actions">
+            <button class="btn btn-sm btn-secondary" onclick="openEdit('${r.id}')">Edit</button>
+            <button class="btn btn-sm btn-ghost" onclick="deleteRole('${r.id}')">Delete</button>
+          </div>` : ''}
       </article>`).join('')
       : emptyState({
           title: 'No roles yet',
           text: 'A role bundles permissions so you can hand someone exactly the access they need.',
-          action: '<button class="btn btn-sm btn-primary" onclick="openCreate()">Create a role</button>'
+          action: can('roles.write')
+            ? '<button class="btn btn-sm btn-primary" onclick="openCreate()">Create a role</button>'
+            : ''
         });
   }
 
-  async function loadAdmins() {
-    try {
-      const data = await api.get('/admin/admins');
-      document.getElementById('admins').innerHTML = data.admins.length
-        ? data.admins.map(a => `
-          <tr>
-            <td>${identityCell(a.name, a.email)}</td>
-            <td class="text-sm">${escapeHtml(a.role_name || '—')}</td>
-            <td>${badge(a.status, a.status === 'active' ? 'active' : 'inactive')}</td>
-            <td class="text-xs muted">${formatDate(a.created_at)}</td>
-          </tr>`).join('')
-        : `<tr><td colspan="4">${emptyState({ title: 'No administrators listed' })}</td></tr>`;
-    } catch (err) {
-      document.getElementById('admins').innerHTML =
-        `<tr><td colspan="4">${emptyState({ title: 'Could not load administrators', text: err.message })}</td></tr>`;
-    }
-  }
-
-  function openCreate() {
-    document.getElementById('rName').value = '';
-    document.getElementById('rDesc').value = '';
-
-    document.getElementById('permPicker').innerHTML = Object.entries(PERM_GROUPS).map(([group, perms]) => `
+  function renderPermPicker(selected = []) {
+    $('permPicker').innerHTML = Object.entries(PERM_GROUPS).map(([group, perms]) => `
       <div class="perm-group-label">${escapeHtml(group)}</div>
       ${perms.map(p => `
         <label class="perm-option" data-perm="${escapeHtml(p.key)}">
-          <span class="check"></span>
+          <span class="check${selected.includes(p.key) ? ' on' : ''}">${selected.includes(p.key) ? '✓' : ''}</span>
           <span>${escapeHtml(p.label)}</span>
         </label>`).join('')}`).join('');
 
     document.querySelectorAll('.perm-option').forEach(opt => {
       opt.addEventListener('click', e => {
         e.preventDefault();
-        opt.querySelector('.check').classList.toggle('on');
-        opt.querySelector('.check').textContent = opt.querySelector('.check').classList.contains('on') ? '✓' : '';
+        const check = opt.querySelector('.check');
+        check.classList.toggle('on');
+        check.textContent = check.classList.contains('on') ? '✓' : '';
       });
     });
+  }
 
+  function pickedPermissions() {
+    return Array.from(document.querySelectorAll('.perm-option'))
+      .filter(el => el.querySelector('.check').classList.contains('on'))
+      .map(el => el.dataset.perm);
+  }
+
+  function openCreate() {
+    editingRoleId = null;
+    $('roleDrawerTitle').textContent = 'New role';
+    $('roleSaveBtn').textContent = 'Create role';
+    $('rName').value = '';
+    $('rDesc').value = '';
+    renderPermPicker();
     Shell.openDrawer('roleDrawer');
   }
 
-  async function createRole() {
-    const name = document.getElementById('rName').value.trim();
+  function openEdit(id) {
+    const role = roles.find(r => r.id === id);
+    if (!role) return;
+
+    editingRoleId = id;
+    $('roleDrawerTitle').textContent = `Edit ${role.name}`;
+    $('roleSaveBtn').textContent = 'Save changes';
+    $('rName').value = role.name;
+    $('rDesc').value = role.description || '';
+    renderPermPicker(role.permissions);
+    Shell.openDrawer('roleDrawer');
+  }
+
+  async function saveRole() {
+    const name = $('rName').value.trim();
     if (!name) { showToast('Name required', 'warning'); return; }
 
-    const permissions = Array.from(document.querySelectorAll('.perm-option'))
-      .filter(el => el.querySelector('.check').classList.contains('on'))
-      .map(el => el.dataset.perm);
-
+    const permissions = pickedPermissions();
     if (!permissions.length) { showToast('Select at least one permission', 'warning'); return; }
 
+    const body = { name, description: $('rDesc').value.trim(), permissions };
+
     try {
-      await api.post('/admin/roles', {
-        name,
-        description: document.getElementById('rDesc').value.trim(),
-        permissions
-      });
+      if (editingRoleId) {
+        await api.put(`/admin/roles/${editingRoleId}`, body);
+        showToast(`Role "${name}" updated`);
+      } else {
+        await api.post('/admin/roles', body);
+        showToast(`Role "${name}" created`);
+      }
       Shell.closeDrawer('roleDrawer');
-      showToast(`Role "${name}" created`);
-      loadRoles();
+      await refresh();
     } catch (err) { showToast(err.message, 'error'); }
+  }
+
+  async function deleteRole(id) {
+    const role = roles.find(r => r.id === id);
+    if (!role) return;
+
+    const ok = await Shell.confirm({
+      title: `Delete the ${role.name} role?`,
+      text: role.admin_count
+        ? `${role.admin_count} administrator(s) still hold it. Move them to another role first.`
+        : 'Nobody holds this role, so nothing loses access.',
+      ok: 'Delete role'
+    });
+    if (!ok) return;
+
+    try {
+      await api.del(`/admin/roles/${id}`);
+      showToast('Role deleted');
+      await refresh();
+    } catch (err) { showToast(err.message, 'error'); }
+  }
+
+  // ─── Administrators ───────────────────────────────────────
+
+  async function loadAdmins() {
+    try {
+      const data = await api.get('/admin/admins');
+      admins = data.admins;
+
+      $('adminsNote').textContent = can('roles.write')
+        ? 'Changing a role or status signs that person out immediately — they pick up the new access on their next sign-in.'
+        : 'Your role can see who has access but not change it.';
+
+      $('admins').innerHTML = admins.length
+        ? admins.map(a => renderAdminRow(a)).join('')
+        : `<tr><td colspan="5">${emptyState({
+            title: 'No administrators listed',
+            text: 'Add a Credit Direct colleague to give a role to somebody.',
+            action: can('roles.write')
+              ? '<button class="btn btn-sm btn-primary" onclick="openAdmin()">Add administrator</button>'
+              : ''
+          })}</td></tr>`;
+    } catch (err) {
+      $('admins').innerHTML =
+        `<tr><td colspan="5">${emptyState({ title: 'Could not load administrators', text: err.message })}</td></tr>`;
+    }
+  }
+
+  function renderAdminRow(a) {
+    const isMe = a.id === me.user.id;
+    const editable = can('roles.write');
+
+    const roleCell = editable
+      ? `<select class="input role-select" onchange="changeRole('${a.id}', this)">
+           ${roles.map(r => `<option value="${r.id}"${r.id === a.role_id ? ' selected' : ''}>${escapeHtml(r.name)}</option>`).join('')}
+         </select>`
+      : `<span class="text-sm">${escapeHtml(a.role_name || '—')}</span>`;
+
+    return `
+      <tr>
+        <td>${identityCell(a.name, a.email)} ${isMe ? badge('you', 'info') : ''}</td>
+        <td>${roleCell}</td>
+        <td>${badge(a.status, a.status === 'active' ? 'active' : 'inactive')}</td>
+        <td class="text-xs muted">${formatDate(a.created_at)}</td>
+        <td>
+          ${editable ? `
+            <div class="row-actions">
+              <button class="btn btn-sm btn-ghost" onclick="openReset('${a.id}')">Reset password</button>
+              ${isMe ? '' : `
+                <button class="btn btn-sm ${a.status === 'active' ? 'btn-danger' : 'btn-primary'}"
+                        onclick="toggleAdmin('${a.id}', '${a.status}')">
+                  ${a.status === 'active' ? 'Deactivate' : 'Activate'}
+                </button>`}
+            </div>` : ''}
+        </td>
+      </tr>`;
+  }
+
+  function openAdmin() {
+    if (!roles.length) { showToast('Create a role first — an administrator needs one', 'warning'); return; }
+
+    $('aName').value = '';
+    $('aEmail').value = '';
+    $('aPassword').value = '';
+    $('aRole').innerHTML = roles.map(r => `<option value="${r.id}">${escapeHtml(r.name)}</option>`).join('');
+    Shell.openDrawer('adminDrawer');
+  }
+
+  function generatePassword(target = 'aPassword') {
+    const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+    const bytes = crypto.getRandomValues(new Uint32Array(16));
+    $(target).value = Array.from(bytes, n => alphabet[n % alphabet.length]).join('');
+  }
+
+  async function createAdmin() {
+    const name = $('aName').value.trim();
+    const email = $('aEmail').value.trim();
+    const password = $('aPassword').value;
+    const role_id = $('aRole').value;
+
+    if (!name || !email) { showToast('Name and work email are required', 'warning'); return; }
+    if (password.length < 10) { showToast('Password must be at least 10 characters', 'warning'); return; }
+
+    try {
+      await api.post('/admin/admins', { name, email, password, role_id });
+      Shell.closeDrawer('adminDrawer');
+      showToast(`${name} can now sign in`);
+      await refresh();
+    } catch (err) { showToast(err.message, 'error'); }
+  }
+
+  async function changeRole(id, select) {
+    const admin = admins.find(a => a.id === id);
+    const role = roles.find(r => r.id === select.value);
+    if (!admin || !role) return;
+
+    const isMe = admin.id === me.user.id;
+    const ok = await Shell.confirm({
+      title: `Move ${admin.name} to ${role.name}?`,
+      text: isMe
+        ? 'This is your own account. You will be signed out, and if the new role cannot manage roles you will not be able to change it back.'
+        : 'They will be signed out and pick up the new permissions when they sign in again.',
+      ok: 'Change role',
+      danger: isMe
+    });
+
+    if (!ok) { select.value = admin.role_id; return; }
+
+    try {
+      await api.put(`/admin/admins/${id}`, { role_id: role.id });
+      showToast(`${admin.name} is now ${role.name}`);
+      await refresh();
+    } catch (err) {
+      showToast(err.message, 'error');
+      select.value = admin.role_id;
+    }
+  }
+
+  async function toggleAdmin(id, current) {
+    const admin = admins.find(a => a.id === id);
+    if (!admin) return;
+
+    const next = current === 'active' ? 'inactive' : 'active';
+    const ok = await Shell.confirm({
+      title: next === 'inactive' ? `Deactivate ${admin.name}?` : `Reactivate ${admin.name}?`,
+      text: next === 'inactive'
+        ? 'They are signed out of every device immediately and cannot sign back in.'
+        : 'They can sign in again with their existing password.',
+      ok: next === 'inactive' ? 'Deactivate' : 'Activate',
+      danger: next === 'inactive'
+    });
+    if (!ok) return;
+
+    try {
+      await api.put(`/admin/admins/${id}`, { status: next });
+      showToast(next === 'inactive' ? 'Access removed' : 'Access restored');
+      await refresh();
+    } catch (err) { showToast(err.message, 'error'); }
+  }
+
+  function openReset(id) {
+    const admin = admins.find(a => a.id === id);
+    if (!admin) return;
+
+    resettingId = id;
+    $('resetFor').textContent = admin.email;
+    $('resetPassword').value = '';
+    Shell.openDrawer('resetDrawer');
+  }
+
+  async function doReset() {
+    const password = $('resetPassword').value;
+    if (password.length < 10) { showToast('Password must be at least 10 characters', 'warning'); return; }
+
+    try {
+      await api.post(`/admin/admins/${resettingId}/reset-password`, { new_password: password });
+      Shell.closeDrawer('resetDrawer');
+      showToast('Password reset — they are signed out everywhere');
+    } catch (err) { showToast(err.message, 'error'); }
+  }
+
+  // ─── Tabs ─────────────────────────────────────────────────
+  // The page action follows the tab: a role on one, a person on the other.
+
+  function renderPageActions(panel) {
+    if (!can('roles.write')) { $('pageActions').innerHTML = ''; return; }
+
+    $('pageActions').innerHTML = panel === 'admins'
+      ? '<button class="btn btn-sm btn-primary" onclick="openAdmin()">Add administrator</button>'
+      : '<button class="btn btn-sm btn-primary" onclick="openCreate()">New role</button>';
   }
 
   document.querySelectorAll('.tab[data-panel]').forEach(tab => {
@@ -206,15 +498,35 @@
       document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
       document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
       tab.classList.add('active');
-      document.getElementById('panel-' + tab.dataset.panel).classList.add('active');
+      $('panel-' + tab.dataset.panel).classList.add('active');
+      renderPageActions(tab.dataset.panel);
     });
   });
 
-  // Permissions must load before roles render, since role chips label
-  // themselves from the catalogue.
-  loadPermissions()
-    .then(() => Promise.all([loadRoles(), loadAdmins()]))
-    .catch(err => showToast(err.message, 'error'));
+  // Roles must load before the administrator rows render: each row's role
+  // picker is built from them.
+  async function refresh() {
+    await loadRoles();
+    await loadAdmins();
+  }
+
+  // Every operator can reach this page from the sidebar, but reading it needs
+  // roles.read. Say so plainly rather than leaving two blank panels behind a
+  // toast that has already faded.
+  Promise.all([loadMe(), loadPermissions()])
+    .then(() => {
+      renderPageActions('roles');
+      return refresh();
+    })
+    .catch(err => {
+      const blocked = emptyState({
+        title: 'Your role cannot see access settings',
+        text: 'Ask a super admin for the "View roles" permission if you need this page.'
+      });
+      $('roles').innerHTML = blocked;
+      $('admins').innerHTML = `<tr><td colspan="5">${blocked}</td></tr>`;
+      showToast(err.message, 'error');
+    });
 </script>
 </body>
 </html>

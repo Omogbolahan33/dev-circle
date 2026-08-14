@@ -47,6 +47,11 @@ const config = {
   dbPath: process.env.DEVCIRCLE_DB_PATH ||
     path.join(__dirname, '..', 'data', 'devcircle.db'),
 
+  // Where this deployment answers. Used to build the links inside outbound
+  // mail, which cannot be relative.
+  appUrl: (process.env.APP_URL || `http://localhost:${parseInt(process.env.PORT, 10) || 3000}`)
+    .replace(/\/+$/, ''),
+
   // Session lifetime for Dev Circle's own tokens
   sessionTtlMs: parseInt(process.env.SESSION_TTL_HOURS, 10) * 3600 * 1000 || 24 * 3600 * 1000,
 

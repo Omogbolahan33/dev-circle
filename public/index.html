@@ -9,6 +9,7 @@
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/assets/css/tokens.css">
   <link rel="stylesheet" href="/assets/css/app.css">
+  <script src="/assets/js/theme.js"></script>
   <style>
     /* Two panels: what this is on the left, the way in on the right. On a
        phone the explanation gets out of the way and the form leads. */
@@ -143,6 +144,9 @@
 
   <main class="signin">
     <div class="signin-inner">
+      <div class="row" style="justify-content:flex-end;margin-bottom:var(--sp-4)">
+        <button class="icon-btn" data-theme-toggle onclick="Theme.toggle()"><span data-theme-icon></span></button>
+      </div>
       <h2 class="signin-title">Sign in</h2>
       <p class="signin-sub" id="signinSub">Enter the email or phone number you are known by. We work out the rest.</p>
 
@@ -282,7 +286,11 @@
   // they were identified by.
   async function requestCode({ firstTime = false } = {}) {
     const { ok, data } = await post('/auth/code/request', { identifier: who.identifier });
-    if (!ok) { showError(data.error || 'Could not send a code just now.'); return; }
+    if (!ok) {
+      showError(data.error || 'Could not send a code just now.');
+      startResendCooldown(0);
+      return;
+    }
 
     $('codeWho').textContent = data.masked;
     $('codeHint').textContent = `${data.code_length}-digit code, good for ${Math.round(data.expires_in_sec / 60)} minutes.`;
@@ -305,9 +313,20 @@
     startResendCooldown();
   }
 
+  // Not run through busy(): the cooldown owns this button's label and disabled
+  // state once the request lands, and restoring the old label would undo it.
   async function resendCode() {
     hideError();
-    await busy($('resendBtn'), 'Sending', () => requestCode());
+    const btn = $('resendBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Sending';
+
+    try {
+      await requestCode();
+    } catch {
+      showError('Could not reach Dev Circle. Check your connection and try again.');
+      startResendCooldown(0);
+    }
   }
 
   function startResendCooldown(seconds = 30) {

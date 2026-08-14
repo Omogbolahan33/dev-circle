@@ -1,80 +1,36 @@
 /* ============================================
    CREDIT DIRECT DEV CIRCLE — DESIGN TOKENS
-   Grounded in Credit Direct brand system.
+   Grounded in the Credit Direct brand system.
 
-   This file holds variables, the reset, and base element styles only.
-   Every reusable component lives in app.css. Pages should declare nothing
-   that a second page would also need.
+   Variables, reset, and base elements only. Every reusable component lives
+   in app.css.
+
+   THEMING
+   Brand colours are identical in both themes. What flips is the neutral
+   ladder — surfaces, text, lines and tints — plus a set of "ink" variants of
+   the accent colours, because harvest gold at 4.5:1 on white is not the same
+   colour as harvest gold on near-black.
+
+   theme.js writes data-theme="dark|light" on <html> before first paint, so
+   these two blocks are the whole story; there is no unstyled flash and no
+   third state to reason about.
    ============================================ */
 
 :root {
-  /* ── BRAND COLORS ────────────────────────── */
+  /* ── BRAND COLOURS (theme-independent) ───── */
   --cd-blue:      #107EBC;   /* Denim blue — primary identity */
   --cd-blue-deep: #0B5A8A;   /* Darker blue for hover/active */
-  --cd-blue-dim:  rgba(16, 126, 188, 0.12);
-  --cd-blue-20:   rgba(16, 126, 188, 0.20);
-  --cd-blue-40:   rgba(16, 126, 188, 0.40);
-  --cd-blue-60:   rgba(16, 126, 188, 0.60);
-
   --cd-gold:      #E6B473;   /* Harvest gold — warm accent */
-  --cd-gold-dim:  rgba(230, 180, 115, 0.12);
   --cd-gold-deep: #C99A58;
-
   --cd-clay:      #945A39;   /* Potters clay — grounding neutral */
-  --cd-clay-dim:  rgba(148, 90, 57, 0.10);
 
-  /* ── NEUTRALS ────────────────────────────── */
-  --ink:       #1A1A2E;      /* Deep warm-black (not pure blue-black) */
-  --slate:     #242438;      /* Elevated surfaces */
-  --slate-mid: #2E2E44;      /* Cards, sidebar */
-  --ash:       #A0A0B8;      /* Secondary text (warm-tinted gray) */
-  --ash-dim:   #6B6B80;      /* Muted text */
-  --bone:      #F5F3F0;      /* Light surface (warm, not cool) */
-  --cream:     #FAF8F5;      /* Lightest surface */
-  --white:     #FFFFFF;
+  --teal:    #0D9488;        /* Production — trust, live */
+  --emerald: #16A34A;        /* Success */
+  --rose:    #E11D48;        /* Error, urgent */
+  --violet:  #8B7CF6;        /* Informational, system events */
 
-  /* ── SURFACE SCALE ───────────────────────── */
-  /* One ladder of elevation. A component picks a rung; it never invents
-     its own background, so nesting stays legible. */
-  --surface-0: #16162A;      /* App canvas — deepest */
-  --surface-1: var(--ink);   /* Sidebar, sticky bars */
-  --surface-2: var(--slate); /* Cards, table shells */
-  --surface-3: var(--slate-mid); /* Drawers, popovers, hover */
-  --surface-4: #383850;      /* Inputs on drawers, active rows */
-
-  /* ── BORDERS ─────────────────────────────── */
-  --line-faint:  rgba(160, 160, 184, 0.06);
-  --line:        rgba(160, 160, 184, 0.12);
-  --line-strong: rgba(160, 160, 184, 0.22);
-
-  /* ── SEMANTIC STATES ─────────────────────── */
-  --teal:        #0D9488;    /* Production state — trust, live */
-  --teal-dim:    rgba(13, 148, 136, 0.12);
-
-  --emerald:     #16A34A;    /* Success */
-  --emerald-dim: rgba(22, 163, 74, 0.12);
-
-  --rose:        #E11D48;    /* Error, urgent */
-  --rose-dim:    rgba(225, 29, 72, 0.10);
-
-  --violet:      #8B7CF6;    /* Informational, system events */
-  --violet-dim:  rgba(139, 124, 246, 0.12);
-
-  /* Sandbox = harvest gold (warm, experimental) */
-  --sandbox:     var(--cd-gold);
-  --sandbox-dim: var(--cd-gold-dim);
-
-  /* Production = teal (mature, live) */
-  --production:     var(--teal);
-  --production-dim: var(--teal-dim);
-
-  /* ── ORBIT / COHORT ARC SYSTEM ───────────── */
-  --cohort-1: rgba(16, 126, 188, 0.25);   /* Blue family */
-  --cohort-2: rgba(16, 126, 188, 0.45);
-  --cohort-3: rgba(230, 180, 115, 0.35);  /* Gold family */
-  --cohort-4: rgba(230, 180, 115, 0.55);
-  --cohort-5: rgba(148, 90, 57, 0.30);    /* Clay family */
-  --cohort-6: rgba(13, 148, 136, 0.30);   /* Teal family */
+  /* Text drawn on top of a filled brand colour is always white. */
+  --on-accent: #FFFFFF;
 
   /* ── TYPE ────────────────────────────────── */
   --font-display: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif;
@@ -89,16 +45,17 @@
   --fs-xl:   1.5rem;
   --fs-2xl:  2rem;
   --fs-3xl:  2.5rem;
+  --fs-4xl:  3.25rem;
 
   --fw-regular:  400;
   --fw-medium:   500;
   --fw-semibold: 600;
   --fw-bold:     700;
-  --fw-black:    900;
+  --fw-black:    800;
 
-  --lh-tight:  1.2;
+  --lh-tight:  1.15;
   --lh-normal: 1.5;
-  --lh-loose:  1.75;
+  --lh-loose:  1.7;
 
   /* ── SPACING ─────────────────────────────── */
   --sp-1:  0.25rem;
@@ -116,25 +73,18 @@
   --r-sm:  4px;
   --r-md:  8px;
   --r-lg:  12px;
-  --r-xl:  16px;
+  --r-xl:  18px;
   --r-full: 9999px;
-
-  /* ── SHADOWS ─────────────────────────────── */
-  --shadow-sm:  0 1px 2px rgba(0, 0, 0, 0.25);
-  --shadow-md:  0 4px 12px rgba(0, 0, 0, 0.35);
-  --shadow-lg:  0 8px 24px rgba(0, 0, 0, 0.45);
-  --shadow-xl:  0 24px 64px rgba(0, 0, 0, 0.55);
 
   /* ── LAYOUT ──────────────────────────────── */
   --sidebar-w:   248px;
-  --topbar-h:    56px;
+  --topbar-h:    60px;
   --drawer-w:    460px;
   --drawer-w-lg: 640px;
   --max-content: 1240px;
-  --max-reading: 720px;   /* Member portal single column */
+  --max-reading: 860px;   /* Member portal column */
 
   /* ── Z-INDEX ─────────────────────────────── */
-  /* Named rungs, so no page has to guess a number. */
   --z-sticky:  100;
   --z-sidebar: 200;
   --z-overlay: 900;
@@ -146,6 +96,157 @@
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --duration-fast: 150ms;
   --duration-normal: 250ms;
+}
+
+/* ─────────────────────────────────────────────
+   DARK — the product's default register
+   ───────────────────────────────────────────── */
+:root, :root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --surface-0: #16162A;      /* App canvas — deepest */
+  --surface-1: #1A1A2E;      /* Sidebar, sticky bars */
+  --surface-2: #242438;      /* Cards, table shells */
+  --surface-3: #2E2E44;      /* Drawers, popovers */
+  --surface-4: #383850;      /* Inputs on drawers, active rows */
+
+  --text:   #FFFFFF;
+  --text-2: #A0A0B8;         /* Secondary (warm-tinted grey) */
+  /* Muted still carries real content — timestamps, hints, metadata — so it is
+     set to clear 4.5:1 on the card surface rather than to look quiet. */
+  --text-3: #9292A8;
+
+  --line-faint:  rgba(160, 160, 184, 0.07);
+  --line:        rgba(160, 160, 184, 0.13);
+  --line-strong: rgba(160, 160, 184, 0.24);
+
+  --tint-row: rgba(160, 160, 184, 0.03);
+  --tint-1:   rgba(160, 160, 184, 0.05);
+  --tint-2:   rgba(160, 160, 184, 0.08);
+  --tint-3:   rgba(160, 160, 184, 0.12);
+
+  /* Accent text on a dark ground: the bright brand values read well as-is. */
+  --blue-ink:  #4FA8DC;
+  --gold-ink:  #E6B473;
+  --teal-ink:  #2DD4BF;
+  --rose-ink:  #FB7185;
+  --clay-ink:  #C08457;
+  --green-ink: #4ADE80;
+
+  --blue-dim:   rgba(16, 126, 188, 0.16);
+  --blue-line:  rgba(16, 126, 188, 0.40);
+  --gold-dim:   rgba(230, 180, 115, 0.14);
+  --teal-dim:   rgba(13, 148, 136, 0.16);
+  --rose-dim:   rgba(225, 29, 72, 0.14);
+  --green-dim:  rgba(22, 163, 74, 0.16);
+  --violet-dim: rgba(139, 124, 246, 0.16);
+  --clay-dim:   rgba(148, 90, 57, 0.16);
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.35);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.45);
+  --shadow-xl: 0 24px 64px rgba(0, 0, 0, 0.55);
+  --scrim: rgba(10, 10, 20, 0.66);
+
+  /* Engagement rings, deepest last. */
+  --ring-1: rgba(16, 126, 188, 0.25);
+  --ring-2: rgba(16, 126, 188, 0.45);
+  --ring-3: rgba(230, 180, 115, 0.35);
+  --ring-4: rgba(230, 180, 115, 0.55);
+}
+
+/* ─────────────────────────────────────────────
+   LIGHT — warm paper, not clinical white. The neutrals carry a trace of the
+   clay in the brand palette so the two themes read as one product.
+   ───────────────────────────────────────────── */
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --surface-0: #F5F2ED;      /* Warm paper canvas */
+  --surface-1: #FFFFFF;      /* Sidebar, bars */
+  --surface-2: #FFFFFF;      /* Cards */
+  --surface-3: #FFFFFF;      /* Drawers, popovers */
+  --surface-4: #EFEAE2;      /* Inputs, active rows */
+
+  --text:   #1A1A2E;
+  --text-2: #56566B;
+  --text-3: #63637A;         /* Clears 4.5:1 on paper, same as its dark twin */
+
+  --line-faint:  rgba(26, 26, 46, 0.07);
+  --line:        rgba(26, 26, 46, 0.13);
+  --line-strong: rgba(26, 26, 46, 0.24);
+
+  --tint-row: rgba(26, 26, 46, 0.022);
+  --tint-1:   rgba(26, 26, 46, 0.04);
+  --tint-2:   rgba(26, 26, 46, 0.06);
+  --tint-3:   rgba(26, 26, 46, 0.10);
+
+  /* Darkened accents so text and badges clear contrast on paper. */
+  --blue-ink:  #0B5A8A;
+  --gold-ink:  #8A5A1E;
+  --teal-ink:  #0B7A70;
+  --rose-ink:  #BE123C;
+  --clay-ink:  #7A4A2E;
+  --green-ink: #15803D;
+
+  --blue-dim:   rgba(16, 126, 188, 0.10);
+  --blue-line:  rgba(16, 126, 188, 0.35);
+  --gold-dim:   rgba(230, 180, 115, 0.22);
+  --teal-dim:   rgba(13, 148, 136, 0.12);
+  --rose-dim:   rgba(225, 29, 72, 0.10);
+  --green-dim:  rgba(22, 163, 74, 0.12);
+  --violet-dim: rgba(139, 124, 246, 0.14);
+  --clay-dim:   rgba(148, 90, 57, 0.12);
+
+  --shadow-sm: 0 1px 2px rgba(26, 26, 46, 0.06);
+  --shadow-md: 0 4px 14px rgba(26, 26, 46, 0.08);
+  --shadow-lg: 0 10px 28px rgba(26, 26, 46, 0.12);
+  --shadow-xl: 0 24px 64px rgba(26, 26, 46, 0.18);
+  --scrim: rgba(26, 26, 46, 0.32);
+
+  --ring-1: rgba(16, 126, 188, 0.22);
+  --ring-2: rgba(16, 126, 188, 0.42);
+  --ring-3: rgba(230, 180, 115, 0.55);
+  --ring-4: rgba(230, 180, 115, 0.85);
+}
+
+/* ─────────────────────────────────────────────
+   COMPATIBILITY ALIASES
+   Earlier screens name neutrals directly (--white for body text, --ash for
+   secondary). Aliasing them onto the semantic scale means every existing
+   page themes correctly without being rewritten.
+   ───────────────────────────────────────────── */
+:root {
+  --white:     var(--text);
+  --ash:       var(--text-2);
+  --ash-dim:   var(--text-3);
+  --ink:       var(--surface-1);
+  --slate:     var(--surface-2);
+  --slate-mid: var(--surface-3);
+
+  --cd-blue-dim:  var(--blue-dim);
+  --cd-blue-20:   var(--blue-dim);
+  --cd-blue-40:   var(--blue-line);
+  --cd-blue-60:   var(--blue-line);
+  --cd-gold-dim:  var(--gold-dim);
+  --cd-clay-dim:  var(--clay-dim);
+  --teal-dim:     var(--teal-dim);
+  --emerald:      var(--green-ink);
+  --emerald-dim:  var(--green-dim);
+  --rose-dim:     var(--rose-dim);
+  --violet-dim:   var(--violet-dim);
+
+  --sandbox:        var(--gold-ink);
+  --sandbox-dim:    var(--gold-dim);
+  --production:     var(--teal-ink);
+  --production-dim: var(--teal-dim);
+
+  --cohort-1: var(--ring-1);
+  --cohort-2: var(--ring-2);
+  --cohort-3: var(--ring-3);
+  --cohort-4: var(--ring-4);
+  --cohort-5: var(--clay-dim);
+  --cohort-6: var(--teal-dim);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -168,11 +269,13 @@ body {
   font-family: var(--font-body);
   font-size: var(--fs-base);
   line-height: var(--lh-normal);
-  color: var(--white);
+  color: var(--text);
   background: var(--surface-0);
+  /* Flipping theme should feel deliberate rather than jarring. */
+  transition: background var(--duration-fast) linear, color var(--duration-fast) linear;
 }
 
-a { color: var(--cd-blue); text-decoration: none; }
+a { color: var(--blue-ink); text-decoration: none; }
 a:hover { text-decoration: underline; }
 
 button { font-family: inherit; cursor: pointer; border: none; background: none; color: inherit; }
@@ -184,7 +287,7 @@ textarea { resize: vertical; }
 h1, h2, h3, h4 { font-family: var(--font-display); letter-spacing: -0.02em; line-height: var(--lh-tight); }
 
 /* ── SCROLLBAR ─────────────────────────────── */
-::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(160, 160, 184, 0.12); border-radius: var(--r-full); }
-::-webkit-scrollbar-thumb:hover { background: rgba(160, 160, 184, 0.22); }
+::-webkit-scrollbar-thumb { background: var(--line); border-radius: var(--r-full); }
+::-webkit-scrollbar-thumb:hover { background: var(--line-strong); }
