@@ -5,14 +5,15 @@ const { uuid } = require('../utils/helpers');
 // A single writer for engagement_history so every caller records the same
 // shape, and so streak maintenance cannot be forgotten at a call site.
 
-const insertEvent = db.prepare(`
-  INSERT INTO engagement_history (id, user_id, type, reference_id, metadata, source)
-  VALUES (?, ?, ?, ?, ?, ?)
-`);
-
+// Prepared per call rather than once at module load: the handle resolves to
+// whichever database the current request belongs to, and a statement held from
+// load would write to the live one even from inside the sandbox.
 function log(userId, type, { referenceId = null, metadata = {}, source = 'dev_circle' } = {}) {
   const id = uuid();
-  insertEvent.run(id, userId, type, referenceId, JSON.stringify(metadata), source);
+  db.prepare(`
+    INSERT INTO engagement_history (id, user_id, type, reference_id, metadata, source)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(id, userId, type, referenceId, JSON.stringify(metadata), source);
   return id;
 }
 

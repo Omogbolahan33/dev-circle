@@ -30,6 +30,7 @@ const ICONS = {
   events:     '<path d="M4 17V9M4 9 8 5M4 9l4 4M20 7v8M20 15l-4 4M20 15l-4-4"/>',
   roles:      '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/>',
   code:       '<path d="m8 6-6 6 6 6M16 6l6 6-6 6M14 4l-4 16"/>',
+  key:        '<circle cx="7.5" cy="15.5" r="4.5"/><path d="m10.7 12.3 8.3-8.3M17 6l3 3M14 9l3 3"/>',
   search:     '<circle cx="11" cy="11" r="7"/><path d="m21 21-4.35-4.35"/>',
   bell:       '<path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/>',
   menu:       '<path d="M3 6h18M3 12h18M3 18h18"/>',
@@ -77,6 +78,7 @@ const ADMIN_NAV = [
     { id: 'roles', label: 'Roles & access', icon: 'roles', href: '/admin/roles.html' },
     // An item may name the permission it needs. The nav then hides it from a
     // role that does not hold it, so nobody is offered a page that answers 403.
+    { id: 'credentials', label: 'Credentials', icon: 'key', href: '/admin/credentials.html', permission: 'credentials.read' },
     { id: 'api-docs', label: 'API reference', icon: 'code', href: '/admin/api-docs.html', permission: 'docs.read' }
   ]}
 ];

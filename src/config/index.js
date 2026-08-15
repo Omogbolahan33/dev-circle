@@ -47,6 +47,18 @@ const config = {
   dbPath: process.env.DEVCIRCLE_DB_PATH ||
     path.join(__dirname, '..', 'data', 'devcircle.db'),
 
+  // ─── API sandbox ──────────────────────────────────────────
+  // A throwaway database the API reference can be pointed at, so a developer
+  // can send real requests — including the destructive ones — without touching
+  // the member base or sending anybody a message. Off with SANDBOX_ENABLED=false.
+  sandbox: {
+    enabled: process.env.SANDBOX_ENABLED !== 'false',
+    dbPath: process.env.DEVCIRCLE_SANDBOX_DB_PATH ||
+      (process.env.DEVCIRCLE_DB_PATH
+        ? process.env.DEVCIRCLE_DB_PATH.replace(/(\.db)?$/, '-sandbox.db')
+        : path.join(__dirname, '..', 'data', 'devcircle-sandbox.db'))
+  },
+
   // Where this deployment answers. Used to build the links inside outbound
   // mail, which cannot be relative.
   appUrl: (process.env.APP_URL || `http://localhost:${parseInt(process.env.PORT, 10) || 3000}`)
@@ -99,6 +111,20 @@ const config = {
   // Feex is inbound-only: it owns support tickets end to end and posts them
   // to Dev Circle for engagement visibility. There is no outbound credential
   // because Dev Circle never writes back.
+
+  // Which secrets were actually supplied. The Credentials screen reports this
+  // so an operator can see what is wired up without anything having to hand
+  // back a value — only ever whether one is present.
+  get configured() {
+    return {
+      customer_io: Boolean(this.delivery.customerIoSiteId && this.delivery.customerIoApiKey),
+      whatsapp: Boolean(this.delivery.whatsappToken),
+      sms: Boolean(this.delivery.smsApiKey),
+      // The SSO secret always has a value — outside production one is derived
+      // per machine — so what matters is whether it was set deliberately.
+      dev_hub_sso: Boolean(process.env.DEV_HUB_SSO_SECRET)
+    };
+  },
 
   // Comma-separated origin allowlist; '*' only permitted outside production
   corsOrigins: (process.env.CORS_ORIGINS || '*').split(',').map(s => s.trim()).filter(Boolean),

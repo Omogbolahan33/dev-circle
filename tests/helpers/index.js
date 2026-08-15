@@ -37,11 +37,14 @@ function stop() {
 
 // Thin fetch wrapper: returns status and parsed body together so assertions
 // can check both without two awaits everywhere.
-async function call(method, endpoint, { token, apiKey, body, raw } = {}) {
-  const headers = {};
+async function call(method, endpoint, { token, apiKey, body, raw, sandbox, headers: extra } = {}) {
+  const headers = { ...extra };
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   if (token) headers.Authorization = `Bearer ${token}`;
   if (apiKey) headers['x-api-key'] = apiKey;
+  // Routes the request to the throwaway database, exactly as the API reference
+  // does when its sandbox toggle is on
+  if (sandbox) headers['X-Devcircle-Sandbox'] = '1';
 
   const res = await fetch(baseUrl + endpoint, {
     method,
@@ -49,12 +52,12 @@ async function call(method, endpoint, { token, apiKey, body, raw } = {}) {
     body: body === undefined ? undefined : JSON.stringify(body)
   });
 
-  if (raw) return { status: res.status, text: await res.text() };
+  if (raw) return { status: res.status, text: await res.text(), headers: res.headers };
 
   const text = await res.text();
   let parsed = null;
   try { parsed = text ? JSON.parse(text) : null; } catch { parsed = { _raw: text }; }
-  return { status: res.status, body: parsed };
+  return { status: res.status, body: parsed, headers: res.headers };
 }
 
 const get = (endpoint, opts) => call('GET', endpoint, opts);

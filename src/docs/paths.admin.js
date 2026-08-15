@@ -5,7 +5,7 @@
 // what a role can do is discoverable three ways before anyone reads the source.
 
 const {
-  ref, str, int, bool, num, arrayOf, object,
+  ref, str, int, bool, num, timestamp, arrayOf, object,
   CHANNELS, API_KEY_SCOPES, SESSION_TYPES
 } = require('./components');
 const { op, json, jsonBody, fileResponse, query, path } = require('./operation');
@@ -1794,58 +1794,119 @@ const paths = {
     })
   },
 
+  // ─── Credentials ──────────────────────────────────────────
+  '/admin/credentials': {
+    get: op({
+      tag: 'Admin · Credentials',
+      permission: 'credentials.read',
+      operationId: 'getCredentials',
+      summary: 'Every credential this deployment holds or issues',
+      description: [
+        'Two halves. **Inbound** are the keys Dev Circle issues to integrations; they are',
+        'stored as hashes and managed entirely through this API.',
+        '',
+        '**Outbound** are the credentials Dev Circle holds for the providers it calls.',
+        'Signing a provider request needs those in cleartext, so they live in the',
+        'environment rather than the database and this endpoint reports only whether each',
+        'one is set — never its value.'
+      ].join('\n'),
+      responses: {
+        200: json('The credential picture.', object({
+          providers: arrayOf(ref('IntegrationProvider'), 'Outbound credentials and what breaks without them'),
+          scopes: arrayOf(ref('ApiKeyScope'), 'Every scope a key can be granted, and what it unlocks'),
+          keys: object({
+            total: int('Keys ever issued'),
+            live: int('Keys working right now'),
+            expired: int('Keys past their expiry'),
+            revoked: int('Keys revoked by hand'),
+            never_used: int('Live keys that have never authenticated a call'),
+            last_used_at: timestamp('The most recent use of any key')
+          }),
+          sandbox: object({
+            enabled: bool('Whether the API sandbox is available here'),
+            header: str('The header that routes a request to it')
+          })
+        }), {
+          providers: [{
+            id: 'customer_io', name: 'Customer.io',
+            purpose: 'Delivers email, WhatsApp and SMS from a single transactional trigger',
+            configured: false,
+            env: ['CUSTOMERIO_SITE_ID', 'CUSTOMERIO_API_KEY'],
+            degraded: 'Outbound messages are recorded as "simulated" instead of being sent.'
+          }],
+          scopes: [{
+            key: 'feex', label: 'Feex',
+            description: 'Mirror support tickets as engagement signals',
+            endpoints: ['POST /integrations/feex/webhook', 'GET /integrations/events/pending']
+          }],
+          keys: { total: 4, live: 2, expired: 1, revoked: 1, never_used: 1, last_used_at: '2026-08-14 06:58:10' },
+          sandbox: { enabled: true, header: 'X-Devcircle-Sandbox' }
+        })
+      }
+    })
+  },
+
   '/admin/api-keys': {
     get: op({
-      tag: 'Admin · Integrations',
-      permission: 'integrations.write',
+      tag: 'Admin · Credentials',
+      permission: ['credentials.read', 'integrations.write'],
       operationId: 'listApiKeys',
       summary: 'List integration keys',
-      description: 'Only the prefix is stored in a readable form, so a key can be identified in a log without the log becoming a credential store.',
+      description: [
+        'Only the prefix is stored in a readable form, so a key can be identified in a log',
+        'without the log becoming a credential store.',
+        '',
+        '`integrations.write` is accepted here because it is what gated key management',
+        'before `credentials.*` existed.'
+      ].join('\n'),
+      parameters: [
+        query('status', 'Filter by lifecycle state', { type: 'string', enum: ['live', 'expired', 'revoked'] })
+      ],
       responses: {
-        200: json('Keys, newest first.', object({ keys: arrayOf(ref('ApiKeySummary'), 'Integration keys') }), {
+        200: json('Keys, newest first.', object({
+          keys: arrayOf(ref('ApiKeySummary'), 'Integration keys'),
+          scopes: arrayOf(ref('ApiKeyScope'), 'The scope catalogue, so a client need not hardcode it')
+        }), {
           keys: [{
             id: 'k1', name: 'Landing page', prefix: 'a1b2c3d4',
-            permissions: ['landing_page'], last_used_at: '2026-08-14 06:58:10',
+            permissions: ['landing_page'], status: 'live',
+            last_used_at: '2026-08-14 06:58:10',
             expires_at: null, revoked_at: null, created_at: '2026-03-01 10:00:00'
-          }]
+          }],
+          scopes: [{ key: 'landing_page', label: 'Landing page', description: 'Register developers from the public sign-up form', endpoints: ['POST /integrations/landing-page/ingest'] }]
         })
       }
     }),
     post: op({
-      tag: 'Admin · Integrations',
-      permission: 'integrations.write',
+      tag: 'Admin · Credentials',
+      permission: ['credentials.write', 'integrations.write'],
       operationId: 'createApiKey',
       summary: 'Issue an integration key',
       description: [
         '**The plaintext key is returned exactly once.** Only its hash is stored, so a key',
-        'that is not copied at this moment cannot be recovered — issue a new one and revoke',
-        'the old.',
+        'that is not copied at this moment cannot be recovered — rotate it instead.',
         '',
         'Scope the key to what the integration actually does. A key scoped to `feex` cannot',
-        'post landing-page registrations.'
+        'post landing-page registrations. Omitting `scopes` grants `["events"]`.'
       ].join('\n'),
       requestBody: jsonBody(object({
         name: str('What the key is for'),
-        scopes: arrayOf({ type: 'string', enum: API_KEY_SCOPES }, 'Defaults to ["events"]'),
-        expires_at: str('When it should stop working. Omit for no expiry')
+        scopes: arrayOf({ type: 'string', enum: API_KEY_SCOPES }, 'Defaults to ["events"]. "*" cannot be combined with others'),
+        expires_at: str('A date or date-time in the future. Omit for no expiry')
       }, { required: ['name'] }), {
         name: 'Landing page',
         scopes: ['landing_page'],
-        expires_at: '2027-03-01 00:00:00'
+        expires_at: '2027-03-01'
       }),
       responses: {
-        201: json('Issued. Copy the key now.', object({
-          key: str('The plaintext key. Shown once and never again'),
-          prefix: str('Safe to record for identification'),
-          scopes: arrayOf({ type: 'string' }, 'Scopes granted'),
-          warning: str('A reminder that the key cannot be retrieved again')
-        }), {
+        201: json('Issued. Copy the key now.', ref('IssuedApiKey'), {
           key: 'dc_a1b2c3d4_a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4',
           prefix: 'a1b2c3d4',
           scopes: ['landing_page'],
+          record: { id: 'k1', name: 'Landing page', prefix: 'a1b2c3d4', permissions: ['landing_page'], status: 'live' },
           warning: 'Copy this key now. It cannot be retrieved again.'
         }),
-        400: json('Missing name, or an unknown scope.', ref('Error'), {
+        400: json('Missing name, an unknown scope, or an expiry in the past.', ref('Error'), {
           error: 'Unknown scope(s): billing', valid: API_KEY_SCOPES
         })
       }
@@ -1853,17 +1914,177 @@ const paths = {
   },
 
   '/admin/api-keys/{id}': {
-    delete: op({
-      tag: 'Admin · Integrations',
-      permission: 'integrations.write',
-      operationId: 'revokeApiKey',
-      summary: 'Revoke an integration key',
-      description: 'Takes effect on the next request made with it. The row is kept so the log still explains what the key was.',
+    get: op({
+      tag: 'Admin · Credentials',
+      permission: 'credentials.read',
+      operationId: 'getApiKey',
+      summary: 'One key, with who issued it',
       parameters: [path('id', 'Key id')],
       responses: {
-        200: json('Revoked.', object({ message: str('Confirmation') }), { message: 'Key revoked' }),
+        200: json('The key.', object({
+          key: ref('ApiKeySummary'),
+          issued_by: object({ name: str('Admin name'), email: str('Admin email') }, { description: 'Null if the issuing account is gone' }),
+          scopes: arrayOf(ref('ApiKeyScope'), 'The scope catalogue')
+        }), {
+          key: {
+            id: 'k1', name: 'Landing page', prefix: 'a1b2c3d4', permissions: ['landing_page'],
+            status: 'live', last_used_at: '2026-08-14 06:58:10', created_at: '2026-03-01 10:00:00'
+          },
+          issued_by: { name: 'Adaeze Okonkwo', email: 'adaeze@creditdirect.ng' }
+        }),
+        404: json('No such key.', ref('Error'), { error: 'Key not found' })
+      }
+    }),
+    put: op({
+      tag: 'Admin · Credentials',
+      permission: 'credentials.write',
+      operationId: 'updateApiKey',
+      summary: 'Rename, re-scope, or change when a key expires',
+      description: [
+        'Narrowing a live key\'s scopes takes effect on its next request, which makes this',
+        'the fastest way to contain a key that is doing more than it should without',
+        'stopping the integration outright.',
+        '',
+        'A revoked key cannot be edited — issue a new one.'
+      ].join('\n'),
+      parameters: [path('id', 'Key id')],
+      requestBody: jsonBody(object({
+        name: str('What the key is for'),
+        scopes: arrayOf({ type: 'string', enum: API_KEY_SCOPES }, 'Replaces the existing scopes outright'),
+        expires_at: str('A date or date-time in the future. Send null to remove the expiry')
+      }), { scopes: ['landing_page', 'events'], expires_at: '2027-06-30' }),
+      responses: {
+        200: json('The updated key.', object({ key: ref('ApiKeySummary') }), {
+          key: { id: 'k1', name: 'Landing page', permissions: ['landing_page', 'events'], status: 'live', expires_at: '2027-06-30 23:59:59' }
+        }),
+        400: json('Nothing to update, an unknown scope, or an expiry in the past.', ref('Error'), {
+          error: 'expires_at must be in the future'
+        }),
+        404: json('No such key.', ref('Error'), { error: 'Key not found' }),
+        409: json('The key is revoked.', ref('Error'), { error: 'This key is revoked. Issue a new one instead.' })
+      }
+    }),
+    delete: op({
+      tag: 'Admin · Credentials',
+      permission: ['credentials.write', 'integrations.write'],
+      operationId: 'revokeApiKey',
+      summary: 'Revoke a key immediately',
+      description: 'Takes effect on the next request made with it. The row is kept so the event log still explains what the key was.',
+      parameters: [path('id', 'Key id')],
+      responses: {
+        200: json('Revoked.', object({
+          message: str('Confirmation'), key: ref('ApiKeySummary')
+        }), {
+          message: 'Key revoked',
+          key: { id: 'k1', name: 'Landing page', status: 'revoked', revoked_at: '2026-08-14 15:10:22' }
+        }),
         404: json('No such key, or it was already revoked.', ref('Error'), {
           error: 'Key not found or already revoked'
+        })
+      }
+    })
+  },
+
+  '/admin/api-keys/{id}/rotate': {
+    post: op({
+      tag: 'Admin · Credentials',
+      permission: 'credentials.write',
+      operationId: 'rotateApiKey',
+      summary: 'Replace a key, optionally without downtime',
+      description: [
+        'Issues a replacement carrying the same name, scopes and expiry, and retires the',
+        'one it replaces.',
+        '',
+        'Replacing a key normally means an outage: the new one is not deployed yet at the',
+        'moment the old one stops working. Pass `grace_hours` and the old key keeps working',
+        'for that long instead of being revoked, so the integration can be moved across and',
+        'the old credential lapses on its own. Up to 720 hours (30 days).',
+        '',
+        '**The new plaintext key is returned exactly once**, as at issue.'
+      ].join('\n'),
+      parameters: [path('id', 'Key id to replace')],
+      requestBody: jsonBody(object({
+        grace_hours: int('How long the old key keeps working. 0 revokes it immediately', {
+          minimum: 0, maximum: 720, default: 0
+        })
+      }, { description: 'Optional.' }), { grace_hours: 24 }, { required: false }),
+      responses: {
+        201: json('Rotated. Copy the new key now.', {
+          allOf: [ref('IssuedApiKey'), object({
+            replaced: object({
+              id: str('The key that was replaced'),
+              prefix: str('Its prefix'),
+              status: str('What became of it', { enum: ['live', 'revoked'] }),
+              expires_at: timestamp('When it stops working, if it was given a grace period')
+            })
+          })]
+        }, {
+          key: 'dc_9f8e7d6c_9f8e7d6c5b4a39281706f5e4d3c2b1a09f8e7d6c5b4a3928',
+          prefix: '9f8e7d6c',
+          scopes: ['landing_page'],
+          record: { id: 'k9', name: 'Landing page', prefix: '9f8e7d6c', status: 'live' },
+          replaced: { id: 'k1', prefix: 'a1b2c3d4', status: 'live', expires_at: '2026-08-15 15:10:22' },
+          warning: 'Copy this key now — it cannot be retrieved again. The previous key keeps working for 24 hour(s), then stops.'
+        }),
+        400: json('grace_hours is out of range.', ref('Error'), {
+          error: 'grace_hours must be between 0 and 720'
+        }),
+        404: json('No such key.', ref('Error'), { error: 'Key not found' }),
+        409: json('The key is already revoked.', ref('Error'), {
+          error: 'This key is already revoked. Issue a new one instead.'
+        })
+      }
+    })
+  },
+
+  // ─── Sandbox ──────────────────────────────────────────────
+  '/admin/sandbox': {
+    get: op({
+      tag: 'Admin · Sandbox',
+      permission: 'sandbox.use',
+      operationId: 'getSandboxStatus',
+      summary: 'What is in the sandbox, and whether you are in it',
+      description: 'Send this one with and without the sandbox header to see the difference — `active` tells you which database answered.',
+      responses: {
+        200: json('Sandbox status.', ref('SandboxStatus'), {
+          enabled: true,
+          active: true,
+          header: 'X-Devcircle-Sandbox',
+          seeded_at: '2026-08-14T15:02:11.409Z',
+          reset_at: null,
+          counts: { users: 6, cohorts: 2, circles: 1, surveys: 1, survey_responses: 3, gifts: 1, feedback: 2, scheduled_sessions: 1 }
+        })
+      }
+    })
+  },
+
+  '/admin/sandbox/reset': {
+    post: op({
+      tag: 'Admin · Sandbox',
+      permission: 'sandbox.use',
+      operationId: 'resetSandbox',
+      summary: 'Throw the sandbox away and rebuild it',
+      description: [
+        'Deletes the sandbox database and recreates it from the demo data. Everything',
+        'created while exploring is gone; the live database is untouched whichever mode',
+        'the request is sent in.',
+        '',
+        'The sandbox is shared by everyone using the reference, so a reset is visible to',
+        'anybody else exploring at the same time.'
+      ].join('\n'),
+      responses: {
+        200: json('Rebuilt.', {
+          allOf: [ref('SandboxStatus'), object({ message: str('Confirmation') })]
+        }, {
+          message: 'Sandbox rebuilt from demo data. Anything created in it is gone.',
+          enabled: true,
+          active: true,
+          header: 'X-Devcircle-Sandbox',
+          reset_at: '2026-08-14T15:40:02.118Z',
+          counts: { users: 6, cohorts: 2, circles: 1, surveys: 1, survey_responses: 3, gifts: 1, feedback: 2, scheduled_sessions: 1 }
+        }),
+        503: json('The sandbox is switched off in this environment.', ref('Error'), {
+          error: 'The API sandbox is switched off in this environment'
         })
       }
     })

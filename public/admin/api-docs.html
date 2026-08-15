@@ -36,6 +36,42 @@
     .snippet-bar { display: flex; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-3); }
     .snippet-bar .spacer { flex: 1; }
 
+    /* ── Sandbox banner ───────────────────────────────────────
+       Which database "Try it out" is about to hit is the single most important
+       thing on this page, so it is stated at the top and colour-coded, not
+       tucked into a settings menu. */
+    .mode-bar {
+      display: flex;
+      align-items: center;
+      gap: var(--sp-4);
+      flex-wrap: wrap;
+      max-width: var(--max-content);
+      margin-bottom: var(--sp-5);
+      padding: var(--sp-4) var(--sp-5);
+      border-radius: var(--r-lg);
+      border: 1px solid var(--line-faint);
+      background: var(--surface-2);
+      transition: border-color var(--duration-fast) var(--ease-out);
+    }
+    .mode-bar.live { border-color: var(--rose); background: var(--rose-dim); }
+    .mode-bar .grow { flex: 1; min-width: 220px; }
+    .mode-title { font-weight: var(--fw-semibold); display: flex; align-items: center; gap: var(--sp-2); }
+    .mode-text { font-size: var(--fs-xs); color: var(--ash); line-height: var(--lh-normal); margin-top: 2px; }
+    .mode-bar.live .mode-text { color: var(--rose-ink); }
+
+    .segmented { display: inline-flex; border: 1px solid var(--line); border-radius: var(--r-full); overflow: hidden; }
+    .segmented button {
+      padding: var(--sp-2) var(--sp-4);
+      font-size: var(--fs-xs);
+      font-weight: var(--fw-semibold);
+      background: transparent;
+      color: var(--ash);
+      border: none;
+      cursor: pointer;
+    }
+    .segmented button.on { background: var(--cd-blue); color: var(--on-accent); }
+    .segmented button.on[data-mode="live"] { background: var(--rose); }
+
     /* ── Swagger UI, wearing the product's clothes ────────────
        Swagger's stylesheet is built for a white page. These map its surfaces,
        type and lines onto our tokens, which flip with the theme — so the
@@ -199,6 +235,18 @@
 
     <div class="app-body">
 
+      <div class="mode-bar hide" id="modeBar">
+        <div class="grow">
+          <div class="mode-title" id="modeTitle"></div>
+          <div class="mode-text" id="modeText"></div>
+        </div>
+        <div class="segmented" id="modeToggle">
+          <button data-mode="sandbox" class="on" onclick="setMode('sandbox')">Sandbox</button>
+          <button data-mode="live" onclick="setMode('live')">Live data</button>
+        </div>
+        <button class="btn btn-sm btn-secondary" id="resetSandboxBtn" onclick="resetSandbox()">Reset sandbox</button>
+      </div>
+
       <section class="card quickstart hide" id="quickstart">
         <div class="card-head">
           <h2 class="card-title">Quick start</h2>
@@ -232,7 +280,69 @@
 
   const SPEC_PATH = '/admin/docs/openapi.json';
   const SPEC_URL = window.location.origin + '/api' + SPEC_PATH;
+  const SANDBOX_HEADER = 'X-Devcircle-Sandbox';
   let spec = null;
+
+  // ─── Which data are we about to hit? ────────────────────────
+  // Sandbox by default, deliberately. Somebody exploring an API reference is
+  // not expecting to have deleted a cohort or messaged the member base, and
+  // the failure is silent — you only find out afterwards. Live is a choice
+  // that has to be made on purpose, and it is remembered only for the tab.
+
+  const MODE_KEY = 'devcircle_docs_mode';
+  let mode = sessionStorage.getItem(MODE_KEY) === 'live' ? 'live' : 'sandbox';
+  let sandboxAvailable = false;
+
+  function setMode(next) {
+    if (next === 'sandbox' && !sandboxAvailable) {
+      return showToast('The sandbox is not available to you', 'error');
+    }
+    mode = next;
+    sessionStorage.setItem(MODE_KEY, next);
+    renderMode();
+  }
+
+  function renderMode() {
+    const bar = document.getElementById('modeBar');
+    const live = mode === 'live';
+
+    bar.classList.toggle('live', live);
+    bar.classList.remove('hide');
+
+    document.getElementById('modeTitle').innerHTML = live
+      ? `${badge('live data', 'danger')} Requests hit the real platform`
+      : `${badge('sandbox', 'active')} Requests hit a throwaway copy`;
+
+    document.getElementById('modeText').textContent = live
+      ? 'Try it out will create, change and delete real records, and messages will actually be sent. Switch back to the sandbox unless you mean it.'
+      : 'Everything works — the same validation, the same permissions, the same errors — against invented people. Nothing is dispatched, and you can reset it at any time.';
+
+    document.querySelectorAll('#modeToggle button').forEach(button => {
+      button.classList.toggle('on', button.dataset.mode === mode);
+    });
+
+    document.getElementById('resetSandboxBtn').classList.toggle('hide', live || !sandboxAvailable);
+  }
+
+  async function resetSandbox() {
+    const ok = await Shell.confirm({
+      title: 'Reset the sandbox?',
+      text: 'The sandbox database is deleted and rebuilt from demo data. Anything you created while exploring is gone. The live database is untouched.',
+      ok: 'Reset sandbox'
+    });
+    if (!ok) return;
+
+    try {
+      const result = await api('/admin/sandbox/reset', {
+        method: 'POST',
+        headers: { ...Auth.headers(), [SANDBOX_HEADER]: '1' },
+        body: '{}'
+      });
+      showToast(result.message);
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  }
 
   // ─── Request snippets ───────────────────────────────────────
   // Swagger UI resolves a snippet generator by looking for a function named
@@ -503,6 +613,18 @@ print(response.json())`
     document.getElementById('quickstart').classList.remove('hide');
     document.getElementById('swaggerWrap').classList.remove('hide');
 
+    // Whether the sandbox is usable is the server's answer, not a guess from
+    // the stored permission list — a reader without it falls back to live and
+    // is told so plainly.
+    try {
+      const status = await api.get('/admin/sandbox');
+      sandboxAvailable = status.enabled;
+    } catch {
+      sandboxAvailable = false;
+    }
+    if (!sandboxAvailable) mode = 'live';
+    renderMode();
+
     SwaggerUIBundle({
       spec,
       dom_id: '#swagger',
@@ -536,11 +658,14 @@ print(response.json())`
       },
 
       // "Try it out" runs as whoever is reading, without them pasting a token —
-      // unless they authorised explicitly, in which case that wins.
+      // unless they authorised explicitly, in which case that wins. The sandbox
+      // header rides along on every request while the toggle is set, so the
+      // snippets Swagger generates are the ones that reproduce what just ran.
       requestInterceptor: request => {
         const token = Auth.getToken();
         const hasAuth = request.headers.Authorization || request.headers.authorization;
         if (token && !hasAuth) request.headers.Authorization = 'Bearer ' + token;
+        if (mode === 'sandbox') request.headers[SANDBOX_HEADER] = '1';
         return request;
       }
     });

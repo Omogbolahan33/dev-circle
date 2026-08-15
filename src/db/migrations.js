@@ -428,6 +428,40 @@ function define(db) {
             .run(JSON.stringify([...permissions, 'docs.read']), role.id);
         }
       }
+    },
+    {
+      id: 19,
+      name: 'credentials_and_sandbox_permissions',
+      up() {
+        // Managing credentials used to ride on 'integrations.write', which also
+        // meant the event log. Splitting them gives the new Credentials screen
+        // its own gate — so this hands the new permissions to Super Admin, and
+        // to anyone who could already manage keys, who would otherwise wake up
+        // locked out of a job they were doing yesterday.
+        const grants = [
+          { to: role => role.name === 'Super Admin', keys: ['credentials.read', 'credentials.write', 'sandbox.use'] },
+          { to: role => role.permissions.includes('integrations.write'), keys: ['credentials.read', 'credentials.write'] }
+        ];
+
+        const roles = db.prepare('SELECT id, name, permissions FROM roles').all().map(role => {
+          let permissions;
+          try { permissions = JSON.parse(role.permissions || '[]'); } catch { permissions = []; }
+          return { ...role, permissions: Array.isArray(permissions) ? permissions : [] };
+        });
+
+        const update = db.prepare('UPDATE roles SET permissions = ? WHERE id = ?');
+
+        for (const role of roles) {
+          // A wildcard role already holds every permission, present and future
+          if (role.permissions.includes('*')) continue;
+
+          const wanted = grants.filter(g => g.to(role)).flatMap(g => g.keys);
+          const missing = [...new Set(wanted)].filter(key => !role.permissions.includes(key));
+          if (!missing.length) continue;
+
+          update.run(JSON.stringify([...role.permissions, ...missing]), role.id);
+        }
+      }
     }
   ];
   return migrations;

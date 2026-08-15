@@ -411,11 +411,56 @@ const schemas = {
     name: str('What the key is for', { example: 'Landing page' }),
     prefix: str('First segment of the key, safe to display and to log', { example: 'a1b2c3d4' }),
     permissions: arrayOf({ type: 'string', enum: API_KEY_SCOPES }, 'Scopes granted'),
-    last_used_at: timestamp('Last time the key authenticated a call'),
+    status: str('Derived from the timestamps below — the one field worth reading first', {
+      enum: ['live', 'expired', 'revoked'], example: 'live'
+    }),
+    last_used_at: timestamp('Last time the key authenticated a call. Null means it has never been used'),
     expires_at: timestamp('When it stops working. Null means no expiry'),
     revoked_at: timestamp('When it was revoked. Null while live'),
+    created_by: id('Admin who issued it'),
     created_at: timestamp('When it was issued')
   }, { description: 'The plaintext key is returned once at creation and never again — only its hash is stored.' }),
+
+  IssuedApiKey: object({
+    key: str('The plaintext key. Returned at issue and rotation, and never again', {
+      example: 'dc_a1b2c3d4_a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4'
+    }),
+    prefix: str('Safe to record so the key can be identified later', { example: 'a1b2c3d4' }),
+    scopes: arrayOf({ type: 'string', enum: API_KEY_SCOPES }, 'Scopes granted'),
+    record: ref('ApiKeySummary'),
+    warning: str('Says plainly that this is the only time the key is readable')
+  }, { description: 'The one response in the API that carries a secret. It is not stored anywhere it can be read back.' }),
+
+  ApiKeyScope: object({
+    key: str('The scope as it is granted', { example: 'feex' }),
+    label: str('Human label', { example: 'Feex' }),
+    description: str('What an integration holding it is able to do'),
+    endpoints: arrayOf({ type: 'string' }, 'The endpoints this scope unlocks')
+  }, { description: 'The catalogue a key editor builds from — a scope, and exactly what it opens.' }),
+
+  IntegrationProvider: object({
+    id: str('Provider key', { example: 'customer_io' }),
+    name: str('Provider name', { example: 'Customer.io' }),
+    purpose: str('What Dev Circle uses it for'),
+    configured: bool('Whether the credential is present. The value itself is never returned'),
+    env: arrayOf({ type: 'string' }, 'Environment variables that supply it'),
+    degraded: str('What stops working, or works differently, while it is missing')
+  }, {
+    description: [
+      'An outbound credential. These are held in the environment rather than the database,',
+      'because signing a provider request needs the secret in cleartext — so this reports',
+      'only whether one is set, never what it is.'
+    ].join(' ')
+  }),
+
+  SandboxStatus: object({
+    enabled: bool('Whether the sandbox is available in this environment'),
+    active: bool('Whether this very request was served from the sandbox'),
+    header: str('The header that routes a request to it', { example: 'X-Devcircle-Sandbox' }),
+    seeded_at: str('When the demo data was first built'),
+    reset_at: str('When it was last rebuilt. Null if never', { nullable: true }),
+    counts: object({}, { description: 'Rows per table, so it is obvious what is in there' })
+  }),
 
   IntegrationEvent: object({
     id: id('Event id'),

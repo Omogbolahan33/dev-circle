@@ -150,9 +150,8 @@ test('a fresh database ends up fully migrated, and re-running is a no-op', () =>
   const fresh = new Database(path.join(dir, 'fresh.db'));
 
   try {
-    // The base schema lives in db.js; a bare database needs it before migrating
-    fresh.exec(fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'db', 'index.js'), 'utf8')
-      .match(/db\.exec\(`([\s\S]*?)`\);/)[1]);
+    // A bare database needs the base schema before it can be migrated
+    fresh.exec(require('../../src/db/schema').SCHEMA);
 
     const firstRun = migrations.run(fresh);
     assert.ok(firstRun.length >= 15);

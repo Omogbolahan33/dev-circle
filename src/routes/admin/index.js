@@ -15,6 +15,7 @@ router.use(requireAuth, requireAdmin);
 router.use('/circles', require('./circles.routes'));
 router.use('/sessions', require('./sessions.routes'));
 router.use('/docs', require('./docs.routes'));
+router.use('/sandbox', require('./sandbox.routes'));
 
 router.use('/', require('./dashboard.routes'));
 router.use('/', require('./members.routes'));
@@ -25,5 +26,6 @@ router.use('/', require('./gifts.routes'));
 router.use('/', require('./roles.routes'));
 router.use('/', require('./feedback.routes'));
 router.use('/', require('./integrations.routes'));
+router.use('/', require('./credentials.routes'));
 
 module.exports = router;

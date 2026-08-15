@@ -67,6 +67,10 @@ app.use('/api/auth', rateLimit({ name: 'auth', windowMs: 60_000, max: 20 }));
 app.use('/api/integrations', rateLimit({ name: 'integrations', windowMs: 60_000, max: 300 }));
 app.use('/api', rateLimit({ name: 'api', windowMs: 60_000, max: 300 }));
 
+// Ahead of the routes and behind the rate limits: a request that asks for the
+// sandbox is served against a throwaway database from here down.
+app.use('/api', require('./middleware/sandbox').sandboxContext);
+
 app.use('/api', require('./routes'));
 
 // Anything else is a frontend route: hand back the sign-in page and let the

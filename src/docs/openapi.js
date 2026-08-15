@@ -77,6 +77,33 @@ x-api-key: dc_a1b2c3d4_…
 
 ---
 
+## The sandbox
+
+Every endpoint below can be sent against a **sandbox**: a second database, identical in shape
+to the live one and filled with invented people. Add one header:
+
+\`\`\`http
+X-Devcircle-Sandbox: 1
+\`\`\`
+
+Everything else is the same request. The same validation runs, the same permissions are
+checked, the same 409 comes back when you claim a gift twice — because it is the same code,
+talking to a different database. Two things differ, both on purpose:
+
+- **Nothing is dispatched.** Email, WhatsApp and SMS are recorded as \`simulated\`. You can
+  send a broadcast to every member in the sandbox and nobody receives anything.
+- **It is disposable.** \`POST /admin/sandbox/reset\` throws it away and rebuilds it.
+
+Your existing session works — the sandbox mirrors it across, so you are the same person with
+the same role, looking at different data. It needs the \`sandbox.use\` permission, and staff
+only. Responses served from it carry \`X-Devcircle-Sandbox: active\`, so a client never has to
+guess which data it is holding.
+
+In the API reference page this is a toggle, and it is **on by default**. Turn it off
+deliberately, when you mean to touch real members.
+
+---
+
 ## Permissions
 
 Every \`/admin\` endpoint is gated on a capability its role must hold, shown on each operation
@@ -181,7 +208,9 @@ const tags = [
   { name: 'Admin · Rewards', description: 'The reward catalogue, its eligibility rules and fulfilment.' },
   { name: 'Admin · Feedback', description: 'Reading and triaging feedback, including complaints mirrored from Feex.' },
   { name: 'Admin · Access control', description: 'Roles, permissions and staff accounts.' },
-  { name: 'Admin · Integrations', description: 'The inbound event log and the API keys that authenticate it.' },
+  { name: 'Admin · Credentials', description: 'The keys Dev Circle issues to integrations, end to end — issue, inspect, re-scope, rotate and revoke — plus the state of the outbound provider credentials.' },
+  { name: 'Admin · Integrations', description: 'The inbound event log: everything the connected systems have sent.' },
+  { name: 'Admin · Sandbox', description: 'The throwaway database this reference can be pointed at.' },
   { name: 'Admin · API reference', description: 'This document.' }
 ];
 

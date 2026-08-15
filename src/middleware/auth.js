@@ -100,6 +100,14 @@ const PERMISSIONS = [
   { key: 'integrations.write', label: 'Manage API keys and integrations', group: 'System' },
   { key: 'roles.read', label: 'View roles', group: 'System' },
   { key: 'roles.write', label: 'Create roles and manage admin users', group: 'System' },
+  // Credentials are the keys to the integration surface: one of them can create
+  // members, forge engagement, and mark accounts production-ready. Holding them
+  // is a separate thing from watching the events they produce.
+  { key: 'credentials.read', label: 'View API keys and integration credentials', group: 'Credentials' },
+  { key: 'credentials.write', label: 'Issue, edit, rotate and revoke API keys', group: 'Credentials' },
+  // The sandbox executes real requests, including destructive ones, against a
+  // throwaway copy of the platform.
+  { key: 'sandbox.use', label: 'Use the API sandbox', group: 'Credentials' },
   // The reference documents every endpoint, the payloads they take, and which
   // permission each one is gated on. That is a map of the whole admin surface,
   // so it is a capability in its own right rather than something every role
@@ -298,6 +306,7 @@ function verifySSOToken(token) {
 }
 
 module.exports = {
+  hashToken,
   createSession,
   getSession,
   destroySession,

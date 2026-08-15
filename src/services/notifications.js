@@ -1,4 +1,5 @@
 const db = require('../db');
+const dbContext = require('../db/context');
 const config = require('../config');
 const { uuid, parseJSON } = require('../utils/helpers');
 const engagement = require('./engagement');
@@ -131,6 +132,14 @@ async function dispatchToProvider(channel, user, message) {
     return { status: 'sent', ref: message.notification_id };
   }
 
+  // Nothing leaves the building from the sandbox. The in-portal inbox above is
+  // fine — it writes to the sandbox database like everything else — but an
+  // email, WhatsApp or SMS would reach a real person, and somebody trying the
+  // API out is not expecting to have sent anything.
+  if (dbContext.inSandbox()) {
+    return { status: 'simulated', ref: null, error: 'Sandbox — not dispatched' };
+  }
+
   const { delivery } = config;
 
   if (channel === 'email' || channel === 'whatsapp' || channel === 'sms') {
@@ -172,12 +181,15 @@ async function dispatchToProvider(channel, user, message) {
 
 // ─── Public API ─────────────────────────────────────────────
 
-const insertNotification = db.prepare(`
+// Prepared per call rather than once at module load: the handle resolves to
+// whichever database the current request belongs to, and a statement held from
+// load would write to the live one even from inside the sandbox.
+const insertNotification = () => db.prepare(`
   INSERT INTO notifications (id, user_id, category, title, body, action_url, source_type, source_id)
   VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 `);
 
-const insertDelivery = db.prepare(`
+const insertDelivery = () => db.prepare(`
   INSERT INTO message_deliveries (id, source_type, source_id, user_id, channel, status, reason, provider_ref, sent_at)
   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 `);
@@ -200,7 +212,7 @@ async function notify(user, {
   let notificationId = null;
   if (allowed.includes('in_portal')) {
     notificationId = uuid();
-    insertNotification.run(notificationId, user.id, category, title, body, actionUrl, sourceType, sourceId);
+    insertNotification().run(notificationId, user.id, category, title, body, actionUrl, sourceType, sourceId);
   }
 
   const message = { category, title, body, action_url: actionUrl, notification_id: notificationId };
@@ -213,7 +225,7 @@ async function notify(user, {
       outcome = { status: 'failed', ref: null, error: err.message };
     }
 
-    insertDelivery.run(
+    insertDelivery().run(
       uuid(), sourceType, sourceId, user.id, channel,
       outcome.status, outcome.error || null, outcome.ref || null,
       ['sent', 'simulated'].includes(outcome.status) ? new Date().toISOString().replace('T', ' ').slice(0, 19) : null
@@ -222,7 +234,7 @@ async function notify(user, {
   }
 
   for (const { channel, reason, deferred } of skipped) {
-    insertDelivery.run(
+    insertDelivery().run(
       uuid(), sourceType, sourceId, user.id, channel,
       deferred ? 'queued' : 'skipped', reason, null, null
     );
@@ -257,7 +269,7 @@ async function sendDirect(user, {
     outcome = { status: 'failed', ref: null, error: err.message };
   }
 
-  insertDelivery.run(
+  insertDelivery().run(
     uuid(), sourceType, sourceId, user.id, channel,
     outcome.status, outcome.error || null, outcome.ref || null,
     ['sent', 'simulated'].includes(outcome.status)
@@ -275,6 +287,10 @@ async function sendDirect(user, {
 // leaves somebody unable to get in.
 async function sendMail({ to, title, body }) {
   if (!to || !title) throw new Error('sendMail() requires "to" and a title');
+
+  if (dbContext.inSandbox()) {
+    return { status: 'simulated', reason: 'Sandbox — not dispatched' };
+  }
 
   const { delivery } = config;
   if (!delivery.enabled) {
