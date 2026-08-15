@@ -23,8 +23,8 @@
           <p class="page-subtitle" id="subtitle">Every developer in the Credit Direct ecosystem.</p>
         </div>
         <div class="page-actions">
-          <button class="btn btn-sm btn-secondary" onclick="Shell.openDrawer('importDrawer')">Import</button>
-          <button class="btn btn-sm btn-secondary" onclick="exportMembers()">Export CSV</button>
+          <button class="btn btn-sm btn-secondary" onclick="openImport()">Import</button>
+          <button class="btn btn-sm btn-secondary" onclick="openExport()">Export</button>
           <button class="btn btn-sm btn-gold" onclick="openBroadcast('all')">Broadcast</button>
         </div>
       </div>
@@ -142,6 +142,63 @@
   </div>
 </aside>
 
+<!-- ─── Export drawer ──────────────────────────────────────
+     Criteria are built from the same vocabulary cohorts use, so anything that
+     can define a cohort can also narrow an export. -->
+<aside class="drawer drawer-lg" id="exportDrawer">
+  <div class="drawer-head">
+    <div>
+      <div class="drawer-title">Export members</div>
+      <div class="drawer-sub">Pick who to include, then the columns and the format</div>
+    </div>
+    <button class="icon-btn" onclick="Shell.closeDrawer('exportDrawer')">×</button>
+  </div>
+  <div class="drawer-body">
+
+    <div class="field">
+      <label class="label">Who to include</label>
+      <p class="text-xs muted mb-2" id="exportSeeded"></p>
+      <div id="criteriaRows"></div>
+      <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
+        <button class="btn btn-secondary btn-sm" onclick="addCriterion()">+ Add a criterion</button>
+        <select class="input" id="matchMode" onchange="refreshCount()" style="width:auto;padding:4px 8px;font-size:var(--fs-xs)">
+          <option value="all">Match all</option>
+          <option value="any">Match any</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- The count is the honest answer to "did I mean that?", and it is cheap
+         enough to recompute on every edit -->
+    <div class="field">
+      <div class="text-sm" id="exportCount">—</div>
+      <div class="text-xs muted" id="exportCountHint">Everyone, if you add no criteria.</div>
+    </div>
+
+    <div class="field">
+      <label class="label">Columns</label>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+        <button class="btn btn-secondary btn-sm" onclick="presetColumns('all')">All</button>
+        <button class="btn btn-secondary btn-sm" onclick="presetColumns('contact')">Contact only</button>
+        <button class="btn btn-secondary btn-sm" onclick="presetColumns('engagement')">Engagement</button>
+      </div>
+      <div id="columnPicker" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+    </div>
+
+    <div class="field">
+      <label class="label">Format</label>
+      <select class="input" id="exportFormat">
+        <option value="csv">CSV</option>
+        <option value="xlsx">Excel (.xlsx)</option>
+      </select>
+    </div>
+  </div>
+  <div class="drawer-foot">
+    <button class="btn btn-secondary" onclick="Shell.closeDrawer('exportDrawer')">Cancel</button>
+    <button class="btn btn-primary" id="exportGo" onclick="runExport(this)">Download</button>
+  </div>
+</aside>
+
 <!-- ─── Import drawer ──────────────────────────────────── -->
 <aside class="drawer drawer-lg" id="importDrawer">
   <div class="drawer-head">
@@ -152,20 +209,34 @@
     <button class="icon-btn" onclick="Shell.closeDrawer('importDrawer')">×</button>
   </div>
   <div class="drawer-body">
+    <!-- Offered before the upload field, since starting from the template is
+         the path that avoids a failed import -->
     <div class="field">
-      <label class="label">Upload a CSV</label>
-      <input type="file" id="importFile" accept=".csv,text/csv" onchange="loadImportFile(this)" class="text-xs muted">
+      <label class="label">Start from a template</label>
+      <div class="text-xs muted mb-2">
+        A blank sheet with the right columns, plus a tab explaining what each one expects.
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-secondary btn-sm" onclick="downloadTemplate('xlsx', this)">Excel (.xlsx)</button>
+        <button class="btn btn-secondary btn-sm" onclick="downloadTemplate('csv', this)">CSV</button>
+      </div>
+    </div>
+
+    <div class="field">
+      <label class="label">Upload your filled-in sheet</label>
+      <input type="file" id="importFile" accept=".csv,text/csv,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+             onchange="loadImportFile(this)" class="text-xs muted">
     </div>
     <div class="field">
       <label class="label">Or paste CSV / JSON</label>
       <textarea class="input mono text-xs" id="importData" style="min-height:180px"
         placeholder="email,name,company,work_sector,api_products&#10;dev@company.ng,Ada Obi,Company,Fintech,payments;lending"></textarea>
     </div>
-    <p class="hint">
-      Requires <code>email</code> and <code>name</code>. Optional: phone, company, work_sector,
-      state, gender, date_of_birth, api_products (semicolon-separated). Imported members sign in
-      with a one-time code sent to their email or phone — there is no password to issue. Credit
-      Direct addresses are rejected here; staff are added under Roles.
+
+    <!-- Rendered from the same column spec the importer uses, so this list
+         cannot fall out of step with what the parser accepts -->
+    <p class="hint" id="importColumns">
+      Requires <code>email</code> and <code>name</code>.
     </p>
     <div id="importSummary" class="text-xs muted mt-4"></div>
   </div>
@@ -403,24 +474,85 @@
   }
 
   // ─── Import / export ────────────────────────────────────
+  // A workbook is binary, so it is held here rather than in the paste box
+  let pendingWorkbook = null;
+
+  function openImport() {
+    document.getElementById('importSummary').textContent = '';
+    Shell.openDrawer('importDrawer');
+    loadImportColumns();
+  }
+
+  async function downloadTemplate(format, button) {
+    const label = button.textContent;
+    button.disabled = true;
+    button.textContent = 'Preparing…';
+    try {
+      await api.download(`/admin/import/template?format=${format}`, `members-template.${format}`);
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+    button.disabled = false;
+    button.textContent = label;
+  }
+
+  // Describe the upload from the server's column spec, so this never drifts
+  // from what the importer actually accepts
+  async function loadImportColumns() {
+    try {
+      const spec = await api.get('/admin/import/columns');
+      const required = spec.columns.filter(c => c.required).map(c => c.key);
+      const optional = spec.columns.filter(c => !c.required).map(c => c.key);
+
+      document.getElementById('importColumns').innerHTML =
+        `Requires ${required.map(k => `<code>${k}</code>`).join(' and ')}. ` +
+        `Optional: ${optional.join(', ')}. ` +
+        spec.guidance.slice(2).join(' ');
+    } catch { /* the drawer is still usable without the hint */ }
+  }
+
   async function loadImportFile(input) {
     const file = input.files && input.files[0];
     if (!file) return;
+
+    const summary = document.getElementById('importSummary');
+    pendingWorkbook = null;
+
+    if (/\.xlsx$/i.test(file.name)) {
+      // Read the workbook as bytes and hand it over base64-encoded; putting
+      // binary through the paste box would corrupt it
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      let binary = '';
+      for (let i = 0; i < bytes.length; i += 0x8000) {
+        binary += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+      }
+      pendingWorkbook = btoa(binary);
+      document.getElementById('importData').value = '';
+      summary.textContent = `Loaded ${file.name}. Run "Check first" to validate before importing.`;
+      return;
+    }
+
     document.getElementById('importData').value = await file.text();
-    document.getElementById('importSummary').textContent =
-      `Loaded ${file.name}. Run "Check first" to validate before importing.`;
+    summary.textContent = `Loaded ${file.name}. Run "Check first" to validate before importing.`;
   }
 
   async function doImport(dryRun) {
     const raw = document.getElementById('importData').value.trim();
-    if (!raw) { showToast('Paste CSV or choose a file first', 'warning'); return; }
 
-    // Accept a spreadsheet export directly; a JSON array still works
-    const body = raw.startsWith('[')
-      ? (() => { try { return { users: JSON.parse(raw) }; } catch { return null; } })()
-      : { csv: raw };
+    let body;
+    if (pendingWorkbook) {
+      body = { xlsx_base64: pendingWorkbook };
+    } else if (raw) {
+      // Accept a spreadsheet export directly; a JSON array still works
+      body = raw.startsWith('[')
+        ? (() => { try { return { users: JSON.parse(raw) }; } catch { return null; } })()
+        : { csv: raw };
+      if (!body) { showToast('That looks like JSON but could not be parsed', 'error'); return; }
+    } else {
+      showToast('Download the template, fill it in, and upload it here', 'warning');
+      return;
+    }
 
-    if (!body) { showToast('That looks like JSON but could not be parsed', 'error'); return; }
     body.dry_run = dryRun;
 
     try {
@@ -437,22 +569,201 @@
 
       if (!dryRun) {
         showToast(result.message);
-        if (!result.errors.length) Shell.closeDrawer('importDrawer');
+        if (!result.errors.length) {
+          pendingWorkbook = null;
+          document.getElementById('importFile').value = '';
+          Shell.closeDrawer('importDrawer');
+        }
         load(1);
       }
     } catch (err) { showToast(err.message, 'error'); }
   }
 
-  async function exportMembers() {
+  // ─── Export ─────────────────────────────────────────────
+  // The criteria vocabulary comes from the server, which is the same one the
+  // cohort builder uses, so a new way of separating members appears here
+  // without this page being touched.
+
+  const OPERATOR_LABELS = {
+    eq: 'is', neq: 'is not', contains: 'contains',
+    gte: 'is at least', lte: 'is at most', gt: 'is more than', lt: 'is less than'
+  };
+
+  const COLUMN_PRESETS = {
+    contact: ['name', 'email', 'phone', 'company', 'consented_channels', 'preferred_channels'],
+    engagement: ['name', 'email', 'surveys_completed', 'gifts_claimed', 'feedback_submitted',
+                 'engagement_streak', 'last_active_at', 'cohorts']
+  };
+
+  let exportFields = null;   // { criteria, columns, lookups }
+  let countTimer = null;
+
+  async function openExport() {
+    Shell.openDrawer('exportDrawer');
+
+    if (!exportFields) {
+      try {
+        exportFields = await api.get('/admin/export/fields');
+      } catch (err) {
+        showToast(err.message, 'error');
+        return;
+      }
+      renderColumnPicker();
+    }
+
+    // Start from whatever the table is already filtered to, so "export what
+    // I'm looking at" needs no re-entry of the same criteria
+    document.getElementById('criteriaRows').innerHTML = '';
+    const seeded = seedFromFilters();
+    document.getElementById('exportSeeded').textContent = seeded
+      ? 'Carried over from the filters on the list. Adjust or clear them.'
+      : 'No criteria yet — this exports every member.';
+
+    refreshCount();
+  }
+
+  // Mirror the toolbar chips into criteria rows
+  function seedFromFilters() {
+    const seedable = {
+      api_status: 'api_status', status: 'status',
+      kyb_completed: 'kyb_completed', cohort_id: 'cohort_id'
+    };
+    let added = 0;
+
+    for (const [filterKey, field] of Object.entries(seedable)) {
+      if (filters[filterKey]) {
+        addCriterion(field, filters[filterKey]);
+        added++;
+      }
+    }
+    return added > 0;
+  }
+
+  function addCriterion(field, value) {
+    if (!exportFields) return;
+
+    const row = document.createElement('div');
+    row.className = 'criterion';
+    row.style.cssText = 'display:flex;gap:6px;align-items:center;margin-bottom:6px';
+
+    row.innerHTML = `
+      <select class="input c-field" style="flex:1;min-width:0;padding:6px 8px;font-size:var(--fs-xs)">
+        ${exportFields.criteria.map(c =>
+          `<option value="${c.field}"${c.field === field ? ' selected' : ''}>${escapeHtml(c.label)}</option>`).join('')}
+      </select>
+      <select class="input c-op" style="width:110px;padding:6px 8px;font-size:var(--fs-xs)"></select>
+      <span class="c-value" style="flex:1;min-width:0"></span>
+      <button class="btn btn-ghost btn-sm" title="Remove">×</button>`;
+
+    row.querySelector('button').onclick = () => { row.remove(); refreshCount(); };
+    row.querySelector('.c-field').onchange = e => { renderCriterionInputs(row); refreshCount(); };
+
+    document.getElementById('criteriaRows').appendChild(row);
+    renderCriterionInputs(row, value);
+  }
+
+  // The operator list and the value control both follow from the field's type
+  function renderCriterionInputs(row, value) {
+    const key = row.querySelector('.c-field').value;
+    const spec = exportFields.criteria.find(c => c.field === key);
+
+    row.querySelector('.c-op').innerHTML = spec.operators
+      .map(op => `<option value="${op}">${OPERATOR_LABELS[op] || op}</option>`).join('');
+
+    const slot = row.querySelector('.c-value');
+    const style = 'width:100%;padding:6px 8px;font-size:var(--fs-xs)';
+    const options = list => list.map(o => {
+      const val = typeof o === 'object' ? o.id : o;
+      const label = typeof o === 'object' ? o.name : o;
+      return `<option value="${escapeHtml(String(val))}"${String(val) === String(value) ? ' selected' : ''}>${escapeHtml(String(label))}</option>`;
+    }).join('');
+
+    if (spec.lookup && exportFields.lookups[spec.lookup]) {
+      slot.innerHTML = `<select class="input c-input" style="${style}">${options(exportFields.lookups[spec.lookup])}</select>`;
+    } else if (exportFields.lookups[key]) {
+      slot.innerHTML = `<select class="input c-input" style="${style}">${options(exportFields.lookups[key])}</select>`;
+    } else if (spec.type === 'bool') {
+      slot.innerHTML = `<select class="input c-input" style="${style}">${options(['yes', 'no'])}</select>`;
+    } else if (spec.type === 'number') {
+      slot.innerHTML = `<input type="number" class="input c-input" style="${style}" value="${value ?? ''}">`;
+    } else {
+      slot.innerHTML = `<input type="text" class="input c-input" style="${style}" value="${value ?? ''}" placeholder="Value">`;
+    }
+
+    slot.querySelector('.c-input').oninput = refreshCount;
+    slot.querySelector('.c-input').onchange = refreshCount;
+  }
+
+  function currentRules() {
+    const rules = Array.from(document.querySelectorAll('#criteriaRows .criterion')).map(row => ({
+      field: row.querySelector('.c-field').value,
+      op: row.querySelector('.c-op').value,
+      value: row.querySelector('.c-input')?.value ?? ''
+    })).filter(r => r.value !== '');
+
+    if (!rules.length) return null;
+    return { match: document.getElementById('matchMode').value, rules };
+  }
+
+  function exportQuery() {
+    const params = new URLSearchParams();
+    const rules = currentRules();
+    if (rules) params.set('rules', JSON.stringify(rules));
+
+    const columns = Array.from(document.querySelectorAll('#columnPicker input:checked')).map(i => i.value);
+    if (columns.length && columns.length !== exportFields.columns.length) {
+      params.set('columns', columns.join(','));
+    }
+    return params;
+  }
+
+  function refreshCount() {
+    clearTimeout(countTimer);
+    countTimer = setTimeout(async () => {
+      const label = document.getElementById('exportCount');
+      const hint = document.getElementById('exportCountHint');
+      try {
+        const params = exportQuery();
+        params.delete('columns');
+        const res = await api.get(`/admin/export/count?${params.toString()}`);
+        label.textContent = `${res.total} member${res.total === 1 ? '' : 's'} match`;
+        hint.textContent = res.total === 0 ? 'Nothing matches — loosen the criteria.' : '';
+      } catch (err) {
+        label.textContent = '—';
+        hint.textContent = err.message;
+      }
+    }, 200);
+  }
+
+  function renderColumnPicker() {
+    document.getElementById('columnPicker').innerHTML = exportFields.columns.map(c => `
+      <label class="text-xs muted" style="display:flex;align-items:center;gap:4px">
+        <input type="checkbox" value="${c}" checked onchange="void 0"> ${c}
+      </label>`).join('');
+  }
+
+  function presetColumns(which) {
+    const wanted = which === 'all' ? exportFields.columns : COLUMN_PRESETS[which];
+    document.querySelectorAll('#columnPicker input').forEach(input => {
+      input.checked = wanted.includes(input.value);
+    });
+  }
+
+  async function runExport(button) {
+    const label = button.textContent;
+    button.disabled = true;
+    button.textContent = 'Preparing…';
     try {
-      const res = await fetch(`${API_BASE}/admin/export?format=csv`, { headers: Auth.headers() });
-      const blob = await res.blob();
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = 'devcircle-export.csv';
-      a.click();
+      const params = exportQuery();
+      params.set('format', document.getElementById('exportFormat').value);
+      await api.download(`/admin/export?${params.toString()}`, 'devcircle-members');
       showToast('Exported');
-    } catch { showToast('Export failed', 'error'); }
+      Shell.closeDrawer('exportDrawer');
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+    button.disabled = false;
+    button.textContent = label;
   }
 
   // ─── Boot ───────────────────────────────────────────────

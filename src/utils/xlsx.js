@@ -175,4 +175,160 @@ function parseXLSX(input) {
   });
 }
 
-module.exports = { parseXLSX, XlsxError };
+// ─── Writing ────────────────────────────────────────────────
+// The mirror of the reader: assemble the same handful of XML parts back into
+// a ZIP. Used for import templates, so an operator can download a workbook
+// with the right columns instead of guessing at them.
+//
+// Values are written as inline strings. That skips the shared-strings table
+// entirely — worth it for a template of a few dozen cells, and it keeps every
+// value exactly as typed rather than letting Excel reinterpret it.
+
+function crc32(buf) {
+  let crc = -1;
+  for (const byte of buf) {
+    crc ^= byte;
+    for (let i = 0; i < 8; i++) crc = (crc >>> 1) ^ (0xEDB88320 & -(crc & 1));
+  }
+  return (crc ^ -1) >>> 0;
+}
+
+function escapeXml(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    // Control characters are not legal in XML and will make Excel declare the
+    // file corrupt rather than skip the cell
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '');
+}
+
+function columnName(index) {
+  let name = '';
+  let n = index + 1;
+  while (n > 0) {
+    const remainder = (n - 1) % 26;
+    name = String.fromCharCode(65 + remainder) + name;
+    n = Math.floor((n - 1) / 26);
+  }
+  return name;
+}
+
+function sheetXml(rows) {
+  const body = rows.map((cells, r) => {
+    const rendered = cells.map((value, c) => {
+      if (value === null || value === undefined || value === '') return '';
+      return `<c r="${columnName(c)}${r + 1}" t="inlineStr">` +
+             `<is><t xml:space="preserve">${escapeXml(value)}</t></is></c>`;
+    }).join('');
+    return `<row r="${r + 1}">${rendered}</row>`;
+  }).join('');
+
+  return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
+    `<sheetData>${body}</sheetData></worksheet>`;
+}
+
+function zip(files) {
+  const locals = [];
+  const central = [];
+  let offset = 0;
+
+  for (const [name, content] of files) {
+    const nameBuf = Buffer.from(name, 'utf8');
+    const raw = Buffer.from(content, 'utf8');
+    const deflated = zlib.deflateRawSync(raw);
+    const sum = crc32(raw);
+
+    const local = Buffer.alloc(30 + nameBuf.length);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt16LE(20, 4);              // version needed
+    local.writeUInt16LE(8, 8);               // deflate
+    local.writeUInt32LE(sum, 14);
+    local.writeUInt32LE(deflated.length, 18);
+    local.writeUInt32LE(raw.length, 22);
+    local.writeUInt16LE(nameBuf.length, 26);
+    nameBuf.copy(local, 30);
+    locals.push(local, deflated);
+
+    const entry = Buffer.alloc(46 + nameBuf.length);
+    entry.writeUInt32LE(0x02014b50, 0);
+    entry.writeUInt16LE(20, 4);              // version made by
+    entry.writeUInt16LE(20, 6);              // version needed
+    entry.writeUInt16LE(8, 10);              // deflate
+    entry.writeUInt32LE(sum, 16);
+    entry.writeUInt32LE(deflated.length, 20);
+    entry.writeUInt32LE(raw.length, 24);
+    entry.writeUInt16LE(nameBuf.length, 28);
+    entry.writeUInt32LE(offset, 42);
+    nameBuf.copy(entry, 46);
+    central.push(entry);
+
+    offset += local.length + deflated.length;
+  }
+
+  const directory = Buffer.concat(central);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(files.length, 8);
+  end.writeUInt16LE(files.length, 10);
+  end.writeUInt32LE(directory.length, 12);
+  end.writeUInt32LE(offset, 16);
+
+  return Buffer.concat([...locals, directory, end]);
+}
+
+// sheets: [{ name, rows: [[cell, cell], …] }]
+function buildXLSX(sheets) {
+  if (!Array.isArray(sheets) || !sheets.length) {
+    throw new XlsxError('At least one sheet is required');
+  }
+
+  // Excel rejects these characters in a tab name and caps it at 31 chars
+  const names = sheets.map((s, i) =>
+    String(s.name || `Sheet${i + 1}`).replace(/[\\/?*[\]:]/g, ' ').slice(0, 31));
+
+  const files = [
+    ['[Content_Types].xml',
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+      '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
+      '<Default Extension="xml" ContentType="application/xml"/>' +
+      '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>' +
+      sheets.map((_, i) =>
+        `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ` +
+        'ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>').join('') +
+      '</Types>'],
+
+    ['_rels/.rels',
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+      '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>' +
+      '</Relationships>'],
+
+    ['xl/workbook.xml',
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" ' +
+      'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>' +
+      names.map((name, i) =>
+        `<sheet name="${escapeXml(name)}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join('') +
+      '</sheets></workbook>'],
+
+    ['xl/_rels/workbook.xml.rels',
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+      sheets.map((_, i) =>
+        `<Relationship Id="rId${i + 1}" ` +
+        'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" ' +
+        `Target="worksheets/sheet${i + 1}.xml"/>`).join('') +
+      '</Relationships>'],
+
+    ...sheets.map((sheet, i) =>
+      [`xl/worksheets/sheet${i + 1}.xml`, sheetXml(sheet.rows || [])])
+  ];
+
+  return zip(files);
+}
+
+module.exports = { parseXLSX, buildXLSX, XlsxError };

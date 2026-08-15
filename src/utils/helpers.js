@@ -52,12 +52,17 @@ function sanitizeUser(user) {
 
 const FORMULA_PREFIX = /^[=+\-@\t\r]/;
 
-function csvCell(value) {
+// neutralizeFormulas guards against a member putting a formula in a field and
+// having it execute in whoever opens the export. It is on for anything derived
+// from user data, and off only for content we authored ourselves — an import
+// template, where a phone number legitimately starts with "+" and must survive
+// the round trip back through the parser.
+function csvCell(value, { neutralizeFormulas = true } = {}) {
   if (value === null || value === undefined) return '';
   if (Array.isArray(value)) value = value.join('; ');
 
   let str = String(value);
-  if (FORMULA_PREFIX.test(str)) str = `'${str}`;
+  if (neutralizeFormulas && FORMULA_PREFIX.test(str)) str = `'${str}`;
 
   if (/[",\n\r]/.test(str)) {
     return `"${str.replace(/"/g, '""')}"`;
@@ -65,14 +70,14 @@ function csvCell(value) {
   return str;
 }
 
-function csvRow(values) {
-  return values.map(csvCell).join(',');
+function csvRow(values, options) {
+  return values.map(v => csvCell(v, options)).join(',');
 }
 
-function toCSV(headers, rows, pick = (row, header) => row[header]) {
-  const lines = [csvRow(headers)];
+function toCSV(headers, rows, pick = (row, header) => row[header], options) {
+  const lines = [csvRow(headers, options)];
   for (const row of rows) {
-    lines.push(csvRow(headers.map(h => pick(row, h))));
+    lines.push(csvRow(headers.map(h => pick(row, h)), options));
   }
   return lines.join('\r\n');
 }

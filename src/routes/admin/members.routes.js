@@ -2,7 +2,8 @@ const express = require('express');
 const db = require('../../db');
 const { uuid, parseJSON, paginate, sanitizeUser, toCSV, parseCSV } = require('../../utils/helpers');
 const identity = require('../../utils/identity');
-const { parseXLSX } = require('../../utils/xlsx');
+const { parseXLSX, buildXLSX } = require('../../utils/xlsx');
+const importTemplates = require('../../services/importTemplates');
 const { requirePermission, destroyAllSessionsFor } = require('../../middleware/auth');
 const { memberFilters } = require('../../services/audience');
 const engagement = require('../../services/engagement');
@@ -154,6 +155,68 @@ router.post('/members/:id/sign-out', requirePermission('members.write'), (req, r
 
 // ─── Bulk Import ────────────────────────────────────────────
 
+// GET /api/admin/import/template?format=csv|xlsx
+// The blank workbook to fill in. Generated from the same column spec the
+// importer reads rows through, so it is always current — nobody has to
+// remember to update a file checked in beside the code.
+router.get('/import/template', requirePermission('members.import'), (req, res) => {
+  const format = (req.query.format || 'xlsx').toLowerCase();
+  const key = req.query.type || 'members';
+
+  try {
+    if (format === 'csv') {
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition',
+        `attachment; filename="${importTemplates.filename(key, 'csv')}"`);
+      // A BOM so Excel opens it as UTF-8 rather than mangling accented names
+      return res.send('﻿' + importTemplates.toCsvTemplate(key));
+    }
+
+    if (format === 'xlsx') {
+      res.setHeader('Content-Type',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition',
+        `attachment; filename="${importTemplates.filename(key, 'xlsx')}"`);
+      return res.send(importTemplates.toWorkbook(key));
+    }
+
+    res.status(400).json({ error: 'format must be csv or xlsx' });
+  } catch (err) {
+    if (err instanceof importTemplates.TemplateError) {
+      return res.status(404).json({ error: err.message });
+    }
+    throw err;
+  }
+});
+
+// GET /api/admin/import/columns — the spec behind the template, for the UI to
+// describe the upload without hardcoding a second copy of the column list
+router.get('/import/columns', requirePermission('members.import'), (req, res) => {
+  const key = req.query.type || 'members';
+
+  try {
+    const template = importTemplates.get(key);
+    res.json({
+      key,
+      label: template.label,
+      guidance: template.guidance,
+      columns: template.columns.map(c => ({
+        key: c.key,
+        label: c.label || c.key,
+        required: Boolean(c.required),
+        notes: c.notes || null,
+        aliases: c.aliases || [],
+        suggested: c.suggested || null
+      }))
+    });
+  } catch (err) {
+    if (err instanceof importTemplates.TemplateError) {
+      return res.status(404).json({ error: err.message });
+    }
+    throw err;
+  }
+});
+
 // POST /api/admin/import
 // Accepts either a JSON array or raw CSV pasted from an Excel export.
 router.post('/import', requirePermission('members.import'), (req, res) => {
@@ -201,19 +264,9 @@ router.post('/import', requirePermission('members.import'), (req, res) => {
     return res.status(400).json({ error: 'Unknown circle_id' });
   }
 
-  const normalise = row => ({
-    email: (row.email || '').trim().toLowerCase(),
-    name: (row.name || row.full_name || '').trim(),
-    phone: row.phone || row.phone_number || null,
-    company: row.company || row.organisation || row.organization || null,
-    work_sector: row.work_sector || row.sector || null,
-    date_of_birth: row.date_of_birth || row.dob || null,
-    gender: row.gender || null,
-    location_state: row.location_state || row.state || null,
-    api_products: row.api_products
-      ? String(row.api_products).split(/[;|]/).map(s => s.trim()).filter(Boolean)
-      : []
-  });
+  // Rows are read through the same column spec the downloadable template is
+  // generated from, so the two cannot describe different things.
+  const normalise = row => importTemplates.normaliseRow('members', row);
 
   const run = db.transaction(() => {
     for (const raw of rows) {
@@ -287,49 +340,138 @@ router.post('/import', requirePermission('members.import'), (req, res) => {
 
 // ─── Export ─────────────────────────────────────────────────
 
-// GET /api/admin/export
-router.get('/export', requirePermission('export.read'), (req, res) => {
-  const { format = 'json' } = req.query;
-  const { where, params } = memberFilters(req.query);
+// Columns an export can carry. The order here is the order in the file.
+const EXPORT_COLUMNS = [
+  'id', 'email', 'name', 'phone', 'company', 'work_sector', 'gender', 'location_state',
+  'date_of_birth', 'age', 'api_products', 'status', 'api_status', 'kyb_completed',
+  'engagement_streak', 'surveys_completed', 'gifts_claimed', 'feedback_submitted',
+  'cohorts', 'circles', 'consented_channels', 'preferred_days', 'preferred_channels',
+  'last_active_at', 'created_at'
+];
 
-  const users = db.prepare(`
+function selectMembers(query) {
+  const { where, params } = memberFilters(query);
+
+  const rows = db.prepare(`
     SELECT u.id, u.email, u.name, u.phone, u.company, u.work_sector,
            u.gender, u.location_state, u.date_of_birth, u.api_products,
            u.status, u.api_status, u.kyb_completed, u.engagement_streak,
            u.preferred_channels, u.preferred_days, u.last_active_at, u.created_at,
+           CAST((julianday('now') - julianday(u.date_of_birth)) / 365.25 AS INTEGER) as age,
            (SELECT COUNT(*) FROM survey_responses sr
              WHERE sr.user_id = u.id AND sr.completed_at IS NOT NULL) as surveys_completed,
            (SELECT COUNT(*) FROM user_gifts ug WHERE ug.user_id = u.id) as gifts_claimed,
+           (SELECT COUNT(*) FROM feedback f WHERE f.user_id = u.id) as feedback_submitted,
            (SELECT GROUP_CONCAT(c.name, '; ') FROM cohorts c
              JOIN user_cohorts uc ON uc.cohort_id = c.id WHERE uc.user_id = u.id) as cohorts,
+           (SELECT GROUP_CONCAT(ci.name, '; ') FROM circles ci
+             JOIN circle_members cm ON cm.circle_id = ci.id WHERE cm.user_id = u.id) as circles,
            (SELECT GROUP_CONCAT(ch.channel, '; ') FROM consent ch
              WHERE ch.user_id = u.id AND ch.status = 'granted') as consented_channels
     FROM users u WHERE ${where}
     ORDER BY u.created_at DESC
   `).all(...params);
 
-  const result = users.map(u => ({
+  return rows.map(u => ({
     ...u,
     api_products: parseJSON(u.api_products, []),
     preferred_channels: parseJSON(u.preferred_channels, []),
     preferred_days: parseJSON(u.preferred_days, []),
     cohorts: u.cohorts ? u.cohorts.split('; ') : [],
+    circles: u.circles ? u.circles.split('; ') : [],
     consented_channels: u.consented_channels ? u.consented_channels.split('; ') : []
   }));
+}
 
-  if (format === 'csv') {
-    const headers = [
-      'id', 'email', 'name', 'phone', 'company', 'work_sector', 'gender', 'location_state',
-      'date_of_birth', 'api_products', 'status', 'api_status', 'kyb_completed',
-      'engagement_streak', 'surveys_completed', 'gifts_claimed', 'cohorts',
-      'consented_channels', 'preferred_days', 'last_active_at', 'created_at'
-    ];
-    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', 'attachment; filename="devcircle-export.csv"');
-    return res.send(toCSV(headers, result));
+// Narrow the file to the columns asked for, keeping the canonical order so two
+// exports of the same selection are diffable
+function chosenColumns(requested) {
+  if (!requested) return EXPORT_COLUMNS;
+  const wanted = new Set(String(requested).split(',').map(s => s.trim()).filter(Boolean));
+  const picked = EXPORT_COLUMNS.filter(c => wanted.has(c));
+  return picked.length ? picked : EXPORT_COLUMNS;
+}
+
+// GET /api/admin/export/fields
+// What an export can be filtered and sliced by, with the values the UI needs to
+// offer for anything that references another record.
+router.get('/export/fields', requirePermission('export.read'), (req, res) => {
+  res.json({
+    criteria: cohortRules.catalogue(),
+    columns: EXPORT_COLUMNS,
+    lookups: {
+      cohort: db.prepare('SELECT id, name FROM cohorts ORDER BY name').all(),
+      circle: db.prepare("SELECT id, name FROM circles WHERE status = 'active' ORDER BY is_root DESC, name").all(),
+      consent_channel: ['email', 'whatsapp', 'sms', 'calls', 'in_portal'],
+      work_sector: db.prepare(
+        "SELECT DISTINCT work_sector as value FROM users WHERE COALESCE(work_sector,'') != '' ORDER BY value"
+      ).all().map(r => r.value),
+      location_state: db.prepare(
+        "SELECT DISTINCT location_state as value FROM users WHERE COALESCE(location_state,'') != '' ORDER BY value"
+      ).all().map(r => r.value),
+      api_products: db.prepare(
+        'SELECT DISTINCT json_each.value as value FROM users, json_each(users.api_products) ORDER BY value'
+      ).all().map(r => r.value)
+    }
+  });
+});
+
+// GET /api/admin/export/count — how many the criteria match, before committing
+// to a download. Cheap enough to run on every edit of the filter builder.
+router.get('/export/count', requirePermission('export.read'), (req, res) => {
+  try {
+    const { where, params } = memberFilters(req.query);
+    const total = db.prepare(`SELECT COUNT(*) as c FROM users u WHERE ${where}`).get(...params).c;
+    res.json({ total });
+  } catch (err) {
+    if (err instanceof cohortRules.RuleError) return res.status(400).json({ error: err.message });
+    throw err;
+  }
+});
+
+// GET /api/admin/export
+// Filter with any criterion a cohort can be built from — cohort, circle, age,
+// sector, consent, engagement, activity — alone or combined.
+router.get('/export', requirePermission('export.read'), (req, res) => {
+  const format = (req.query.format || 'json').toLowerCase();
+
+  let result;
+  try {
+    result = selectMembers(req.query);
+  } catch (err) {
+    if (err instanceof cohortRules.RuleError) return res.status(400).json({ error: err.message });
+    throw err;
   }
 
-  res.json({ users: result, total: result.length });
+  const columns = chosenColumns(req.query.columns);
+  const stamp = new Date().toISOString().slice(0, 10);
+  const name = `devcircle-members-${stamp}`;
+
+  if (format === 'csv') {
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${name}.csv"`);
+    // The BOM makes Excel read it as UTF-8; the formula guard inside toCSV
+    // stays on, because these values came from members.
+    return res.send('\ufeff' + toCSV(columns, result));
+  }
+
+  if (format === 'xlsx') {
+    const rows = [columns, ...result.map(u => columns.map(c => {
+      const value = u[c];
+      return Array.isArray(value) ? value.join('; ') : value;
+    }))];
+
+    res.setHeader('Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${name}.xlsx"`);
+    return res.send(buildXLSX([{ name: 'Members', rows }]));
+  }
+
+  if (format !== 'json') {
+    return res.status(400).json({ error: 'format must be json, csv, or xlsx' });
+  }
+
+  res.json({ users: result, total: result.length, columns });
 });
 
 module.exports = router;

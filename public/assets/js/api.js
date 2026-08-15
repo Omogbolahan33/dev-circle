@@ -125,6 +125,35 @@ api.post = (path, body) => api(path, { method: 'POST', body: JSON.stringify(body
 api.put = (path, body) => api(path, { method: 'PUT', body: JSON.stringify(body) });
 api.del = (path) => api(path, { method: 'DELETE' });
 
+// Downloads need the auth header, so they cannot be a plain link. The server
+// names the file in Content-Disposition; the fallback is only used when that
+// header is missing. The object URL is revoked afterwards — repeated exports
+// were leaking one blob each.
+api.download = async (path, fallbackName = 'download') => {
+  const res = await fetch(API_BASE + path, { headers: Auth.headers() });
+
+  if (res.status === 401) { Auth.logout(); return; }
+  if (!res.ok) {
+    let message = `Download failed (${res.status})`;
+    try { message = (await res.json()).error || message; } catch { /* not JSON */ }
+    throw new Error(message);
+  }
+
+  const disposition = res.headers.get('content-disposition') || '';
+  const named = /filename="?([^";]+)"?/i.exec(disposition);
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = named ? named[1] : fallbackName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+};
+
 // ─── UI Helpers ─────────────────────────────────────────────
 
 function formatDate(str) {

@@ -1,5 +1,6 @@
 const db = require('../db');
 const { parseJSON } = require('../utils/helpers');
+const cohortRules = require('./cohortRules');
 
 // ─── Audience resolution ────────────────────────────────────
 // Who a piece of work reaches. Surveys, blasts and member listings all need
@@ -20,14 +21,34 @@ function circleScope(circleId) {
 
 // Filters shared by the member list and the export, so what an admin sees on
 // screen is exactly what they get in the file.
+//
+// Beyond the handful of query parameters the toolbar chips set, this accepts
+// `rules` — the same definition language cohorts are built from. That is
+// deliberately one vocabulary rather than two: any criterion that can define a
+// cohort can also filter a list or narrow an export, and a criterion added to
+// the rule engine shows up in all three at once.
 function memberFilters(query) {
   const where = ['1=1'];
   const params = [];
 
   const {
     search, status, api_status, cohort_id, work_sector, location_state,
-    gender, api_product, kyb_completed, min_streak, circle_id
+    gender, api_product, kyb_completed, min_streak, circle_id, rules
   } = query;
+
+  if (rules) {
+    const definition = typeof rules === 'string' ? parseJSON(rules, null) : rules;
+    if (definition === null) {
+      throw new cohortRules.RuleError('rules must be valid JSON');
+    }
+    // activeOnly is off here: an export may legitimately want suspended
+    // members, and `status` is available as an explicit criterion.
+    const built = cohortRules.buildQuery(definition, { activeOnly: false });
+    if (built.ruleCount) {
+      where.push(`(${built.where})`);
+      params.push(...built.params);
+    }
+  }
 
   if (search) {
     where.push('(u.name LIKE ? OR u.email LIKE ? OR u.company LIKE ?)');

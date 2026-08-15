@@ -54,7 +54,27 @@ const FIELDS = {
     type: 'number', label: 'Days since joined'
   },
   cohort_id: {
-    sql: null, type: 'cohort', label: 'Member of cohort'
+    type: 'membership', label: 'Member of cohort',
+    subquery: 'SELECT user_id FROM user_cohorts WHERE cohort_id = ?'
+  },
+  circle_id: {
+    type: 'membership', label: 'Member of circle',
+    subquery: 'SELECT user_id FROM circle_members WHERE circle_id = ?'
+  },
+  // Who may be contacted on a given channel — the separator that decides
+  // whether a segment is reachable at all
+  consent_channel: {
+    type: 'membership', label: 'Consented to channel',
+    subquery: "SELECT user_id FROM consent WHERE channel = ? AND status = 'granted'"
+  },
+  has_phone: {
+    sql: "CASE WHEN COALESCE(u.phone, '') = '' THEN 0 ELSE 1 END",
+    type: 'bool', label: 'Has a phone number'
+  },
+  has_responded: {
+    sql: `(SELECT COUNT(*) FROM survey_responses sr
+           WHERE sr.user_id = u.id AND sr.completed_at IS NOT NULL) > 0`,
+    type: 'bool', label: 'Has ever responded to a survey'
   }
 };
 
@@ -89,10 +109,13 @@ function buildClause(rule) {
 
   const op = rule.op || 'eq';
 
-  if (field.type === 'cohort') {
+  // Membership fields ask whether the member appears in some join table.
+  // "is not" has to become NOT IN rather than a negated equality, or it would
+  // only exclude the row that matched instead of the member.
+  if (field.type === 'membership') {
     const negate = op === 'neq';
     return {
-      sql: `u.id ${negate ? 'NOT IN' : 'IN'} (SELECT user_id FROM user_cohorts WHERE cohort_id = ?)`,
+      sql: `u.id ${negate ? 'NOT IN' : 'IN'} (${field.subquery})`,
       params: [String(rule.value)]
     };
   }
@@ -262,7 +285,10 @@ function catalogue() {
       ? ['gte', 'lte', 'eq', 'gt', 'lt']
       : f.type === 'text'
         ? ['eq', 'neq', 'contains']
-        : ['eq', 'neq']
+        : ['eq', 'neq'],
+    // Membership values are ids the UI has to look up, so it needs to know
+    // which list to offer
+    lookup: f.type === 'membership' ? key.replace(/_id$/, '') : null
   }));
 }
 

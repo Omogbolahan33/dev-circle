@@ -229,6 +229,76 @@ const paths = {
     })
   },
 
+  '/admin/import/template': {
+    get: op({
+      tag: 'Admin · Members',
+      permission: 'members.import',
+      operationId: 'downloadImportTemplate',
+      summary: 'Download a blank import template',
+      description: [
+        'A sheet with the right columns already in place, so an import does not have to be',
+        'guessed at. The workbook carries a second tab explaining what each column expects.',
+        '',
+        'It is generated from the same column specification the importer reads uploads',
+        'through, so it cannot advertise a column the importer ignores or omit one it needs.',
+        'Downloading it and posting it straight back to `/admin/import` succeeds unedited.'
+      ].join('\n'),
+      parameters: [
+        query('format', 'File format', { type: 'string', enum: ['xlsx', 'csv'], default: 'xlsx' }),
+        query('type', 'Which import the template is for', { type: 'string', enum: ['members'], default: 'members' })
+      ],
+      responses: {
+        200: fileResponse(
+          'The template, named for the browser to save.',
+          'text/csv',
+          'email,name,phone,company,work_sector,date_of_birth,gender,location_state,api_products\nada.obi@zilla.ng,Ada Obi,+2348031234567,Zilla,Fintech,1994-04-12,female,Lagos,payments;lending'
+        ),
+        400: json('Unsupported format.', ref('Error'), { error: 'format must be csv or xlsx' }),
+        404: json('No such template.', ref('Error'), { error: 'No import template named "invoices"' })
+      }
+    })
+  },
+
+  '/admin/import/columns': {
+    get: op({
+      tag: 'Admin · Members',
+      permission: 'members.import',
+      operationId: 'getImportColumns',
+      summary: 'Describe the import columns',
+      description:
+        'The specification behind the template: which columns exist, which are required, ' +
+        'what each expects, and the alternative headings that are still understood. The ' +
+        'import screen renders its guidance from this rather than keeping a second copy.',
+      parameters: [
+        query('type', 'Which import to describe', { type: 'string', enum: ['members'], default: 'members' })
+      ],
+      responses: {
+        200: json('The column specification.', object({
+          key: str('Which import this is'),
+          label: str('Human name for the import'),
+          guidance: arrayOf({ type: 'string' }, 'Notes shown to whoever fills the sheet in'),
+          columns: arrayOf(object({
+            key: str('Column heading'),
+            label: str('Human name'),
+            required: bool('Whether an import fails without it'),
+            notes: str('What the column expects'),
+            aliases: arrayOf({ type: 'string' }, 'Other headings accepted for this column'),
+            suggested: arrayOf({ type: 'string' }, 'Values worth sticking to, where it matters')
+          }), 'One entry per column')
+        }), {
+          key: 'members',
+          label: 'Members',
+          guidance: ['Fill in one row per person. Delete the example rows before importing.'],
+          columns: [
+            { key: 'email', label: 'Email', required: true, notes: 'Their sign-in identity.', aliases: [], suggested: null },
+            { key: 'name', label: 'Full name', required: true, notes: 'As they would write it.', aliases: ['full_name'], suggested: null }
+          ]
+        }),
+        404: json('No such template.', ref('Error'), { error: 'No import template named "invoices"' })
+      }
+    })
+  },
+
   '/admin/import': {
     post: op({
       tag: 'Admin · Members',
@@ -288,15 +358,87 @@ const paths = {
     })
   },
 
+  '/admin/export/fields': {
+    get: op({
+      tag: 'Admin · Members',
+      permission: 'export.read',
+      operationId: 'getExportFields',
+      summary: 'What an export can be filtered and sliced by',
+      description: [
+        'Every criterion that separates one member from another — demography, sector,',
+        'product, cohort, circle, consent, engagement and activity — together with the',
+        'columns an export can carry and the values to offer for anything that references',
+        'another record.',
+        '',
+        'This is the same vocabulary cohorts are defined with, so a criterion added to the',
+        'rule engine becomes available to cohorts, list filters and exports at once.'
+      ].join('\n'),
+      responses: {
+        200: json('The criteria, columns and lookups.', object({
+          criteria: arrayOf(object({
+            field: str('Criterion name, used as `field` in a rule'),
+            label: str('Human name'),
+            type: str('text, number, bool, array or membership'),
+            operators: arrayOf({ type: 'string' }, 'Operators this criterion accepts'),
+            lookup: str('Which lookup list supplies its values, when it references another record')
+          }), 'Everything a member can be separated by'),
+          columns: arrayOf({ type: 'string' }, 'Columns an export can carry'),
+          lookups: object({}, 'Values for the criteria that reference another record')
+        }), {
+          criteria: [
+            { field: 'age', label: 'Age', type: 'number', operators: ['gte', 'lte', 'eq'], lookup: null },
+            { field: 'cohort_id', label: 'Member of cohort', type: 'membership', operators: ['eq', 'neq'], lookup: 'cohort' }
+          ],
+          columns: ['id', 'email', 'name', 'age', 'cohorts', 'consented_channels'],
+          lookups: { consent_channel: ['email', 'whatsapp', 'sms', 'calls', 'in_portal'] }
+        })
+      }
+    })
+  },
+
+  '/admin/export/count': {
+    get: op({
+      tag: 'Admin · Members',
+      permission: 'export.read',
+      operationId: 'countExportMembers',
+      summary: 'Count what the criteria match',
+      description:
+        'How many members a set of criteria selects, without building the file. Cheap ' +
+        'enough to call on every edit of a filter, so the size of an export is known ' +
+        'before it is downloaded.',
+      parameters: [
+        query('rules', 'A rule definition, JSON-encoded — the same shape a cohort is built from'),
+        ...memberFilterParams
+      ],
+      responses: {
+        200: json('How many match.', object({ total: int('Matching members') }), { total: 42 }),
+        400: json('A criterion could not be understood.', ref('Error'), { error: 'Unknown field "shoe_size"' })
+      }
+    })
+  },
+
   '/admin/export': {
     get: op({
       tag: 'Admin · Members',
       permission: 'export.read',
       operationId: 'exportMembers',
-      summary: 'Export members as JSON or CSV',
-      description: 'Accepts every filter `GET /admin/members` accepts. CSV values that begin with `=`, `+`, `-` or `@` are neutralised so Excel does not evaluate them as formulas.',
+      summary: 'Export members as JSON, CSV or Excel',
+      description: [
+        'Filter with any criterion a cohort can be built from, passed as `rules` — cohort,',
+        'circle, age, sector, state, product, consent, engagement, activity — alone or',
+        'combined with `match: all` or `match: any`. The simpler query parameters the member',
+        'list uses are accepted too, and combine with the rules.',
+        '',
+        'Narrow the file with `columns`. CSV values beginning with `=`, `+`, `-` or `@` are',
+        'neutralised so Excel does not evaluate them as formulas.',
+        '',
+        'Call `/admin/export/fields` for the criteria and `/admin/export/count` to size the',
+        'result first.'
+      ].join('\n'),
       parameters: [
-        query('format', 'Response format', { type: 'string', enum: ['json', 'csv'], default: 'json' }),
+        query('format', 'Response format', { type: 'string', enum: ['json', 'csv', 'xlsx'], default: 'json' }),
+        query('rules', 'A rule definition, JSON-encoded. Example: `{"match":"all","rules":[{"field":"age","op":"gte","value":30}]}`'),
+        query('columns', 'Comma-separated columns to include. Defaults to all of them.'),
         ...memberFilterParams
       ],
       responses: {
@@ -306,23 +448,30 @@ const paths = {
             'application/json': {
               schema: object({
                 users: arrayOf(ref('Member'), 'Matching members, with cohorts and consented channels flattened'),
-                total: int('How many were returned')
+                total: int('How many were returned'),
+                columns: arrayOf({ type: 'string' }, 'Columns carried in this export')
               }),
               example: {
                 users: [{
                   id: MEMBER_ID, email: 'chidi@paystack.africa', name: 'Chidi Nwosu',
-                  company: 'Paystack', api_status: 'sandbox', surveys_completed: 3,
+                  company: 'Paystack', api_status: 'sandbox', age: 34, surveys_completed: 3,
                   gifts_claimed: 1, cohorts: ['All Members'], consented_channels: ['email', 'in_portal']
                 }],
-                total: 248
+                total: 248,
+                columns: ['id', 'email', 'name']
               }
             },
             'text/csv': {
               schema: { type: 'string' },
-              example: 'id,email,name,phone,company,work_sector\n9f1c2a44…,chidi@paystack.africa,Chidi Nwosu,0803 555 0142,Paystack,Fintech'
+              example: 'email,name,age,work_sector\nchidi@paystack.africa,Chidi Nwosu,34,Fintech'
+            },
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': {
+              schema: { type: 'string', format: 'binary' }
             }
           }
-        }
+        },
+        400: json('A criterion or format could not be understood.', ref('Error'),
+          { error: 'format must be json, csv, or xlsx' })
       }
     })
   },
