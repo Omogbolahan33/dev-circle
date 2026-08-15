@@ -83,13 +83,17 @@ function seed(database) {
   const surveyId = uuid();
   const giftId = uuid();
 
+  // Quiet hours are off for everybody but the last member. A sandbox whose
+  // behaviour depends on what time it is teaches the wrong lesson — send a
+  // broadcast at eleven at night and every delivery would queue rather than go
+  // — while one member keeping a window means the feature is still visible.
   const people = [
     { name: 'Chidi Nwosu', email: 'chidi@paystack.africa', company: 'Paystack', sector: 'Fintech', api: 'production', kyb: 1, streak: 4, state: 'Lagos', gender: 'male', dob: '1994-03-02', products: ['lending', 'payments'] },
     { name: 'Ada Eze', email: 'ada@flutterwave.com', company: 'Flutterwave', sector: 'Fintech', api: 'production', kyb: 1, streak: 7, state: 'Lagos', gender: 'female', dob: '1991-11-19', products: ['payments'] },
     { name: 'Tunde Salami', email: 'tunde@kuda.com', company: 'Kuda', sector: 'Banking', api: 'sandbox', kyb: 0, streak: 1, state: 'Lagos', gender: 'male', dob: '1997-06-30', products: ['lending'] },
     { name: 'Ngozi Okeke', email: 'ngozi@carbon.ng', company: 'Carbon', sector: 'Lending', api: 'sandbox', kyb: 0, streak: 0, state: 'Abuja', gender: 'female', dob: '1989-01-08', products: [] },
     { name: 'Segun Adeyemi', email: 'segun@moniepoint.com', company: 'Moniepoint', sector: 'Fintech', api: 'sandbox', kyb: 1, streak: 2, state: 'Ogun', gender: 'male', dob: '1993-09-14', products: ['collections'] },
-    { name: 'Amaka Obi', email: 'amaka@stitch.money', company: 'Stitch', sector: 'Payments', api: 'sandbox', kyb: 0, streak: 0, state: 'Rivers', gender: 'female', dob: '1996-04-25', products: ['payments'] }
+    { name: 'Amaka Obi', email: 'amaka@stitch.money', company: 'Stitch', sector: 'Payments', api: 'sandbox', kyb: 0, streak: 0, state: 'Rivers', gender: 'female', dob: '1996-04-25', products: ['payments'], quiet: ['22:00', '08:00'] }
   ];
 
   database.transaction(() => {
@@ -125,7 +129,7 @@ function seed(database) {
                          preferred_channels, preferred_days, api_products,
                          gender, date_of_birth, location_state,
                          quiet_hours_start, quiet_hours_end, last_active_at)
-      VALUES (?, ?, ?, ?, ?, '!', ?, ?, ?, ?, ?, ?, '[]', '[]', ?, ?, ?, ?, '22:00', '08:00', datetime('now', '-2 days'))
+      VALUES (?, ?, ?, ?, ?, '!', ?, ?, ?, ?, ?, ?, '[]', '[]', ?, ?, ?, ?, ?, ?, datetime('now', '-2 days'))
     `);
     const joinCohort = database.prepare('INSERT OR IGNORE INTO user_cohorts (user_id, cohort_id) VALUES (?, ?)');
     const joinCircle = database.prepare('INSERT OR IGNORE INTO circle_members (circle_id, user_id) VALUES (?, ?)');
@@ -149,7 +153,9 @@ function seed(database) {
         `080${index}5550${100 + index}`, `+23480${index}5550${100 + index}`,
         person.company, person.sector, person.api, person.kyb,
         person.streak, person.streak,
-        JSON.stringify(person.products), person.gender, person.dob, person.state
+        JSON.stringify(person.products), person.gender, person.dob, person.state,
+        // start === end means no quiet window at all
+        ...(person.quiet || ['00:00', '00:00'])
       );
 
       joinCohort.run(id, allCohortId);

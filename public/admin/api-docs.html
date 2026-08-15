@@ -145,16 +145,65 @@
     .swagger-ui table tbody tr td { border-color: var(--line-faint); color: var(--text-2); }
     .swagger-ui .responses-inner { padding: var(--sp-4); }
 
-    /* Code, both the syntax-highlighted blocks and inline spans. */
+    /* ── Documentation folds away once you have a real answer ──
+       Before you send anything, the documented responses are the whole point.
+       The moment one comes back they become reference material sitting directly
+       under it, in the same shape, and the two get confused. So they collapse
+       behind their own heading, which turns into the control that brings them
+       back. No element is inserted to do it — Swagger's tree is React's, and
+       adding nodes to it invites a reconciliation crash — only a class and an
+       attribute, which React leaves alone. */
+    .swagger-ui .opblock.docs-collapsed .responses-inner > table.responses-table { display: none; }
+
+    .swagger-ui .responses-inner h4.doc-heading {
+      cursor: pointer;
+      user-select: none;
+      display: inline-flex;
+      align-items: center;
+      gap: var(--sp-3);
+    }
+    .swagger-ui .responses-inner h4.doc-heading::after {
+      content: attr(data-doc-hint);
+      font-family: var(--font-body);
+      font-size: var(--fs-xs);
+      font-weight: var(--fw-medium);
+      letter-spacing: 0;
+      color: var(--blue-ink);
+      background: var(--cd-blue-dim);
+      border: 1px solid var(--cd-blue-40);
+      border-radius: var(--r-full);
+      padding: 1px 9px;
+    }
+    .swagger-ui .responses-inner h4.doc-heading:hover::after { border-color: var(--cd-blue); }
+
+    /* And the live one gets the accent, so the eye lands on the answer. */
+    .swagger-ui .live-responses-table {
+      border-left: 2px solid var(--cd-blue);
+      padding-left: var(--sp-4);
+    }
+
+    /* Code blocks.
+       Swagger prints these as white-on-charcoal and its syntax highlighting is
+       tuned for that ground — the string green is a pale mint that only reads
+       on something dark. Repainting the block to our light surface therefore
+       makes every response body and every example vanish into the paper, which
+       is exactly what it did. So the blocks keep their own dark ground, nudged
+       to ours only in dark mode where that is safe. */
+       Swagger sets the ground inline on the blocks it highlights, so overriding
+       it here only ever half-worked — response bodies kept theirs while the
+       request URL took ours, and the two no longer matched. We style the frame
+       and leave the ground alone. */
     .swagger-ui .microlight, .swagger-ui pre.microlight,
     .swagger-ui .highlight-code > .microlight, .swagger-ui .model-example pre {
-      background: var(--surface-0) !important;
       border: 1px solid var(--line-faint);
       border-radius: var(--r-md);
     }
+
+    /* Prose code, which we do own: the ink variants carry a colour that clears
+       contrast on each theme's background rather than one gold for both. */
     .swagger-ui .markdown code, .swagger-ui .renderedMarkdown code {
       background: var(--tint-2);
-      color: var(--cd-gold);
+      color: var(--gold-ink);
       font-family: var(--font-mono);
       padding: 1px 5px;
       border-radius: var(--r-sm);
@@ -164,6 +213,12 @@
       border: 1px solid var(--line-faint);
       border-radius: var(--r-md);
       color: var(--text);
+    }
+    /* A fenced block already has a ground; its code must not paint a second one */
+    .swagger-ui .markdown pre code, .swagger-ui .renderedMarkdown pre code {
+      background: none;
+      color: inherit;
+      padding: 0;
     }
 
     /* Models and schemas. */
@@ -197,7 +252,7 @@
 
     /* The vendor extension we use to say which permission gates an endpoint. */
     .swagger-ui .opblock-summary-description + .view-line-link { display: none; }
-    .swagger-ui .renderedMarkdown strong { color: var(--cd-gold); }
+    .swagger-ui .renderedMarkdown strong { color: var(--gold-ink); }
 
     /* Swagger draws its own top bar and info block; ours already says what the
        page is, so its title and version badge would only repeat us. */
@@ -313,9 +368,15 @@
       ? `${badge('live data', 'danger')} Requests hit the real platform`
       : `${badge('sandbox', 'active')} Requests hit a throwaway copy`;
 
-    document.getElementById('modeText').textContent = live
+    // Operations open ready to send, which means Swagger's toggle reads
+    // "Cancel" from the start rather than "Try it out". That reads as an
+    // instruction to somebody looking for the usual button, and pressing it
+    // drops the panel back to samples — so the flow is spelled out here.
+    const howTo = ' Open an operation and press Execute — it is already live. The button marked Cancel returns it to samples.';
+
+    document.getElementById('modeText').textContent = (live
       ? 'Try it out will create, change and delete real records, and messages will actually be sent. Switch back to the sandbox unless you mean it.'
-      : 'Everything works — the same validation, the same permissions, the same errors — against invented people. Nothing is dispatched, and you can reset it at any time.';
+      : 'Everything works — the same validation, the same permissions, the same errors — against invented people. Nothing is dispatched, and you can reset it at any time.') + howTo;
 
     document.querySelectorAll('#modeToggle button').forEach(button => {
       button.classList.toggle('on', button.dataset.mode === mode);
@@ -585,6 +646,78 @@ print(response.json())`
 
   // ─── Load and render ────────────────────────────────────────
 
+  // ─── Fold the documentation once a real response arrives ────
+  // Swagger renders the live result and the documented responses one above the
+  // other, both as a table of status codes with example bodies. While you are
+  // testing, only the top one is the answer. This collapses the lower one the
+  // first time a call comes back, and hands the heading over as the toggle.
+
+  function syncDocumentedResponses() {
+    document.querySelectorAll('#swagger .opblock.is-open').forEach(block => {
+      const inner = block.querySelector('.responses-inner');
+      if (!inner) return;
+
+      // The documented table sits directly under .responses-inner; the live one
+      // is nested a couple of levels deeper alongside the snippets.
+      const documented = inner.querySelector(':scope > table.responses-table');
+      if (!documented) return;
+
+      const live = inner.querySelector('.live-responses-table');
+      const heading = [...inner.querySelectorAll('h4')]
+        .find(h => h.textContent.trim() === 'Responses');
+
+      // Nothing sent yet — or the result was cleared. The documentation is all
+      // there is, so put it back and forget the fold.
+      if (!live) {
+        block.classList.remove('docs-collapsed');
+        delete block.dataset.docsFolded;
+        if (heading) {
+          heading.classList.remove('doc-heading');
+          heading.removeAttribute('data-doc-hint');
+        }
+        return;
+      }
+
+      if (!heading) return;
+      heading.classList.add('doc-heading');
+
+      // Fold on the first response only. After that the reader's choice stands,
+      // however many times they execute.
+      if (!block.dataset.docsFolded) {
+        block.dataset.docsFolded = 'yes';
+        block.classList.add('docs-collapsed');
+      }
+
+      const collapsed = block.classList.contains('docs-collapsed');
+      const count = documented.querySelectorAll('tbody tr.response').length;
+      const hint = collapsed
+        ? `show ${count} documented response${count === 1 ? '' : 's'}`
+        : 'hide documented responses';
+
+      if (heading.dataset.docHint !== hint) heading.dataset.docHint = hint;
+    });
+  }
+
+  function watchDocumentedResponses() {
+    const root = document.getElementById('swagger');
+
+    root.addEventListener('click', event => {
+      const heading = event.target.closest('.doc-heading');
+      if (!heading) return;
+      heading.closest('.opblock').classList.toggle('docs-collapsed');
+      syncDocumentedResponses();
+    });
+
+    // childList only: our own work changes classes and attributes, which this
+    // deliberately does not observe, so it cannot retrigger itself.
+    let queued = false;
+    new MutationObserver(() => {
+      if (queued) return;
+      queued = true;
+      requestAnimationFrame(() => { queued = false; syncDocumentedResponses(); });
+    }).observe(root, { childList: true, subtree: true });
+  }
+
   function countOperations(paths) {
     const METHODS = ['get', 'post', 'put', 'patch', 'delete'];
     return Object.values(paths || {})
@@ -669,6 +802,8 @@ print(response.json())`
         return request;
       }
     });
+
+    watchDocumentedResponses();
   }
 
   renderQuickstart();
