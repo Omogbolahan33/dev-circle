@@ -16,15 +16,6 @@
     .builder { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: var(--sp-6); align-items: start; }
     @media (max-width: 1000px) { .builder { grid-template-columns: minmax(0, 1fr); } }
 
-    .rule-row {
-      display: grid;
-      grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.7fr) minmax(0, 1.2fr) auto;
-      gap: var(--sp-2);
-      align-items: center;
-      margin-bottom: var(--sp-2);
-    }
-    @media (max-width: 620px) { .rule-row { grid-template-columns: 1fr 1fr; } }
-    .rule-row .input { padding: var(--sp-2) var(--sp-3); }
 
     .rule-join {
       display: flex;
@@ -123,7 +114,7 @@
               of these rules.
             </div>
 
-            <div id="rules"></div>
+            <div id="rules" class="criteria"></div>
             <button class="btn btn-sm btn-ghost mt-2" onclick="addRule()">+ Add rule</button>
           </section>
         </div>
@@ -146,6 +137,7 @@
 
 <script src="/assets/js/api.js"></script>
 <script src="/assets/js/shell.js"></script>
+<script src="/assets/js/criteria.js"></script>
 <script>
   Shell.admin('cohorts');
 
@@ -155,70 +147,31 @@
 
   // Every criterion the blueprint calls for: engagement history, available
   // days, work sector, integration product types, sandbox/production, custom.
-  const RULE_FIELDS = [
-    { value: 'api_status', label: 'API status', type: 'select', options: ['sandbox', 'production'] },
-    { value: 'kyb_completed', label: 'KYB completed', type: 'select', options: ['yes', 'no'] },
-    { value: 'work_sector', label: 'Work sector', type: 'select', options: ['Fintech', 'Banking', 'Lending', 'Payments', 'Insurance', 'Other'] },
-    { value: 'api_products', label: 'API product', type: 'select', options: ['payments', 'lending', 'identity', 'credit_scoring'] },
-    { value: 'preferred_days', label: 'Available day', type: 'select', options: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] },
-    { value: 'preferred_channels', label: 'Preferred channel', type: 'select', options: ['email', 'whatsapp', 'sms', 'calls', 'in_portal'] },
-    { value: 'location_state', label: 'State', type: 'text' },
-    { value: 'gender', label: 'Gender', type: 'select', options: ['male', 'female', 'other'] },
-    { value: 'age', label: 'Age', type: 'number' },
-    { value: 'engagement_streak', label: 'Engagement streak', type: 'number' },
-    { value: 'surveys_completed', label: 'Surveys completed', type: 'number' },
-    { value: 'gifts_claimed', label: 'Gifts claimed', type: 'number' },
-    { value: 'days_since_active', label: 'Days since active', type: 'number' },
-    { value: 'days_since_joined', label: 'Days since joined', type: 'number' }
-  ];
+  // Fields, operators and — crucially — the values each field allows come from
+  // the server catalogue, shared with the export builder. This page used to
+  // carry its own copy, which drifted: account status and preferred channel
+  // were free text here, and half the available criteria were missing.
+  let criteria = null;
 
-  const OPERATORS = {
-    select: [{ value: 'eq', label: 'is' }, { value: 'neq', label: 'is not' }],
-    text:   [{ value: 'eq', label: 'is' }, { value: 'neq', label: 'is not' }, { value: 'contains', label: 'contains' }],
-    number: [{ value: 'gte', label: 'at least' }, { value: 'lte', label: 'at most' }, { value: 'eq', label: 'exactly' }]
-  };
-
-  function addRule() {
-    ruleCount++;
-    const row = document.createElement('div');
-    row.className = 'rule-row';
-    row.id = `rule-${ruleCount}`;
-    row.innerHTML = `
-      <select class="input rule-field" onchange="updateRuleOps(this)">
-        ${RULE_FIELDS.map(f => `<option value="${f.value}">${f.label}</option>`).join('')}
-      </select>
-      <select class="input rule-op"></select>
-      <input type="text" class="input rule-val" placeholder="Value">
-      <button class="icon-btn" onclick="this.parentElement.remove();previewMatch()" aria-label="Remove rule">×</button>`;
-
-    document.getElementById('rules').appendChild(row);
-    updateRuleOps(row.querySelector('.rule-field'));
-  }
-
-  function updateRuleOps(fieldSelect) {
-    const field = RULE_FIELDS.find(f => f.value === fieldSelect.value);
-    const row = fieldSelect.parentElement;
-    row.querySelector('.rule-op').innerHTML =
-      OPERATORS[field.type].map(o => `<option value="${o.value}">${o.label}</option>`).join('');
-
-    const val = row.querySelector('.rule-val');
-    if (field.type === 'select') {
-      val.outerHTML = `<select class="input rule-val">${field.options.map(o => `<option value="${o}">${o}</option>`).join('')}</select>`;
-    } else if (field.type === 'number') {
-      val.outerHTML = '<input type="number" class="input rule-val" placeholder="Value">';
-    } else {
-      val.outerHTML = '<input type="text" class="input rule-val" placeholder="e.g. Lagos">';
+  async function loadCriteria() {
+    try {
+      const fields = await Criteria.load('/admin/cohorts/rule-fields');
+      criteria = Criteria.attach(document.getElementById('rules'), {
+        fields,
+        matchSelect: document.getElementById('matchMode'),
+        onChange: schedulePreview
+      });
+      criteria.add();
+    } catch (err) {
+      showToast('Could not load the rule fields: ' + err.message, 'error');
     }
-
-    previewMatch();
   }
+
+  function addRule() { if (criteria) criteria.add(); }
 
   function getRules() {
-    return Array.from(document.querySelectorAll('.rule-row')).map(row => ({
-      field: row.querySelector('.rule-field').value,
-      op: row.querySelector('.rule-op').value,
-      value: row.querySelector('.rule-val').value
-    })).filter(r => r.value !== '');
+    const definition = criteria && criteria.rules();
+    return definition ? definition.rules : [];
   }
 
   async function previewMatch() {
@@ -292,10 +245,9 @@
 
   // Debounced so typing a value does not fire a request per keystroke.
   function schedulePreview() { clearTimeout(previewTimer); previewTimer = setTimeout(previewMatch, 300); }
-  document.addEventListener('input', schedulePreview);
-  document.addEventListener('change', schedulePreview);
-
-  addRule();
+  // The name and description also affect nothing but are cheap to ignore;
+  // only the criteria builder drives the preview, and it reports its own edits.
+  loadCriteria();
 </script>
 </body>
 </html>

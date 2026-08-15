@@ -1472,3 +1472,46 @@ textarea.input { min-height: 90px; line-height: var(--lh-normal); }
 .progress { height: 4px; background: var(--tint-3); border-radius: var(--r-full); overflow: hidden; }
 .progress .fill { height: 100%; background: var(--cd-blue); border-radius: var(--r-full); transition: width var(--duration-normal) var(--ease-out); }
 .progress .fill.gold { background: var(--cd-gold); }
+
+/* ─── Criteria builder ──────────────────────────────────────
+   One row per criterion: what to test, how, and against what. The value
+   control is whatever the field's type calls for, so the row has to tolerate
+   a select, a number box or a plain input sitting in the same slot. */
+.criterion {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-2);
+}
+.criterion .input { padding: 6px 8px; font-size: var(--fs-xs); }
+.criterion-field { flex: 1 1 40%; min-width: 0; }
+.criterion-op { flex: 0 0 auto; width: 118px; }
+.criterion-value { flex: 1 1 40%; min-width: 0; display: flex; }
+.criterion-value .input { width: 100%; }
+
+.criterion-empty {
+  font-size: var(--fs-xs);
+  color: var(--ash-dim);
+  font-style: italic;
+  padding: 6px 0;
+}
+
+.criterion-remove {
+  flex: 0 0 auto;
+  background: none;
+  border: none;
+  color: var(--ash-dim);
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: var(--r-sm);
+}
+.criterion-remove:hover { color: var(--rose); background: var(--rose-dim, rgba(225,29,72,0.10)); }
+.criterion-remove:focus-visible { outline: 2px solid var(--cd-blue); outline-offset: 1px; }
+
+@media (max-width: 640px) {
+  .criterion { flex-wrap: wrap; }
+  .criterion-field, .criterion-value { flex: 1 1 100%; }
+  .criterion-op { flex: 1 1 auto; width: auto; }
+}

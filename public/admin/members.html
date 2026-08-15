@@ -161,7 +161,7 @@
       <div id="criteriaRows"></div>
       <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
         <button class="btn btn-secondary btn-sm" onclick="addCriterion()">+ Add a criterion</button>
-        <select class="input" id="matchMode" onchange="refreshCount()" style="width:auto;padding:4px 8px;font-size:var(--fs-xs)">
+        <select class="input" id="matchMode" style="width:auto;padding:4px 8px;font-size:var(--fs-xs)">
           <option value="all">Match all</option>
           <option value="any">Match any</option>
         </select>
@@ -249,6 +249,7 @@
 
 <script src="/assets/js/api.js"></script>
 <script src="/assets/js/shell.js"></script>
+<script src="/assets/js/criteria.js"></script>
 <script>
   Shell.admin('members');
 
@@ -580,14 +581,8 @@
   }
 
   // ─── Export ─────────────────────────────────────────────
-  // The criteria vocabulary comes from the server, which is the same one the
-  // cohort builder uses, so a new way of separating members appears here
-  // without this page being touched.
-
-  const OPERATOR_LABELS = {
-    eq: 'is', neq: 'is not', contains: 'contains',
-    gte: 'is at least', lte: 'is at most', gt: 'is more than', lt: 'is less than'
-  };
+  // The criteria builder and its value lists come from the server catalogue,
+  // so this screen and the cohort builder always offer the same choices.
 
   const COLUMN_PRESETS = {
     contact: ['name', 'email', 'phone', 'company', 'consented_channels', 'preferred_channels'],
@@ -595,7 +590,8 @@
                  'engagement_streak', 'last_active_at', 'cohorts']
   };
 
-  let exportFields = null;   // { criteria, columns, lookups }
+  let exportFields = null;
+  let criteria = null;
   let countTimer = null;
 
   async function openExport() {
@@ -609,11 +605,17 @@
         return;
       }
       renderColumnPicker();
+
+      criteria = Criteria.attach(document.getElementById('criteriaRows'), {
+        fields: exportFields.criteria,
+        matchSelect: document.getElementById('matchMode'),
+        onChange: refreshCount
+      });
     }
 
     // Start from whatever the table is already filtered to, so "export what
     // I'm looking at" needs no re-entry of the same criteria
-    document.getElementById('criteriaRows').innerHTML = '';
+    criteria.clear();
     const seeded = seedFromFilters();
     document.getElementById('exportSeeded').textContent = seeded
       ? 'Carried over from the filters on the list. Adjust or clear them.'
@@ -632,82 +634,22 @@
 
     for (const [filterKey, field] of Object.entries(seedable)) {
       if (filters[filterKey]) {
-        addCriterion(field, filters[filterKey]);
+        // The chips carry 1/0 for KYB; the criterion expects yes/no
+        const value = field === 'kyb_completed'
+          ? (String(filters[filterKey]) === '1' ? 'yes' : 'no')
+          : filters[filterKey];
+        criteria.add(field, value);
         added++;
       }
     }
     return added > 0;
   }
 
-  function addCriterion(field, value) {
-    if (!exportFields) return;
-
-    const row = document.createElement('div');
-    row.className = 'criterion';
-    row.style.cssText = 'display:flex;gap:6px;align-items:center;margin-bottom:6px';
-
-    row.innerHTML = `
-      <select class="input c-field" style="flex:1;min-width:0;padding:6px 8px;font-size:var(--fs-xs)">
-        ${exportFields.criteria.map(c =>
-          `<option value="${c.field}"${c.field === field ? ' selected' : ''}>${escapeHtml(c.label)}</option>`).join('')}
-      </select>
-      <select class="input c-op" style="width:110px;padding:6px 8px;font-size:var(--fs-xs)"></select>
-      <span class="c-value" style="flex:1;min-width:0"></span>
-      <button class="btn btn-ghost btn-sm" title="Remove">×</button>`;
-
-    row.querySelector('button').onclick = () => { row.remove(); refreshCount(); };
-    row.querySelector('.c-field').onchange = e => { renderCriterionInputs(row); refreshCount(); };
-
-    document.getElementById('criteriaRows').appendChild(row);
-    renderCriterionInputs(row, value);
-  }
-
-  // The operator list and the value control both follow from the field's type
-  function renderCriterionInputs(row, value) {
-    const key = row.querySelector('.c-field').value;
-    const spec = exportFields.criteria.find(c => c.field === key);
-
-    row.querySelector('.c-op').innerHTML = spec.operators
-      .map(op => `<option value="${op}">${OPERATOR_LABELS[op] || op}</option>`).join('');
-
-    const slot = row.querySelector('.c-value');
-    const style = 'width:100%;padding:6px 8px;font-size:var(--fs-xs)';
-    const options = list => list.map(o => {
-      const val = typeof o === 'object' ? o.id : o;
-      const label = typeof o === 'object' ? o.name : o;
-      return `<option value="${escapeHtml(String(val))}"${String(val) === String(value) ? ' selected' : ''}>${escapeHtml(String(label))}</option>`;
-    }).join('');
-
-    if (spec.lookup && exportFields.lookups[spec.lookup]) {
-      slot.innerHTML = `<select class="input c-input" style="${style}">${options(exportFields.lookups[spec.lookup])}</select>`;
-    } else if (exportFields.lookups[key]) {
-      slot.innerHTML = `<select class="input c-input" style="${style}">${options(exportFields.lookups[key])}</select>`;
-    } else if (spec.type === 'bool') {
-      slot.innerHTML = `<select class="input c-input" style="${style}">${options(['yes', 'no'])}</select>`;
-    } else if (spec.type === 'number') {
-      slot.innerHTML = `<input type="number" class="input c-input" style="${style}" value="${value ?? ''}">`;
-    } else {
-      slot.innerHTML = `<input type="text" class="input c-input" style="${style}" value="${value ?? ''}" placeholder="Value">`;
-    }
-
-    slot.querySelector('.c-input').oninput = refreshCount;
-    slot.querySelector('.c-input').onchange = refreshCount;
-  }
-
-  function currentRules() {
-    const rules = Array.from(document.querySelectorAll('#criteriaRows .criterion')).map(row => ({
-      field: row.querySelector('.c-field').value,
-      op: row.querySelector('.c-op').value,
-      value: row.querySelector('.c-input')?.value ?? ''
-    })).filter(r => r.value !== '');
-
-    if (!rules.length) return null;
-    return { match: document.getElementById('matchMode').value, rules };
-  }
+  function addCriterion() { criteria.add(); }
 
   function exportQuery() {
     const params = new URLSearchParams();
-    const rules = currentRules();
+    const rules = criteria.rules();
     if (rules) params.set('rules', JSON.stringify(rules));
 
     const columns = Array.from(document.querySelectorAll('#columnPicker input:checked')).map(i => i.value);
@@ -738,7 +680,7 @@
   function renderColumnPicker() {
     document.getElementById('columnPicker').innerHTML = exportFields.columns.map(c => `
       <label class="text-xs muted" style="display:flex;align-items:center;gap:4px">
-        <input type="checkbox" value="${c}" checked onchange="void 0"> ${c}
+        <input type="checkbox" value="${c}" checked> ${c}
       </label>`).join('');
   }
 

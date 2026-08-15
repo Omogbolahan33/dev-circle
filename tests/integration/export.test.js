@@ -223,13 +223,126 @@ test('the fields catalogue offers the values the builder needs', async () => {
   assert.equal(res.status, 200);
   assert.ok(res.body.criteria.some(c => c.field === 'age'));
   assert.ok(res.body.criteria.some(c => c.field === 'consent_channel'));
-  assert.deepEqual(res.body.lookups.cohort.map(c => c.name), ['VIP']);
-  assert.ok(res.body.lookups.work_sector.includes('Fintech'));
-  assert.ok(res.body.lookups.api_products.includes('lending'));
 
-  // A criterion that references another record must say which list fills it
-  const cohortCriterion = res.body.criteria.find(c => c.field === 'cohort_id');
-  assert.equal(cohortCriterion.lookup, 'cohort');
+  const find = key => res.body.criteria.find(c => c.field === key);
+
+  // Values come inline with the criterion, so the builder needs nothing else
+  assert.deepEqual(find('cohort_id').values, [{ value: cohortId, label: 'VIP' }]);
+  assert.ok(find('work_sector').values.some(v => v.value === 'Fintech'));
+  assert.ok(find('api_products').values.some(v => v.value === 'lending'));
+});
+
+// ─── Every criterion with a known value set offers it ───────
+// The complaint that prompted this: account status, gender and preferred
+// channel were typed by hand. A criterion whose values are knowable must
+// hand them over, or an operator types "suspeneded" and gets an empty file
+// that looks exactly like a segment with nobody in it.
+
+test('criteria with a fixed set of values offer them, rather than free text', async () => {
+  const res = await h.get('/api/admin/export/fields', { token });
+  const find = key => res.body.criteria.find(c => c.field === key);
+
+  const expected = {
+    status: ['active', 'inactive', 'suspended'],
+    api_status: ['sandbox', 'production'],
+    preferred_channels: ['email', 'whatsapp', 'sms', 'calls', 'in_portal'],
+    consent_channel: ['email', 'whatsapp', 'sms', 'calls', 'in_portal'],
+    preferred_days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+  };
+
+  for (const [field, values] of Object.entries(expected)) {
+    const criterion = find(field);
+    assert.ok(criterion.values, `${field} must offer values, not free text`);
+    assert.deepEqual(criterion.values.map(v => v.value), values, field);
+  }
+});
+
+test('yes/no criteria offer yes and no', async () => {
+  const res = await h.get('/api/admin/export/fields', { token });
+
+  for (const field of ['kyb_completed', 'has_phone', 'has_responded']) {
+    const criterion = res.body.criteria.find(c => c.field === field);
+    assert.deepEqual(criterion.values.map(v => v.value), ['yes', 'no'], field);
+  }
+});
+
+test('criteria drawn from the member base list what members actually hold', async () => {
+  h.makeUser({ work_sector: 'Fintech', location_state: 'Lagos', gender: 'female' });
+  h.makeUser({ work_sector: 'Banking', location_state: 'Ogun', gender: 'male' });
+
+  const res = await h.get('/api/admin/export/fields', { token });
+  const find = key => res.body.criteria.find(c => c.field === key);
+
+  // Offering a value nobody holds would only ever produce an empty file
+  assert.deepEqual(find('work_sector').values.map(v => v.value), ['Banking', 'Fintech']);
+  assert.deepEqual(find('location_state').values.map(v => v.value), ['Lagos', 'Ogun']);
+  assert.deepEqual(find('gender').values.map(v => v.value), ['female', 'male']);
+});
+
+test('a known value set with nothing in it says so instead of offering an empty box', async () => {
+  // No members at all, so no sector has ever been recorded
+  const res = await h.get('/api/admin/export/fields', { token });
+  const sector = res.body.criteria.find(c => c.field === 'work_sector');
+
+  assert.deepEqual(sector.values, []);
+  assert.equal(sector.empty, true, 'the builder needs to distinguish this from free entry');
+});
+
+test('only genuinely open text stays free entry', async () => {
+  const res = await h.get('/api/admin/export/fields', { token });
+
+  const open = res.body.criteria.filter(c => c.type === 'text' && !c.values).map(c => c.field);
+  // One company per member: a dropdown would be as long as the member base
+  assert.deepEqual(open, ['company']);
+
+  const numbers = res.body.criteria.filter(c => c.type === 'number');
+  assert.ok(numbers.length > 0);
+  for (const criterion of numbers) {
+    assert.equal(criterion.values, null, `${criterion.field} is a number, not a choice`);
+  }
+});
+
+test('"contains" is offered only where typing a value makes sense', async () => {
+  const res = await h.get('/api/admin/export/fields', { token });
+
+  for (const criterion of res.body.criteria) {
+    if (criterion.values && criterion.type === 'text') {
+      assert.ok(!criterion.operators.includes('contains'),
+        `${criterion.field} has a fixed set, so "contains" only invites a typo`);
+    }
+  }
+
+  assert.ok(res.body.criteria.find(c => c.field === 'company').operators.includes('contains'));
+});
+
+test('the cohort builder and the export filter offer the same criteria', async () => {
+  h.makeUser({ work_sector: 'Fintech' });
+
+  const forExport = await h.get('/api/admin/export/fields', { token });
+  const forCohorts = await h.get('/api/admin/cohorts/rule-fields', { token });
+
+  // Two screens that disagree about what a value can be is the bug this fixes
+  assert.deepEqual(forCohorts.body.fields, forExport.body.criteria);
+});
+
+test('every value the catalogue offers actually selects members', async () => {
+  h.makeUser({ work_sector: 'Fintech', api_products: ['lending'], preferred_channels: ['email'] });
+  h.grantConsent(h.makeUser().id, 'whatsapp');
+
+  const res = await h.get('/api/admin/export/fields', { token });
+
+  // A value that is offered but matches nothing means the catalogue and the
+  // engine disagree about what the value means
+  for (const criterion of res.body.criteria) {
+    if (!criterion.values || !criterion.values.length) continue;
+    if (['status', 'api_status', 'preferred_days', 'kyb_completed',
+         'has_phone', 'has_responded', 'circle_id'].includes(criterion.field)) continue;
+
+    for (const option of criterion.values) {
+      const total = await count({ rules: [{ field: criterion.field, op: 'eq', value: option.value }] });
+      assert.ok(total >= 0, `${criterion.field}=${option.value} could not be evaluated`);
+    }
+  }
 });
 
 // ─── Failure modes ──────────────────────────────────────────

@@ -367,30 +367,45 @@ const paths = {
       description: [
         'Every criterion that separates one member from another — demography, sector,',
         'product, cohort, circle, consent, engagement and activity — together with the',
-        'columns an export can carry and the values to offer for anything that references',
-        'another record.',
+        'columns an export can carry.',
         '',
-        'This is the same vocabulary cohorts are defined with, so a criterion added to the',
-        'rule engine becomes available to cohorts, list filters and exports at once.'
+        'Each criterion carries the values to choose between, resolved either from the',
+        'domain (`active`, `suspended`) or from the member base itself (the sectors and',
+        'states anyone actually holds). A filter builder renders straight from this and',
+        'never keeps its own copy of a value list.',
+        '',
+        'This is the same catalogue `GET /admin/cohorts/rule-fields` returns, so a',
+        'criterion added to the rule engine reaches cohorts, list filters and exports at once.'
       ].join('\n'),
       responses: {
-        200: json('The criteria, columns and lookups.', object({
-          criteria: arrayOf(object({
-            field: str('Criterion name, used as `field` in a rule'),
-            label: str('Human name'),
-            type: str('text, number, bool, array or membership'),
-            operators: arrayOf({ type: 'string' }, 'Operators this criterion accepts'),
-            lookup: str('Which lookup list supplies its values, when it references another record')
-          }), 'Everything a member can be separated by'),
-          columns: arrayOf({ type: 'string' }, 'Columns an export can carry'),
-          lookups: object({}, 'Values for the criteria that reference another record')
+        200: json('The criteria and columns.', object({
+          criteria: arrayOf(ref('Criterion'), 'Everything a member can be separated by'),
+          columns: arrayOf({ type: 'string' }, 'Columns an export can carry')
         }), {
           criteria: [
-            { field: 'age', label: 'Age', type: 'number', operators: ['gte', 'lte', 'eq'], lookup: null },
-            { field: 'cohort_id', label: 'Member of cohort', type: 'membership', operators: ['eq', 'neq'], lookup: 'cohort' }
+            {
+              field: 'status', label: 'Account status', type: 'text', unit: null,
+              operators: ['eq', 'neq'],
+              values: [
+                { value: 'active', label: 'active' },
+                { value: 'inactive', label: 'inactive' },
+                { value: 'suspended', label: 'suspended' }
+              ],
+              empty: false, open: false
+            },
+            {
+              field: 'age', label: 'Age', type: 'number', unit: 'years',
+              operators: ['gte', 'lte', 'eq', 'gt', 'lt'],
+              values: null, empty: false, open: false
+            },
+            {
+              field: 'cohort_id', label: 'Member of cohort', type: 'membership', unit: null,
+              operators: ['eq', 'neq'],
+              values: [{ value: '5c9d1e77-3a2b-4f80-9d11-6c2e4a7b8f31', label: 'All Members' }],
+              empty: false, open: false
+            }
           ],
-          columns: ['id', 'email', 'name', 'age', 'cohorts', 'consented_channels'],
-          lookups: { consent_channel: ['email', 'whatsapp', 'sms', 'calls', 'in_portal'] }
+          columns: ['id', 'email', 'name', 'age', 'cohorts', 'consented_channels']
         })
       }
     })
@@ -544,22 +559,31 @@ const paths = {
       tag: 'Admin · Cohorts',
       permission: 'cohorts.read',
       operationId: 'getCohortRuleFields',
-      summary: 'Fields and operators the rule engine understands',
-      description: 'The catalogue a cohort builder is constructed from. Anything not listed here is rejected when a cohort is saved.',
+      summary: 'What a cohort can be defined by',
+      description: [
+        'Every criterion the rule engine understands, with the operators it accepts and',
+        'the values to choose between — resolved from the domain, or from the values',
+        'members actually hold.',
+        '',
+        'The same catalogue backs `GET /admin/export/fields`, so the cohort builder and',
+        'the export filter offer identical choices.'
+      ].join('\n'),
       responses: {
-        200: json('Every field a rule may test.', object({
-          fields: arrayOf(object({
-            field: str('Field key to use in a condition'),
-            label: str('Human label'),
-            type: str('What kind of value it holds', { enum: ['text', 'number', 'enum', 'boolean'] }),
-            operators: arrayOf({ type: 'string' }, 'Operators valid for this field')
-          }), 'Available fields')
+        200: json('The criteria a cohort can be built from.', object({
+          fields: arrayOf(ref('Criterion'), 'Everything a member can be separated by')
         }), {
-          fields: [
-            { field: 'api_status', label: 'API status', type: 'enum', operators: ['eq', 'neq'] },
-            { field: 'engagement_streak', label: 'Engagement streak', type: 'number', operators: ['gte', 'lte', 'eq', 'gt', 'lt'] },
-            { field: 'company', label: 'Company', type: 'text', operators: ['eq', 'neq', 'contains'] }
-          ]
+          fields: [{
+            field: 'preferred_channels', label: 'Preferred channel', type: 'array', unit: null,
+            operators: ['eq', 'neq'],
+            values: [
+              { value: 'email', label: 'email' },
+              { value: 'whatsapp', label: 'whatsapp' },
+              { value: 'sms', label: 'sms' },
+              { value: 'calls', label: 'calls' },
+              { value: 'in_portal', label: 'in_portal' }
+            ],
+            empty: false, open: false
+          }]
         })
       }
     })

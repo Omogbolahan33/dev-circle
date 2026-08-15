@@ -11,27 +11,79 @@ const { parseJSON } = require('../utils/helpers');
 //
 // A rule is { field, op, value }.
 
-// Each field maps to a SQL expression over `u` plus the value type it expects.
+// Values a member can actually hold. Anything with a known set declares it
+// here, so a criterion is chosen from a list rather than typed from memory —
+// "suspended" spelled wrong silently matches nobody, which looks identical to
+// a segment that is genuinely empty.
+const CHANNELS = ['email', 'whatsapp', 'sms', 'calls', 'in_portal'];
+const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+// Values already present in the member base. Filtering by a value nobody holds
+// returns nothing, so the list is drawn from the data rather than guessed.
+const distinct = column => db => db.prepare(
+  `SELECT DISTINCT ${column} AS value FROM users
+   WHERE COALESCE(${column}, '') != '' ORDER BY value`
+).all().map(r => r.value);
+
+// Same, for the JSON array columns
+const distinctInArray = column => db => db.prepare(
+  `SELECT DISTINCT json_each.value AS value FROM users, json_each(users.${column})
+   WHERE COALESCE(json_each.value, '') != '' ORDER BY value`
+).all().map(r => r.value);
+
+// Free text a member typed. A dropdown of everything anyone has ever written
+// would be unusable, so these stay open and lean on "contains".
+const OPEN_TEXT = new Set(['company']);
+
+// Each field maps to a SQL expression over `u`, the value type it expects, and
+// where the values to choose from come from.
 const FIELDS = {
-  api_status:        { sql: 'u.api_status', type: 'text', label: 'API status' },
-  status:            { sql: 'u.status', type: 'text', label: 'Account status' },
-  work_sector:       { sql: 'u.work_sector', type: 'text', label: 'Work sector' },
-  company:           { sql: 'u.company', type: 'text', label: 'Company' },
-  location_state:    { sql: 'u.location_state', type: 'text', label: 'State' },
-  gender:            { sql: 'u.gender', type: 'text', label: 'Gender' },
-  kyb_completed:     { sql: 'u.kyb_completed', type: 'bool', label: 'KYB completed' },
+  api_status: {
+    sql: 'u.api_status', type: 'text', label: 'API status',
+    values: ['sandbox', 'production']
+  },
+  status: {
+    sql: 'u.status', type: 'text', label: 'Account status',
+    values: ['active', 'inactive', 'suspended']
+  },
+  work_sector: {
+    sql: 'u.work_sector', type: 'text', label: 'Work sector',
+    values: distinct('work_sector')
+  },
+  company: {
+    sql: 'u.company', type: 'text', label: 'Company'
+    // deliberately open: one per member, so a list would be as long as the base
+  },
+  location_state: {
+    sql: 'u.location_state', type: 'text', label: 'State',
+    values: distinct('location_state')
+  },
+  gender: {
+    sql: 'u.gender', type: 'text', label: 'Gender',
+    values: distinct('gender')
+  },
+  kyb_completed: { sql: 'u.kyb_completed', type: 'bool', label: 'KYB completed' },
   engagement_streak: { sql: 'u.engagement_streak', type: 'number', label: 'Engagement streak' },
 
   // JSON array columns — matched with json_each rather than LIKE so
   // "Mon" cannot accidentally match "Monday" or a value inside another field.
-  preferred_days:     { json: 'u.preferred_days', type: 'array', label: 'Available day' },
-  preferred_channels: { json: 'u.preferred_channels', type: 'array', label: 'Preferred channel' },
-  api_products:       { json: 'u.api_products', type: 'array', label: 'API product' },
+  preferred_days: {
+    json: 'u.preferred_days', type: 'array', label: 'Available day',
+    values: WEEKDAYS
+  },
+  preferred_channels: {
+    json: 'u.preferred_channels', type: 'array', label: 'Preferred channel',
+    values: CHANNELS
+  },
+  api_products: {
+    json: 'u.api_products', type: 'array', label: 'API product',
+    values: distinctInArray('api_products')
+  },
 
   // Derived values
   age: {
     sql: "CAST((julianday('now') - julianday(u.date_of_birth)) / 365.25 AS INTEGER)",
-    type: 'number', label: 'Age'
+    type: 'number', label: 'Age', unit: 'years'
   },
   surveys_completed: {
     sql: '(SELECT COUNT(*) FROM survey_responses sr WHERE sr.user_id = u.id AND sr.completed_at IS NOT NULL)',
@@ -47,25 +99,30 @@ const FIELDS = {
   },
   days_since_active: {
     sql: "CAST(julianday('now') - julianday(COALESCE(u.last_active_at, u.created_at)) AS INTEGER)",
-    type: 'number', label: 'Days since last active'
+    type: 'number', label: 'Days since last active', unit: 'days'
   },
   days_since_joined: {
     sql: "CAST(julianday('now') - julianday(u.created_at) AS INTEGER)",
-    type: 'number', label: 'Days since joined'
+    type: 'number', label: 'Days since joined', unit: 'days'
   },
   cohort_id: {
     type: 'membership', label: 'Member of cohort',
-    subquery: 'SELECT user_id FROM user_cohorts WHERE cohort_id = ?'
+    subquery: 'SELECT user_id FROM user_cohorts WHERE cohort_id = ?',
+    values: db => db.prepare('SELECT id AS value, name AS label FROM cohorts ORDER BY name').all()
   },
   circle_id: {
     type: 'membership', label: 'Member of circle',
-    subquery: 'SELECT user_id FROM circle_members WHERE circle_id = ?'
+    subquery: 'SELECT user_id FROM circle_members WHERE circle_id = ?',
+    values: db => db.prepare(
+      "SELECT id AS value, name AS label FROM circles WHERE status = 'active' ORDER BY is_root DESC, name"
+    ).all()
   },
   // Who may be contacted on a given channel — the separator that decides
   // whether a segment is reachable at all
   consent_channel: {
     type: 'membership', label: 'Consented to channel',
-    subquery: "SELECT user_id FROM consent WHERE channel = ? AND status = 'granted'"
+    subquery: "SELECT user_id FROM consent WHERE channel = ? AND status = 'granted'",
+    values: CHANNELS
   },
   has_phone: {
     sql: "CASE WHEN COALESCE(u.phone, '') = '' THEN 0 ELSE 1 END",
@@ -275,21 +332,57 @@ function syncAll() {
   return results;
 }
 
-// Field catalogue for the cohort builder UI
+// ─── Catalogue ──────────────────────────────────────────────
+// Everything a criteria builder needs to render itself: the fields, the
+// operators each accepts, and — the part that matters — the values to choose
+// between. Both the cohort builder and the export builder read this, so a
+// value list cannot be right on one screen and wrong on the other, and adding
+// a field makes it appear on both.
+
+function operatorsFor(field) {
+  if (field.type === 'number') return ['gte', 'lte', 'eq', 'gt', 'lt'];
+  // Open text is the only place "contains" earns its keep; on a field with a
+  // fixed set it just invites a typo that matches nothing.
+  if (field.type === 'text') {
+    return field.values ? ['eq', 'neq'] : ['eq', 'neq', 'contains'];
+  }
+  return ['eq', 'neq'];
+}
+
+// Normalise every value source to { value, label } so the UI has one shape to
+// render, whether it came from a constant, a distinct query, or a join table.
+function resolveValues(field) {
+  if (field.type === 'bool') {
+    return [{ value: 'yes', label: 'Yes' }, { value: 'no', label: 'No' }];
+  }
+  if (!field.values) return null;
+
+  const raw = typeof field.values === 'function' ? field.values(db) : field.values;
+  return raw
+    .filter(v => v !== null && v !== undefined && v !== '')
+    .map(v => (typeof v === 'object'
+      ? { value: String(v.value), label: String(v.label ?? v.value) }
+      : { value: String(v), label: String(v) }));
+}
+
 function catalogue() {
-  return Object.entries(FIELDS).map(([key, f]) => ({
-    field: key,
-    label: f.label,
-    type: f.type,
-    operators: f.type === 'number'
-      ? ['gte', 'lte', 'eq', 'gt', 'lt']
-      : f.type === 'text'
-        ? ['eq', 'neq', 'contains']
-        : ['eq', 'neq'],
-    // Membership values are ids the UI has to look up, so it needs to know
-    // which list to offer
-    lookup: f.type === 'membership' ? key.replace(/_id$/, '') : null
-  }));
+  return Object.entries(FIELDS).map(([key, field]) => {
+    const values = resolveValues(field);
+    return {
+      field: key,
+      label: field.label,
+      type: field.type,
+      unit: field.unit || null,
+      operators: operatorsFor(field),
+      // Present means "offer exactly these"; null means free entry
+      values,
+      // A field with a known set that happens to be empty is still a choice
+      // field — the base simply has no values yet, and typing one would match
+      // nobody. The UI says so rather than showing an empty dropdown.
+      empty: Boolean(field.values) && values !== null && values.length === 0,
+      open: OPEN_TEXT.has(key)
+    };
+  });
 }
 
 module.exports = { evaluate, sync, syncAll, buildQuery, catalogue, normalizeDefinition, FIELDS, RuleError };

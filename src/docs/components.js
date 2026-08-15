@@ -184,6 +184,37 @@ const schemas = {
     created_at: timestamp('When it was created')
   }, { description: 'A saved segment of members — either a hand-picked list or a rule set that keeps itself current.' }),
 
+  Criterion: object({
+    field: str('Use this as `field` in a rule', { example: 'status' }),
+    label: str('Human name for the criterion', { example: 'Account status' }),
+    type: str('What kind of value it takes', {
+      enum: ['text', 'number', 'bool', 'array', 'membership'], example: 'text'
+    }),
+    unit: str('What a number counts, where that is not obvious', { nullable: true, example: 'years' }),
+    operators: arrayOf({ type: 'string' }, 'Comparisons this criterion accepts'),
+    values: {
+      nullable: true,
+      type: 'array',
+      description:
+        'The values to choose between. Present means offer exactly these — either a ' +
+        'fixed set from the domain, or the values members actually hold. Null means ' +
+        'free entry, which only applies to numbers and genuinely open text.',
+      items: {
+        type: 'object',
+        properties: {
+          value: { type: 'string', description: 'What to send as the rule value' },
+          label: { type: 'string', description: 'What to show the operator' }
+        }
+      }
+    },
+    empty: bool('The criterion has a known value set, but no member holds one yet'),
+    open: bool('Free text by design — a list would be as long as the member base')
+  }, {
+    description:
+      'One way of separating members, and the values to separate them by. ' +
+      'A criteria builder renders directly from this.'
+  }),
+
   FilterRules: object({
     match: str('Whether every condition must hold or any one of them', { enum: ['all', 'any'], example: 'all' }),
     conditions: arrayOf(object({

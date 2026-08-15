@@ -393,26 +393,13 @@ function chosenColumns(requested) {
 }
 
 // GET /api/admin/export/fields
-// What an export can be filtered and sliced by, with the values the UI needs to
-// offer for anything that references another record.
+// What an export can be filtered and sliced by. Each criterion carries the
+// values to choose between, resolved from the domain or from the member base,
+// so the filter builder never has to hold its own copy of a value list.
 router.get('/export/fields', requirePermission('export.read'), (req, res) => {
   res.json({
     criteria: cohortRules.catalogue(),
-    columns: EXPORT_COLUMNS,
-    lookups: {
-      cohort: db.prepare('SELECT id, name FROM cohorts ORDER BY name').all(),
-      circle: db.prepare("SELECT id, name FROM circles WHERE status = 'active' ORDER BY is_root DESC, name").all(),
-      consent_channel: ['email', 'whatsapp', 'sms', 'calls', 'in_portal'],
-      work_sector: db.prepare(
-        "SELECT DISTINCT work_sector as value FROM users WHERE COALESCE(work_sector,'') != '' ORDER BY value"
-      ).all().map(r => r.value),
-      location_state: db.prepare(
-        "SELECT DISTINCT location_state as value FROM users WHERE COALESCE(location_state,'') != '' ORDER BY value"
-      ).all().map(r => r.value),
-      api_products: db.prepare(
-        'SELECT DISTINCT json_each.value as value FROM users, json_each(users.api_products) ORDER BY value'
-      ).all().map(r => r.value)
-    }
+    columns: EXPORT_COLUMNS
   });
 });
 
