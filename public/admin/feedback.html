@@ -57,6 +57,7 @@
       <div class="toolbar">
         <button class="chip active" data-source="">Every source</button>
         <button class="chip" data-source="dev_circle">Dev Circle</button>
+        <button class="chip" data-source="survey">Surveys</button>
         <button class="chip" data-source="feex">Feex</button>
         <span class="result-count" id="count"></span>
       </div>
@@ -97,6 +98,12 @@
       This complaint belongs to Feex. Its status is mirrored here for engagement
       tracking and has to be updated in Feex itself.
     </p>
+
+    <p class="hint hide" id="dSurveyNote">
+      This is what the member wrote in a survey — a record of what they said at
+      that moment, kept alongside the rest of their feedback so it can be found.
+      There is nothing to work through on it.
+    </p>
   </div>
   <div class="drawer-foot">
     <button class="btn btn-secondary" onclick="Shell.closeDrawer('fbDrawer')">Close</button>
@@ -112,6 +119,11 @@
   let items = [];
   let statusFilter = '';
   let sourceFilter = '';
+
+  const SOURCE_LABELS = {
+    dev_circle: 'Dev Circle', survey: 'Survey answer',
+    feex: 'Feex', customer_io: 'Customer.io'
+  };
   let open = null;         // The feedback currently in the drawer
 
   async function load() {
@@ -153,7 +165,8 @@
     }
 
     list.innerHTML = items.map(f => `
-      <article class="fb-item ${f.source === 'feex' ? 'feex' : ''}" onclick="openItem('${f.id}')">
+      <article class="fb-item ${f.source}" onclick="openItem('${f.id}')">
+        ${f.prompt ? `<p class="fb-prompt">${escapeHtml(f.prompt)}</p>` : ''}
         <p class="fb-quote">${escapeHtml(f.content.length > 240 ? f.content.slice(0, 240) + '…' : f.content)}</p>
         <div class="fb-meta">
           <span class="who">${escapeHtml(f.user_name)}</span>
@@ -162,7 +175,8 @@
           ${f.rating ? `<span class="rating">${'★'.repeat(f.rating)}${'☆'.repeat(5 - f.rating)}</span>` : ''}
           <span>${formatDate(f.created_at)}</span>
           ${f.source === 'feex' ? `<span>via Feex${f.external_ticket_id ? ' · ' + escapeHtml(f.external_ticket_id) : ''}</span>` : ''}
-          ${badge(f.status, f.status === 'open' ? 'warn' : f.status === 'resolved' ? 'active' : 'inactive')}
+          ${f.source === 'survey' ? `<span>via ${escapeHtml(f.survey_title || 'a survey')}</span>` : ''}
+          ${f.source === 'survey' ? '' : badge(f.status, f.status === 'open' ? 'warn' : f.status === 'resolved' ? 'active' : 'inactive')}
         </div>
       </article>`).join('');
   }
@@ -177,17 +191,22 @@
     document.getElementById('dContent').textContent = open.content;
 
     document.getElementById('dFacts').innerHTML = `
-      <div class="kv-row"><span class="kv-key">Source</span><span class="kv-val">${open.source === 'feex' ? 'Feex' : 'Dev Circle'}</span></div>
+      <div class="kv-row"><span class="kv-key">Source</span><span class="kv-val">${SOURCE_LABELS[open.source] || open.source}</span></div>
+      ${open.prompt ? `<div class="kv-row"><span class="kv-key">Question</span><span class="kv-val">${escapeHtml(open.prompt)}</span></div>` : ''}
+      ${open.survey_title ? `<div class="kv-row"><span class="kv-key">Survey</span><span class="kv-val">${escapeHtml(open.survey_title)}</span></div>` : ''}
       <div class="kv-row"><span class="kv-key">Type</span><span class="kv-val">${escapeHtml((open.type || '').replace(/_/g, ' '))}</span></div>
       ${open.rating ? `<div class="kv-row"><span class="kv-key">Rating</span><span class="kv-val">${open.rating} / 5</span></div>` : ''}
       ${open.external_ticket_id ? `<div class="kv-row"><span class="kv-key">Ticket</span><span class="kv-val mono">${escapeHtml(open.external_ticket_id)}</span></div>` : ''}
       <div class="kv-row"><span class="kv-key">Email</span><span class="kv-val">${escapeHtml(open.user_email)}</span></div>`;
 
-    // Feex owns its own complaints — triage is read-only for those.
+    // Feex owns its complaints, and a survey answer is a record rather than an
+    // item to work through — neither has a triage state to advance here.
     const isFeex = open.source === 'feex';
-    document.getElementById('dTriage').classList.toggle('hide', isFeex);
+    const readOnly = isFeex || open.source === 'survey';
+    document.getElementById('dTriage').classList.toggle('hide', readOnly);
     document.getElementById('dFeexNote').classList.toggle('hide', !isFeex);
-    document.getElementById('dSave').classList.toggle('hide', isFeex);
+    document.getElementById('dSurveyNote').classList.toggle('hide', open.source !== 'survey');
+    document.getElementById('dSave').classList.toggle('hide', readOnly);
 
     document.querySelectorAll('#dStatus button').forEach(b =>
       b.classList.toggle('active', b.dataset.status === open.status));

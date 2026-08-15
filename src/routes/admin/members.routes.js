@@ -9,6 +9,7 @@ const { memberFilters } = require('../../services/audience');
 const engagement = require('../../services/engagement');
 const cohortRules = require('../../services/cohortRules');
 const circles = require('../../services/circles');
+const verbatims = require('../../services/verbatims');
 
 const router = express.Router();
 
@@ -75,9 +76,9 @@ router.get('/members/:id', requirePermission('members.read'), (req, res) => {
     engagement: db.prepare(
       'SELECT * FROM engagement_history WHERE user_id = ? ORDER BY created_at DESC LIMIT 50'
     ).all(user.id),
-    feedback: db.prepare(
-      'SELECT * FROM feedback WHERE user_id = ? ORDER BY created_at DESC LIMIT 20'
-    ).all(user.id),
+    // Everything this member has told us, whatever the source and whichever
+    // question drew it out — the single list this change exists to make possible
+    feedback: verbatims.forUser(user.id, { limit: 50 }),
     survey_responses: db.prepare(`
       SELECT sr.*, s.title as survey_title
       FROM survey_responses sr JOIN surveys s ON s.id = sr.survey_id

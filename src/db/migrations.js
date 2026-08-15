@@ -462,6 +462,125 @@ function define(db) {
           update.run(JSON.stringify([...role.permissions, ...missing]), role.id);
         }
       }
+    },
+    {
+      id: 20,
+      name: 'survey_verbatims_as_feedback',
+      up() {
+        // What a developer writes in a survey's free-text box is feedback in
+        // every sense except where it was stored: inside survey_responses.answers
+        // as JSON keyed by question id, reachable only by opening that one
+        // survey. It was the largest source of what developers tell us and the
+        // only one you could not search, so "everything this developer has said"
+        // meant reading three places.
+        //
+        // This widens feedback to hold them, and backfills the ones already
+        // collected. Nothing is interpreted or grouped — they are simply filed
+        // where the rest of the feedback lives, keyed to the member and stamped
+        // with where they came from.
+
+        db.exec(`
+          CREATE TABLE feedback_new (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            type TEXT DEFAULT 'self_initiated' CHECK(type IN (
+              'self_initiated','system_triggered','feex_complaint','survey_response'
+            )),
+            content TEXT NOT NULL,
+            category TEXT,
+            rating INTEGER,
+            status TEXT DEFAULT 'open' CHECK(status IN ('open','reviewed','resolved')),
+            source TEXT DEFAULT 'dev_circle' CHECK(source IN (
+              'dev_circle','feex','customer_io','survey'
+            )),
+            external_ticket_id TEXT,
+            survey_id TEXT REFERENCES surveys(id),
+            -- Which question drew this out, and what it asked. Without the
+            -- prompt a verbatim like "about a week" means nothing on its own.
+            question_id TEXT,
+            prompt TEXT,
+            created_at TEXT DEFAULT (datetime('now')),
+            resolved_at TEXT,
+            feex_status TEXT,
+            feex_priority TEXT,
+            feex_url TEXT,
+            feex_updated_at TEXT
+          );
+
+          INSERT INTO feedback_new (
+            id, user_id, type, content, category, rating, status, source,
+            external_ticket_id, survey_id, created_at, resolved_at,
+            feex_status, feex_priority, feex_url, feex_updated_at
+          )
+          SELECT id, user_id, type, content, category, rating, status, source,
+                 external_ticket_id, survey_id, created_at, resolved_at,
+                 feex_status, feex_priority, feex_url, feex_updated_at
+          FROM feedback;
+
+          DROP TABLE feedback;
+          ALTER TABLE feedback_new RENAME TO feedback;
+
+          CREATE INDEX IF NOT EXISTS idx_feedback_user ON feedback(user_id);
+          CREATE INDEX IF NOT EXISTS idx_feedback_status ON feedback(status);
+          CREATE INDEX IF NOT EXISTS idx_feedback_source ON feedback(source);
+          CREATE INDEX IF NOT EXISTS idx_feedback_ticket ON feedback(external_ticket_id);
+
+          -- One row per member per question. Makes the backfill re-runnable and
+          -- stops a resubmitted response filing the same sentence twice.
+          CREATE UNIQUE INDEX IF NOT EXISTS idx_feedback_verbatim
+            ON feedback(user_id, survey_id, question_id)
+            WHERE question_id IS NOT NULL;
+        `);
+
+        // ─── Backfill ───────────────────────────────────────
+        // Deliberately self-contained rather than calling the service that does
+        // this at runtime: a migration has to keep behaving the way it did the
+        // day it ran, and service code is free to change.
+
+        const responses = db.prepare(`
+          SELECT sr.id, sr.user_id, sr.survey_id, sr.answers, sr.completed_at,
+                 s.questions, s.title
+          FROM survey_responses sr
+          JOIN surveys s ON s.id = sr.survey_id
+          WHERE sr.completed_at IS NOT NULL
+        `).all();
+
+        const insert = db.prepare(`
+          INSERT OR IGNORE INTO feedback (
+            id, user_id, type, content, category, status, source,
+            survey_id, question_id, prompt, created_at
+          ) VALUES (?, ?, 'survey_response', ?, ?, 'open', 'survey', ?, ?, ?, ?)
+        `);
+
+        let filed = 0;
+
+        for (const response of responses) {
+          let answers, questions;
+          try {
+            answers = JSON.parse(response.answers || '{}');
+            questions = JSON.parse(response.questions || '[]');
+          } catch { continue; }
+
+          for (const question of questions) {
+            // Only free text is a verbatim. A rating or a picked option is a
+            // measurement — it belongs in the survey's own results, and filing
+            // it here would bury the sentences under the numbers.
+            if (question.type !== 'text') continue;
+
+            const answer = answers[question.id];
+            if (typeof answer !== 'string' || !answer.trim()) continue;
+
+            insert.run(
+              crypto.randomUUID(), response.user_id, answer.trim(),
+              response.title || null, response.survey_id, question.id,
+              question.text || null, response.completed_at
+            );
+            filed++;
+          }
+        }
+
+        if (filed) console.log(`  backfilled ${filed} survey verbatim(s) into feedback`);
+      }
     }
   ];
   return migrations;

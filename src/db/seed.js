@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const config = require('../config');
 const { NO_PASSWORD, normalizePhone } = require('../utils/identity');
 const { generateApiKey, hashApiKey } = require('../middleware/auth');
+const verbatims = require('../services/verbatims');
 
 function uuid() { return crypto.randomUUID(); }
 
@@ -329,6 +330,21 @@ const responseStmt = db.prepare(`
   VALUES (?, ?, ?, ?, datetime('now', ?), ?)
 `);
 
+// Written answers, so the verbatims a survey collects read like things a
+// person actually typed rather than "Sample feedback text" repeated 30 times
+const VERBATIMS = [
+  'The webhook retry intervals are documented as "every few minutes" — I need the actual schedule to build idempotency properly.',
+  'Sandbox rate limits are far tighter than production, so load testing tells me nothing useful.',
+  'KYB took eight days and the status page never moved. I only found out we were approved by trying a call.',
+  'Error bodies say "unauthorized" whether the key is wrong, expired, or lacks a scope. Three very different fixes.',
+  'The Postman collection is a version behind the docs. Lost half a day to that.',
+  'Honestly the onboarding was the smoothest of any Nigerian provider we have integrated.',
+  'Would like a way to rotate keys without downtime — right now it is a hard cutover.',
+  'Transfer status webhooks arrive before the GET reflects the same state, so we poll anyway.',
+  'Docs assume Node. Our stack is Go and the examples do not translate cleanly.',
+  'Support answered in under two hours on a production issue. That is why we stayed.'
+];
+
 let responseCount = 0;
 for (const dev of developers) {
   for (const survey of surveys) {
@@ -337,17 +353,30 @@ for (const dev of developers) {
       for (const q of survey.questions) {
         if (q.type === 'rating') answers[q.id] = Math.ceil(Math.random() * 5);
         else if (q.type === 'choice') answers[q.id] = q.options[Math.floor(Math.random() * q.options.length)];
-        else if (q.type === 'text' && Math.random() > 0.5) answers[q.id] = 'Sample feedback text';
+        else if (q.type === 'text' && Math.random() > 0.4) {
+          answers[q.id] = VERBATIMS[Math.floor(Math.random() * VERBATIMS.length)];
+        }
       }
+
+      const completedDaysAgo = Math.floor(Math.random() * 30);
       responseStmt.run(
         uuid(), survey.id, dev._id, JSON.stringify(answers),
-        `-${Math.floor(Math.random() * 30)} days`, 'manual'
+        `-${completedDaysAgo} days`, 'manual'
       );
+
+      // Free-text answers are filed with the rest of the member's feedback,
+      // the same way a live submission does it
+      verbatims.record(dev._id, survey, answers, {
+        at: new Date(Date.now() - completedDaysAgo * 86400000).toISOString().slice(0, 19).replace('T', ' ')
+      });
+
       responseCount++;
     }
   }
 }
-console.log(`✓ ${responseCount} survey responses created`);
+
+const verbatimCount = db.prepare("SELECT COUNT(*) c FROM feedback WHERE source = 'survey'").get().c;
+console.log(`✓ ${responseCount} survey responses created (${verbatimCount} verbatims filed as feedback)`);
 
 // ─── Engagement History ─────────────────────────────────────
 const ehStmt = db.prepare(`

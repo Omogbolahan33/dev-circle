@@ -336,20 +336,35 @@ const schemas = {
     user_id: id('Member who raised it'),
     user_name: str('Convenience label'),
     user_email: str('Convenience label', { format: 'email' }),
-    type: str('Where it came from', { enum: ['self_initiated', 'system_triggered', 'feex_complaint'] }),
+    type: str('What kind of thing was said', {
+      enum: ['self_initiated', 'system_triggered', 'feex_complaint', 'survey_response']
+    }),
     content: str('The feedback itself', { example: 'The sandbox disbursement callback fires twice for a single request.' }),
     category: str('What it is about', { enum: FEEDBACK_CATEGORIES, nullable: true }),
     rating: int('Satisfaction, 1–5', { nullable: true, minimum: 1, maximum: 5, example: 3 }),
     status: str('Triage state — how far the engagement team has read it', { enum: ['open', 'reviewed', 'resolved'] }),
-    source: str('System it arrived from', { enum: ['dev_circle', 'feex', 'customer_io'] }),
+    source: str('Where it came from', { enum: ['dev_circle', 'feex', 'customer_io', 'survey'] }),
     external_ticket_id: str('Feex ticket id, for mirrored complaints', { nullable: true }),
     feex_status: str('Ticket state as Feex last reported it', { nullable: true }),
     feex_priority: str('Ticket priority in Feex', { nullable: true }),
     feex_url: str('Deep link into Feex', { nullable: true, format: 'uri' }),
     survey_id: { ...id('Survey that prompted this feedback'), nullable: true },
+    question_id: str('Which question drew it out, for survey answers', { nullable: true, example: 'q3' }),
+    prompt: str('The question as it was asked. Without it a short answer means nothing on its own.', {
+      nullable: true, example: 'What could we improve about the onboarding?'
+    }),
+    survey_title: str('Survey the answer came from', { nullable: true, example: 'Onboarding experience' }),
     created_at: timestamp('When it was raised'),
     resolved_at: timestamp('When triage closed it')
-  }, { description: 'Feedback raised by a member, or a support ticket mirrored from Feex. Feex owns its tickets; Dev Circle only reflects their state.' }),
+  }, {
+    description:
+      'Something a member told us, whatever prompted it: written unprompted in Dev Circle, ' +
+      'answered in a survey, or raised through Feex. All three are filed here so that ' +
+      'everything one member has said is a single query.\n\n' +
+      'Survey answers carry the question that drew them out and cannot be triaged — they ' +
+      'are a record of what was said, not an item to work through. Feex owns its tickets; ' +
+      'Dev Circle only reflects their state.'
+  }),
 
   // ── Messaging ──
   Notification: object({

@@ -4,6 +4,7 @@ const { uuid, parseJSON, sanitizeUser } = require('../utils/helpers');
 const identity = require('../utils/identity');
 const { requireAuth } = require('../middleware/auth');
 const engagement = require('../services/engagement');
+const verbatims = require('../services/verbatims');
 const notifications = require('../services/notifications');
 const circles = require('../services/circles');
 const scheduler = require('../services/scheduler');
@@ -598,9 +599,13 @@ router.post('/surveys/:id/respond', requireAuth, (req, res) => {
     WHERE id = ?
   `).run(JSON.stringify(answers), response.id);
 
+  // Free-text answers are feedback, so they are filed with the rest of it
+  // rather than left inside this one response's JSON where nobody can find them
+  const { filed } = verbatims.record(req.user.id, survey, answers);
+
   const { streak } = engagement.record(req.user.id, 'survey_completed', {
     referenceId: survey.id,
-    metadata: { survey_title: survey.title }
+    metadata: { survey_title: survey.title, verbatims: filed }
   });
 
   // Any pending reminder for this survey is now moot

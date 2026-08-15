@@ -1515,3 +1515,13 @@ textarea.input { min-height: 90px; line-height: var(--lh-normal); }
   .criterion-field, .criterion-value { flex: 1 1 100%; }
   .criterion-op { flex: 1 1 auto; width: auto; }
 }
+
+/* The question a verbatim answered. Without it, "about a week" says nothing —
+   so it sits above the quote, quieter than the words the member chose. */
+.fb-prompt {
+  font-size: var(--fs-xs);
+  color: var(--ash-dim);
+  margin-bottom: var(--sp-1);
+}
+.fb-item.survey { border-left: 2px solid var(--cd-blue-40, var(--cd-blue)); }
+.quote-prompt { font-size: var(--fs-xs); color: var(--ash-dim); margin-bottom: 2px; }
