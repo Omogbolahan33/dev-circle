@@ -1,5 +1,6 @@
 const express = require('express');
 const { requireAuth, requireAdmin } = require('../../middleware/auth');
+const { circleContext } = require('../../middleware/circleContext');
 
 // ─── Admin API ──────────────────────────────────────────────
 // Authentication and admin status are the floor, applied once here. Each
@@ -8,7 +9,9 @@ const { requireAuth, requireAdmin } = require('../../middleware/auth');
 
 const router = express.Router();
 
-router.use(requireAuth, requireAdmin);
+// Authentication, admin status, then the circle being worked in — which is
+// what decides both the data in scope and the permissions that apply.
+router.use(requireAuth, requireAdmin, circleContext);
 
 // Circles, sessions and the API reference mount first: their paths would
 // otherwise be caught by the parameterised routes in the resource routers below.

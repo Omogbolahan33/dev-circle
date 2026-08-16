@@ -101,21 +101,14 @@ const GROUPINGS = {
   }
 };
 
-// Cohort and circle are facets rather than columns: a developer belongs to
-// several at once, so one answer legitimately appears under more than one
-// group. That is correct here — it is a lens, not a partition.
+// Cohort is a facet rather than a column: a developer belongs to several at
+// once, so one answer legitimately appears under more than one group.
 const MEMBERSHIP_GROUPINGS = {
   cohort: {
     label: 'Cohort',
     describe: 'What a segment is telling us',
     table: 'user_cohorts', column: 'cohort_id', names: 'cohorts',
     filter: 'cohort_id'
-  },
-  circle: {
-    label: 'Circle',
-    describe: 'What one circle is telling us',
-    table: 'circle_members', column: 'circle_id', names: 'circles',
-    filter: 'circle_id'
   }
 };
 
@@ -134,6 +127,10 @@ function axes() {
 function conditions(query = {}) {
   const where = ['1=1'];
   const params = [];
+
+  // Scoped to one workspace. A developer in two circles has what they said in
+  // one stay there — the same person, two separate bodies of evidence.
+  if (query.circle_id) { where.push('f.circle_id = ?'); params.push(query.circle_id); }
 
   const direct = {
     status: 'f.status', source: 'f.source', source_system: 'f.source_system',
@@ -164,11 +161,6 @@ function conditions(query = {}) {
     where.push('f.user_id IN (SELECT user_id FROM user_cohorts WHERE cohort_id = ?)');
     params.push(query.cohort_id);
   }
-  if (query.circle_id) {
-    where.push('f.user_id IN (SELECT user_id FROM circle_members WHERE circle_id = ?)');
-    params.push(query.circle_id);
-  }
-
   return { where: where.join(' AND '), params };
 }
 

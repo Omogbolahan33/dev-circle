@@ -20,8 +20,8 @@ const VERBATIM_TYPES = new Set(['text']);
 const insert = () => db.prepare(`
   INSERT OR IGNORE INTO feedback (
     id, user_id, type, content, category, status, source,
-    survey_id, question_id, canonical_question_id, prompt, created_at
-  ) VALUES (?, ?, 'survey_response', ?, ?, 'open', 'survey', ?, ?, ?, ?, COALESCE(?, datetime('now')))
+    survey_id, question_id, canonical_question_id, prompt, circle_id, created_at
+  ) VALUES (?, ?, 'survey_response', ?, ?, 'open', 'survey', ?, ?, ?, ?, ?, COALESCE(?, datetime('now')))
 `);
 
 // Pull the free-text answers out of one completed response.
@@ -61,6 +61,13 @@ function record(userId, survey, answers, { at = null } = {}) {
   const verbatims = extract(survey, answers);
   if (!verbatims.length) return { filed: 0, verbatims: [] };
 
+  // A verbatim belongs to the circle whose survey drew it out. If the survey
+  // carries none, fall back to the member's own — evidence filed against no
+  // workspace would be invisible everywhere, which is worse than approximate.
+  const circleId = survey.circle_id || db.prepare(
+    'SELECT circle_id FROM circle_members WHERE user_id = ? ORDER BY added_at LIMIT 1'
+  ).get(userId)?.circle_id || null;
+
   const write = db.transaction(rows => {
     let filed = 0;
     for (const row of rows) {
@@ -68,7 +75,8 @@ function record(userId, survey, answers, { at = null } = {}) {
       // us, and it is what makes a list of verbatims readable at a glance.
       const result = insert().run(
         uuid(), userId, row.content, survey.title || null,
-        survey.id, row.question_id, row.canonical_question_id, row.prompt, at
+        survey.id, row.question_id, row.canonical_question_id, row.prompt,
+        circleId, at
       );
       filed += result.changes;
     }

@@ -6,6 +6,9 @@ const { toCSV } = require('../../utils/helpers');
 const { buildXLSX } = require('../../utils/xlsx');
 const views = require('../../services/feedbackViews');
 
+// Every read is bounded by the circle being worked in
+const scoped = req => ({ ...req.query, circle_id: req.circleId });
+
 const router = express.Router();
 
 // ─── Feedback (Admin view) ──────────────────────────────────
@@ -59,7 +62,7 @@ router.get('/feedback/axes', requirePermission('feedback.read'), (req, res) => {
 // "what did the Lending cohort say about onboarding, by developer" is one call.
 router.get('/feedback/grouped', requirePermission('feedback.read'), (req, res) => {
   const axis = req.query.group_by || 'question';
-  const groups = views.group(axis, req.query);
+  const groups = views.group(axis, scoped(req));
 
   if (!groups) {
     return res.status(400).json({
@@ -72,15 +75,15 @@ router.get('/feedback/grouped', requirePermission('feedback.read'), (req, res) =
     group_by: axis,
     axis: views.axes().find(a => a.key === axis),
     groups,
-    totals: views.summarise(req.query)
+    totals: views.summarise(scoped(req))
   });
 });
 
 // GET /api/admin/feedback/items — the verbatims themselves, however filtered
 router.get('/feedback/items', requirePermission('feedback.read'), (req, res) => {
   res.json({
-    items: views.items(req.query, { limit: Math.min(500, parseInt(req.query.limit, 10) || 200) }),
-    totals: views.summarise(req.query)
+    items: views.items(scoped(req), { limit: Math.min(500, parseInt(scoped(req).limit, 10) || 200) }),
+    totals: views.summarise(scoped(req))
   });
 });
 
@@ -117,7 +120,7 @@ function selectFeedback(query) {
 // GET /api/admin/feedback/export?format=csv|xlsx|json
 router.get('/feedback/export', requirePermission('export.read'), (req, res) => {
   const format = (req.query.format || 'csv').toLowerCase();
-  const rows = selectFeedback(req.query);
+  const rows = selectFeedback(scoped(req));
 
   const stamp = new Date().toISOString().slice(0, 10);
   const name = `devcircle-feedback-${stamp}`;
@@ -143,12 +146,12 @@ router.get('/feedback/export', requirePermission('export.read'), (req, res) => {
     // same reason to want them on their own tab.
     const axis = req.query.group_by;
     if (axis && views.axes().some(a => a.key === axis)) {
-      const groups = views.group(axis, req.query) || [];
+      const groups = views.group(axis, scoped(req)) || [];
       const filterKey = views.axes().find(a => a.key === axis).filter;
 
       const sheets = groups.slice(0, 40).map(g => ({
         name: String(g.label || 'Unlabelled').slice(0, 31),
-        rows: asRows(selectFeedback({ ...req.query, [filterKey]: g.key }))
+        rows: asRows(selectFeedback({ ...scoped(req), [filterKey]: g.key }))
       }));
 
       // A contents tab first, so a 20-sheet workbook is navigable
@@ -177,7 +180,7 @@ router.get('/feedback/export', requirePermission('export.read'), (req, res) => {
 
 // GET /api/admin/feedback/export/count — size it before downloading
 router.get('/feedback/export/count', requirePermission('export.read'), (req, res) => {
-  const rows = selectFeedback(req.query);
+  const rows = selectFeedback(scoped(req));
   res.json({
     total: rows.length,
     developers: new Set(rows.map(r => r.email)).size,

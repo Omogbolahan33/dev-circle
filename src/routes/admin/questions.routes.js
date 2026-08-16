@@ -13,7 +13,7 @@ const router = express.Router();
 
 // GET /api/admin/questions
 router.get('/questions', requirePermission('feedback.read'), (req, res) => {
-  const catalogue = questions.catalogue({ search: req.query.search || null });
+  const catalogue = questions.catalogue({ search: req.query.search || null, circleId: req.circleId });
 
   res.json({
     questions: catalogue,
@@ -24,8 +24,8 @@ router.get('/questions', requirePermission('feedback.read'), (req, res) => {
       questions: catalogue.length,
       developers: db.prepare(`
         SELECT COUNT(DISTINCT user_id) as c FROM feedback
-        WHERE source IN ('survey', 'external_survey')
-      `).get().c,
+        WHERE source IN ('survey', 'external_survey') AND circle_id = ?
+      `).get(req.circleId).c,
       answers: catalogue.reduce((sum, q) => sum + q.answer_count, 0)
     }
   });

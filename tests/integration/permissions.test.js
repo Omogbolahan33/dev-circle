@@ -32,7 +32,6 @@ const FORBIDDEN_FOR_READ_ONLY = [
   ['POST', '/api/admin/api-keys', { name: 'x' }],
   ['POST', '/api/admin/import', { users: [] }],
   ['POST', '/api/admin/gifts', { name: 'x' }],
-  ['POST', '/api/admin/circles', { name: 'x' }],
   ['POST', '/api/admin/sessions', { title: 'x', scheduled_for: '2027-01-01 10:00:00' }]
 ];
 

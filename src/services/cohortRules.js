@@ -114,7 +114,7 @@ const FIELDS = {
     type: 'membership', label: 'Member of circle',
     subquery: 'SELECT user_id FROM circle_members WHERE circle_id = ?',
     values: db => db.prepare(
-      "SELECT id AS value, name AS label FROM circles WHERE status = 'active' ORDER BY is_root DESC, name"
+      "SELECT id AS value, name AS label FROM circles WHERE status = 'active' ORDER BY created_at"
     ).all()
   },
   // Who may be contacted on a given channel — the separator that decides
@@ -278,14 +278,8 @@ function sync(cohortId) {
   if (!cohort) throw new RuleError('Cohort not found');
   if (!cohort.filter_rules) return { added: 0, removed: 0, total: 0, rule_based: false };
 
-  // Root-circle cohorts draw from everyone; a sub-circle's cohorts draw only
-  // from that circle.
-  const root = db.prepare('SELECT id FROM circles WHERE is_root = 1').get();
-  const scopeCircleId = cohort.circle_id && root && cohort.circle_id !== root.id
-    ? cohort.circle_id
-    : null;
-
-  const { where, params } = buildQuery(cohort.filter_rules, { circleId: scopeCircleId });
+  // A cohort slices the members of the circle it belongs to, never beyond it
+  const { where, params } = buildQuery(cohort.filter_rules, { circleId: cohort.circle_id });
   const matching = db.prepare(`SELECT u.id FROM users u WHERE ${where}`).all(...params).map(r => r.id);
   const matchingSet = new Set(matching);
 

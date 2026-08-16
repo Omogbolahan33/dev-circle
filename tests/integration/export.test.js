@@ -74,8 +74,8 @@ test('circle membership separates members', async () => {
   const outside = h.makeUser();
 
   const circleId = h.uuid();
-  h.db.prepare("INSERT INTO circles (id, name, slug, parent_id) VALUES (?, 'Lending', 'lending', ?)")
-    .run(circleId, rootCircle);
+  h.db.prepare("INSERT INTO circles (id, name, slug) VALUES (?, 'Merchant Circle', 'merchant')")
+    .run(circleId);
   h.db.prepare('INSERT INTO circle_members (circle_id, user_id) VALUES (?, ?)').run(circleId, inside.id);
 
   assert.equal(await count({ rules: [{ field: 'circle_id', op: 'eq', value: circleId }] }), 1);

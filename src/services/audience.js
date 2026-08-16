@@ -8,11 +8,11 @@ const cohortRules = require('./cohortRules');
 // per route — a divergence between them would mean a survey and its reminder
 // reaching different people.
 
-// Membership of a sub-circle bounds every audience derived from its work.
-// Root-circle work reaches everyone, so it needs no extra restriction.
+// A circle is a workspace, so its work reaches its members and nobody else.
+// This used to treat the root circle as "no restriction", which meant Dev
+// Circle silently meant everyone — a leak between workspaces by construction.
 function circleScope(circleId) {
-  const root = db.prepare('SELECT id FROM circles WHERE is_root = 1').get();
-  if (!circleId || !root || circleId === root.id) return { clause: '', params: [] };
+  if (!circleId) return { clause: '', params: [] };
   return {
     clause: 'AND u.id IN (SELECT user_id FROM circle_members WHERE circle_id = ?)',
     params: [circleId]

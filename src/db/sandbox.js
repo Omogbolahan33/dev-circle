@@ -74,10 +74,10 @@ function meta(database, key, value) {
 const uuid = () => crypto.randomUUID();
 
 function seed(database) {
-  // Migrating a fresh database already creates the root circle, so the seed
-  // adopts it rather than inserting a second one and colliding on the slug.
-  const existingRoot = database.prepare('SELECT id FROM circles WHERE is_root = 1').get();
-  const rootId = existingRoot ? existingRoot.id : uuid();
+  // A sandbox is one workspace. If migrating produced a circle already, the
+  // seed adopts it rather than inserting a second and colliding on the slug.
+  const existingCircle = database.prepare('SELECT id FROM circles ORDER BY created_at LIMIT 1').get();
+  const rootId = existingCircle ? existingCircle.id : uuid();
   const productionCohortId = uuid();
   const allCohortId = uuid();
   const surveyId = uuid();
@@ -99,13 +99,13 @@ function seed(database) {
   database.transaction(() => {
     const SANDBOX_CIRCLE = ['Dev Circle (sandbox)', 'Invented data. Nothing here reaches a real person.'];
 
-    if (existingRoot) {
+    if (existingCircle) {
       database.prepare('UPDATE circles SET name = ?, description = ? WHERE id = ?')
         .run(...SANDBOX_CIRCLE, rootId);
     } else {
       database.prepare(`
-        INSERT INTO circles (id, name, slug, description, color, is_root)
-        VALUES (?, ?, 'dev-circle', ?, '#107EBC', 1)
+        INSERT INTO circles (id, name, slug, description, color)
+        VALUES (?, ?, 'dev-circle', ?, '#107EBC')
       `).run(rootId, ...SANDBOX_CIRCLE);
     }
 
@@ -282,10 +282,22 @@ function mirrorAccess(database, { admin, role, session }) {
     database.prepare('DELETE FROM admin_users WHERE email = ? AND id <> ?').run(admin.email, admin.id);
 
     database.prepare(`
-      INSERT INTO admin_users (id, email, name, password_hash, role_id, status)
-      VALUES (?, ?, ?, ?, ?, ?)
-      ON CONFLICT(id) DO UPDATE SET role_id = excluded.role_id, status = excluded.status
+      INSERT INTO admin_users (id, email, name, password_hash, role_id, status, is_global)
+      VALUES (?, ?, ?, ?, ?, ?, 1)
+      ON CONFLICT(id) DO UPDATE SET role_id = excluded.role_id, status = excluded.status, is_global = 1
     `).run(admin.id, admin.email, admin.name, admin.password_hash, admin.role_id, admin.status);
+
+    // A role is held within a circle, so the mirrored account needs its grant
+    // in the sandbox's own circle — otherwise the caller arrives with a valid
+    // session and no workspace to work in. Global here regardless of their
+    // live tier: the sandbox is one workspace and entirely theirs.
+    const sandboxCircle = database.prepare('SELECT id FROM circles ORDER BY created_at LIMIT 1').get();
+    if (sandboxCircle) {
+      database.prepare(`
+        INSERT INTO circle_admins (circle_id, admin_id, role_id) VALUES (?, ?, ?)
+        ON CONFLICT(circle_id, admin_id) DO UPDATE SET role_id = excluded.role_id
+      `).run(sandboxCircle.id, admin.id, admin.role_id);
+    }
 
     database.prepare(`
       INSERT INTO sessions (token_hash, subject_id, is_admin, issued_via, user_agent, expires_at, scope)

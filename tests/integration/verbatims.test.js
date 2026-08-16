@@ -25,11 +25,12 @@ const QUESTIONS = [
 
 function makeSurvey({ status = 'active', questions = QUESTIONS, title = 'Docs feedback' } = {}) {
   const id = h.uuid();
+  const circleId = h.db.prepare('SELECT id FROM circles ORDER BY created_at LIMIT 1').get()?.id;
   h.db.prepare(`
-    INSERT INTO surveys (id, title, questions, status, target_type)
-    VALUES (?, ?, ?, ?, 'all')
-  `).run(id, title, JSON.stringify(questions), status);
-  return { id, title, questions };
+    INSERT INTO surveys (id, title, questions, status, target_type, circle_id)
+    VALUES (?, ?, ?, ?, 'all', ?)
+  `).run(id, title, JSON.stringify(questions), status, circleId);
+  return { id, title, circle_id: circleId, questions };
 }
 
 async function respond(user, survey, answers) {

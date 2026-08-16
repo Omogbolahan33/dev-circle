@@ -15,8 +15,8 @@ router.get('/gifts', requirePermission('gifts.read'), (req, res) => {
     SELECT g.*,
       (SELECT COUNT(*) FROM user_gifts ug WHERE ug.gift_id = g.id) as claimed_count,
       (SELECT COUNT(*) FROM user_gifts ug WHERE ug.gift_id = g.id AND ug.delivered_at IS NOT NULL) as delivered_count
-    FROM gifts g ORDER BY g.created_at DESC
-  `).all();
+    FROM gifts g WHERE g.circle_id = ? ORDER BY g.created_at DESC
+  `).all(req.circleId);
 
   res.json({ gifts: gifts.map(g => ({ ...g, target_cohort_ids: parseJSON(g.target_cohort_ids, []) })) });
 });

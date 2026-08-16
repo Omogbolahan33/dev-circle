@@ -268,7 +268,7 @@ router.post('/register', (req, res) => {
     db.prepare('INSERT OR IGNORE INTO user_cohorts (user_id, cohort_id) VALUES (?, ?)').run(id, allCohort.id);
   }
 
-  circles.joinRoot(id);
+  circles.join(id, req.circleId);
 
   // Log engagement event
   db.prepare(`
@@ -351,7 +351,7 @@ router.post('/sso/exchange', (req, res) => {
       db.prepare('INSERT OR IGNORE INTO user_cohorts (user_id, cohort_id) VALUES (?, ?)').run(id, allCohort.id);
     }
 
-    circles.joinRoot(id);
+    circles.join(id, req.circleId);
 
     db.prepare(`
       INSERT INTO engagement_history (id, user_id, type, source, metadata)

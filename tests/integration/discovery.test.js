@@ -22,9 +22,12 @@ beforeEach(async () => {
 function makeSurvey(title, questionList) {
   const id = h.uuid();
   const withIds = questions.attachToSurvey(questionList);
-  h.db.prepare("INSERT INTO surveys (id, title, questions, status, target_type) VALUES (?, ?, ?, 'active', 'all')")
-    .run(id, title, JSON.stringify(withIds));
-  return { id, title, questions: withIds };
+  const circleId = h.db.prepare('SELECT id FROM circles ORDER BY created_at LIMIT 1').get().id;
+  h.db.prepare(`
+    INSERT INTO surveys (id, title, questions, status, target_type, circle_id)
+    VALUES (?, ?, ?, 'active', 'all', ?)
+  `).run(id, title, JSON.stringify(withIds), circleId);
+  return { id, title, circle_id: circleId, questions: withIds };
 }
 
 function answer(user, survey, answers) {
@@ -327,7 +330,7 @@ test('the timeline gathers every source into one stream', async () => {
 
 test('a notification about a session opens that session', async () => {
   const user = h.makeUser();
-  require('../../src/services/circles').joinRoot(user.id);
+  require('../../src/services/circles').join(user.id);
 
   const when = new Date(Date.now() + 86400000).toISOString().replace('T', ' ').slice(0, 19);
   const session = await h.post('/api/admin/sessions', {
@@ -343,7 +346,7 @@ test('a notification about a session opens that session', async () => {
 
 test('a survey invitation opens that survey', async () => {
   const user = h.makeUser();
-  require('../../src/services/circles').joinRoot(user.id);
+  require('../../src/services/circles').join(user.id);
 
   const survey = await h.post('/api/admin/surveys', {
     title: 'Docs', questions: [{ type: 'text', text: 'Thoughts?' }], engagement_mode: 'in_portal'
@@ -357,7 +360,7 @@ test('a survey invitation opens that survey', async () => {
 
 test('every destination a notification carries is a page that exists', async () => {
   const user = h.makeUser();
-  require('../../src/services/circles').joinRoot(user.id);
+  require('../../src/services/circles').join(user.id);
 
   const survey = await h.post('/api/admin/surveys', {
     title: 'Docs', questions: [{ type: 'text', text: 'Thoughts?' }], engagement_mode: 'in_portal'
@@ -377,7 +380,7 @@ test('every destination a notification carries is a page that exists', async () 
 
 test('a broadcast carries no destination, since the inbox is already the place', async () => {
   const user = h.makeUser();
-  require('../../src/services/circles').joinRoot(user.id);
+  require('../../src/services/circles').join(user.id);
 
   const blast = await h.post('/api/admin/blasts', {
     subject: 'Notice', content: 'Something for everyone.', channel: 'in_portal', target_type: 'all'

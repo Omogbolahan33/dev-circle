@@ -26,7 +26,7 @@ const OWNED_TABLES = [
   'session_dispatches', 'scheduled_sessions',
   'message_deliveries', 'notifications', 'user_gifts', 'gifts', 'consent',
   'feedback', 'survey_responses', 'surveys', 'questions', 'engagement_history',
-  'circle_members', 'circles',
+  'circle_admins', 'circle_members', 'circles',
   'user_cohorts', 'cohorts', 'sessions', 'users', 'admin_users', 'roles',
   'api_keys', 'message_blasts', 'integration_events'
 ];
@@ -92,29 +92,27 @@ for (const a of admins) {
 console.log(`✓ ${admins.length} admin users created`);
 
 // ─── Circles ────────────────────────────────────────────────
-// Dev Circle itself is the root; sub-circles are separate engagement spaces
-// drawn from its membership, each with its own cohorts, surveys and messaging.
-const rootCircleId = uuid();
-db.prepare(`
-  INSERT INTO circles (id, name, slug, description, color, is_root, created_by)
-  VALUES (?, 'Dev Circle', 'dev-circle', 'The Credit Direct developer community', '#107EBC', 1, ?)
-`).run(rootCircleId, admins[0].id);
+// A circle is a workspace, and Dev Circle is one instance of it. A second is
+// seeded so the switcher, the scoping and the per-circle staff grants are
+// visible rather than theoretical — the two share the same member accounts but
+// nothing else: separate cohorts, surveys, sessions and feedback.
+const devCircleId = uuid();
+const merchantCircleId = uuid();
 
-const subCircles = [
-  { id: uuid(), name: 'Lending Partners Circle', slug: 'lending-partners', color: '#945A39',
-    description: 'Partners building on the lending and credit-scoring APIs' },
-  { id: uuid(), name: 'Early Access Circle', slug: 'early-access', color: '#E6B473',
-    description: 'Production partners testing unreleased endpoints ahead of GA' }
-];
-
-const subCircleStmt = db.prepare(`
-  INSERT INTO circles (id, name, slug, description, color, parent_id, created_by)
-  VALUES (?, ?, ?, ?, ?, ?, ?)
+const circleStmt = db.prepare(`
+  INSERT INTO circles (id, name, slug, description, color, created_by)
+  VALUES (?, ?, ?, ?, ?, ?)
 `);
-for (const c of subCircles) {
-  subCircleStmt.run(c.id, c.name, c.slug, c.description, c.color, rootCircleId, admins[0].id);
-}
-console.log(`✓ 1 root circle + ${subCircles.length} sub-circles created`);
+
+circleStmt.run(devCircleId, 'Dev Circle', 'dev-circle',
+  'Developers integrating the Credit Direct APIs', '#107EBC', admins[0].id);
+circleStmt.run(merchantCircleId, 'Merchant Circle', 'merchant-circle',
+  'Merchants and partners on the business products', '#945A39', admins[0].id);
+
+// The workspace the rest of this seed builds out
+const rootCircleId = devCircleId;
+
+console.log('✓ 2 circles created (Dev Circle, Merchant Circle)');
 
 // ─── Cohorts ────────────────────────────────────────────────
 // System cohorts carry real filter_rules and auto_sync, so membership is
@@ -382,6 +380,9 @@ for (const dev of developers) {
   }
 }
 
+db.prepare('UPDATE feedback SET circle_id = ? WHERE circle_id IS NULL').run(rootCircleId);
+db.prepare('UPDATE questions SET circle_id = ? WHERE circle_id IS NULL').run(rootCircleId);
+
 const verbatimCount = db.prepare("SELECT COUNT(*) c FROM feedback WHERE source = 'survey'").get().c;
 console.log(`✓ ${responseCount} survey responses created (${verbatimCount} verbatims filed as feedback)`);
 
@@ -509,22 +510,28 @@ const circleMemberStmt = db.prepare('INSERT OR IGNORE INTO circle_members (circl
 
 let circleMemberCount = 0;
 for (const dev of developers) {
-  circleMemberStmt.run(rootCircleId, dev._id, 'member');
+  circleMemberStmt.run(devCircleId, dev._id, 'member');
   circleMemberCount++;
 
-  // Sub-circles are drawn from the root's membership
-  if (dev.products.includes('lending')) {
-    circleMemberStmt.run(subCircles[0].id, dev._id, dev.streak >= 8 ? 'lead' : 'member');
-    circleMemberCount++;
-  }
-  if (dev.api_status === 'production' && dev.kyb) {
-    circleMemberStmt.run(subCircles[1].id, dev._id, 'member');
+  // One account, several workspaces: a few of these developers also work on
+  // the business products, so they are in both circles. Nothing else is shared.
+  if (dev.work_sector === 'Payments' || dev.company === 'Interswitch') {
+    circleMemberStmt.run(merchantCircleId, dev._id, 'member');
     circleMemberCount++;
   }
 }
-console.log(`✓ ${circleMemberCount} circle memberships created`);
+console.log(`✓ ${circleMemberCount} circle memberships across 2 circles`);
 
-// Everything created above belongs to the root circle
+// Staff hold a role within a circle. Adaeze spans both as Credit Direct staff;
+// Tunde works in Dev Circle only, and cannot see Merchant Circle at all.
+const staffGrantStmt = db.prepare('INSERT OR IGNORE INTO circle_admins (circle_id, admin_id, role_id) VALUES (?, ?, ?)');
+db.prepare('UPDATE admin_users SET is_global = 1 WHERE id = ?').run(admins[0].id);
+staffGrantStmt.run(devCircleId, admins[0].id, admins[0].role_id);
+staffGrantStmt.run(merchantCircleId, admins[0].id, admins[0].role_id);
+staffGrantStmt.run(devCircleId, admins[1].id, admins[1].role_id);
+console.log('✓ staff granted per circle (Adaeze: both, Tunde: Dev Circle only)');
+
+// Everything created above belongs to the workspace it was made in
 for (const table of ['cohorts', 'surveys', 'gifts']) {
   db.prepare(`UPDATE ${table} SET circle_id = ? WHERE circle_id IS NULL`).run(rootCircleId);
 }
@@ -543,14 +550,14 @@ const sessions = [
   {
     id: uuid(), title: 'Lending API v2 Preview', type: 'workshop',
     description: 'Hands-on session on the v2 lending endpoints before general availability.',
-    circle_id: subCircles[0].id, target_type: 'circle', target_ids: [subCircles[0].id],
+    circle_id: rootCircleId, target_type: 'cohort', target_ids: [cohorts[8].id],
     offset_days: 10, hour: 14, duration: 90, location: 'Lagos office + remote',
     channels: ['in_portal', 'email', 'whatsapp'], reminders: [2880, 1440, 60]
   },
   {
     id: uuid(), title: 'Sandbox Load Test Window', type: 'test',
     description: 'Coordinated load test against the sandbox. Bring your integration.',
-    circle_id: subCircles[1].id, target_type: 'circle', target_ids: [subCircles[1].id],
+    circle_id: rootCircleId, target_type: 'cohort', target_ids: [cohorts[4].id],
     offset_days: 3, hour: 10, duration: 120, location: 'Remote',
     channels: ['in_portal', 'email'], reminders: [1440, 120]
   }

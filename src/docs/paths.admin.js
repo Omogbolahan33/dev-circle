@@ -1100,6 +1100,83 @@ const paths = {
   },
 
   // ─── Circles ──────────────────────────────────────────────
+  '/admin/circles/all': {
+    get: op({
+      tag: 'Admin · Circles',
+      permission: 'circles.read',
+      operationId: 'listAllCircles',
+      summary: 'Every workspace',
+      description:
+        'For the tier of Credit Direct staff who span circles. Ordinary staff see ' +
+        'only the circles they hold a role in, through `GET /admin/circles`.',
+      parameters: [query('include_archived', 'Include archived circles', { type: 'boolean', default: false })],
+      responses: {
+        200: json('Every circle.', object({
+          circles: arrayOf(ref('Circle'), 'All workspaces')
+        }), {
+          circles: [
+            { id: 'r1', name: 'Dev Circle', slug: 'dev-circle', member_count: 248, status: 'active' },
+            { id: 'r2', name: 'Merchant Circle', slug: 'merchant-circle', member_count: 61, status: 'active' }
+          ]
+        }),
+        403: json('Not a staff member who spans circles.', ref('Error'), {
+          error: 'Only Credit Direct staff with access across circles can do this.'
+        })
+      }
+    })
+  },
+
+  '/admin/circles/{id}/staff': {
+    post: op({
+      tag: 'Admin · Circles',
+      permission: 'circles.write',
+      operationId: 'grantCircleAccess',
+      summary: 'Give a staff member a role in this workspace',
+      description: [
+        'A role is held *within* a circle. Granting one here lets that person work in',
+        'this workspace and nowhere else — a rep for one circle has no business in',
+        'another, and before circles were workspaces every admin could see everything.',
+        '',
+        'Only staff who span circles may grant access.'
+      ].join('\n'),
+      parameters: [path('id', 'Circle id')],
+      requestBody: jsonBody(object({
+        admin_id: id('The staff member'),
+        role_id: id('The role they hold in this circle')
+      }, { required: ['admin_id', 'role_id'] }), {
+        admin_id: '3c8a1b20-0000-4000-8000-000000000004',
+        role_id: '7d2e9f10-0000-4000-8000-000000000002'
+      }),
+      responses: {
+        200: json('Access granted.', object({ message: str('What happened') }),
+          { message: 'Access granted to this circle' }),
+        400: json('Unknown admin or role.', ref('Error'), { error: 'Unknown admin_id' }),
+        403: json('Not a staff member who spans circles.', ref('Error'), {
+          error: 'Only Credit Direct staff with access across circles can do this.'
+        })
+      }
+    })
+  },
+
+  '/admin/circles/{id}/staff/{adminId}': {
+    delete: op({
+      tag: 'Admin · Circles',
+      permission: 'circles.write',
+      operationId: 'revokeCircleAccess',
+      summary: 'Take away a staff member\'s access to this workspace',
+      description:
+        'They keep any role they hold in other circles. Revoking the last one leaves ' +
+        'them signed in with nowhere to work, which the console reports plainly.',
+      parameters: [path('id', 'Circle id'), path('adminId', 'The staff member')],
+      responses: {
+        200: json('Access revoked.', object({ message: str('What happened') }),
+          { message: 'Access revoked' }),
+        404: json('They did not have access to begin with.', ref('Error'),
+          { error: 'They did not have access to this circle' })
+      }
+    })
+  },
+
   '/admin/circles': {
     get: op({
       tag: 'Admin · Circles',

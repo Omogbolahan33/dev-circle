@@ -78,7 +78,7 @@ function reset() {
     'login_codes',
     'session_dispatches', 'scheduled_sessions', 'message_deliveries', 'notifications',
     'user_gifts', 'gifts', 'consent', 'feedback', 'survey_responses', 'surveys', 'questions',
-    'engagement_history', 'circle_members', 'circles', 'user_cohorts', 'cohorts',
+    'engagement_history', 'circle_admins', 'circle_members', 'circles', 'user_cohorts', 'cohorts',
     'sessions', 'users', 'admin_users', 'roles', 'api_keys', 'message_blasts',
     'integration_events'
   ];
@@ -87,14 +87,19 @@ function reset() {
   })();
 }
 
-function makeRootCircle() {
+// The workspace a test works in. Circles are peers, so this is simply the
+// first one; tests that care about the boundary make a second.
+function makeCircle(name = 'Dev Circle', slug = 'dev-circle') {
   const id = uuid();
   db.prepare(`
-    INSERT INTO circles (id, name, slug, description, color, is_root)
-    VALUES (?, 'Dev Circle', 'dev-circle', 'root', '#107EBC', 1)
-  `).run(id);
+    INSERT INTO circles (id, name, slug, description, color)
+    VALUES (?, ?, ?, 'A workspace', '#107EBC')
+  `).run(id, name, slug);
   return id;
 }
+
+// Kept under the old name so existing tests read unchanged
+const makeRootCircle = makeCircle;
 
 function makeRole(name, permissions) {
   const id = uuid();
@@ -103,11 +108,21 @@ function makeRole(name, permissions) {
   return id;
 }
 
-function makeAdmin({ email, password = 'admin-password', roleId }) {
+function makeAdmin({ email, password = 'admin-password', roleId, global: isGlobal = true, circleId } = {}) {
   const bcrypt = require('bcryptjs');
   const id = uuid();
-  db.prepare('INSERT INTO admin_users (id, email, name, password_hash, role_id) VALUES (?, ?, ?, ?, ?)')
-    .run(id, email, email.split('@')[0], bcrypt.hashSync(password, 4), roleId);
+  db.prepare('INSERT INTO admin_users (id, email, name, password_hash, role_id, is_global) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(id, email, email.split('@')[0], bcrypt.hashSync(password, 4), roleId, isGlobal ? 1 : 0);
+
+  // A role is held within a circle. Tests default to reaching every circle,
+  // which is what they assumed before circles were workspaces; a test about
+  // the boundary passes global: false and names one.
+  const circle = circleId || db.prepare('SELECT id FROM circles ORDER BY created_at LIMIT 1').get()?.id;
+  if (circle) {
+    db.prepare('INSERT OR IGNORE INTO circle_admins (circle_id, admin_id, role_id) VALUES (?, ?, ?)')
+      .run(circle, id, roleId);
+  }
+
   return { id, email, password };
 }
 
@@ -159,6 +174,15 @@ function makeUser(overrides = {}) {
     user.quiet_hours_end ?? '00:00'
   );
 
+  // Members are scoped to a workspace, so a fixture member joins the circle
+  // the test is working in. Tests about the boundary pass circleId explicitly.
+  const circle = user.circleId
+    || db.prepare('SELECT id FROM circles ORDER BY created_at LIMIT 1').get()?.id;
+  if (circle) {
+    db.prepare('INSERT OR IGNORE INTO circle_members (circle_id, user_id) VALUES (?, ?)')
+      .run(circle, id);
+  }
+
   return { id, ...user };
 }
 
@@ -206,7 +230,7 @@ module.exports = {
   baseUrl: () => baseUrl,
   get, post, put, del, call,
   reset, uuid,
-  makeRootCircle, makeRole, makeAdmin, makeUser, makeApiKey,
+  makeCircle, makeRootCircle, makeRole, makeAdmin, makeUser, makeApiKey,
   grantConsent, withdrawConsent,
   loginAdmin, loginUser
 };

@@ -11,17 +11,16 @@ const router = express.Router();
 
 // GET /api/admin/cohorts
 router.get('/cohorts', requirePermission('cohorts.read'), (req, res) => {
-  const { circle_id } = req.query;
-
+  // Cohorts belong to the circle they were made in
   const cohorts = db.prepare(`
     SELECT c.*, ci.name as circle_name, COUNT(uc.user_id) as member_count
     FROM cohorts c
     LEFT JOIN user_cohorts uc ON uc.cohort_id = c.id
     LEFT JOIN circles ci ON ci.id = c.circle_id
-    ${circle_id ? 'WHERE c.circle_id = ?' : ''}
+    WHERE c.circle_id = ?
     GROUP BY c.id
     ORDER BY member_count DESC
-  `).all(...(circle_id ? [circle_id] : []));
+  `).all(req.circleId);
 
   res.json({
     cohorts: cohorts.map(c => ({ ...c, filter_rules: parseJSON(c.filter_rules, null) }))
@@ -49,12 +48,8 @@ router.post('/cohorts', requirePermission('cohorts.write'), (req, res) => {
   const { name, description, color, type = 'custom', filter_rules, auto_sync = true, circle_id } = req.body;
   if (!name) return res.status(400).json({ error: 'name required' });
 
-  let circle;
-  try {
-    circle = circles.resolve(circle_id);
-  } catch (err) {
-    return res.status(400).json({ error: err.message });
-  }
+  // Made in the circle being worked in
+  const circle = req.circle;
 
   // Validate the rules before storing them, so a cohort can never be saved
   // with a definition the engine cannot evaluate.

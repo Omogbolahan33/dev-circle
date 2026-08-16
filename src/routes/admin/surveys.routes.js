@@ -13,13 +13,14 @@ const router = express.Router();
 
 // GET /api/admin/surveys
 router.get('/surveys', requirePermission('surveys.read'), (req, res) => {
+  // A survey belongs to the circle that ran it
   const surveys = db.prepare(`
     SELECT s.*,
       (SELECT COUNT(*) FROM survey_responses sr WHERE sr.survey_id = s.id) as response_count,
       (SELECT COUNT(*) FROM survey_responses sr
         WHERE sr.survey_id = s.id AND sr.completed_at IS NOT NULL) as completed_count
-    FROM surveys s ORDER BY s.created_at DESC
-  `).all();
+    FROM surveys s WHERE s.circle_id = ? ORDER BY s.created_at DESC
+  `).all(req.circleId);
 
   res.json({
     surveys: surveys.map(s => ({
@@ -92,12 +93,8 @@ router.post('/surveys', requirePermission('surveys.write'), (req, res) => {
   if (!title || !questions) return res.status(400).json({ error: 'title and questions required' });
   if (!Array.isArray(questions)) return res.status(400).json({ error: 'questions must be an array' });
 
-  let circle;
-  try {
-    circle = circles.resolve(circle_id);
-  } catch (err) {
-    return res.status(400).json({ error: err.message });
-  }
+  const circle = circle_id ? circles.byId(circle_id) : req.circle;
+  if (!circle) return res.status(400).json({ error: 'Unknown circle_id' });
 
   // Every question needs a stable id — responses are keyed by it, and an
   // export lines answers up against it.

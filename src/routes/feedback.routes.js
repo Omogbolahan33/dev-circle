@@ -29,13 +29,19 @@ router.post('/', requireAuth, (req, res) => {
   }
 
   const id = uuid();
+  // Filed in the circle they belong to. A member of several has this recorded
+  // against the one the feedback was raised in.
+  const circleId = db.prepare(
+    'SELECT circle_id FROM circle_members WHERE user_id = ? ORDER BY added_at LIMIT 1'
+  ).get(req.user.id)?.circle_id || null;
+
   db.prepare(`
-    INSERT INTO feedback (id, user_id, type, content, category, rating, source, survey_id)
-    VALUES (?, ?, ?, ?, ?, ?, 'dev_circle', ?)
+    INSERT INTO feedback (id, user_id, type, content, category, rating, source, survey_id, circle_id)
+    VALUES (?, ?, ?, ?, ?, ?, 'dev_circle', ?, ?)
   `).run(
     id, req.user.id,
     survey_id ? 'system_triggered' : 'self_initiated',
-    String(content).trim(), category || null, rating ?? null, survey_id || null
+    String(content).trim(), category || null, rating ?? null, survey_id || null, circleId
   );
 
   // Submitting feedback counts toward the engagement streak

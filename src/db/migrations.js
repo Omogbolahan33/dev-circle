@@ -764,6 +764,126 @@ function define(db) {
         // Answers collected here keep saying so
         db.prepare("UPDATE feedback SET source_system = 'dev_circle' WHERE source = 'survey'").run();
       }
+    },
+    {
+      id: 23,
+      name: 'circles_are_workspaces',
+      up() {
+        // A circle is a workspace, and Dev Circle is one instance of it — not a
+        // container the others live inside. This was built the other way up: a
+        // root circle with everything nested beneath it, and membership of a
+        // child constrained to its parent. That is segmentation, which is what
+        // a cohort already is, and it made "Circles" read as a feature within
+        // Dev Circle rather than as the thing Dev Circle is.
+        //
+        // Circles become peers. Each owns its members, cohorts, surveys,
+        // sessions, questions and feedback, and nothing crosses between them.
+
+        // The circles that were really segments become cohorts, keeping their
+        // members. They were describing a slice of Dev Circle, not a separate
+        // space, and the word was the only thing wrong with them.
+        const nested = db.prepare('SELECT * FROM circles WHERE COALESCE(is_root, 0) = 0').all();
+        const root = db.prepare('SELECT * FROM circles WHERE is_root = 1').get();
+
+        if (root) {
+          const makeCohort = db.prepare(`
+            INSERT INTO cohorts (id, name, description, type, color, circle_id, created_by)
+            VALUES (?, ?, ?, 'custom', ?, ?, ?)
+          `);
+          const moveMember = db.prepare(
+            'INSERT OR IGNORE INTO user_cohorts (user_id, cohort_id) VALUES (?, ?)'
+          );
+
+          for (const circle of nested) {
+            const cohortId = crypto.randomUUID();
+            makeCohort.run(
+              cohortId, circle.name, circle.description, circle.color, root.id, circle.created_by
+            );
+
+            for (const m of db.prepare('SELECT user_id FROM circle_members WHERE circle_id = ?').all(circle.id)) {
+              moveMember.run(m.user_id, cohortId);
+            }
+
+            // Their work belongs to the workspace they were carved out of
+            for (const table of ['cohorts', 'surveys', 'gifts', 'message_blasts', 'scheduled_sessions']) {
+              db.prepare(`UPDATE ${table} SET circle_id = ? WHERE circle_id = ?`).run(root.id, circle.id);
+            }
+            db.prepare('DELETE FROM circle_members WHERE circle_id = ?').run(circle.id);
+            db.prepare('DELETE FROM circles WHERE id = ?').run(circle.id);
+          }
+        }
+
+        // Peers, not a tree
+        db.exec(`
+          CREATE TABLE circles_new (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            slug TEXT UNIQUE NOT NULL,
+            description TEXT,
+            color TEXT DEFAULT '#107EBC',
+            status TEXT DEFAULT 'active' CHECK(status IN ('active','archived')),
+            created_by TEXT,
+            created_at TEXT DEFAULT (datetime('now'))
+          );
+
+          INSERT INTO circles_new (id, name, slug, description, color, status, created_by, created_at)
+            SELECT id, name, slug, description, color, status, created_by, created_at FROM circles;
+
+          DROP TABLE circles;
+          ALTER TABLE circles_new RENAME TO circles;
+        `);
+
+        // Which circle a thing was said in. Without it, a developer who belongs
+        // to two workspaces would have what they said in one show up in the other.
+        addColumn('feedback', 'circle_id', 'TEXT');
+        addColumn('questions', 'circle_id', 'TEXT');
+        db.exec(`
+          CREATE INDEX IF NOT EXISTS idx_feedback_circle ON feedback(circle_id);
+          CREATE INDEX IF NOT EXISTS idx_questions_circle ON questions(circle_id);
+        `);
+
+        const first = db.prepare('SELECT id FROM circles ORDER BY created_at LIMIT 1').get();
+        if (first) {
+          db.prepare('UPDATE feedback SET circle_id = ? WHERE circle_id IS NULL').run(first.id);
+          db.prepare('UPDATE questions SET circle_id = ? WHERE circle_id IS NULL').run(first.id);
+        }
+
+        // Staff are granted a role *within* a circle. A rep for one workspace
+        // has no business in another, and until now every admin could see
+        // everything by construction.
+        db.exec(`
+          CREATE TABLE IF NOT EXISTS circle_admins (
+            circle_id TEXT NOT NULL REFERENCES circles(id) ON DELETE CASCADE,
+            admin_id TEXT NOT NULL REFERENCES admin_users(id) ON DELETE CASCADE,
+            role_id TEXT REFERENCES roles(id),
+            added_at TEXT DEFAULT (datetime('now')),
+            PRIMARY KEY (circle_id, admin_id)
+          );
+          CREATE INDEX IF NOT EXISTS idx_circle_admins_admin ON circle_admins(admin_id);
+        `);
+
+        // A tier above the circles: Credit Direct staff who create them and
+        // move between. Without one, nobody could set up the second workspace.
+        addColumn('admin_users', 'is_global', 'INTEGER DEFAULT 0');
+
+        if (first) {
+          // Everyone who could already administer keeps working, in the circle
+          // that existed when they were granted it
+          const grant = db.prepare(
+            'INSERT OR IGNORE INTO circle_admins (circle_id, admin_id, role_id) VALUES (?, ?, ?)'
+          );
+          for (const admin of db.prepare('SELECT id, role_id FROM admin_users').all()) {
+            grant.run(first.id, admin.id, admin.role_id);
+          }
+
+          // Whoever holds the wildcard role becomes the global tier, so the
+          // ability to create a circle does not disappear with this migration
+          db.prepare(`
+            UPDATE admin_users SET is_global = 1
+            WHERE role_id IN (SELECT id FROM roles WHERE permissions LIKE '%"*"%')
+          `).run();
+        }
+      }
     }
   ];
   return migrations;

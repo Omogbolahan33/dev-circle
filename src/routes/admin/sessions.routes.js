@@ -26,6 +26,8 @@ router.get('/', requirePermission('sessions.read'), (req, res) => {
   const where = ['1=1'];
   const params = [];
 
+  // Sessions belong to the circle that scheduled them
+  where.push('s.circle_id = ?'); params.push(req.circleId);
   if (status) { where.push('s.status = ?'); params.push(status); }
   if (upcoming === 'true') { where.push("s.scheduled_for > datetime('now')"); }
 
@@ -98,7 +100,7 @@ router.post('/', requirePermission('sessions.write'), (req, res) => {
     return res.status(400).json({ error: 'Unknown survey_id' });
   }
 
-  const circle = circle_id ? db.prepare('SELECT * FROM circles WHERE id = ?').get(circle_id) : circles.root();
+  const circle = circle_id ? circles.byId(circle_id) : req.circle;
   if (!circle) return res.status(400).json({ error: 'Unknown circle_id' });
 
   const id = uuid();
@@ -144,7 +146,7 @@ router.post('/preview', requirePermission('sessions.read'), (req, res) => {
     res.json(scheduler.preview({
       title: req.body.title || 'Draft session',
       scheduled_for: req.body.scheduled_for,
-      circle_id: req.body.circle_id || circles.root().id,
+      circle_id: req.body.circle_id || req.circleId,
       target_type: req.body.target_type || 'all',
       target_ids: JSON.stringify(req.body.target_ids || []),
       channels: JSON.stringify(req.body.channels || ['in_portal', 'email'])

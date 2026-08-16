@@ -1,11 +1,17 @@
 const express = require('express');
 const db = require('../../db');
-const { parseJSON, paginate } = require('../../utils/helpers');
+const { paginate } = require('../../utils/helpers');
 const { requirePermission } = require('../../middleware/auth');
+const { requireGlobalAdmin } = require('../../middleware/circleContext');
 const circles = require('../../services/circles');
 const cohortRules = require('../../services/cohortRules');
 
 const router = express.Router();
+
+// ─── Circles ────────────────────────────────────────────────
+// A circle is a workspace. These endpoints are about which workspace you are
+// in and who may work there — not about segmenting the members inside one,
+// which is what cohorts do.
 
 function handleCircleError(err, res) {
   if (err instanceof circles.CircleError) {
@@ -16,23 +22,38 @@ function handleCircleError(err, res) {
 }
 
 // GET /api/admin/circles
-router.get('/', requirePermission('circles.read'), (req, res) => {
-  res.json({ circles: circles.withCounts(), root: circles.root() });
+// The workspaces this staff member can reach, and which one they are in.
+// Every admin needs this to render the switcher, so it takes no permission
+// beyond being staff.
+router.get('/', (req, res) => {
+  res.json({
+    circles: req.availableCircles.map(c => ({
+      id: c.id, name: c.name, slug: c.slug, description: c.description,
+      color: c.color, member_count: c.member_count ?? null
+    })),
+    current: { id: req.circle.id, name: req.circle.name, slug: req.circle.slug },
+    can_create: Boolean(req.admin.is_global)
+  });
+});
+
+// GET /api/admin/circles/all — every workspace, for the tier that spans them
+router.get('/all', requireGlobalAdmin, (req, res) => {
+  res.json({ circles: circles.all({ includeArchived: req.query.include_archived === 'true' }) });
 });
 
 // GET /api/admin/circles/:id
 router.get('/:id', requirePermission('circles.read'), (req, res) => {
-  const circle = db.prepare('SELECT * FROM circles WHERE id = ?').get(req.params.id);
+  const circle = circles.byId(req.params.id);
   if (!circle) return res.status(404).json({ error: 'Circle not found' });
+
+  if (!circles.canAdminister(req.admin, circle.id)) {
+    return res.status(403).json({ error: 'You do not have access to that circle.' });
+  }
 
   const { offset, limit } = paginate(req.query.page, req.query.limit);
 
   res.json({
     circle,
-    parent: circle.parent_id
-      ? db.prepare('SELECT id, name, slug FROM circles WHERE id = ?').get(circle.parent_id)
-      : null,
-    children: db.prepare('SELECT id, name, slug, color, status FROM circles WHERE parent_id = ?').all(circle.id),
     member_count: db.prepare('SELECT COUNT(*) as c FROM circle_members WHERE circle_id = ?').get(circle.id).c,
     members: circles.members(circle.id, { limit, offset }),
     cohorts: db.prepare(`
@@ -40,29 +61,36 @@ router.get('/:id', requirePermission('circles.read'), (req, res) => {
         (SELECT COUNT(*) FROM user_cohorts uc WHERE uc.cohort_id = c.id) as member_count
       FROM cohorts c WHERE c.circle_id = ?
     `).all(circle.id),
-    surveys: db.prepare('SELECT id, title, status, engagement_mode FROM surveys WHERE circle_id = ?').all(circle.id)
+    surveys: db.prepare('SELECT id, title, status FROM surveys WHERE circle_id = ?').all(circle.id),
+    staff: db.prepare(`
+      SELECT a.id, a.name, a.email, r.name as role_name
+      FROM circle_admins ca
+      JOIN admin_users a ON a.id = ca.admin_id
+      LEFT JOIN roles r ON r.id = ca.role_id
+      WHERE ca.circle_id = ?
+    `).all(circle.id)
   });
 });
 
-// POST /api/admin/circles
-router.post('/', requirePermission('circles.write'), (req, res) => {
-  const { name, description, color, parent_id, seed_from_cohort_id } = req.body;
+// POST /api/admin/circles — start another workspace
+router.post('/', requireGlobalAdmin, (req, res) => {
+  const { name, description, color, seed_from_cohort_id } = req.body;
 
   try {
-    const circle = circles.create({
-      name, description, color,
-      parentId: parent_id,
-      createdBy: req.admin.id
-    });
+    const circle = circles.create({ name, description, color, createdBy: req.admin.id });
 
-    // A new circle usually starts from an existing segment — seeding it from
-    // a cohort saves adding members one at a time.
+    // A new workspace usually starts from people who are already known, so a
+    // cohort can be used to populate it. Those members join the new circle;
+    // they do not leave the one they were in.
     let seeded = null;
     if (seed_from_cohort_id) {
       const userIds = db.prepare('SELECT user_id FROM user_cohorts WHERE cohort_id = ?')
         .all(seed_from_cohort_id).map(r => r.user_id);
       seeded = circles.addMembers(circle.id, userIds);
     }
+
+    // Whoever created it can work in it
+    circles.grantAdmin(circle.id, req.admin.id, req.admin.role_id);
 
     res.status(201).json({ circle, seeded });
   } catch (err) {
@@ -72,8 +100,11 @@ router.post('/', requirePermission('circles.write'), (req, res) => {
 
 // PUT /api/admin/circles/:id
 router.put('/:id', requirePermission('circles.write'), (req, res) => {
-  const circle = db.prepare('SELECT * FROM circles WHERE id = ?').get(req.params.id);
+  const circle = circles.byId(req.params.id);
   if (!circle) return res.status(404).json({ error: 'Circle not found' });
+  if (!circles.canAdminister(req.admin, circle.id)) {
+    return res.status(403).json({ error: 'You do not have access to that circle.' });
+  }
 
   const { name, description, color } = req.body;
   const updates = [];
@@ -88,12 +119,11 @@ router.put('/:id', requirePermission('circles.write'), (req, res) => {
   params.push(circle.id);
   db.prepare(`UPDATE circles SET ${updates.join(', ')} WHERE id = ?`).run(...params);
 
-  res.json({ circle: db.prepare('SELECT * FROM circles WHERE id = ?').get(circle.id) });
+  res.json({ circle: circles.byId(circle.id) });
 });
 
-// DELETE /api/admin/circles/:id — archive rather than delete, so the
-// engagement history attached to the circle's work survives
-router.delete('/:id', requirePermission('circles.write'), (req, res) => {
+// DELETE /api/admin/circles/:id — archive, keeping the history attached to it
+router.delete('/:id', requireGlobalAdmin, (req, res) => {
   try {
     circles.archive(req.params.id);
     res.json({ message: 'Circle archived' });
@@ -102,38 +132,33 @@ router.delete('/:id', requirePermission('circles.write'), (req, res) => {
   }
 });
 
-// GET /api/admin/circles/:id/candidates — parent members not yet in this circle
+// ─── Members ────────────────────────────────────────────────
+
+// GET /api/admin/circles/:id/candidates — people not yet in this workspace
 router.get('/:id/candidates', requirePermission('circles.read'), (req, res) => {
-  const circle = db.prepare('SELECT * FROM circles WHERE id = ?').get(req.params.id);
+  const circle = circles.byId(req.params.id);
   if (!circle) return res.status(404).json({ error: 'Circle not found' });
 
-  const { search } = req.query;
-  const parentId = circle.parent_id;
-
   const params = [circle.id];
-  let scope = '';
-  if (parentId) {
-    scope = 'AND u.id IN (SELECT user_id FROM circle_members WHERE circle_id = ?)';
-    params.push(parentId);
-  }
-
   let searchClause = '';
-  if (search) {
+
+  if (req.query.search) {
     searchClause = 'AND (u.name LIKE ? OR u.email LIKE ? OR u.company LIKE ?)';
-    const s = `%${search}%`;
+    const s = `%${req.query.search}%`;
     params.push(s, s, s);
   }
 
-  const candidates = db.prepare(`
-    SELECT u.id, u.name, u.email, u.company, u.work_sector
-    FROM users u
-    WHERE u.status = 'active'
-      AND u.id NOT IN (SELECT user_id FROM circle_members WHERE circle_id = ?)
-      ${scope} ${searchClause}
-    ORDER BY u.name LIMIT 100
-  `).all(...params);
-
-  res.json({ candidates });
+  // Anyone with an account, since a developer may belong to several circles
+  res.json({
+    candidates: db.prepare(`
+      SELECT u.id, u.name, u.email, u.company, u.work_sector
+      FROM users u
+      WHERE u.status = 'active'
+        AND u.id NOT IN (SELECT user_id FROM circle_members WHERE circle_id = ?)
+        ${searchClause}
+      ORDER BY u.name LIMIT 100
+    `).all(...params)
+  });
 });
 
 // POST /api/admin/circles/:id/members
@@ -142,8 +167,6 @@ router.post('/:id/members', requirePermission('circles.write'), (req, res) => {
 
   let ids = Array.isArray(user_ids) ? user_ids : [];
 
-  // Members can also be pulled in by cohort or by an ad-hoc rule set, using
-  // the same engine that powers cohorts.
   if (cohort_id) {
     ids = ids.concat(
       db.prepare('SELECT user_id FROM user_cohorts WHERE cohort_id = ?').all(cohort_id).map(r => r.user_id)
@@ -164,7 +187,11 @@ router.post('/:id/members', requirePermission('circles.write'), (req, res) => {
 
   try {
     const result = circles.addMembers(req.params.id, [...new Set(ids)], role === 'lead' ? 'lead' : 'member');
-    res.json({ ...result, member_count: db.prepare('SELECT COUNT(*) as c FROM circle_members WHERE circle_id = ?').get(req.params.id).c });
+    res.json({
+      ...result,
+      member_count: db.prepare('SELECT COUNT(*) as c FROM circle_members WHERE circle_id = ?')
+        .get(req.params.id).c
+    });
   } catch (err) {
     if (!handleCircleError(err, res)) throw err;
   }
@@ -172,14 +199,40 @@ router.post('/:id/members', requirePermission('circles.write'), (req, res) => {
 
 // DELETE /api/admin/circles/:id/members/:userId
 router.delete('/:id/members/:userId', requirePermission('circles.write'), (req, res) => {
+  // Leaving one workspace has no bearing on the others they belong to
+  const removed = circles.removeMember(req.params.id, req.params.userId);
+  if (!removed) return res.status(404).json({ error: 'Member is not in this circle' });
+  res.json({ message: 'Member removed from this circle' });
+});
+
+// ─── Staff access ───────────────────────────────────────────
+
+// POST /api/admin/circles/:id/staff — give someone a role in this workspace
+router.post('/:id/staff', requireGlobalAdmin, (req, res) => {
+  const { admin_id, role_id } = req.body;
+  if (!admin_id || !role_id) {
+    return res.status(400).json({ error: 'admin_id and role_id are required' });
+  }
+  if (!db.prepare('SELECT 1 FROM admin_users WHERE id = ?').get(admin_id)) {
+    return res.status(400).json({ error: 'Unknown admin_id' });
+  }
+  if (!db.prepare('SELECT 1 FROM roles WHERE id = ?').get(role_id)) {
+    return res.status(400).json({ error: 'Unknown role_id' });
+  }
+
   try {
-    // Removing from a circle also removes from everything beneath it
-    const removed = circles.removeFromTree(req.params.id, req.params.userId);
-    if (!removed) return res.status(404).json({ error: 'Member is not in this circle' });
-    res.json({ message: 'Member removed', removed_from: removed });
+    circles.grantAdmin(req.params.id, admin_id, role_id);
+    res.json({ message: 'Access granted to this circle' });
   } catch (err) {
     if (!handleCircleError(err, res)) throw err;
   }
+});
+
+// DELETE /api/admin/circles/:id/staff/:adminId
+router.delete('/:id/staff/:adminId', requireGlobalAdmin, (req, res) => {
+  const removed = circles.revokeAdmin(req.params.id, req.params.adminId);
+  if (!removed) return res.status(404).json({ error: 'They did not have access to this circle' });
+  res.json({ message: 'Access revoked' });
 });
 
 module.exports = router;

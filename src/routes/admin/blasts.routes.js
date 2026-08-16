@@ -20,8 +20,8 @@ router.get('/blasts', requirePermission('blasts.send', 'members.read'), (req, re
           AND d.status IN ('sent','simulated')) as delivered_count,
       (SELECT COUNT(*) FROM message_deliveries d
         WHERE d.source_type = 'blast' AND d.source_id = b.id AND d.status = 'skipped') as skipped_count
-    FROM message_blasts b ORDER BY b.created_at DESC
-  `).all();
+    FROM message_blasts b WHERE b.circle_id = ? ORDER BY b.created_at DESC
+  `).all(req.circleId);
 
   res.json({ blasts: blasts.map(b => ({ ...b, target_ids: parseJSON(b.target_ids, []) })) });
 });
@@ -47,12 +47,8 @@ router.post('/blasts', requirePermission('blasts.send'), (req, res) => {
     return res.status(400).json({ error: 'content, channel, and target_type required' });
   }
 
-  let circle;
-  try {
-    circle = circles.resolve(circle_id);
-  } catch (err) {
-    return res.status(400).json({ error: err.message });
-  }
+  const circle = circle_id ? circles.byId(circle_id) : req.circle;
+  if (!circle) return res.status(400).json({ error: 'Unknown circle_id' });
   if (!['email', 'whatsapp', 'sms', 'in_portal', 'all'].includes(channel)) {
     return res.status(400).json({ error: 'Invalid channel' });
   }

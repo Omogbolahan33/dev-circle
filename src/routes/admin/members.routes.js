@@ -19,7 +19,9 @@ const router = express.Router();
 // GET /api/admin/members
 router.get('/members', requirePermission('members.read'), (req, res) => {
   const { offset, limit: l, page: p } = paginate(req.query.page, req.query.limit);
-  const { where, params } = memberFilters(req.query);
+  // Scoped to the circle being worked in. A member of another workspace is not
+  // "filtered out" here — they are not part of this one.
+  const { where, params } = memberFilters({ ...req.query, circle_id: req.circleId });
 
   const total = db.prepare(`SELECT COUNT(*) as c FROM users u WHERE ${where}`).get(...params).c;
 
@@ -65,9 +67,15 @@ router.get('/members/:id', requirePermission('members.read'), (req, res) => {
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
   if (!user) return res.status(404).json({ error: 'Member not found' });
 
+  // Reachable only from a circle they are actually in
+  if (!circles.isMember(req.circleId, user.id)) {
+    return res.status(404).json({ error: 'Member not found in this circle' });
+  }
+
   const cohorts = db.prepare(`
-    SELECT c.* FROM cohorts c JOIN user_cohorts uc ON uc.cohort_id = c.id WHERE uc.user_id = ?
-  `).all(user.id);
+    SELECT c.* FROM cohorts c JOIN user_cohorts uc ON uc.cohort_id = c.id
+    WHERE uc.user_id = ? AND c.circle_id = ?
+  `).all(user.id, req.circleId);
 
   res.json({
     user: sanitizeUser(user),
@@ -350,7 +358,7 @@ router.post('/import', requirePermission('members.import'), (req, res) => {
   const circleStmt = db.prepare('INSERT OR IGNORE INTO circle_members (circle_id, user_id) VALUES (?, ?)');
 
   // Everyone joins the root circle; a sub-circle can be named to seed it too
-  const rootCircle = circles.root();
+  const workingCircle = req.circle;
   const targetCircle = circle_id ? db.prepare('SELECT * FROM circles WHERE id = ?').get(circle_id) : null;
   if (circle_id && !targetCircle) {
     return res.status(400).json({ error: 'Unknown circle_id' });
@@ -400,8 +408,9 @@ router.post('/import', requirePermission('members.import'), (req, res) => {
         );
         if (allCohort) cohortStmt.run(id, allCohort.id);
         if (cohort_id) cohortStmt.run(id, cohort_id);
-        if (rootCircle) circleStmt.run(rootCircle.id, id);
-        if (targetCircle && targetCircle.id !== rootCircle?.id) circleStmt.run(targetCircle.id, id);
+        // Imported members join the circle being worked in
+        if (workingCircle) circleStmt.run(workingCircle.id, id);
+        if (targetCircle && targetCircle.id !== workingCircle?.id) circleStmt.run(targetCircle.id, id);
         engagement.log(id, 'account_created', { metadata: { via: 'bulk_import' }, source: 'manual' });
         results.created++;
       } catch (e) {
@@ -499,7 +508,7 @@ router.get('/export/fields', requirePermission('export.read'), (req, res) => {
 // to a download. Cheap enough to run on every edit of the filter builder.
 router.get('/export/count', requirePermission('export.read'), (req, res) => {
   try {
-    const { where, params } = memberFilters(req.query);
+    const { where, params } = memberFilters({ ...req.query, circle_id: req.circleId });
     const total = db.prepare(`SELECT COUNT(*) as c FROM users u WHERE ${where}`).get(...params).c;
     res.json({ total });
   } catch (err) {
@@ -516,7 +525,7 @@ router.get('/export', requirePermission('export.read'), (req, res) => {
 
   let result;
   try {
-    result = selectMembers(req.query);
+    result = selectMembers({ ...req.query, circle_id: req.circleId });
   } catch (err) {
     if (err instanceof cohortRules.RuleError) return res.status(400).json({ error: err.message });
     throw err;

@@ -137,7 +137,7 @@ router.post('/landing-page/ingest', requireApiKey('landing_page'), (req, res) =>
   if (allCohort) {
     db.prepare('INSERT OR IGNORE INTO user_cohorts (user_id, cohort_id) VALUES (?, ?)').run(id, allCohort.id);
   }
-  circles.joinRoot(id);
+  circles.join(id, req.circleId);
 
   // Registration on the landing page includes the consent form, so record the
   // channels the member agreed to rather than leaving consent empty.
@@ -338,9 +338,14 @@ router.post('/survey-responses', requireApiKey('events', 'customer_io'), (req, r
   const insert = db.prepare(`
     INSERT OR IGNORE INTO feedback (
       id, user_id, type, content, category, status, source, source_system,
-      canonical_question_id, prompt, external_response_id, created_at
-    ) VALUES (?, ?, 'survey_response', ?, ?, 'open', 'external_survey', ?, ?, ?, ?, COALESCE(?, datetime('now')))
+      canonical_question_id, prompt, external_response_id, circle_id, created_at
+    ) VALUES (?, ?, 'survey_response', ?, ?, 'open', 'external_survey', ?, ?, ?, ?, ?, COALESCE(?, datetime('now')))
   `);
+
+  // Filed in the circle the respondent belongs to
+  const respondentCircle = db.prepare(
+    'SELECT circle_id FROM circle_members WHERE user_id = ? ORDER BY added_at LIMIT 1'
+  ).get(user.id)?.circle_id || null;
 
   const filed = [];
   const skipped = [];
@@ -368,7 +373,7 @@ router.post('/survey-responses', requireApiKey('events', 'customer_io'), (req, r
         uuid(), user.id, answer.trim(), survey_name || null,
         source_system, question ? question.id : null, questionText,
         response_id ? `${response_id}:${question ? question.id : index}` : null,
-        submitted_at || null
+        respondentCircle, submitted_at || null
       );
 
       if (result.changes) filed.push({ question: questionText, question_id: question?.id });

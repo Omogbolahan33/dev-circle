@@ -164,90 +164,114 @@ test('a manual cohort keeps hand-added members when its rules are re-run', async
 
 // ─── Circles ────────────────────────────────────────────────
 
-test('a sub-circle can only draw members from its parent', async () => {
-  const inRoot = h.makeUser();
+test('a circle is a workspace, so its membership is its own', async () => {
+  const inDev = h.makeUser();
   const outsider = h.makeUser();
 
-  circles.joinRoot(inRoot.id); // outsider deliberately left out
+  // Nothing is drawn from a parent, because there is no parent — circles are
+  // peers, and this was the rule that made them read as a feature inside one.
+  const merchant = await h.post('/api/admin/circles', { name: 'Merchant Circle' }, { token });
+  assert.equal(merchant.status, 201);
 
-  const sub = await h.post('/api/admin/circles', { name: 'Lending Partners' }, { token });
-  assert.equal(sub.status, 201);
+  const res = await h.post(`/api/admin/circles/${merchant.body.circle.id}/members`,
+    { user_ids: [inDev.id, outsider.id] }, { token });
 
-  const res = await h.post(`/api/admin/circles/${sub.body.circle.id}/members`,
-    { user_ids: [inRoot.id, outsider.id] }, { token });
-
-  assert.equal(res.body.added, 1);
-  assert.equal(res.body.rejected.length, 1);
-  assert.match(res.body.rejected[0].reason, /parent circle/);
+  assert.equal(res.body.added, 2);
+  assert.deepEqual(res.body.rejected, []);
 });
 
-test('a cohort in a sub-circle cannot reach outside that circle', async () => {
-  const inner = h.makeUser({ work_sector: 'Fintech' });
-  const outer = h.makeUser({ work_sector: 'Fintech' });
-  circles.joinRoot(inner.id);
-  circles.joinRoot(outer.id);
+test('one account, several workspaces', async () => {
+  const user = h.makeUser();
+  const merchant = await h.post('/api/admin/circles', { name: 'Merchant Circle' }, { token });
+  await h.post(`/api/admin/circles/${merchant.body.circle.id}/members`, { user_ids: [user.id] }, { token });
 
-  const sub = await h.post('/api/admin/circles', { name: 'Inner' }, { token });
-  await h.post(`/api/admin/circles/${sub.body.circle.id}/members`, { user_ids: [inner.id] }, { token });
+  const circles = require('../../src/services/circles').forUser(user.id);
+  assert.equal(circles.length, 2, 'the same person, in two workspaces');
+});
 
+test('leaving one workspace has no bearing on the others', async () => {
+  const user = h.makeUser();
+  const merchant = await h.post('/api/admin/circles', { name: 'Merchant Circle' }, { token });
+  await h.post(`/api/admin/circles/${merchant.body.circle.id}/members`, { user_ids: [user.id] }, { token });
+
+  await h.del(`/api/admin/circles/${merchant.body.circle.id}/members/${user.id}`, { token });
+
+  const circles = require('../../src/services/circles').forUser(user.id);
+  assert.equal(circles.length, 1);
+  assert.equal(circles[0].id, rootCircle, 'still in the circle they started in');
+});
+
+test('a cohort slices one workspace and never reaches into another', async () => {
+  const here = h.makeUser({ work_sector: 'Fintech' });
+
+  const merchant = await h.post('/api/admin/circles', { name: 'Merchant Circle' }, { token });
+  const there = h.makeUser({ work_sector: 'Fintech' });
+  await h.post(`/api/admin/circles/${merchant.body.circle.id}/members`, { user_ids: [there.id] }, { token });
+  h.db.prepare('DELETE FROM circle_members WHERE user_id = ? AND circle_id = ?').run(there.id, rootCircle);
+
+  // Made in Dev Circle, so it can only ever hold Dev Circle members
   const cohort = await h.post('/api/admin/cohorts', {
-    name: 'Fintech in Inner',
-    circle_id: sub.body.circle.id,
-    filter_rules: [{ field: 'work_sector', op: 'eq', value: 'Fintech' }]
+    name: 'Fintech', filter_rules: [{ field: 'work_sector', op: 'eq', value: 'Fintech' }]
   }, { token });
 
-  // Both members match the rule; only the one inside the circle may join
-  assert.equal(cohort.body.sync.added, 1);
+  assert.equal(cohort.body.sync.added, 1, 'the identical member in the other workspace is not in scope');
+
+  const members = h.db.prepare('SELECT user_id FROM user_cohorts WHERE cohort_id = ?')
+    .all(cohort.body.cohort.id).map(r => r.user_id);
+  assert.deepEqual(members, [here.id]);
 });
 
-test('removing someone from a circle removes them from its sub-circles too', async () => {
-  const user = h.makeUser();
-  circles.joinRoot(user.id);
-
-  const sub = await h.post('/api/admin/circles', { name: 'Nested' }, { token });
-  await h.post(`/api/admin/circles/${sub.body.circle.id}/members`, { user_ids: [user.id] }, { token });
-
-  await h.del(`/api/admin/circles/${rootCircle}/members/${user.id}`, { token });
-
-  const remaining = h.db.prepare('SELECT COUNT(*) as c FROM circle_members WHERE user_id = ?').get(user.id).c;
-  assert.equal(remaining, 0);
-});
-
-test('the root circle cannot be archived', async () => {
+test('the last remaining circle cannot be archived', async () => {
+  // Archiving it would leave nowhere to work
   const res = await h.del(`/api/admin/circles/${rootCircle}`, { token });
   assert.equal(res.status, 400);
+  assert.match(res.body.error, /only active circle/);
 });
 
-test('circles cannot be nested more than one level below the root', async () => {
-  const parent = await h.post('/api/admin/circles', { name: 'Parent' }, { token });
-  const grandchild = await h.post('/api/admin/circles',
-    { name: 'Child', parent_id: parent.body.circle.id }, { token });
-
-  assert.equal(grandchild.status, 400);
-  assert.match(grandchild.body.error, /nested/);
+test('a circle can be archived once another exists', async () => {
+  const merchant = await h.post('/api/admin/circles', { name: 'Merchant Circle' }, { token });
+  const res = await h.del(`/api/admin/circles/${merchant.body.circle.id}`, { token });
+  assert.equal(res.status, 200);
 });
 
-test('a circle with active sub-circles cannot be archived', async () => {
-  const parent = await h.post('/api/admin/circles', { name: 'Parent' }, { token });
+test('only staff who span circles may create one', async () => {
+  const role = h.makeRole('Circle Admin', ['*']);
+  const scoped = h.makeAdmin({
+    email: 'scoped@creditdirect.ng', roleId: role, global: false, circleId: rootCircle
+  });
+  const scopedToken = await h.loginAdmin(scoped.email, scoped.password);
 
-  // Inserted directly, since the API refuses to nest this deep
-  h.db.prepare(`
-    INSERT INTO circles (id, name, slug, parent_id) VALUES (?, 'Child', 'child', ?)
-  `).run(h.uuid(), parent.body.circle.id);
-
-  const res = await h.del(`/api/admin/circles/${parent.body.circle.id}`, { token });
-  assert.equal(res.status, 400);
-  assert.match(res.body.error, /sub-circle/);
+  const res = await h.post('/api/admin/circles', { name: 'Unauthorised Circle' }, { token: scopedToken });
+  assert.equal(res.status, 403);
 });
 
-test('a survey scoped to a sub-circle is invisible to everyone else', async () => {
+test('naming a circle you cannot reach is refused, not quietly answered', async () => {
+  const merchant = await h.post('/api/admin/circles', { name: 'Merchant Circle' }, { token });
+
+  const role = h.makeRole('Dev Only', ['members.read']);
+  const scoped = h.makeAdmin({
+    email: 'devonly@creditdirect.ng', roleId: role, global: false, circleId: rootCircle
+  });
+  const scopedToken = await h.loginAdmin(scoped.email, scoped.password);
+
+  const res = await h.call('GET', '/api/admin/members', {
+    token: scopedToken, headers: { 'X-Circle-Id': merchant.body.circle.id }
+  });
+
+  // Answering with a different circle's data would be the leak this prevents
+  assert.equal(res.status, 403);
+  assert.match(res.body.error, /do not have access/);
+});
+
+test('a survey belongs to one workspace and is invisible outside it', async () => {
   const inside = h.makeUser();
   const outside = h.makeUser();
-  circles.joinRoot(inside.id);
-  circles.joinRoot(outside.id);
+  circles.join(inside.id);
+  circles.join(outside.id);
 
-  const sub = await h.post('/api/admin/circles', { name: 'Private' }, { token });
-  await h.post(`/api/admin/circles/${sub.body.circle.id}/members`, { user_ids: [inside.id] }, { token });
+  const other = await h.post('/api/admin/circles', { name: 'Merchant Circle' }, { token });
+  await h.post(`/api/admin/circles/${other.body.circle.id}/members`, { user_ids: [inside.id] }, { token });
+  const sub = other;
 
   const survey = await h.post('/api/admin/surveys', {
     title: 'Private survey', questions: [{ type: 'text', text: 'thoughts?' }],

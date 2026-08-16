@@ -160,6 +160,8 @@ function requireAuth(req, res, next) {
     }
     req.admin = admin;
     req.isAdmin = true;
+    // A provisional value: a role is held within a circle, so circleContext
+    // replaces this with the permissions that apply where they are working
     req.permissions = permissionsFor(admin);
   } else {
     const user = db.prepare('SELECT * FROM users WHERE id = ?').get(session.userId);

@@ -118,10 +118,12 @@ function forExternalSurvey(text, { source, ref, type = 'text' } = {}) {
 // Every question we have asked that drew written answers, with the size of the
 // evidence behind it. Developers, not answers, because one developer saying a
 // thing five times and five saying it once are different facts.
-function catalogue({ search = null } = {}) {
+function catalogue({ search = null, circleId = null } = {}) {
   // Answers from surveys run here and elsewhere are the same evidence
   const where = ["f.source IN ('survey', 'external_survey')"];
   const params = [];
+
+  if (circleId) { where.push('f.circle_id = ?'); params.push(circleId); }
 
   if (search) {
     where.push('(q.text LIKE ? OR f.content LIKE ?)');

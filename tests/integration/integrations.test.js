@@ -170,7 +170,7 @@ test('an event for an unknown member is queued for replay, not lost', async () =
 
 test('a production call promotes the member and re-syncs rule-based cohorts', async () => {
   const user = h.makeUser({ email: 'dev@hub.ng', api_status: 'sandbox' });
-  require('../../src/services/circles').joinRoot(user.id);
+  require('../../src/services/circles').join(user.id);
 
   const cohort = await h.post('/api/admin/cohorts', {
     name: 'Production', auto_sync: true,
