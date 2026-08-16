@@ -1534,7 +1534,7 @@ textarea.input { min-height: 90px; line-height: var(--lh-normal); }
   border: 1px solid var(--line);
   border-radius: var(--r-lg);
   margin-bottom: var(--sp-3);
-  background: var(--surface);
+  background: var(--surface-2);
   overflow: hidden;
 }
 .q-head {
@@ -1740,8 +1740,8 @@ textarea.input { min-height: 90px; line-height: var(--lh-normal); }
   bottom: calc(100% + 6px);
   left: 0;
   right: 0;
-  z-index: 60;
-  background: var(--surface);
+  z-index: 50;
+  background: var(--surface-3);
   border: 1px solid var(--line);
   border-radius: var(--r-md);
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.32);

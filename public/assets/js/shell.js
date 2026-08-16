@@ -157,7 +157,7 @@ const Shell = {
     return `
       <aside class="sidebar" id="sidebar">
         <a href="/admin/dashboard.html" class="sidebar-brand">
-          <span class="brand-mark">dev<span>.</span>circle</span>
+          <span class="brand-mark" id="brandMark">dev<span>.</span>circle</span>
           <span class="brand-badge">Admin</span>
         </a>
         <button class="sidebar-search" onclick="Shell.openPalette()">
@@ -322,6 +322,10 @@ const Shell = {
     const current = data.current;
     if (Auth.getCircle() !== current.id) Auth.setCircle(current.id);
 
+    // Name the workspace everywhere it is claimed, so a switch is visibly a
+    // switch rather than something you have to take on trust
+    this._nameCircle(current.name);
+
     // One workspace and no power to make another means there is nothing here
     // to decide, so nothing is shown
     if (data.circles.length < 2 && !data.can_create) return;
@@ -367,6 +371,17 @@ const Shell = {
   closeCircles() {
     document.getElementById('circleMenu')?.classList.remove('open');
     document.getElementById('circleButton')?.setAttribute('aria-expanded', 'false');
+  },
+
+  // The sidebar heading and the browser tab both said "dev.circle" whichever
+  // circle you were in, which read as though switching had not worked.
+  _nameCircle(name) {
+    const mark = document.getElementById('brandMark');
+    if (mark) mark.textContent = name;
+
+    // Keep whatever the page called itself, and say which workspace it is in
+    const page = document.title.split('—').pop().trim();
+    document.title = `${name} — ${page}`;
   },
 
   toggleCircles(e) {
