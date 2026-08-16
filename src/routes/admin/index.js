@@ -15,6 +15,7 @@ router.use(requireAuth, requireAdmin);
 router.use('/circles', require('./circles.routes'));
 router.use('/sessions', require('./sessions.routes'));
 router.use('/docs', require('./docs.routes'));
+router.use('/', require('./questions.routes'));
 router.use('/sandbox', require('./sandbox.routes'));
 
 router.use('/', require('./dashboard.routes'));

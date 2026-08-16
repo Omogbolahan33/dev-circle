@@ -5,7 +5,7 @@
 // what a role can do is discoverable three ways before anyone reads the source.
 
 const {
-  ref, str, int, bool, num, timestamp, arrayOf, object,
+  ref, str, int, bool, num, id, timestamp, arrayOf, object,
   CHANNELS, API_KEY_SCOPES, SESSION_TYPES
 } = require('./components');
 const { op, json, jsonBody, fileResponse, query, path } = require('./operation');
@@ -354,6 +354,386 @@ const paths = {
         400: json('No usable input, or a workbook that could not be read.', ref('Error'), {
           error: 'Provide a users array, a csv string, or xlsx_base64'
         })
+      }
+    })
+  },
+
+  '/admin/feedback/axes': {
+    get: op({
+      tag: 'Admin · Feedback',
+      permission: 'feedback.read',
+      operationId: 'getFeedbackAxes',
+      summary: 'Ways feedback can be grouped',
+      description:
+        'The same body of verbatims can be cut by question, developer, survey, source, ' +
+        'company, sector, stage, month, cohort or circle. Each axis names the filter ' +
+        'that drills into one of its groups, so grouping and filtering compose.',
+      responses: {
+        200: json('The available groupings.', object({
+          axes: arrayOf(object({
+            key: str('Pass as group_by'),
+            label: str('Human name'),
+            describe: str('What reading it this way tells you'),
+            filter: str('Query parameter that narrows to one group'),
+            facet: bool('True where one answer can appear under several groups, as with cohorts')
+          }), 'Every way of cutting the feedback up')
+        }), {
+          axes: [
+            { key: 'question', label: 'Question', describe: 'What people answered when we asked the same thing', filter: 'question_id', facet: false },
+            { key: 'cohort', label: 'Cohort', describe: 'What a segment is telling us', filter: 'cohort_id', facet: true }
+          ]
+        })
+      }
+    })
+  },
+
+  '/admin/feedback/grouped': {
+    get: op({
+      tag: 'Admin · Feedback',
+      permission: 'feedback.read',
+      operationId: 'getGroupedFeedback',
+      summary: 'Feedback grouped along one axis',
+      description: [
+        'Groups first, verbatims on drill-in. Filters and grouping compose, so "what the',
+        'lending cohort said, by question" is one call.',
+        '',
+        'Counts lead with distinct developers rather than answers: five people saying a',
+        'thing once and one person saying it five times are different facts, and a single',
+        'total renders them identically.'
+      ].join('\n'),
+      parameters: [
+        query('group_by', 'Which axis to group along — see /admin/feedback/axes', { type: 'string', default: 'question' }),
+        query('prompted', 'true for answers to questions, false for what was raised unprompted', { type: 'string', enum: ['true', 'false'] }),
+        query('search', 'Match against the question or the answer'),
+        query('question_id', 'Narrow to one question'),
+        query('user_id', 'Narrow to one developer'),
+        query('survey_id', 'Narrow to one survey, or one external system'),
+        query('source', 'dev_circle, survey, external_survey, feex or customer_io'),
+        query('cohort_id', 'Narrow to a cohort'),
+        query('circle_id', 'Narrow to a circle'),
+        query('since', 'Only what was said on or after this date')
+      ],
+      responses: {
+        200: json('The groups, with the size of the evidence behind each.', object({
+          group_by: str('Axis used'),
+          groups: arrayOf(object({
+            key: str('Value to pass to the axis filter'),
+            label: str('What to show'),
+            context: str('Secondary label, such as the company for a developer', { nullable: true }),
+            developer_count: int('Distinct developers who said something in this group'),
+            answer_count: int('Verbatims in this group'),
+            last_at: timestamp('Most recent thing said')
+          }), 'One entry per group'),
+          totals: object({
+            answers: int('Verbatims matching the filters'),
+            developers: int('Distinct developers'),
+            questions: int('Distinct questions answered')
+          })
+        }), {
+          group_by: 'question',
+          groups: [{
+            key: 'a1b2c3d4-0000-4000-8000-000000000001',
+            label: 'What could we improve about the onboarding?',
+            context: null, developer_count: 6, answer_count: 6,
+            last_at: '2026-08-14 09:12:00'
+          }],
+          totals: { answers: 35, developers: 13, questions: 7 }
+        }),
+        400: json('Unknown grouping.', ref('Error'), { error: 'Unknown grouping "colour"' })
+      }
+    })
+  },
+
+  '/admin/feedback/items': {
+    get: op({
+      tag: 'Admin · Feedback',
+      permission: 'feedback.read',
+      operationId: 'getFeedbackItems',
+      summary: 'The verbatims themselves',
+      description:
+        'Flat rows for whatever the filters leave — what a table view reads, and what ' +
+        'drilling into a group returns. Accepts every filter `/admin/feedback/grouped` does.',
+      parameters: [
+        query('question_id', 'Narrow to one question'),
+        query('user_id', 'Narrow to one developer'),
+        query('survey_id', 'Narrow to one survey or external system'),
+        query('source', 'Where it reached us'),
+        query('prompted', 'true for answers, false for unprompted', { type: 'string', enum: ['true', 'false'] }),
+        query('search', 'Match against the question or the answer'),
+        query('limit', 'How many to return', { type: 'integer', default: 200, maximum: 500 })
+      ],
+      responses: {
+        200: json('The matching verbatims.', object({
+          items: arrayOf(object({
+            id: id('Feedback id'),
+            content: str('What the developer wrote'),
+            question: str('The question it answered', { nullable: true }),
+            came_from: str('Survey title, or the system it was collected in'),
+            source: str('dev_circle, survey, external_survey, feex, customer_io'),
+            developer: str('Who said it'),
+            company: str('Their company', { nullable: true }),
+            created_at: timestamp('When they said it')
+          }), 'Verbatims, newest first'),
+          totals: object({
+            answers: int('How many'), developers: int('Distinct developers'), questions: int('Distinct questions')
+          })
+        }), {
+          items: [{
+            id: '2b7e1f00-0000-4000-8000-000000000009',
+            content: 'The webhook retry intervals are undocumented.',
+            question: 'What could we improve about the onboarding?',
+            came_from: 'Onboarding Experience Feedback', source: 'survey',
+            developer: 'Chidi Nwosu', company: 'Paystack', created_at: '2026-08-01 10:04:00'
+          }],
+          totals: { answers: 6, developers: 6, questions: 1 }
+        })
+      }
+    })
+  },
+
+  '/admin/feedback/export': {
+    get: op({
+      tag: 'Admin · Feedback',
+      permission: 'export.read',
+      operationId: 'exportFeedback',
+      summary: 'Export verbatims',
+      description: [
+        'Every filter the screen accepts, and the same rows it is showing — the export',
+        'reads through the same service, so a file can never disagree with the screen',
+        'that asked for it.',
+        '',
+        'Passing `group_by` with `format=xlsx` puts each group on its own sheet, behind a',
+        'contents tab: reading one question\'s answers side by side is the same reason to',
+        'group on screen and to want them on their own tab.',
+        '',
+        'CSV values beginning with `=`, `+`, `-` or `@` are neutralised — every one of',
+        'these values was typed by a developer, which is exactly the case that guards against.'
+      ].join('\n'),
+      parameters: [
+        query('format', 'File format', { type: 'string', enum: ['csv', 'xlsx', 'json'], default: 'csv' }),
+        query('group_by', 'With xlsx, produces one sheet per group'),
+        query('question_id', 'Narrow to one question'),
+        query('user_id', 'Narrow to one developer'),
+        query('cohort_id', 'Narrow to a cohort'),
+        query('prompted', 'true for answers, false for unprompted', { type: 'string', enum: ['true', 'false'] }),
+        query('search', 'Match against the question or the answer')
+      ],
+      responses: {
+        200: fileResponse(
+          'The verbatims, in the requested format.',
+          'text/csv',
+          'said_at,developer,email,company,work_sector,api_status,source,came_from,question,answer\n2026-08-01,Chidi Nwosu,chidi@paystack.africa,Paystack,Fintech,production,survey,Onboarding Experience Feedback,What could we improve about the onboarding?,The webhook retry intervals are undocumented.'
+        ),
+        400: json('Unsupported format.', ref('Error'), { error: 'format must be csv, xlsx, or json' })
+      }
+    })
+  },
+
+  '/admin/feedback/export/count': {
+    get: op({
+      tag: 'Admin · Feedback',
+      permission: 'export.read',
+      operationId: 'countFeedbackExport',
+      summary: 'Size an export before downloading it',
+      description: 'How many verbatims, developers and questions the filters select.',
+      parameters: [query('question_id', 'Narrow to one question'), query('cohort_id', 'Narrow to a cohort')],
+      responses: {
+        200: json('What the filters select.', object({
+          total: int('Verbatims'), developers: int('Distinct developers'), questions: int('Distinct questions')
+        }), { total: 35, developers: 13, questions: 7 })
+      }
+    })
+  },
+
+  '/admin/questions': {
+    get: op({
+      tag: 'Admin · Feedback',
+      permission: 'feedback.read',
+      operationId: 'listQuestions',
+      summary: 'Questions that have drawn written answers',
+      description: [
+        'A question is a thing in its own right rather than an entry inside one survey, so',
+        'answers to it read together whichever survey carried it — including surveys run',
+        'outside Dev Circle.',
+        '',
+        'A survey normally asks several open questions, so a survey and a question are not',
+        'the same unit: four surveys can produce seven questions.'
+      ].join('\n'),
+      parameters: [query('search', 'Match against the question text or its answers')],
+      responses: {
+        200: json('Questions, most-answered first.', object({
+          questions: arrayOf(object({
+            id: id('Question id'),
+            text: str('The question as asked'),
+            developer_count: int('Distinct developers who answered'),
+            answer_count: int('Answers collected'),
+            survey_count: int('How many surveys or systems have carried it'),
+            external_source: str('Set when the question belongs to a form run elsewhere', { nullable: true }),
+            last_answered_at: timestamp('Most recent answer')
+          }), 'One entry per question'),
+          totals: object({ questions: int('Questions'), developers: int('Distinct developers'), answers: int('Answers') })
+        }), {
+          questions: [{
+            id: 'a1b2c3d4-0000-4000-8000-000000000001',
+            text: 'What could we improve about the onboarding?',
+            developer_count: 6, answer_count: 6, survey_count: 1,
+            external_source: null, last_answered_at: '2026-08-14 09:12:00'
+          }],
+          totals: { questions: 7, developers: 13, answers: 35 }
+        })
+      }
+    })
+  },
+
+  '/admin/questions/{id}': {
+    get: op({
+      tag: 'Admin · Feedback',
+      permission: 'feedback.read',
+      operationId: 'getQuestion',
+      summary: 'One question and everything said in answer to it',
+      description:
+        'Answers from every survey that has carried this question, with who said each one. ' +
+        '`asked_in` lists the occasions, so a question asked three times over a year reads ' +
+        'as one body of evidence rather than three.',
+      parameters: [path('id', 'Question id')],
+      responses: {
+        200: json('The question and its answers.', object({
+          question: object({ id: id('Question id'), text: str('As asked'), type: str('Question type') }),
+          asked_in: arrayOf(object({
+            id: id('Survey id'), title: str('Survey title'), developer_count: int('Answers from that round')
+          }), 'Surveys that carried it'),
+          developer_count: int('Distinct developers who answered'),
+          answers: arrayOf(object({
+            content: str('What they wrote'),
+            user_name: str('Who said it'),
+            user_company: str('Their company', { nullable: true }),
+            survey_title: str('Which round', { nullable: true }),
+            created_at: timestamp('When')
+          }), 'Every answer, newest first')
+        }), {
+          question: { id: 'a1b2c3d4-0000-4000-8000-000000000001', text: 'What could we improve about the onboarding?', type: 'text' },
+          asked_in: [{ id: MEMBER_ID, title: 'Onboarding Experience Feedback', developer_count: 6 }],
+          developer_count: 6,
+          answers: [{
+            content: 'The webhook retry intervals are undocumented.',
+            user_name: 'Chidi Nwosu', user_company: 'Paystack',
+            survey_title: 'Onboarding Experience Feedback', created_at: '2026-08-01 10:04:00'
+          }]
+        }),
+        404: json('No such question.', ref('Error'), { error: 'Question not found' })
+      }
+    })
+  },
+
+  '/admin/questions-reusable': {
+    get: op({
+      tag: 'Admin · Surveys',
+      permission: 'surveys.write',
+      operationId: 'listReusableQuestions',
+      summary: 'Questions a survey can carry on',
+      description: [
+        'Offered while writing a survey, with how much each has already collected.',
+        '',
+        'Questions are not a fixed library: every discovery initiative asks whatever it',
+        'needs, new questions are the ordinary case, and a question asked exactly once is',
+        'a normal question. Reuse only makes *continuing* a question possible.'
+      ].join('\n'),
+      parameters: [query('type', 'Question type', { type: 'string', default: 'text' })],
+      responses: {
+        200: json('Questions that can be carried on.', object({
+          questions: arrayOf(object({
+            id: id('Question id'), text: str('As asked'),
+            developer_count: int('Developers who have answered it'),
+            survey_count: int('Surveys that have carried it')
+          }), 'Reusable questions')
+        }), {
+          questions: [{
+            id: 'a1b2c3d4-0000-4000-8000-000000000001',
+            text: 'What could we improve about the onboarding?',
+            developer_count: 6, survey_count: 1
+          }]
+        })
+      }
+    })
+  },
+
+  '/admin/questions/suggest': {
+    post: op({
+      tag: 'Admin · Surveys',
+      permission: 'surveys.write',
+      operationId: 'suggestQuestions',
+      summary: 'Have we asked this before?',
+      description: [
+        'Questions already asked that read like the one being written, so the author can',
+        'join the evidence up if they meant the same thing.',
+        '',
+        'This only ever suggests. Two initiatives can ask "Any other feedback?" about',
+        'entirely different things, and merging them silently would be unrecoverable —',
+        'separate piles can be joined later, a merged pile cannot be taken apart.'
+      ].join('\n'),
+      requestBody: jsonBody(object({
+        text: str('The question being written'),
+        type: str('Question type', { default: 'text' })
+      }), { text: 'What could we improve about the onboarding?', type: 'text' }),
+      responses: {
+        200: json('Questions that read the same.', object({
+          matches: arrayOf(object({
+            id: id('Question id'), text: str('As previously asked'),
+            developer_count: int('Developers who answered it'),
+            survey_count: int('Surveys that carried it')
+          }), 'Possible continuations — never applied automatically')
+        }), {
+          matches: [{
+            id: 'a1b2c3d4-0000-4000-8000-000000000001',
+            text: 'What could we improve about the onboarding?',
+            developer_count: 6, survey_count: 1
+          }]
+        })
+      }
+    })
+  },
+
+  '/admin/members/{id}/timeline': {
+    get: op({
+      tag: 'Admin · Members',
+      permission: 'members.read',
+      operationId: 'getMemberTimeline',
+      summary: 'Everything one developer did and said',
+      description: [
+        'One stream: the milestones the system recorded, every verbatim from every source,',
+        'and the messages we sent them — in the order it happened.',
+        '',
+        'Reading it across three tabs and stitching the order together in your head was',
+        'what made a developer hard to see whole.'
+      ].join('\n'),
+      parameters: [path('id', 'Member id'), query('limit', 'How many entries', { type: 'integer', default: 150 })],
+      responses: {
+        200: json('The member, whole.', object({
+          timeline: arrayOf(object({
+            kind: str('did, said or sent', { enum: ['did', 'said', 'sent'] }),
+            at: timestamp('When it happened'),
+            label: str('What happened, for a milestone', { nullable: true }),
+            content: str('What they wrote, for a verbatim', { nullable: true }),
+            prompt: str('The question it answered', { nullable: true }),
+            source: str('Where it came from'),
+            detail: str('Survey, reward or system it relates to', { nullable: true })
+          }), 'Newest first'),
+          counts: object({
+            did: int('Milestones'), said: int('Verbatims'), sent: int('Messages delivered'),
+            questions_answered: int('Distinct questions this developer has answered')
+          })
+        }), {
+          timeline: [
+            { kind: 'said', at: '2026-08-14 09:12:00', label: null,
+              content: 'Waiting on KYB with no visibility. We had engineers idle for a week.',
+              prompt: 'What is the single biggest friction in going live?',
+              source: 'external_survey', detail: 'google forms' },
+            { kind: 'did', at: '2026-07-16 11:00:00', label: 'first production call',
+              content: null, prompt: null, source: 'customer_io', detail: null }
+          ],
+          counts: { did: 6, said: 5, sent: 0, questions_answered: 4 }
+        }),
+        404: json('No such member.', ref('Error'), { error: 'Member not found' })
       }
     })
   },

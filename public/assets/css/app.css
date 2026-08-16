@@ -1525,3 +1525,169 @@ textarea.input { min-height: 90px; line-height: var(--lh-normal); }
 }
 .fb-item.survey { border-left: 2px solid var(--cd-blue-40, var(--cd-blue)); }
 .quote-prompt { font-size: var(--fs-xs); color: var(--ash-dim); margin-bottom: 2px; }
+
+/* ─── Questions: the evidence base ──────────────────────────
+   Answers read together under the question that drew them out. The developer
+   leads each answer, because comparing who said what is the whole reason to
+   read them side by side rather than as a stream. */
+.q-card {
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  margin-bottom: var(--sp-3);
+  background: var(--surface);
+  overflow: hidden;
+}
+.q-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  padding: var(--sp-4) var(--sp-5);
+  cursor: pointer;
+}
+.q-head:hover { background: var(--surface-2, rgba(160,160,184,0.03)); }
+.q-text {
+  font-family: var(--font-display);
+  font-weight: var(--fw-semibold);
+  font-size: var(--fs-md);
+  letter-spacing: -0.01em;
+  flex: 1;
+  min-width: 0;
+}
+.q-facts {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  flex-shrink: 0;
+  font-size: var(--fs-xs);
+  color: var(--ash-dim);
+}
+/* The number that matters: distinct developers, not messages */
+.q-count {
+  font-family: var(--font-display);
+  font-weight: var(--fw-bold);
+  font-size: var(--fs-lg);
+  color: var(--cd-blue);
+  letter-spacing: -0.02em;
+}
+.q-repeat, .q-ext {
+  font-size: 10px;
+  font-family: var(--font-mono);
+  padding: 2px 6px;
+  border-radius: var(--r-sm);
+  background: rgba(160,160,184,0.08);
+  color: var(--ash);
+}
+.q-ext { background: var(--cd-blue-dim); color: var(--blue-ink, var(--cd-blue)); }
+
+.q-answers { display: none; }
+.q-answers.open { display: block; border-top: 1px solid var(--line); }
+
+.q-occasions {
+  padding: var(--sp-2) var(--sp-5);
+  font-size: var(--fs-xs);
+  color: var(--ash-dim);
+  border-bottom: 1px solid var(--line);
+}
+
+.q-answer {
+  display: flex;
+  gap: var(--sp-4);
+  padding: var(--sp-4) var(--sp-5);
+  border-bottom: 1px solid var(--line);
+}
+.q-answer:last-child { border-bottom: none; }
+.q-who {
+  flex: 0 0 140px;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  color: var(--white);
+  text-decoration: none;
+}
+.q-who:hover { color: var(--cd-blue); }
+.q-body { flex: 1; min-width: 0; }
+.q-quote { font-size: var(--fs-sm); line-height: 1.55; margin-bottom: var(--sp-1); }
+.q-meta {
+  display: flex;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+  font-size: var(--fs-xs);
+  color: var(--ash-dim);
+}
+
+@media (max-width: 640px) {
+  .q-head { flex-wrap: wrap; }
+  .q-answer { flex-direction: column; gap: var(--sp-1); }
+  .q-who { flex: none; }
+}
+
+/* ─── Everything: one developer, whole ──────────────────────
+   What they did and what they said in one stream. Said entries carry weight,
+   because their words are the thing worth reading; milestones stay quiet and
+   act as the spine the words hang from. */
+.ev-summary {
+  display: flex;
+  gap: var(--sp-5);
+  flex-wrap: wrap;
+  padding: 0 0 var(--sp-4);
+  margin-bottom: var(--sp-4);
+  border-bottom: 1px solid var(--line);
+  font-size: var(--fs-xs);
+  color: var(--ash-dim);
+}
+.ev-summary strong {
+  font-family: var(--font-display);
+  font-size: var(--fs-md);
+  color: var(--white);
+  margin-right: 4px;
+}
+
+.ev { display: flex; gap: var(--sp-4); padding: var(--sp-3) 0; }
+.ev-when {
+  flex: 0 0 76px;
+  font-size: var(--fs-xs);
+  color: var(--ash-dim);
+  font-family: var(--font-mono);
+  padding-top: 2px;
+}
+.ev-body { flex: 1; min-width: 0; }
+
+.ev-did .ev-line, .ev-sent .ev-line { font-size: var(--fs-sm); color: var(--ash); }
+.ev-detail { color: var(--ash-dim); }
+.ev-sent { opacity: .72; }
+
+.ev-said {
+  border-left: 2px solid var(--cd-blue);
+  padding-left: var(--sp-4);
+  margin: var(--sp-2) 0 var(--sp-2) calc(76px + var(--sp-4));
+}
+.ev-said .ev-when { display: none; }
+.ev-prompt { font-size: var(--fs-xs); color: var(--ash-dim); margin-bottom: 2px; }
+.ev-quote { font-size: var(--fs-sm); line-height: 1.55; margin-bottom: var(--sp-1); }
+.ev-meta { display: flex; gap: var(--sp-3); flex-wrap: wrap; font-size: var(--fs-xs); color: var(--ash-dim); }
+.ev-meta a { color: var(--cd-blue); text-decoration: none; }
+.ev-meta a:hover { text-decoration: underline; }
+
+@media (max-width: 640px) {
+  .ev { flex-direction: column; gap: 2px; }
+  .ev-when { flex: none; }
+  .ev-said { margin-left: 0; }
+}
+.inline-field { display:flex; align-items:center; gap:var(--sp-2); font-size:var(--fs-xs); color:var(--ash-dim); }
+.inline-field .input { width:auto; padding:var(--sp-1) var(--sp-2); font-size:var(--fs-xs); }
+.q-context { font-weight:400; color:var(--ash-dim); font-size:var(--fs-xs); }
+.seg { display:inline-flex; border:1px solid var(--line); border-radius:var(--r-md); overflow:hidden; }
+.seg-btn { background:none; border:none; padding:var(--sp-1) var(--sp-3); font-size:var(--fs-xs); color:var(--ash); cursor:pointer; font-family:var(--font-body); }
+.seg-btn.active { background:var(--cd-blue-dim); color:var(--blue-ink, var(--cd-blue)); }
+.data-table th[data-sort] { cursor:pointer; user-select:none; white-space:nowrap; }
+.data-table th[data-sort]:hover { color:var(--white); }
+.data-table th.sorted { color:var(--cd-blue); }
+.data-table tr.group-row td { background: var(--cd-blue-dim); padding: var(--sp-2) var(--sp-3); }
+.group-label { font-family: var(--font-display); font-weight: var(--fw-semibold); font-size: var(--fs-sm); }
+.group-count { font-size: var(--fs-xs); color: var(--ash-dim); margin-left: var(--sp-3); }
+/* A notification that goes somewhere reads as something you can open */
+.note.actionable { cursor: pointer; }
+.note.actionable:hover { background: var(--cd-blue-dim); }
+.note.actionable:focus-visible { outline: 2px solid var(--cd-blue); outline-offset: -2px; }
+.note-go { color: var(--ash-dim); flex-shrink: 0; align-self: center; }
+.note.actionable:hover .note-go { color: var(--cd-blue); }

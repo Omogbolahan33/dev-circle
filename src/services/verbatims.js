@@ -16,11 +16,12 @@ const { uuid, parseJSON } = require('../utils/helpers');
 // sentences under the numbers.
 const VERBATIM_TYPES = new Set(['text']);
 
-const insert = db.prepare(`
+// Prepared on use rather than at load: the handle may point at a sandbox
+const insert = () => db.prepare(`
   INSERT OR IGNORE INTO feedback (
     id, user_id, type, content, category, status, source,
-    survey_id, question_id, prompt, created_at
-  ) VALUES (?, ?, 'survey_response', ?, ?, 'open', 'survey', ?, ?, ?, COALESCE(?, datetime('now')))
+    survey_id, question_id, canonical_question_id, prompt, created_at
+  ) VALUES (?, ?, 'survey_response', ?, ?, 'open', 'survey', ?, ?, ?, ?, COALESCE(?, datetime('now')))
 `);
 
 // Pull the free-text answers out of one completed response.
@@ -41,7 +42,10 @@ function extract(survey, answers) {
     if (typeof answer !== 'string' || !answer.trim()) continue;
 
     found.push({
+      // The slot inside this survey, and the question it is an instance of.
+      // Grouping reads the second; tracing an answer home reads the first.
       question_id: question.id,
+      canonical_question_id: question.question_id || null,
       prompt: question.text || null,
       content: answer.trim()
     });
@@ -62,9 +66,9 @@ function record(userId, survey, answers, { at = null } = {}) {
     for (const row of rows) {
       // The survey title is the closest thing to a category the member gave
       // us, and it is what makes a list of verbatims readable at a glance.
-      const result = insert.run(
+      const result = insert().run(
         uuid(), userId, row.content, survey.title || null,
-        survey.id, row.question_id, row.prompt, at
+        survey.id, row.question_id, row.canonical_question_id, row.prompt, at
       );
       filed += result.changes;
     }

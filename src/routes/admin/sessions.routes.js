@@ -243,6 +243,7 @@ router.delete('/:id', requirePermission('sessions.write'), async (req, res) => {
       const result = await notifications.notify(user, {
         category: 'platform_updates',
         title: `Cancelled: ${session.title}`,
+        actionUrl: '/member/sessions.html',
         // A DELETE usually carries no body, so req.body is undefined here
         body: req.body?.reason || 'This session will no longer take place. We\'ll follow up with a new date.',
         sourceType: 'session_invite',

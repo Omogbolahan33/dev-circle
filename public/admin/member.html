@@ -55,7 +55,8 @@
       </div>
 
       <nav class="tabs" id="tabs">
-        <button class="tab active" data-panel="activity">Activity</button>
+        <button class="tab active" data-panel="everything">Everything</button>
+        <button class="tab" data-panel="activity">Activity</button>
         <button class="tab" data-panel="surveys">Surveys</button>
         <button class="tab" data-panel="feedback">Feedback</button>
         <button class="tab" data-panel="rewards">Rewards</button>
@@ -89,9 +90,16 @@
           </section>
         </aside>
 
-        <!-- The activity stream is the centre of the profile. -->
+        <!-- Everything this developer did and said, in one stream. Reading
+             it across three tabs and stitching the order together in your head
+             was what made a person hard to see whole. -->
         <div>
-          <div class="panel active" id="panel-activity">
+          <div class="panel active" id="panel-everything">
+            <div class="ev-summary" id="everythingSummary"></div>
+            <div class="ev-stream" id="everything"></div>
+          </div>
+
+          <div class="panel" id="panel-activity">
             <div class="timeline" id="activity"></div>
           </div>
 
@@ -158,6 +166,7 @@
       renderActivity(data.engagement);
       renderSurveys(data.survey_responses);
       renderFeedback(data.feedback);
+      loadEverything(memberId);
       renderRewards(data.gifts);
       renderDeliveries(data.deliveries);
     } catch (err) {
@@ -351,6 +360,90 @@
   }
 
   // ─── Tabs ───────────────────────────────────────────────
+  // ─── Everything ─────────────────────────────────────────
+  const EVENT_WORDS = {
+    account_created: 'Joined Dev Circle',
+    api_key_generated: 'Generated an API key',
+    first_sandbox_call: 'First sandbox call',
+    first_production_call: 'Went live in production',
+    kyb_completed: 'Completed KYB',
+    product_requested: 'Asked for another API product',
+    survey_invited: 'Invited to a survey',
+    survey_started: 'Started a survey',
+    survey_completed: 'Completed a survey',
+    survey_reminded: 'Reminded about a survey',
+    feedback_submitted: 'Sent feedback',
+    complaint_received: 'Raised a complaint',
+    complaint_resolved: 'Complaint closed in Feex',
+    gift_claimed: 'Claimed a reward',
+    gift_delivered: 'Reward delivered',
+    message_sent: 'We messaged them',
+    message_read: 'Read a message',
+    consent_granted: 'Granted consent',
+    consent_withdrawn: 'Withdrew consent'
+  };
+
+  const SAID_WHERE = {
+    dev_circle: 'unprompted, in Dev Circle',
+    survey: 'in a survey',
+    external_survey: 'in a form run elsewhere',
+    feex: 'through Feex support',
+    customer_io: 'via Customer.io'
+  };
+
+  async function loadEverything(id) {
+    const stream = document.getElementById('everything');
+    try {
+      const data = await api.get(`/admin/members/${id}/timeline`);
+      const c = data.counts;
+
+      document.getElementById('everythingSummary').innerHTML = `
+        <span><strong>${c.said}</strong> thing${c.said === 1 ? '' : 's'} said</span>
+        <span><strong>${c.questions_answered}</strong> question${c.questions_answered === 1 ? '' : 's'} answered</span>
+        <span><strong>${c.did}</strong> milestone${c.did === 1 ? '' : 's'}</span>
+        <span><strong>${c.sent}</strong> message${c.sent === 1 ? '' : 's'} sent to them</span>`;
+
+      if (!data.timeline.length) {
+        stream.innerHTML = emptyState({ title: 'Nothing yet', text: 'What this developer does and says will collect here.' });
+        return;
+      }
+
+      stream.innerHTML = data.timeline.map(e => {
+        if (e.kind === 'said') {
+          // What they wrote is the thing worth reading, so it gets the weight
+          return `
+            <div class="ev ev-said">
+              <div class="ev-when">${formatDate(e.at)}</div>
+              <div class="ev-body">
+                ${e.prompt ? `<div class="ev-prompt">${escapeHtml(e.prompt)}</div>` : ''}
+                <p class="ev-quote">${escapeHtml(e.content)}</p>
+                <div class="ev-meta">
+                  <span>${SAID_WHERE[e.source] || e.source}</span>
+                  ${e.detail ? `<span>${escapeHtml(e.detail)}</span>` : ''}
+                  ${e.ticket ? `<span class="mono">${escapeHtml(e.ticket)}</span>` : ''}
+                  ${e.question_id ? `<a href="/admin/feedback.html#q-${e.question_id}">see everyone's answers</a>` : ''}
+                </div>
+              </div>
+            </div>`;
+        }
+
+        const label = e.kind === 'sent'
+          ? `We sent a ${escapeHtml(e.label)} by ${escapeHtml(e.channel)}`
+          : (EVENT_WORDS[e.type] || escapeHtml(e.label));
+
+        return `
+          <div class="ev ev-${e.kind}">
+            <div class="ev-when">${formatDate(e.at)}</div>
+            <div class="ev-body">
+              <div class="ev-line">${label}${e.detail ? ` <span class="ev-detail">${escapeHtml(e.detail)}</span>` : ''}</div>
+            </div>
+          </div>`;
+      }).join('');
+    } catch (err) {
+      stream.innerHTML = emptyState({ title: 'Could not load', text: err.message });
+    }
+  }
+
   document.querySelectorAll('.tab[data-panel]').forEach(tab => {
     tab.addEventListener('click', () => {
       document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));

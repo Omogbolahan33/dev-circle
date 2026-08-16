@@ -155,9 +155,12 @@
     document.getElementById('readAllBtn').hidden = inbox.unread_count === 0;
     document.getElementById('unreadCount').textContent = inbox.unread_count || '';
 
+    // A notification is about something, so the whole row opens that thing —
+    // hunting for a small button to the right is not how anyone reads an inbox.
     document.getElementById('inbox').innerHTML = inbox.notifications.length
       ? inbox.notifications.map(n => `
-        <div class="note ${n.read_at ? 'read' : ''}">
+        <div class="note ${n.read_at ? 'read' : ''} ${n.action_url ? 'actionable' : ''}"
+             ${n.action_url ? `role="link" tabindex="0" data-open="${n.id}"` : ''}>
           ${n.read_at ? '<span style="width:6px;flex-shrink:0"></span>' : '<span class="note-unread"></span>'}
           <div style="flex:1;min-width:0">
             <div class="note-title">${escapeHtml(n.title)}</div>
@@ -165,13 +168,34 @@
             <div class="note-time">${formatDate(n.created_at)}</div>
           </div>
           ${n.action_url
-            ? `<a class="btn btn-sm btn-secondary" href="${escapeHtml(n.action_url)}" onclick="markRead('${n.id}')">Open</a>`
-            : (n.read_at ? '' : `<button class="btn btn-sm btn-ghost" onclick="markRead('${n.id}')">Mark read</button>`)}
+            ? '<span class="note-go" aria-hidden="true">→</span>'
+            : (n.read_at ? '' : `<button class="btn btn-sm btn-ghost" data-read="${n.id}">Mark read</button>`)}
         </div>`).join('')
       : emptyState({
           title: 'Nothing here yet',
           text: 'Survey invitations, session reminders and reward notices land in this inbox.'
         });
+
+    inbox.notifications.forEach(n => {
+      const row = document.querySelector(`[data-open="${n.id}"]`);
+      if (row) {
+        row.addEventListener('click', () => openNotification(n));
+        row.addEventListener('keydown', e => {
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openNotification(n); }
+        });
+      }
+      const button = document.querySelector(`[data-read="${n.id}"]`);
+      if (button) button.addEventListener('click', () => markRead(n.id));
+    });
+  }
+
+  // Mark it read before leaving. Navigating first would abandon the request,
+  // so the notification stayed unread however many times it was opened.
+  async function openNotification(n) {
+    try {
+      if (!n.read_at) await api.post(`/users/notifications/${n.id}/read`, {});
+    } catch { /* the destination matters more than the read receipt */ }
+    window.location.href = n.action_url;
   }
 
   async function markRead(id) {

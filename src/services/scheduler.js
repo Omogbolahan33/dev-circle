@@ -192,7 +192,12 @@ async function dispatch(sessionId, offsetMinutes = null) {
   const channels = parseJSON(session.channels, ['in_portal']) || ['in_portal'];
   const { title, body } = describe(session, offsetMinutes);
 
-  const actionUrl = session.survey_id ? `/member/survey.html?id=${session.survey_id}` : '/member/notifications.html';
+  // Where the notification takes them: the survey it is about if there is
+  // one, otherwise the session itself. Pointing back at the inbox they read
+  // it in would be a round trip to nowhere.
+  const actionUrl = session.survey_id
+    ? `/member/survey.html?id=${session.survey_id}`
+    : `/member/sessions.html?id=${session.id}`;
   const sourceType = offsetMinutes === null ? 'session_invite' : 'session_reminder';
   const category = offsetMinutes === null ? 'survey_invites' : 'survey_reminders';
 

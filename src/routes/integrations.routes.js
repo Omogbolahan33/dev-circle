@@ -7,6 +7,7 @@ const engagement = require('../services/engagement');
 const notifications = require('../services/notifications');
 const cohortRules = require('../services/cohortRules');
 const circles = require('../services/circles');
+const questionsService = require('../services/questions');
 
 const router = express.Router();
 
@@ -290,6 +291,108 @@ router.post('/feex/webhook', requireApiKey('feex'), (req, res) => {
 
   markProcessed(eventId);
   res.status(201).json({ message: 'Complaint ingested', feedback_id: feedbackId, user_id: user.id });
+});
+
+// ─── Survey responses collected elsewhere ───────────────────
+// POST /api/integrations/survey-responses
+// A discovery round may go out through Customer.io, Google Forms, Microsoft
+// Forms or anything else the team already uses. Those answers are the same
+// evidence as one collected here, so they arrive through this and are filed
+// against the developer who wrote them, under the question they answered.
+router.post('/survey-responses', requireApiKey('events', 'customer_io'), (req, res) => {
+  const {
+    source_system, external_survey_id, survey_name,
+    respondent = {}, answers, submitted_at, response_id
+  } = req.body;
+
+  if (!source_system) {
+    return res.status(400).json({ error: 'source_system is required, e.g. "google_forms"' });
+  }
+  if (!Array.isArray(answers) || !answers.length) {
+    return res.status(400).json({ error: 'answers must be a non-empty array of { question, answer }' });
+  }
+
+  const eventId = logIntegrationEvent(source_system, 'survey_response', req.body);
+
+  // Whoever they are here, matched the same way every other integration does
+  const user = findUser({
+    email: respondent.email,
+    dev_hub_user_id: respondent.dev_hub_user_id,
+    user_id: respondent.user_id
+  }) || (respondent.phone
+    ? db.prepare('SELECT * FROM users WHERE phone_normalized = ?')
+        .get(identity.normalizePhone(respondent.phone))
+    : null);
+
+  if (!user) {
+    // Left unprocessed so it can be replayed once the developer exists here,
+    // rather than dropping what someone took the time to write
+    return res.status(404).json({
+      error: 'No developer in Dev Circle matches this respondent',
+      queued: true,
+      event_id: eventId,
+      matched_on: Object.keys(respondent)
+    });
+  }
+
+  const insert = db.prepare(`
+    INSERT OR IGNORE INTO feedback (
+      id, user_id, type, content, category, status, source, source_system,
+      canonical_question_id, prompt, external_response_id, created_at
+    ) VALUES (?, ?, 'survey_response', ?, ?, 'open', 'external_survey', ?, ?, ?, ?, COALESCE(?, datetime('now')))
+  `);
+
+  const filed = [];
+  const skipped = [];
+
+  const write = db.transaction(() => {
+    for (const [index, entry] of answers.entries()) {
+      const questionText = entry.question || entry.prompt;
+      const answer = entry.answer ?? entry.value;
+
+      // Only written answers. A rating or a picked option from a Google Form
+      // is a measurement, the same as one collected here.
+      if (!questionText || typeof answer !== 'string' || !answer.trim()) {
+        skipped.push({ question: questionText || `#${index + 1}`, reason: 'Not a written answer' });
+        continue;
+      }
+
+      const question = questionsService.forExternalSurvey(questionText, {
+        source: source_system,
+        ref: external_survey_id
+      });
+
+      // One row per answer, so re-delivering the same submission is not a
+      // second copy of what the developer said
+      const result = insert.run(
+        uuid(), user.id, answer.trim(), survey_name || null,
+        source_system, question ? question.id : null, questionText,
+        response_id ? `${response_id}:${question ? question.id : index}` : null,
+        submitted_at || null
+      );
+
+      if (result.changes) filed.push({ question: questionText, question_id: question?.id });
+      else skipped.push({ question: questionText, reason: 'Already filed' });
+    }
+  });
+
+  write();
+
+  if (filed.length) {
+    engagement.record(user.id, 'survey_completed', {
+      metadata: { source_system, survey_name, external_survey_id, answers: filed.length },
+      source: source_system === 'customer_io' ? 'customer_io' : 'system'
+    });
+  }
+
+  markProcessed(eventId);
+
+  res.status(filed.length ? 201 : 200).json({
+    message: `${filed.length} answer(s) filed for ${user.name}`,
+    user_id: user.id,
+    filed,
+    skipped
+  });
 });
 
 // ─── Generic Event Ingestion ────────────────────────────────

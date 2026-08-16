@@ -2,7 +2,10 @@
 // Liveness, the sign-in flows, the member's own portal endpoints, feedback,
 // and the machine-to-machine integration surface.
 
-const { ref, str, int, bool, arrayOf, object, CHANNELS, FEEDBACK_CATEGORIES, ENGAGEMENT_TYPES } = require('./components');
+const {
+  ref, str, int, bool, id, timestamp, arrayOf, object,
+  CHANNELS, FEEDBACK_CATEGORIES, ENGAGEMENT_TYPES
+} = require('./components');
 const { op, json, jsonBody, query, path } = require('./operation');
 
 // Worked examples reused across operations, so the same member appears
@@ -1125,6 +1128,85 @@ const paths = {
         400: json('Missing fields.', ref('Error'), { error: 'ticket_id and user_email required' }),
         404: json('No matching member. The event is kept for replay.', ref('Error'), {
           error: 'User not found', queued: true, event_id: 'ev_71a3'
+        })
+      }
+    })
+  },
+
+  '/integrations/survey-responses': {
+    post: op({
+      tag: 'Integrations',
+      credential: 'apiKey',
+      scope: 'events',
+      operationId: 'ingestSurveyResponses',
+      summary: 'Deliver answers from a survey run elsewhere',
+      description: [
+        'A discovery round does not have to run in Dev Circle. It may go out through',
+        'Customer.io, Google Forms, Microsoft Forms or anything else the team already',
+        'uses — and those answers are the same evidence. Post them here and they are',
+        'filed against the developer who wrote them, under the question they answered,',
+        'alongside everything else that developer has said.',
+        '',
+        'Only written answers are kept. A rating or a picked option is a measurement and',
+        'belongs in the form\'s own results, the same as one collected here.',
+        '',
+        'The respondent is matched on email, Developer Hub id, phone or Dev Circle id. If',
+        'nobody matches, the delivery is queued rather than dropped, so it can be replayed',
+        'once that developer exists here.',
+        '',
+        'Send `response_id` and re-delivery is not a duplicate: the same submission maps',
+        'to the same rows however many times it arrives.'
+      ].join('\n'),
+      requestBody: jsonBody(object({
+        source_system: str('The tool it was collected in', { example: 'google_forms' }),
+        external_survey_id: str('The form\'s own id, so repeat runs accumulate against one question', { nullable: true }),
+        survey_name: str('What the round was called', { nullable: true }),
+        response_id: str('The vendor\'s id for this submission, used to ignore re-delivery', { nullable: true }),
+        submitted_at: timestamp('When they answered'),
+        respondent: object({
+          email: str('Their email', { format: 'email', nullable: true }),
+          dev_hub_user_id: str('Their Developer Hub id', { nullable: true }),
+          phone: str('Their phone number', { nullable: true }),
+          user_id: id('Their Dev Circle id, if the caller knows it')
+        }, 'How to find the developer'),
+        answers: arrayOf(object({
+          question: str('The question as it was asked'),
+          answer: { description: 'What they wrote. Non-text answers are skipped.' }
+        }), 'One entry per question')
+      }), {
+        source_system: 'google_forms',
+        external_survey_id: '1FAIpQL_q3_2026',
+        survey_name: 'Q3 Developer Experience',
+        response_id: 'resp_8871',
+        submitted_at: '2026-08-14 09:12:00',
+        respondent: { email: 'chidi@paystack.africa' },
+        answers: [
+          { question: 'What is the single biggest friction in going live?',
+            answer: 'Waiting on KYB with no visibility. We had engineers idle for a week.' },
+          { question: 'How would you rate the docs?', answer: 4 }
+        ]
+      }),
+      responses: {
+        201: json('The written answers were filed.', object({
+          message: str('What happened'),
+          user_id: id('The developer they were filed against'),
+          filed: arrayOf(object({ question: str('Question'), question_id: id('Question id') }), 'What was kept'),
+          skipped: arrayOf(object({ question: str('Question'), reason: str('Why it was not kept') }), 'What was not')
+        }), {
+          message: '1 answer(s) filed for Chidi Nwosu',
+          user_id: '9f1c2a44-6d0b-4a1e-9c2f-7b1d3e5a8c40',
+          filed: [{ question: 'What is the single biggest friction in going live?', question_id: 'a1b2c3d4-0000-4000-8000-000000000001' }],
+          skipped: [{ question: 'How would you rate the docs?', reason: 'Not a written answer' }]
+        }),
+        200: json('Nothing new — every answer had already been filed.', object({
+          message: str('What happened'), filed: arrayOf({ type: 'object' }, 'Empty'),
+          skipped: arrayOf({ type: 'object' }, 'Already filed')
+        }), { message: '0 answer(s) filed for Chidi Nwosu', filed: [], skipped: [{ question: 'What is the single biggest friction in going live?', reason: 'Already filed' }] }),
+        400: json('The delivery could not be read.', ref('Error'),
+          { error: 'answers must be a non-empty array of { question, answer }' }),
+        404: json('No developer matches the respondent. Queued for replay.', ref('Error'), {
+          error: 'No developer in Dev Circle matches this respondent',
+          queued: true, matched_on: ['email']
         })
       }
     })

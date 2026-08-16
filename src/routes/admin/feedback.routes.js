@@ -2,6 +2,9 @@ const express = require('express');
 const db = require('../../db');
 const { requirePermission } = require('../../middleware/auth');
 const engagement = require('../../services/engagement');
+const { toCSV } = require('../../utils/helpers');
+const { buildXLSX } = require('../../utils/xlsx');
+const views = require('../../services/feedbackViews');
 
 const router = express.Router();
 
@@ -9,13 +12,20 @@ const router = express.Router();
 
 // GET /api/admin/feedback
 router.get('/feedback', requirePermission('feedback.read'), (req, res) => {
-  const { status, source, type, limit = 50 } = req.query;
+  const { status, source, type, prompted, limit = 50 } = req.query;
   const where = ['1=1'];
   const params = [];
 
   if (status) { where.push('f.status = ?'); params.push(status); }
   if (source) { where.push('f.source = ?'); params.push(source); }
   if (type) { where.push('f.type = ?'); params.push(type); }
+
+  // Two kinds of evidence with different natural shapes. Answers to questions
+  // we asked are comparable to each other and read best grouped by question.
+  // What a developer raised unprompted has no question behind it, so arrival
+  // order is genuinely the right way to read it.
+  if (prompted === 'false') where.push('f.canonical_question_id IS NULL');
+  if (prompted === 'true') where.push('f.canonical_question_id IS NOT NULL');
 
   const feedback = db.prepare(`
     SELECT f.*, u.name as user_name, u.email as user_email, u.company as user_company,
@@ -35,6 +45,144 @@ router.get('/feedback', requirePermission('feedback.read'), (req, res) => {
   ).all();
 
   res.json({ feedback, sources: bySource });
+});
+
+// ─── Views ──────────────────────────────────────────────────
+
+// GET /api/admin/feedback/axes — the ways this can be cut up
+router.get('/feedback/axes', requirePermission('feedback.read'), (req, res) => {
+  res.json({ axes: views.axes() });
+});
+
+// GET /api/admin/feedback/grouped?group_by=question|developer|survey|source|…
+// Groups first, verbatims on drill-in. Filters and grouping compose, so
+// "what did the Lending cohort say about onboarding, by developer" is one call.
+router.get('/feedback/grouped', requirePermission('feedback.read'), (req, res) => {
+  const axis = req.query.group_by || 'question';
+  const groups = views.group(axis, req.query);
+
+  if (!groups) {
+    return res.status(400).json({
+      error: `Unknown grouping "${axis}"`,
+      available: views.axes().map(a => a.key)
+    });
+  }
+
+  res.json({
+    group_by: axis,
+    axis: views.axes().find(a => a.key === axis),
+    groups,
+    totals: views.summarise(req.query)
+  });
+});
+
+// GET /api/admin/feedback/items — the verbatims themselves, however filtered
+router.get('/feedback/items', requirePermission('feedback.read'), (req, res) => {
+  res.json({
+    items: views.items(req.query, { limit: Math.min(500, parseInt(req.query.limit, 10) || 200) }),
+    totals: views.summarise(req.query)
+  });
+});
+
+// ─── Export ─────────────────────────────────────────────────
+// Verbatims are what a discovery round is for, so they have to leave the
+// system as readily as member records do — and carry enough with them to stay
+// meaningful once they are in a spreadsheet.
+
+const FEEDBACK_COLUMNS = [
+  'said_at', 'developer', 'email', 'company', 'work_sector', 'api_status',
+  'source', 'came_from', 'question', 'answer', 'category', 'status', 'ticket'
+];
+
+// The export reads through the same view service the screen does, so a file
+// can never contain a different set of rows than the screen that asked for it.
+function selectFeedback(query) {
+  return views.items(query, { limit: 10000 }).map(row => ({
+    said_at: row.created_at,
+    developer: row.developer,
+    email: row.email,
+    company: row.company,
+    work_sector: row.work_sector,
+    api_status: row.api_status,
+    source: row.source,
+    came_from: row.came_from,
+    question: row.question,
+    answer: row.content,
+    category: row.category,
+    status: row.status,
+    ticket: row.external_ticket_id
+  }));
+}
+
+// GET /api/admin/feedback/export?format=csv|xlsx|json
+router.get('/feedback/export', requirePermission('export.read'), (req, res) => {
+  const format = (req.query.format || 'csv').toLowerCase();
+  const rows = selectFeedback(req.query);
+
+  const stamp = new Date().toISOString().slice(0, 10);
+  const name = `devcircle-feedback-${stamp}`;
+
+  if (format === 'json') {
+    return res.json({ feedback: rows, total: rows.length, columns: FEEDBACK_COLUMNS });
+  }
+
+  if (format === 'csv') {
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${name}.csv"`);
+    // The formula guard stays on: every one of these values was typed by a
+    // developer, which is exactly the case it exists for
+    return res.send('\ufeff' + toCSV(FEEDBACK_COLUMNS, rows));
+  }
+
+  if (format === 'xlsx') {
+    const header = FEEDBACK_COLUMNS;
+    const asRows = list => [header, ...list.map(r => header.map(c => r[c]))];
+
+    // Grouping carries into the workbook as sheets, because the reason to
+    // group on screen — reading one question's answers side by side — is the
+    // same reason to want them on their own tab.
+    const axis = req.query.group_by;
+    if (axis && views.axes().some(a => a.key === axis)) {
+      const groups = views.group(axis, req.query) || [];
+      const filterKey = views.axes().find(a => a.key === axis).filter;
+
+      const sheets = groups.slice(0, 40).map(g => ({
+        name: String(g.label || 'Unlabelled').slice(0, 31),
+        rows: asRows(selectFeedback({ ...req.query, [filterKey]: g.key }))
+      }));
+
+      // A contents tab first, so a 20-sheet workbook is navigable
+      sheets.unshift({
+        name: 'Overview',
+        rows: [
+          [views.axes().find(a => a.key === axis).label, 'Developers', 'Answers', 'Last heard'],
+          ...groups.map(g => [g.label, g.developer_count, g.answer_count, g.last_at])
+        ]
+      });
+
+      res.setHeader('Content-Type',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', `attachment; filename="${name}-by-${axis}.xlsx"`);
+      return res.send(buildXLSX(sheets));
+    }
+
+    res.setHeader('Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${name}.xlsx"`);
+    return res.send(buildXLSX([{ name: 'Feedback', rows: asRows(rows) }]));
+  }
+
+  res.status(400).json({ error: 'format must be csv, xlsx, or json' });
+});
+
+// GET /api/admin/feedback/export/count — size it before downloading
+router.get('/feedback/export/count', requirePermission('export.read'), (req, res) => {
+  const rows = selectFeedback(req.query);
+  res.json({
+    total: rows.length,
+    developers: new Set(rows.map(r => r.email)).size,
+    questions: new Set(rows.map(r => r.question).filter(Boolean)).size
+  });
 });
 
 // PUT /api/admin/feedback/:id

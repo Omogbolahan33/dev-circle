@@ -77,7 +77,7 @@ function reset() {
   const tables = [
     'login_codes',
     'session_dispatches', 'scheduled_sessions', 'message_deliveries', 'notifications',
-    'user_gifts', 'gifts', 'consent', 'feedback', 'survey_responses', 'surveys',
+    'user_gifts', 'gifts', 'consent', 'feedback', 'survey_responses', 'surveys', 'questions',
     'engagement_history', 'circle_members', 'circles', 'user_cohorts', 'cohorts',
     'sessions', 'users', 'admin_users', 'roles', 'api_keys', 'message_blasts',
     'integration_events'

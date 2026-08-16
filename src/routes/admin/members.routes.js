@@ -96,6 +96,97 @@ router.get('/members/:id', requirePermission('members.read'), (req, res) => {
   });
 });
 
+// GET /api/admin/members/:id/timeline
+// Everything about one developer in a single stream: what they did, what they
+// said, and what we sent them — from every source, in the order it happened.
+// Reading three tabs and stitching the order together in your head was the
+// thing that made a developer hard to see whole.
+router.get('/members/:id/timeline', requirePermission('members.read'), (req, res) => {
+  const user = db.prepare('SELECT id, name FROM users WHERE id = ?').get(req.params.id);
+  if (!user) return res.status(404).json({ error: 'Member not found' });
+
+  const limit = Math.min(300, parseInt(req.query.limit, 10) || 150);
+
+  // What they did — the events the system recorded about them
+  const events = db.prepare(`
+    SELECT eh.id, eh.type, eh.created_at, eh.metadata, eh.source, eh.reference_id,
+           s.title as survey_title, g.name as gift_name
+    FROM engagement_history eh
+    LEFT JOIN surveys s ON s.id = eh.reference_id
+    LEFT JOIN gifts g ON g.id = eh.reference_id
+    WHERE eh.user_id = ?
+    ORDER BY eh.created_at DESC
+    LIMIT ?
+  `).all(user.id, limit).map(e => ({
+    kind: 'did',
+    at: e.created_at,
+    id: e.id,
+    type: e.type,
+    source: e.source,
+    label: e.type.replace(/_/g, ' '),
+    detail: e.survey_title || e.gift_name || null,
+    metadata: parseJSON(e.metadata, {})
+  }));
+
+  // What they said — every verbatim, whichever door it came through
+  const said = db.prepare(`
+    SELECT f.id, f.content, f.prompt, f.source, f.source_system, f.category,
+           f.created_at, f.external_ticket_id, f.canonical_question_id,
+           s.title as survey_title
+    FROM feedback f
+    LEFT JOIN surveys s ON s.id = f.survey_id
+    WHERE f.user_id = ?
+    ORDER BY f.created_at DESC
+    LIMIT ?
+  `).all(user.id, limit).map(f => ({
+    kind: 'said',
+    at: f.created_at,
+    id: f.id,
+    source: f.source,
+    source_system: f.source_system,
+    prompt: f.prompt,
+    content: f.content,
+    question_id: f.canonical_question_id,
+    detail: f.survey_title || (f.source_system || '').replace(/_/g, ' ') || null,
+    ticket: f.external_ticket_id
+  }));
+
+  // What we sent them, and whether it actually went. A member who has been
+  // messaged eight times and answered nothing reads very differently from one
+  // nobody has contacted.
+  const sent = db.prepare(`
+    SELECT id, source_type, channel, status, reason, created_at
+    FROM message_deliveries
+    WHERE user_id = ? AND status IN ('sent', 'simulated')
+    ORDER BY created_at DESC
+    LIMIT ?
+  `).all(user.id, limit).map(d => ({
+    kind: 'sent',
+    at: d.created_at,
+    id: d.id,
+    label: d.source_type.replace(/_/g, ' '),
+    channel: d.channel,
+    source: 'system'
+  }));
+
+  const timeline = [...events, ...said, ...sent]
+    .filter(entry => entry.at)
+    .sort((a, b) => String(b.at).localeCompare(String(a.at)))
+    .slice(0, limit);
+
+  res.json({
+    timeline,
+    counts: {
+      did: events.length,
+      said: said.length,
+      sent: sent.length,
+      // How many distinct questions this developer has answered — the measure
+      // of how much they have actually given us
+      questions_answered: new Set(said.filter(s => s.question_id).map(s => s.question_id)).size
+    }
+  });
+});
+
 // PUT /api/admin/members/:id
 router.put('/members/:id', requirePermission('members.write'), (req, res) => {
   const { status, api_status, kyb_completed, work_sector, api_products, location_state, gender } = req.body;

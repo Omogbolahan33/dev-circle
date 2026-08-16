@@ -114,7 +114,6 @@ router.post('/blasts/:id/send', requirePermission('blasts.send'), async (req, re
       category: 'platform_updates',
       title: blast.subject || 'A message from Credit Direct',
       body: blast.content,
-      actionUrl: '/member/notifications.html',
       sourceType: 'blast',
       sourceId: blast.id,
       channels

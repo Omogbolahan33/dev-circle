@@ -581,6 +581,189 @@ function define(db) {
 
         if (filed) console.log(`  backfilled ${filed} survey verbatim(s) into feedback`);
       }
+    },
+    {
+      id: 21,
+      name: 'canonical_questions',
+      up() {
+        // A question was only ever an entry inside one survey's JSON, keyed
+        // "q3". Ask the same thing in next quarter's survey and it became a
+        // different "q3" with no relation to the first, so answers fragmented
+        // instead of accumulating.
+        //
+        // This makes a question a thing in its own right that surveys point
+        // at. Questions are not a fixed library: every discovery initiative
+        // writes whatever it needs, and a question asked once is a perfectly
+        // normal question. What the identity buys is that reusing one is
+        // possible at all.
+        db.exec(`
+          CREATE TABLE IF NOT EXISTS questions (
+            id TEXT PRIMARY KEY,
+            text TEXT NOT NULL,
+            -- Text with case, spacing and trailing punctuation flattened.
+            -- Used to offer "you have asked this before" — never to decide it.
+            normalized TEXT NOT NULL,
+            type TEXT NOT NULL DEFAULT 'text',
+            created_by TEXT,
+            created_at TEXT DEFAULT (datetime('now'))
+          );
+
+          -- Deliberately not unique. Two initiatives may ask the same words
+          -- about different things, and merging them silently would be
+          -- unrecoverable: you cannot tell afterwards which answer came from
+          -- which intent. Separate piles can be joined later; a merged pile
+          -- cannot be taken apart.
+          CREATE INDEX IF NOT EXISTS idx_questions_normalized
+            ON questions(normalized, type);
+        `);
+
+        // Which question a filed answer belongs to. The existing question_id
+        // stays: it points at the slot inside that one survey, which is how an
+        // answer is traced back to the response it came from.
+        addColumn('feedback', 'canonical_question_id', 'TEXT REFERENCES questions(id)');
+        db.exec('CREATE INDEX IF NOT EXISTS idx_feedback_question ON feedback(canonical_question_id)');
+
+        const normalize = text => String(text)
+          .toLowerCase()
+          .replace(/\s+/g, ' ')
+          .replace(/[?.!,;:\s]+$/, '')
+          .trim();
+
+        const addQuestion = db.prepare(
+          'INSERT INTO questions (id, text, normalized, type) VALUES (?, ?, ?, ?)'
+        );
+        const updateSurvey = db.prepare('UPDATE surveys SET questions = ? WHERE id = ?');
+        const stampFeedback = db.prepare(`
+          UPDATE feedback SET canonical_question_id = ?
+          WHERE survey_id = ? AND question_id = ?
+        `);
+
+        let created = 0;
+        let linked = 0;
+
+        for (const survey of db.prepare('SELECT id, questions FROM surveys').all()) {
+          let questions;
+          try { questions = JSON.parse(survey.questions || '[]'); } catch { continue; }
+          if (!Array.isArray(questions)) continue;
+
+          const rewritten = questions.map(question => {
+            if (!question.text) return question;
+
+            const normalized = normalize(question.text);
+            if (!normalized) return question;
+
+            // One question per survey question, faithfully. Folding two
+            // surveys together here would be guessing that they meant the
+            // same thing, and nobody asked for that.
+            const id = crypto.randomUUID();
+            addQuestion.run(id, question.text, normalized, question.type || 'text');
+            created++;
+
+            linked += stampFeedback.run(id, survey.id, question.id).changes;
+
+            return { ...question, question_id: id };
+          });
+
+          updateSurvey.run(JSON.stringify(rewritten), survey.id);
+        }
+
+        if (created) {
+          console.log(`  ${created} question(s) lifted out of surveys, ${linked} answer(s) linked`);
+        }
+      }
+    },
+    {
+      id: 22,
+      name: 'external_survey_responses',
+      up() {
+        // Surveys do not only run here. A discovery round may go out through
+        // Customer.io, Google Forms, Microsoft Forms or anything else the team
+        // already uses — and those answers are the same evidence. They have to
+        // land against the developer who wrote them, under the question they
+        // answered, next to everything else that developer has said.
+        //
+        // Two things follow. The vendor is recorded separately from the kind
+        // of source, so a new tool never needs another migration. And a
+        // question can belong to an external form, which is what stops two
+        // unrelated forms that both asked "Any other feedback?" from being
+        // read as one body of evidence.
+
+        // Which system it came out of: 'google_forms', 'customer_io', …
+        addColumn('feedback', 'source_system', 'TEXT');
+        // The vendor's own id for the submission, so re-delivery is not a duplicate
+        addColumn('feedback', 'external_response_id', 'TEXT');
+
+        addColumn('questions', 'external_source', 'TEXT');
+        addColumn('questions', 'external_ref', 'TEXT');
+
+        db.exec(`
+          CREATE INDEX IF NOT EXISTS idx_questions_external
+            ON questions(external_source, external_ref);
+          CREATE UNIQUE INDEX IF NOT EXISTS idx_feedback_external_response
+            ON feedback(source_system, external_response_id)
+            WHERE external_response_id IS NOT NULL;
+        `);
+
+        // 'survey' meant "a survey run in Dev Circle". External answers are
+        // the same kind of thing arriving another way, so they share the
+        // source and are told apart by source_system.
+        db.exec(`
+          CREATE TABLE feedback_new (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            type TEXT DEFAULT 'self_initiated' CHECK(type IN (
+              'self_initiated','system_triggered','feex_complaint','survey_response'
+            )),
+            content TEXT NOT NULL,
+            category TEXT,
+            rating INTEGER,
+            status TEXT DEFAULT 'open' CHECK(status IN ('open','reviewed','resolved')),
+            source TEXT DEFAULT 'dev_circle' CHECK(source IN (
+              'dev_circle','feex','customer_io','survey','external_survey'
+            )),
+            source_system TEXT,
+            external_ticket_id TEXT,
+            external_response_id TEXT,
+            survey_id TEXT REFERENCES surveys(id),
+            question_id TEXT,
+            canonical_question_id TEXT REFERENCES questions(id),
+            prompt TEXT,
+            created_at TEXT DEFAULT (datetime('now')),
+            resolved_at TEXT,
+            feex_status TEXT,
+            feex_priority TEXT,
+            feex_url TEXT,
+            feex_updated_at TEXT
+          );
+
+          INSERT INTO feedback_new SELECT
+            id, user_id, type, content, category, rating, status, source,
+            source_system, external_ticket_id, external_response_id,
+            survey_id, question_id, canonical_question_id, prompt,
+            created_at, resolved_at, feex_status, feex_priority, feex_url, feex_updated_at
+          FROM feedback;
+
+          DROP TABLE feedback;
+          ALTER TABLE feedback_new RENAME TO feedback;
+
+          CREATE INDEX IF NOT EXISTS idx_feedback_user ON feedback(user_id);
+          CREATE INDEX IF NOT EXISTS idx_feedback_status ON feedback(status);
+          CREATE INDEX IF NOT EXISTS idx_feedback_source ON feedback(source);
+          CREATE INDEX IF NOT EXISTS idx_feedback_ticket ON feedback(external_ticket_id);
+          CREATE INDEX IF NOT EXISTS idx_feedback_question ON feedback(canonical_question_id);
+
+          CREATE UNIQUE INDEX IF NOT EXISTS idx_feedback_verbatim
+            ON feedback(user_id, survey_id, question_id)
+            WHERE question_id IS NOT NULL AND survey_id IS NOT NULL;
+
+          CREATE UNIQUE INDEX IF NOT EXISTS idx_feedback_external_response
+            ON feedback(source_system, external_response_id)
+            WHERE external_response_id IS NOT NULL;
+        `);
+
+        // Answers collected here keep saying so
+        db.prepare("UPDATE feedback SET source_system = 'dev_circle' WHERE source = 'survey'").run();
+      }
     }
   ];
   return migrations;

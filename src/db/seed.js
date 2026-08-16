@@ -5,6 +5,7 @@ const config = require('../config');
 const { NO_PASSWORD, normalizePhone } = require('../utils/identity');
 const { generateApiKey, hashApiKey } = require('../middleware/auth');
 const verbatims = require('../services/verbatims');
+const questionsService = require('../services/questions');
 
 function uuid() { return crypto.randomUUID(); }
 
@@ -24,7 +25,7 @@ console.log('Seeding Dev Circle database...\n');
 const OWNED_TABLES = [
   'session_dispatches', 'scheduled_sessions',
   'message_deliveries', 'notifications', 'user_gifts', 'gifts', 'consent',
-  'feedback', 'survey_responses', 'surveys', 'engagement_history',
+  'feedback', 'survey_responses', 'surveys', 'questions', 'engagement_history',
   'circle_members', 'circles',
   'user_cohorts', 'cohorts', 'sessions', 'users', 'admin_users', 'roles',
   'api_keys', 'message_blasts', 'integration_events'
@@ -268,7 +269,8 @@ const surveys = [
       { id: 'q1', type: 'rating', text: 'How easy was the registration process?', scale: 5 },
       { id: 'q2', type: 'rating', text: 'How clear was the initial documentation?', scale: 5 },
       { id: 'q3', type: 'choice', text: 'What brought you to Credit Direct APIs?', options: ['Business integration', 'Personal project', 'Evaluation', 'Client requirement'] },
-      { id: 'q4', type: 'text', text: 'What could we improve about the onboarding?', optional: true }
+      { id: 'q4', type: 'text', text: 'What could we improve about the onboarding?', optional: true },
+      { id: 'q5', type: 'text', text: 'What nearly stopped you from finishing?', optional: true }
     ],
     target_type: 'all', engagement_mode: 'in_portal', time_estimate_min: 3,
     trigger_event: 'api_key_generated'
@@ -280,7 +282,8 @@ const surveys = [
       { id: 'q2', type: 'rating', text: 'How easy is it to find what you need?', scale: 5 },
       { id: 'q3', type: 'rating', text: 'Are the code examples helpful?', scale: 5 },
       { id: 'q4', type: 'choice', text: 'Which section needs the most improvement?', options: ['Authentication', 'Endpoints reference', 'Error handling', 'Webhooks', 'Tutorials'] },
-      { id: 'q5', type: 'text', text: 'Any specific feedback on the docs?', optional: true }
+      { id: 'q5', type: 'text', text: 'Any specific feedback on the docs?', optional: true },
+      { id: 'q6', type: 'text', text: 'Which example would have saved you the most time?', optional: true }
     ],
     target_type: 'all', engagement_mode: 'in_portal', time_estimate_min: 5
   },
@@ -290,7 +293,8 @@ const surveys = [
       { id: 'q1', type: 'rating', text: 'How smooth was the transition from sandbox to production?', scale: 5 },
       { id: 'q2', type: 'choice', text: 'What was the biggest challenge?', options: ['KYB process', 'API configuration', 'Testing limitations', 'Documentation gaps', 'Support response time'] },
       { id: 'q3', type: 'rating', text: 'How satisfied are you with the sandbox environment?', scale: 5 },
-      { id: 'q4', type: 'text', text: 'What would have made the journey faster?', optional: true }
+      { id: 'q4', type: 'text', text: 'What would have made the journey faster?', optional: true },
+      { id: 'q5', type: 'text', text: 'What surprised you once you were live?', optional: true }
     ],
     target_type: 'cohort', target_ids: [cohorts[4].id], engagement_mode: 'email', time_estimate_min: 4,
     trigger_event: 'first_production_call', reminder_after_days: 5
@@ -315,6 +319,9 @@ const surveyStmt = db.prepare(`
 `);
 
 for (const s of surveys) {
+  // Through the service, so seeded surveys carry question identities the same
+  // way an authored one does
+  s.questions = questionsService.attachToSurvey(s.questions, { createdBy: admins[0].id });
   surveyStmt.run(
     s.id, s.title, s.description, JSON.stringify(s.questions),
     s.target_type, JSON.stringify(s.target_ids || []),
@@ -322,7 +329,7 @@ for (const s of surveys) {
     s.trigger_event || null, s.reminder_after_days || null, admins[0].id
   );
 }
-console.log(`✓ ${surveys.length} surveys created`);
+console.log(`✓ ${surveys.length} surveys created (${db.prepare('SELECT COUNT(*) c FROM questions').get().c} questions)`);
 
 // ─── Survey Responses ───────────────────────────────────────
 const responseStmt = db.prepare(`

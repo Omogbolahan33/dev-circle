@@ -99,6 +99,7 @@ router.post('/gifts/:id/deliver', requirePermission('gifts.write'), async (req, 
     category: 'gift_notifications',
     title: `${gift.name} is on its way`,
     body: 'Your reward has been sent.',
+    actionUrl: '/member/gifts.html',
     sourceType: 'system',
     sourceId: gift.id,
     channels: ['in_portal', 'email']

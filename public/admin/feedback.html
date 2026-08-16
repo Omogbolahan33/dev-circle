@@ -42,27 +42,53 @@
       <div class="page-head-row">
         <div>
           <h1 class="page-title">Feedback</h1>
-          <p class="page-subtitle">What developers told us, unprompted and in surveys. Triage marks how far the team has read — it does not resolve tickets.</p>
+          <p class="page-subtitle" id="subtitle">What developers told us, however it reached us.</p>
+        </div>
+        <!-- How to read it, and how to take it away: both are about the whole
+             screen, so they sit with the title rather than among the filters. -->
+        <div class="page-actions">
+          <div class="seg" id="viewToggle">
+            <button class="seg-btn active" data-view="grouped">Grouped</button>
+            <button class="seg-btn" data-view="table">Table</button>
+          </div>
+          <button class="btn btn-sm btn-secondary" onclick="openExport()">Export</button>
         </div>
       </div>
-      <nav class="tabs" id="tabs">
-        <button class="tab active" data-status="">All</button>
-        <button class="tab" data-status="open">Open</button>
-        <button class="tab" data-status="reviewed">Reviewed</button>
-        <button class="tab" data-status="resolved">Resolved</button>
-      </nav>
     </header>
 
     <div class="app-body">
+      <!-- Filters only: what to include, and how to cut it up. -->
       <div class="toolbar">
-        <button class="chip active" data-source="">Every source</button>
-        <button class="chip" data-source="dev_circle">Dev Circle</button>
-        <button class="chip" data-source="survey">Surveys</button>
-        <button class="chip" data-source="feex">Feex</button>
-        <span class="result-count" id="count"></span>
+        <label class="search-box">
+          <span class="icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.35-4.35"/></svg></span>
+          <input type="search" id="fbSearch" placeholder="Search questions and answers…" autocomplete="off">
+        </label>
+
+        <label class="inline-field">
+          <span>Group by</span>
+          <select class="input" id="groupBy"></select>
+        </label>
+
+        <button class="chip active" data-prompted="">Everything</button>
+        <button class="chip" data-prompted="true">Answers to questions</button>
+        <button class="chip" data-prompted="false">Raised unprompted</button>
+
+        <span class="result-count" id="fbCount"></span>
       </div>
 
-      <div class="fb-list" id="list"></div>
+      <p class="hint" id="axisNote"></p>
+      <div id="groupList"></div>
+
+      <!-- The same rows, flat and sortable. A grid is where most analysis
+           actually starts, and it is one click from what the export contains. -->
+      <div class="table-shell hide" id="tableView">
+        <div class="table-scroll">
+          <table class="data-table">
+            <thead><tr id="fbHead"></tr></thead>
+            <tbody id="fbRows"></tbody>
+          </table>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -116,70 +142,13 @@
 <script>
   Shell.admin('feedback');
 
-  let items = [];
-  let statusFilter = '';
-  let sourceFilter = '';
-
   const SOURCE_LABELS = {
-    dev_circle: 'Dev Circle', survey: 'Survey answer',
+    dev_circle: 'Dev Circle', survey: 'Survey answer', external_survey: 'Form run elsewhere',
     feex: 'Feex', customer_io: 'Customer.io'
   };
+
   let open = null;         // The feedback currently in the drawer
-
-  async function load() {
-    document.getElementById('list').innerHTML =
-      '<div class="fb-item"><div class="skeleton" style="width:80%;height:14px;margin-bottom:10px"></div><div class="skeleton" style="width:40%"></div></div>';
-    try {
-      const params = new URLSearchParams({ limit: 100 });
-      if (statusFilter) params.set('status', statusFilter);
-      if (sourceFilter) params.set('source', sourceFilter);
-
-      const data = await api.get(`/admin/feedback?${params}`);
-      items = data.feedback;
-      render();
-
-      // Deep link from the overview opens straight into the drawer.
-      const id = param('id');
-      if (id) { const hit = items.find(f => f.id === id); if (hit) openItem(hit.id); }
-    } catch (err) {
-      document.getElementById('list').innerHTML = emptyState({ title: 'Could not load feedback', text: err.message });
-    }
-  }
-
-  function render() {
-    document.getElementById('count').textContent = `${items.length} item${items.length === 1 ? '' : 's'}`;
-
-    document.querySelectorAll('.tab[data-status]').forEach(tab => {
-      tab.classList.toggle('active', tab.dataset.status === statusFilter);
-    });
-
-    const list = document.getElementById('list');
-    if (!items.length) {
-      list.innerHTML = emptyState({
-        title: 'Nothing here',
-        text: statusFilter || sourceFilter
-          ? 'No feedback matches these filters.'
-          : 'Feedback appears here when developers submit it in Dev Circle or raise a complaint through Feex.'
-      });
-      return;
-    }
-
-    list.innerHTML = items.map(f => `
-      <article class="fb-item ${f.source}" onclick="openItem('${f.id}')">
-        ${f.prompt ? `<p class="fb-prompt">${escapeHtml(f.prompt)}</p>` : ''}
-        <p class="fb-quote">${escapeHtml(f.content.length > 240 ? f.content.slice(0, 240) + '…' : f.content)}</p>
-        <div class="fb-meta">
-          <span class="who">${escapeHtml(f.user_name)}</span>
-          ${f.user_company ? `<span>${escapeHtml(f.user_company)}</span>` : ''}
-          ${f.category ? `<span>${escapeHtml(f.category)}</span>` : ''}
-          ${f.rating ? `<span class="rating">${'★'.repeat(f.rating)}${'☆'.repeat(5 - f.rating)}</span>` : ''}
-          <span>${formatDate(f.created_at)}</span>
-          ${f.source === 'feex' ? `<span>via Feex${f.external_ticket_id ? ' · ' + escapeHtml(f.external_ticket_id) : ''}</span>` : ''}
-          ${f.source === 'survey' ? `<span>via ${escapeHtml(f.survey_title || 'a survey')}</span>` : ''}
-          ${f.source === 'survey' ? '' : badge(f.status, f.status === 'open' ? 'warn' : f.status === 'resolved' ? 'active' : 'inactive')}
-        </div>
-      </article>`).join('');
-  }
+  let items = [];          // Whatever the open group or table last loaded
 
   function openItem(id) {
     open = items.find(f => f.id === id);
@@ -230,24 +199,311 @@
       await api.put(`/admin/feedback/${open.id}`, { status, note: document.getElementById('dNote').value.trim() || undefined });
       showToast('Triage saved');
       Shell.closeDrawer('fbDrawer');
-      load();
+      view === 'table' ? loadTable() : loadGroups();
     } catch (err) { showToast(err.message, 'error'); }
   }
 
-  document.querySelectorAll('.tab[data-status]').forEach(tab => {
-    tab.addEventListener('click', () => { statusFilter = tab.dataset.status; load(); });
+  // ─── One body of feedback, cut whichever way answers the question ───
+  const filters = { group_by: 'question', prompted: '', search: '' };
+  let axes = [];
+  let searchTimer = null;
+  const expanded = new Set();
+
+  // A view is worth sharing: "grouped by question, as a table" should survive
+  // being pasted to someone else.
+  function readUrl() {
+    const url = new URLSearchParams(location.search);
+    if (url.has('group_by')) filters.group_by = url.get('group_by');
+    if (url.has('prompted')) filters.prompted = url.get('prompted');
+    if (url.has('search')) filters.search = url.get('search');
+    if (url.get('view') === 'table') view = 'table';
+  }
+
+  function writeUrl() {
+    const url = new URLSearchParams();
+    if (view === 'table') url.set('view', 'table');
+    Object.entries(filters).forEach(([k, v]) => { if (v) url.set(k, v); });
+    history.replaceState(null, '', url.toString() ? `?${url}` : location.pathname);
+  }
+
+  async function boot() {
+    readUrl();
+    try {
+      axes = (await api.get('/admin/feedback/axes')).axes;
+      // "None" is a real answer in a table: sometimes you just want the rows
+      document.getElementById('groupBy').innerHTML =
+        '<option value="">No grouping</option>' +
+        axes.map(a => `<option value="${a.key}"${a.key === filters.group_by ? ' selected' : ''}>${escapeHtml(a.label)}</option>`)
+          .join('');
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+    document.getElementById('fbSearch').value = filters.search;
+    document.querySelectorAll('.chip[data-prompted]').forEach(c =>
+      c.classList.toggle('active', c.dataset.prompted === filters.prompted));
+
+    setView(view);
+  }
+
+  function query(extra = {}) {
+    const params = new URLSearchParams();
+    Object.entries({ ...filters, ...extra }).forEach(([k, v]) => { if (v) params.set(k, v); });
+    return params;
+  }
+
+  async function loadGroups() {
+    const list = document.getElementById('groupList');
+    list.innerHTML = '<div class="q-card"><div class="skeleton" style="width:55%;height:14px"></div></div>';
+    expanded.clear();
+
+    try {
+      const data = await api.get(`/admin/feedback/grouped?${query()}`);
+      const t = data.totals;
+
+      document.getElementById('fbCount').textContent =
+        `${t.developers} developer${t.developers === 1 ? '' : 's'} · ${t.answers} answer${t.answers === 1 ? '' : 's'}`;
+      document.getElementById('axisNote').textContent = data.axis ? data.axis.describe : '';
+
+      if (!data.groups.length) {
+        list.innerHTML = emptyState({
+          title: 'Nothing here',
+          text: filters.search ? 'No question or answer contains that.'
+            : 'Feedback collects here from surveys run in Dev Circle, forms run elsewhere, and what developers raise on their own.'
+        });
+        return;
+      }
+
+      list.innerHTML = data.groups.map(g => `
+        <section class="q-card">
+          <header class="q-head" onclick="toggleGroup('${encodeURIComponent(g.key)}', this)">
+            <div class="q-text">${escapeHtml(g.label || '—')}${
+              g.context ? ` <span class="q-context">${escapeHtml(g.context)}</span>` : ''}</div>
+            <div class="q-facts">
+              <span class="q-count">${g.developer_count}</span>
+              <span>developer${g.developer_count === 1 ? '' : 's'}</span>
+              <span class="q-repeat">${g.answer_count} answer${g.answer_count === 1 ? '' : 's'}</span>
+            </div>
+          </header>
+          <div class="q-answers" data-key="${encodeURIComponent(g.key)}"></div>
+        </section>`).join('');
+
+      // Open the first: a screen that starts fully collapsed makes you work
+      // before it tells you anything
+      const first = list.querySelector('.q-head');
+      if (first) toggleGroup(list.querySelector('.q-answers').dataset.key, first);
+    } catch (err) {
+      list.innerHTML = emptyState({ title: 'Could not load feedback', text: err.message });
+    }
+  }
+
+  async function toggleGroup(key, head) {
+    const box = head.parentElement.querySelector('.q-answers');
+
+    if (expanded.has(key)) {
+      expanded.delete(key);
+      box.classList.remove('open');
+      box.innerHTML = '';
+      return;
+    }
+
+    expanded.add(key);
+    box.classList.add('open');
+    box.innerHTML = '<div class="q-answer"><div class="skeleton" style="width:70%"></div></div>';
+
+    const axis = axes.find(a => a.key === filters.group_by);
+
+    try {
+      const data = await api.get(`/admin/feedback/items?${query({ [axis.filter]: decodeURIComponent(key) })}`);
+
+      box.innerHTML = data.items.map(i => `
+        <div class="q-answer">
+          <a class="q-who" href="/admin/member.html?id=${i.user_id}">${escapeHtml(i.developer)}</a>
+          <div class="q-body">
+            ${filters.group_by !== 'question' && i.question
+              ? `<div class="ev-prompt">${escapeHtml(i.question)}</div>` : ''}
+            <p class="q-quote">${escapeHtml(i.content)}</p>
+            <div class="q-meta">
+              ${i.company ? `<span>${escapeHtml(i.company)}</span>` : ''}
+              <span>${escapeHtml(i.came_from || i.source)}</span>
+              ${i.external_ticket_id ? `<span class="mono">${escapeHtml(i.external_ticket_id)}</span>` : ''}
+              <span>${formatDate(i.created_at)}</span>
+            </div>
+          </div>
+        </div>`).join('');
+    } catch (err) {
+      box.innerHTML = `<div class="q-answer"><div class="q-body">${escapeHtml(err.message)}</div></div>`;
+    }
+  }
+
+  // Whatever is on screen is what leaves in the file
+  async function openExport() {
+    const grouped = view === 'grouped';
+    const format = confirm(grouped
+      ? 'OK for Excel (a sheet per group), Cancel for CSV'
+      : 'OK for Excel, Cancel for CSV') ? 'xlsx' : 'csv';
+    try {
+      // A table view exports flat, the way it reads on screen
+      const params = query({ format });
+      if (!grouped) params.delete('group_by');
+      await api.download(`/admin/feedback/export?${params}`, `feedback.${format}`);
+      showToast('Exported');
+    } catch (err) { showToast(err.message, 'error'); }
+  }
+
+  // ─── Table view ─────────────────────────────────────────
+  // Same rows, same filters, laid out as a grid. Sorting happens on what has
+  // been fetched rather than round-tripping, so a click reorders instantly.
+
+  const TABLE_COLUMNS = [
+    { key: 'developer', label: 'Developer' },
+    { key: 'company', label: 'Company' },
+    { key: 'question', label: 'Question' },
+    { key: 'content', label: 'What they said', wide: true },
+    { key: 'came_from', label: 'Came from' },
+    { key: 'source', label: 'Source' },
+    { key: 'created_at', label: 'When' }
+  ];
+
+  let view = 'grouped';
+  let rows = [];
+  let sortKey = 'created_at';
+  let sortDesc = true;
+
+  function setView(next) {
+    view = next;
+    document.querySelectorAll('.seg-btn').forEach(b => b.classList.toggle('active', b.dataset.view === view));
+    document.getElementById('groupList').classList.toggle('hide', view === 'table');
+    document.getElementById('axisNote').classList.toggle('hide', view === 'table');
+    document.getElementById('tableView').classList.toggle('hide', view !== 'table');
+
+    writeUrl();
+    if (view === 'table') loadTable();
+    else loadGroups();
+  }
+
+  let tableGroups = null;   // [{ label, developer_count, rows }] when grouped
+
+  async function loadTable() {
+    document.getElementById('fbHead').innerHTML = TABLE_COLUMNS
+      .map(c => `<th${c.wide ? ' style="min-width:320px"' : ''} data-sort="${c.key}">${c.label}</th>`).join('');
+    document.getElementById('fbRows').innerHTML =
+      `<tr><td colspan="${TABLE_COLUMNS.length}"><div class="skeleton" style="height:14px"></div></td></tr>`;
+
+    try {
+      const data = await api.get(`/admin/feedback/items?${query({ limit: 500 })}`);
+      rows = data.items;
+
+      const t = data.totals;
+      document.getElementById('fbCount').textContent =
+        `${t.developers} developer${t.developers === 1 ? '' : 's'} · ${t.answers} answer${t.answers === 1 ? '' : 's'}`;
+
+      // Grouping is not a different screen, it is a way of reading this one.
+      // The table gets section headers, the way a pivot does.
+      tableGroups = null;
+      if (filters.group_by) {
+        const grouped = await api.get(`/admin/feedback/grouped?${query()}`);
+        const axis = axes.find(a => a.key === filters.group_by);
+
+        tableGroups = await Promise.all(grouped.groups.map(async g => {
+          const inner = await api.get(`/admin/feedback/items?${query({ [axis.filter]: g.key, limit: 500 })}`);
+          return { label: g.label, developer_count: g.developer_count, rows: inner.items };
+        }));
+      }
+
+      renderTable();
+    } catch (err) {
+      document.getElementById('fbRows').innerHTML =
+        `<tr><td colspan="${TABLE_COLUMNS.length}">${escapeHtml(err.message)}</td></tr>`;
+    }
+  }
+
+  function bodyRow(r) {
+    return `
+      <tr>
+        <td><a href="/admin/member.html?id=${r.user_id}">${escapeHtml(r.developer)}</a></td>
+        <td class="text-xs muted">${escapeHtml(r.company || '—')}</td>
+        <td class="text-xs muted">${escapeHtml(r.question || '—')}</td>
+        <td>${escapeHtml(r.content)}</td>
+        <td class="text-xs muted">${escapeHtml(r.came_from || '—')}</td>
+        <td class="text-xs muted">${escapeHtml((r.source || '').replace(/_/g, ' '))}</td>
+        <td class="text-xs muted">${formatDate(r.created_at)}</td>
+      </tr>`;
+  }
+
+  function sortRows(list) {
+    return [...list].sort((a, b) => {
+      const x = String(a[sortKey] ?? '');
+      const y = String(b[sortKey] ?? '');
+      return sortDesc ? y.localeCompare(x) : x.localeCompare(y);
+    });
+  }
+
+  function renderTable() {
+    document.querySelectorAll('#fbHead th').forEach(th => {
+      th.classList.toggle('sorted', th.dataset.sort === sortKey);
+      th.textContent = th.textContent.replace(/ [↑↓]$/, '') +
+        (th.dataset.sort === sortKey ? (sortDesc ? ' ↓' : ' ↑') : '');
+    });
+
+    if (tableGroups) {
+      document.getElementById('fbRows').innerHTML = tableGroups.map(g => `
+        <tr class="group-row">
+          <td colspan="${TABLE_COLUMNS.length}">
+            <span class="group-label">${escapeHtml(g.label || '—')}</span>
+            <span class="group-count">${g.developer_count} developer${g.developer_count === 1 ? '' : 's'} · ${g.rows.length} answer${g.rows.length === 1 ? '' : 's'}</span>
+          </td>
+        </tr>
+        ${sortRows(g.rows).map(bodyRow).join('')}`).join('');
+      return;
+    }
+
+    const sorted = [...rows].sort((a, b) => {
+      const x = String(a[sortKey] ?? '');
+      const y = String(b[sortKey] ?? '');
+      return sortDesc ? y.localeCompare(x) : x.localeCompare(y);
+    });
+
+    document.getElementById('fbRows').innerHTML = sorted.length
+      ? sorted.map(bodyRow).join('')
+      : `<tr><td colspan="${TABLE_COLUMNS.length}">${emptyState({ title: 'Nothing matches', text: 'Loosen the filters.' })}</td></tr>`;
+  }
+
+  document.getElementById('fbHead').addEventListener('click', e => {
+    const key = e.target.dataset?.sort;
+    if (!key) return;
+    if (key === sortKey) sortDesc = !sortDesc;
+    else { sortKey = key; sortDesc = true; }
+    renderTable();
   });
 
-  document.querySelectorAll('.chip[data-source]').forEach(chip => {
+  document.querySelectorAll('.seg-btn').forEach(b =>
+    b.addEventListener('click', () => setView(b.dataset.view)));
+
+  document.getElementById('groupBy').addEventListener('change', e => {
+    filters.group_by = e.target.value;
+    writeUrl();
+    if (view === 'table') loadTable();
+    else if (filters.group_by) loadGroups();
+    else { setView('table'); }   // grouped view has nothing to show ungrouped
+  });
+
+  document.getElementById('fbSearch').addEventListener('input', e => {
+    clearTimeout(searchTimer);
+    filters.search = e.target.value.trim();
+    searchTimer = setTimeout(() => { writeUrl(); view === 'table' ? loadTable() : loadGroups(); }, 250);
+  });
+
+  document.querySelectorAll('.chip[data-prompted]').forEach(chip => {
     chip.addEventListener('click', () => {
-      document.querySelectorAll('.chip[data-source]').forEach(c => c.classList.remove('active'));
+      document.querySelectorAll('.chip[data-prompted]').forEach(c => c.classList.remove('active'));
       chip.classList.add('active');
-      sourceFilter = chip.dataset.source;
-      load();
+      filters.prompted = chip.dataset.prompted;
+      writeUrl();
+    if (view === 'table') loadTable(); else loadGroups();
     });
   });
 
-  load();
+  boot();
 </script>
 </body>
 </html>
