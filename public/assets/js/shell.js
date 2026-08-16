@@ -60,8 +60,7 @@ const ADMIN_NAV = [
   ]},
   { group: 'People', items: [
     { id: 'members', label: 'Members', icon: 'members', href: '/admin/members.html' },
-    { id: 'cohorts', label: 'Cohorts', icon: 'cohorts', href: '/admin/cohorts.html' },
-    { id: 'circles', label: 'Circles', icon: 'circles', href: '/admin/circles.html' }
+    { id: 'cohorts', label: 'Cohorts', icon: 'cohorts', href: '/admin/cohorts.html' }
   ]},
   { group: 'Programs', items: [
     { id: 'surveys',  label: 'Surveys',    icon: 'surveys',  href: '/admin/surveys.html' },
@@ -125,6 +124,7 @@ const Shell = {
 
     this._mountOverlays();
     this._bindKeys(true);
+    this._loadCircles();
   },
 
   // Member portal: top bar, no palette — four destinations do not need one.
@@ -167,6 +167,11 @@ const Shell = {
         </button>
         <nav class="sidebar-nav">${groups}</nav>
         <div class="sidebar-foot">
+          <!-- Which workspace you are in, sat with your account. Rendered once
+               the circles are known, and left out entirely when there is only
+               one — a control that offers no choice is just more to read. -->
+          <div class="circle-switch hide" id="circleSwitch"></div>
+
           <div class="user-menu" id="userMenu">
             <a href="/admin/roles.html">${icon('roles', 14)} Roles &amp; access</a>
             <button class="danger" onclick="Auth.logout()">${icon('logout', 14)} Sign out</button>
@@ -277,6 +282,12 @@ const Shell = {
 
       const account = document.getElementById('accountMenu');
       if (account && account.classList.contains('open') && !e.target.closest('.account')) account.classList.remove('open');
+
+      const circles = document.getElementById('circleMenu');
+      if (circles && circles.classList.contains('open') && !e.target.closest('.circle-switch')) {
+        circles.classList.remove('open');
+        document.getElementById('circleButton')?.setAttribute('aria-expanded', 'false');
+      }
     });
   },
 
@@ -286,7 +297,96 @@ const Shell = {
 
   toggleUserMenu(e) {
     e.stopPropagation();
+    document.getElementById('circleMenu')?.classList.remove('open');
     document.getElementById('userMenu').classList.toggle('open');
+  },
+
+  // ── Circles ──
+  // A circle is a workspace. The one you are in is named in full next to your
+  // account, and switching reloads into it so nothing on screen is left over
+  // from the last one.
+
+  async _loadCircles() {
+    const mount = document.getElementById('circleSwitch');
+    if (!mount) return;
+
+    let data;
+    try {
+      data = await api.get('/admin/circles');
+    } catch {
+      return;   // the console still works in whichever circle the server picked
+    }
+
+    // Keep the stored choice honest: a circle taken away should not leave the
+    // console asking for it on every request
+    const current = data.current;
+    if (Auth.getCircle() !== current.id) Auth.setCircle(current.id);
+
+    // One workspace and no power to make another means there is nothing here
+    // to decide, so nothing is shown
+    if (data.circles.length < 2 && !data.can_create) return;
+
+    const options = data.circles.map(c => `
+      <button class="circle-option${c.id === current.id ? ' current' : ''}"
+              data-circle="${c.id}" role="menuitemradio"
+              aria-checked="${c.id === current.id}">
+        <span class="circle-check" aria-hidden="true">${c.id === current.id ? '✓' : ''}</span>
+        <span class="circle-option-body">
+          <span class="circle-option-name">${escapeHtml(c.name)}</span>
+          ${c.member_count != null
+            ? `<span class="circle-option-meta">${c.member_count} member${c.member_count === 1 ? '' : 's'}</span>`
+            : ''}
+        </span>
+      </button>`).join('');
+
+    mount.innerHTML = `
+      <button class="circle-button" id="circleButton" aria-haspopup="true" aria-expanded="false"
+              onclick="Shell.toggleCircles(event)">
+        <span class="circle-dot" style="background:${current.color || 'var(--cd-blue)'}"></span>
+        <span class="circle-current">
+          <span class="circle-label">Circle</span>
+          <span class="circle-name">${escapeHtml(current.name)}</span>
+        </span>
+        <span class="circle-caret" aria-hidden="true">${icon('chevron', 14)}</span>
+      </button>
+      <div class="circle-menu" id="circleMenu" role="menu">
+        <div class="circle-menu-head">Switch circle</div>
+        ${options}
+        ${data.can_create ? `
+          <div class="circle-menu-divider"></div>
+          <a class="circle-manage" href="/admin/circles.html">Manage circles…</a>` : ''}
+      </div>`;
+
+    mount.classList.remove('hide');
+
+    mount.querySelectorAll('.circle-option').forEach(button => {
+      button.addEventListener('click', () => Shell.switchCircle(button.dataset.circle));
+    });
+  },
+
+  closeCircles() {
+    document.getElementById('circleMenu')?.classList.remove('open');
+    document.getElementById('circleButton')?.setAttribute('aria-expanded', 'false');
+  },
+
+  toggleCircles(e) {
+    e.stopPropagation();
+    const menu = document.getElementById('circleMenu');
+    const button = document.getElementById('circleButton');
+    const open = menu.classList.toggle('open');
+    button?.setAttribute('aria-expanded', String(open));
+  },
+
+  switchCircle(id) {
+    if (!id || id === Auth.getCircle()) {
+      document.getElementById('circleMenu')?.classList.remove('open');
+      return;
+    }
+
+    Auth.setCircle(id);
+    // A full reload rather than refetching each panel: every screen is scoped
+    // to one workspace, and half-swapped data would be worse than a moment's wait
+    window.location.reload();
   },
 
   // ── Drawers ──
@@ -308,6 +408,9 @@ const Shell = {
 
   // Closes whatever layer is currently on top — used by Esc and the scrim.
   closeTop() {
+    const circles = document.getElementById('circleMenu');
+    if (circles?.classList.contains('open')) return this.closeCircles();
+
     const palette = document.getElementById('palette');
     if (palette?.classList.contains('open')) return this.closePalette();
 

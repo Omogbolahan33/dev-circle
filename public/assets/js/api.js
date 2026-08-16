@@ -66,6 +66,8 @@ const Auth = {
     localStorage.removeItem(this.TOKEN_KEY);
     localStorage.removeItem(this.USER_KEY);
     localStorage.removeItem(this.ADMIN_KEY);
+    // The next person to sign in on this machine starts in their own workspace
+    localStorage.removeItem(this.CIRCLE_KEY);
     localStorage.removeItem(this.PERMS_KEY);
     window.location.href = '/index.html';
   },
@@ -86,11 +88,32 @@ const Auth = {
     return true;
   },
 
+  // Which circle the console is working in. A circle is a workspace, so every
+  // admin request carries it — the server answers with that workspace's data
+  // and refuses one this account cannot reach.
+  CIRCLE_KEY: 'devcircle_circle',
+
+  getCircle() {
+    return localStorage.getItem(this.CIRCLE_KEY) || null;
+  },
+
+  setCircle(id) {
+    if (id) localStorage.setItem(this.CIRCLE_KEY, id);
+    else localStorage.removeItem(this.CIRCLE_KEY);
+  },
+
   headers() {
-    return {
+    const headers = {
       'Content-Type': 'application/json',
       'Authorization': 'Bearer ' + this.getToken()
     };
+
+    // Omitted when unset, so the server falls back to the first circle this
+    // account can reach — a single-workspace install needs no ceremony.
+    const circle = this.getCircle();
+    if (circle) headers['X-Circle-Id'] = circle;
+
+    return headers;
   }
 };
 

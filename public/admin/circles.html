@@ -11,41 +11,38 @@
   <link rel="stylesheet" href="/assets/css/app.css">
   <script src="/assets/js/theme.js"></script>
   <style>
-    /* A circle is a whole engagement space; sub-circles nest under their
-       parent, so the indent carries real meaning rather than decoration. */
-    .circle {
+    /* A circle is a workspace, so this reads as a list of places rather than
+       a list of records: each one says how big it is and who runs it. */
+    .circle-card {
       display: flex;
-      align-items: center;
+      align-items: flex-start;
       gap: var(--sp-4);
-      padding: var(--sp-4) 0;
-      border-bottom: 1px solid var(--line-faint);
-      cursor: pointer;
+      padding: var(--sp-5);
+      border: 1px solid var(--line);
+      border-radius: var(--r-lg);
+      margin-bottom: var(--sp-3);
+      background: var(--surface);
     }
-    .circle:last-child { border-bottom: none; }
-    .circle.child { padding-left: var(--sp-8); position: relative; }
-    .circle.child::before {
-      content: '';
-      position: absolute;
-      left: var(--sp-4);
-      top: 50%;
-      width: var(--sp-3);
-      height: 1px;
-      background: var(--line);
+    .circle-mark { width: 10px; height: 10px; border-radius: 50%; margin-top: 6px; flex-shrink: 0; }
+    .circle-body { flex: 1; min-width: 0; }
+    .circle-title { font-family: var(--font-display); font-weight: var(--fw-semibold); font-size: var(--fs-md); }
+    .circle-desc { font-size: var(--fs-sm); color: var(--ash); margin-top: 2px; }
+    .circle-facts {
+      display: flex; gap: var(--sp-4); flex-wrap: wrap;
+      font-size: var(--fs-xs); color: var(--ash-dim); margin-top: var(--sp-3);
     }
-
-    .circle-mark { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
-    .circle-name { font-family: var(--font-display); font-weight: var(--fw-semibold); font-size: var(--fs-base); }
-    .circle-desc { font-size: var(--fs-xs); color: var(--ash-dim); margin-top: 2px; }
-    .circle-counts { display: flex; gap: var(--sp-4); font-size: var(--fs-xs); color: var(--ash); font-family: var(--font-mono); }
-
-    .person { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-3) 0; border-bottom: 1px solid var(--line-faint); }
-    .person:last-child { border-bottom: none; }
-
-    .swatches { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
-    .swatch { width: 28px; height: 28px; border-radius: var(--r-md); border: 2px solid transparent; }
-    .swatch.selected { border-color: var(--white); }
-
-    .list { max-width: 820px; }
+    .circle-here {
+      font-size: 10px; font-family: var(--font-mono); text-transform: uppercase;
+      letter-spacing: 0.06em; padding: 2px 8px; border-radius: var(--r-sm);
+      background: var(--cd-blue-dim); color: var(--blue-ink, var(--cd-blue));
+    }
+    .circle-actions { display: flex; gap: var(--sp-2); flex-shrink: 0; }
+    .staff-row {
+      display: flex; align-items: center; gap: var(--sp-3);
+      padding: var(--sp-2) 0; border-bottom: 1px solid var(--line-faint); font-size: var(--fs-sm);
+    }
+    .staff-row:last-child { border-bottom: none; }
+    .staff-name { flex: 1; min-width: 0; }
   </style>
 </head>
 <body>
@@ -57,278 +54,228 @@
       <div class="page-head-row">
         <div>
           <h1 class="page-title">Circles</h1>
-          <p class="page-subtitle">Dev Circle is itself a circle. Create sub-circles for a product, a partner programme or a region — each with its own members, cohorts and surveys.</p>
+          <p class="page-subtitle">
+            A circle is a workspace. Each has its own members, cohorts, surveys and feedback,
+            and nothing crosses between them. Switch circles from your account, at the bottom
+            of the sidebar.
+          </p>
         </div>
         <div class="page-actions">
-          <button class="btn btn-sm btn-primary" onclick="openCreate()">New circle</button>
+          <button class="btn btn-sm btn-primary" onclick="Shell.openDrawer('newCircleDrawer')">New circle</button>
         </div>
       </div>
     </header>
 
     <div class="app-body">
-      <div class="list" id="list"></div>
+      <div id="circleList"></div>
     </div>
   </div>
 </div>
 
-<!-- Membership of one circle, with search to add people from Dev Circle. -->
-<aside class="drawer drawer-lg" id="detailDrawer">
-  <div class="drawer-head">
-    <div>
-      <div class="drawer-title" id="dName">Circle</div>
-      <div class="drawer-sub" id="dSub"></div>
-    </div>
-    <button class="icon-btn" onclick="Shell.closeDrawer('detailDrawer')">×</button>
-  </div>
-  <div class="drawer-body">
-    <div class="field">
-      <label class="label">Add a member</label>
-      <label class="search-box" style="max-width:none;width:100%">
-        <span class="icon">⌕</span>
-        <input type="search" id="candidateSearch" placeholder="Search Dev Circle by name or email…" autocomplete="off">
-      </label>
-      <div id="candidates" class="mt-2"></div>
-    </div>
-
-    <div class="section-head mt-6">
-      <span class="card-title">Members</span>
-      <span class="dim text-xs" id="memberCount"></span>
-    </div>
-    <div id="members"></div>
-  </div>
-</aside>
-
-<aside class="drawer" id="createDrawer">
+<!-- ─── New circle ─────────────────────────────────────── -->
+<aside class="drawer" id="newCircleDrawer">
   <div class="drawer-head">
     <div>
       <div class="drawer-title">New circle</div>
-      <div class="drawer-sub">A sub-circle of Dev Circle</div>
+      <div class="drawer-sub">A separate workspace, starting empty</div>
     </div>
-    <button class="icon-btn" onclick="Shell.closeDrawer('createDrawer')">×</button>
+    <button class="icon-btn" onclick="Shell.closeDrawer('newCircleDrawer')">×</button>
   </div>
   <div class="drawer-body">
     <div class="field">
-      <label class="label">Name</label>
-      <input type="text" class="input" id="cName" placeholder="e.g. Payments partners">
+      <label class="label" for="cName">Name</label>
+      <input type="text" class="input" id="cName" placeholder="e.g. Merchant Circle">
     </div>
     <div class="field">
-      <label class="label">Description</label>
-      <textarea class="input" id="cDesc" placeholder="What is this circle for?"></textarea>
+      <label class="label" for="cDesc">What it is for</label>
+      <textarea class="input" id="cDesc" rows="2" placeholder="Who belongs here and why"></textarea>
     </div>
     <div class="field">
-      <label class="label">Colour</label>
-      <div class="swatches" id="swatches"></div>
-    </div>
-    <div class="field">
-      <label class="label">Start from a cohort</label>
-      <select class="input" id="cSeed"></select>
-      <p class="hint">Seeding copies that cohort's members in as a starting roster. You can add and remove people afterwards.</p>
+      <label class="label" for="cSeed">Start with members from a cohort</label>
+      <select class="input" id="cSeed"><option value="">Start empty</option></select>
+      <p class="hint">
+        They join the new circle and stay in the one they are already in — a developer
+        can belong to several.
+      </p>
     </div>
   </div>
   <div class="drawer-foot">
-    <button class="btn btn-secondary" onclick="Shell.closeDrawer('createDrawer')">Cancel</button>
-    <button class="btn btn-primary" onclick="createCircle()">Create circle</button>
+    <button class="btn btn-secondary" onclick="Shell.closeDrawer('newCircleDrawer')">Cancel</button>
+    <button class="btn btn-primary" onclick="createCircle(this)">Create circle</button>
+  </div>
+</aside>
+
+<!-- ─── Staff access ───────────────────────────────────── -->
+<aside class="drawer" id="staffDrawer">
+  <div class="drawer-head">
+    <div>
+      <div class="drawer-title">Who can work here</div>
+      <div class="drawer-sub" id="staffCircleName"></div>
+    </div>
+    <button class="icon-btn" onclick="Shell.closeDrawer('staffDrawer')">×</button>
+  </div>
+  <div class="drawer-body">
+    <div id="staffList"></div>
+
+    <div class="field mt-6">
+      <label class="label">Give someone access</label>
+      <div class="field-row">
+        <select class="input" id="staffAdmin"></select>
+        <select class="input" id="staffRole"></select>
+      </div>
+      <p class="hint">
+        A role is held in this circle only. The same person can hold a different
+        role, or none, in another.
+      </p>
+    </div>
+  </div>
+  <div class="drawer-foot">
+    <button class="btn btn-secondary" onclick="Shell.closeDrawer('staffDrawer')">Close</button>
+    <button class="btn btn-primary" onclick="grantAccess(this)">Grant access</button>
   </div>
 </aside>
 
 <script src="/assets/js/api.js"></script>
 <script src="/assets/js/shell.js"></script>
 <script>
-  Shell.admin('circles');
+  Shell.admin(null);
 
-  const COLOURS = ['#107EBC', '#E6B473', '#945A39', '#0D9488', '#16A34A', '#8B7CF6', '#0B5A8A', '#6B6B80'];
-  let selectedColour = COLOURS[0];
+  let circles = [];
+  let roles = [];
+  let admins = [];
   let openCircleId = null;
-  let searchTimer = null;
-
-  function renderSwatches() {
-    document.getElementById('swatches').innerHTML = COLOURS.map((c, i) =>
-      `<button class="swatch${i === 0 ? ' selected' : ''}" style="background:${c}" data-colour="${c}"></button>`).join('');
-
-    document.querySelectorAll('.swatch').forEach(s => {
-      s.addEventListener('click', () => {
-        document.querySelectorAll('.swatch').forEach(x => x.classList.remove('selected'));
-        s.classList.add('selected');
-        selectedColour = s.dataset.colour;
-      });
-    });
-  }
 
   async function load() {
+    const list = document.getElementById('circleList');
     try {
       const [data, cohortData] = await Promise.all([
-        api.get('/admin/circles'),
-        api.get('/admin/cohorts')
+        api.get('/admin/circles/all'),
+        api.get('/admin/cohorts').catch(() => ({ cohorts: [] }))
       ]);
+      circles = data.circles;
 
-      document.getElementById('cSeed').innerHTML =
-        '<option value="">Empty — add members by hand</option>' +
-        cohortData.cohorts.map(c => `<option value="${c.id}">${escapeHtml(c.name)} (${c.member_count})</option>`).join('');
+      document.getElementById('cSeed').innerHTML = '<option value="">Start empty</option>' +
+        cohortData.cohorts.map(c =>
+          `<option value="${c.id}">${escapeHtml(c.name)} (${c.member_count})</option>`).join('');
 
-      const circles = data.circles.filter(c => c.status === 'active');
-      document.getElementById('list').innerHTML = circles.length ? circles.map(c => `
-        <article class="circle ${c.is_root ? '' : 'child'}" onclick="openDetail('${c.id}')">
-          <span class="circle-mark" style="background:${c.color}"></span>
-          <div style="flex:1;min-width:0">
-            <div class="row-tight">
-              <span class="circle-name">${escapeHtml(c.name)}</span>
-              ${c.is_root ? badge('root', 'info') : ''}
+      const here = Auth.getCircle();
+
+      list.innerHTML = circles.map(c => `
+        <article class="circle-card">
+          <span class="circle-mark" style="background:${c.color || 'var(--cd-blue)'}"></span>
+          <div class="circle-body">
+            <div class="circle-title">
+              ${escapeHtml(c.name)}
+              ${c.id === here ? '<span class="circle-here">You are here</span>' : ''}
+              ${c.status === 'archived' ? badge('archived', 'inactive') : ''}
             </div>
             ${c.description ? `<div class="circle-desc">${escapeHtml(c.description)}</div>` : ''}
-          </div>
-          <div class="circle-counts hide-sm">
-            <span>${c.member_count} member${c.member_count === 1 ? '' : 's'}</span>
-            <span>${c.cohort_count} cohort${c.cohort_count === 1 ? '' : 's'}</span>
-            <span>${c.survey_count} survey${c.survey_count === 1 ? '' : 's'}</span>
-          </div>
-          <div class="row-actions" onclick="event.stopPropagation()">
-            ${c.is_root ? '' : `<button class="btn btn-sm btn-ghost" onclick="archiveCircle('${c.id}', '${escapeHtml(c.name).replace(/'/g, '&#39;')}')">Archive</button>`}
-          </div>
-        </article>`).join('')
-        : emptyState({
-            title: 'No circles yet',
-            text: 'Sub-circles let you run a separate engagement space with its own members and surveys.',
-            action: '<button class="btn btn-sm btn-primary" onclick="openCreate()">Create one</button>'
-          });
-    } catch (err) {
-      document.getElementById('list').innerHTML = emptyState({ title: 'Could not load circles', text: err.message });
-    }
-  }
-
-  // ─── Detail ─────────────────────────────────────────────
-  async function openDetail(id) {
-    openCircleId = id;
-    document.getElementById('candidateSearch').value = '';
-    document.getElementById('candidates').innerHTML = '';
-    document.getElementById('members').innerHTML = '<div class="row"><span class="spinner"></span></div>';
-    Shell.openDrawer('detailDrawer');
-
-    try {
-      const data = await api.get(`/admin/circles/${id}`);
-      const isRoot = data.circle.is_root === 1;
-
-      document.getElementById('dName').textContent = data.circle.name;
-      document.getElementById('dSub').textContent = data.circle.description || (isRoot ? 'The root circle' : '');
-      document.getElementById('memberCount').textContent = `${data.members.length} member${data.members.length === 1 ? '' : 's'}`;
-
-      document.getElementById('members').innerHTML = data.members.length
-        ? data.members.map(m => `
-          <div class="person">
-            ${avatar(m.name, 'avatar-sm')}
-            <div style="flex:1;min-width:0">
-              <div class="text-sm truncate">${escapeHtml(m.name)}${m.role === 'lead' ? ' ' + badge('lead', 'info') : ''}</div>
-              <div class="dim text-xs truncate">${escapeHtml(m.company || m.email || '')}</div>
+            <div class="circle-facts">
+              <span>${c.member_count} member${c.member_count === 1 ? '' : 's'}</span>
+              <span>${c.cohort_count} cohort${c.cohort_count === 1 ? '' : 's'}</span>
+              <span>${c.survey_count} survey${c.survey_count === 1 ? '' : 's'}</span>
             </div>
-            ${badge(m.api_status, m.api_status)}
-            ${isRoot ? '' : `<button class="btn btn-sm btn-ghost" onclick="removeMember('${m.id}', '${escapeHtml(m.name).replace(/'/g, '&#39;')}')">Remove</button>`}
-          </div>`).join('')
-        : '<p class="dim text-sm">Nobody here yet. Search above to add members.</p>';
+          </div>
+          <div class="circle-actions">
+            ${c.id === here ? '' : `<button class="btn btn-sm btn-secondary" onclick="goTo('${c.id}')">Switch to</button>`}
+            <button class="btn btn-sm btn-secondary" onclick="openStaff('${c.id}')">Access</button>
+          </div>
+        </article>`).join('');
     } catch (err) {
-      document.getElementById('members').innerHTML = emptyState({ title: 'Could not load members', text: err.message });
+      list.innerHTML = emptyState({ title: 'Could not load circles', text: err.message });
     }
   }
 
-  document.getElementById('candidateSearch').addEventListener('input', () => {
-    clearTimeout(searchTimer);
-    searchTimer = setTimeout(runSearch, 250);
-  });
-
-  async function runSearch() {
-    const term = document.getElementById('candidateSearch').value.trim();
-    if (!openCircleId || term.length < 2) {
-      document.getElementById('candidates').innerHTML = '';
-      return;
-    }
-
-    try {
-      const data = await api.get(`/admin/circles/${openCircleId}/candidates?search=${encodeURIComponent(term)}`);
-      document.getElementById('candidates').innerHTML = data.candidates.length
-        ? data.candidates.slice(0, 8).map(c => `
-          <div class="person">
-            ${avatar(c.name, 'avatar-sm')}
-            <div style="flex:1;min-width:0">
-              <div class="text-sm truncate">${escapeHtml(c.name)}</div>
-              <div class="dim text-xs truncate">${escapeHtml(c.company || c.email || '')}</div>
-            </div>
-            <button class="btn btn-sm btn-primary" onclick="addMember('${c.id}')">Add</button>
-          </div>`).join('')
-        : '<p class="dim text-sm">Nobody matching who is not already in this circle.</p>';
-    } catch (err) { showToast(err.message, 'error'); }
+  // Switching is the same act as switching from the sidebar, so it goes
+  // through the same path rather than a second one that could drift
+  function goTo(id) {
+    Auth.setCircle(id);
+    window.location.href = '/admin/dashboard.html';
   }
 
-  async function addMember(userId) {
-    try {
-      const res = await api.post(`/admin/circles/${openCircleId}/members`, { user_ids: [userId] });
-      // The server can refuse a member (already present, wrong circle scope) —
-      // say which, rather than reporting a success that did not happen.
-      if (res.rejected.length) showToast(res.rejected[0].reason, 'warning');
-      else showToast('Added');
-
-      document.getElementById('candidateSearch').value = '';
-      document.getElementById('candidates').innerHTML = '';
-      openDetail(openCircleId);
-      load();
-    } catch (err) { showToast(err.message, 'error'); }
-  }
-
-  async function removeMember(userId, name) {
-    const ok = await Shell.confirm({
-      title: `Remove ${name}?`,
-      text: 'They stay in Dev Circle — this only removes them from this circle.',
-      ok: 'Remove'
-    });
-    if (!ok) return;
-
-    try {
-      await api.del(`/admin/circles/${openCircleId}/members/${userId}`);
-      showToast('Removed');
-      openDetail(openCircleId);
-      load();
-    } catch (err) { showToast(err.message, 'error'); }
-  }
-
-  // ─── Create / archive ───────────────────────────────────
-  function openCreate() {
-    document.getElementById('cName').value = '';
-    document.getElementById('cDesc').value = '';
-    Shell.openDrawer('createDrawer');
-  }
-
-  async function createCircle() {
+  async function createCircle(button) {
     const name = document.getElementById('cName').value.trim();
     if (!name) { showToast('Give the circle a name', 'warning'); return; }
 
+    button.disabled = true;
     try {
       const res = await api.post('/admin/circles', {
         name,
         description: document.getElementById('cDesc').value.trim() || null,
-        color: selectedColour,
         seed_from_cohort_id: document.getElementById('cSeed').value || null
       });
 
-      Shell.closeDrawer('createDrawer');
-      showToast(res.seeded ? `"${name}" created with ${res.seeded.added} member(s)` : `"${name}" created`);
+      Shell.closeDrawer('newCircleDrawer');
+      showToast(res.seeded
+        ? `"${name}" created with ${res.seeded.added} member(s)`
+        : `"${name}" created`);
+      document.getElementById('cName').value = '';
+      document.getElementById('cDesc').value = '';
       load();
-    } catch (err) { showToast(err.message, 'error'); }
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+    button.disabled = false;
   }
 
-  async function archiveCircle(id, name) {
-    const ok = await Shell.confirm({
-      title: `Archive "${name}"?`,
-      text: 'Its history is kept, but it stops receiving new surveys, broadcasts and members.',
-      ok: 'Archive'
-    });
-    if (!ok) return;
+  // ─── Staff access ───────────────────────────────────────
+
+  async function openStaff(id) {
+    openCircleId = id;
+    const circle = circles.find(c => c.id === id);
+    document.getElementById('staffCircleName').textContent = circle ? circle.name : '';
+    document.getElementById('staffList').innerHTML = '<div class="skeleton" style="height:14px"></div>';
+    Shell.openDrawer('staffDrawer');
 
     try {
-      await api.del(`/admin/circles/${id}`);
-      showToast('Archived');
-      Shell.closeDrawer('detailDrawer');
-      load();
-    } catch (err) { showToast(err.message, 'error'); }
+      if (!roles.length) roles = (await api.get('/admin/roles')).roles;
+      if (!admins.length) admins = (await api.get('/admin/admins')).admins;
+
+      document.getElementById('staffRole').innerHTML = roles
+        .map(r => `<option value="${r.id}">${escapeHtml(r.name)}</option>`).join('');
+      document.getElementById('staffAdmin').innerHTML = admins
+        .map(a => `<option value="${a.id}">${escapeHtml(a.name)}</option>`).join('');
+
+      const detail = await api.get(`/admin/circles/${id}`);
+      document.getElementById('staffList').innerHTML = detail.staff.length
+        ? detail.staff.map(s => `
+          <div class="staff-row">
+            <span class="staff-name">${escapeHtml(s.name)}</span>
+            <span class="text-xs muted">${escapeHtml(s.role_name || '—')}</span>
+            <button class="btn btn-sm btn-ghost" onclick="revoke('${s.id}','${escapeHtml(s.name)}')">Remove</button>
+          </div>`).join('')
+        : '<p class="hint">Nobody has been given access to this circle yet.</p>';
+    } catch (err) {
+      document.getElementById('staffList').innerHTML = `<p class="hint">${escapeHtml(err.message)}</p>`;
+    }
   }
 
-  renderSwatches();
+  async function grantAccess(button) {
+    button.disabled = true;
+    try {
+      await api.post(`/admin/circles/${openCircleId}/staff`, {
+        admin_id: document.getElementById('staffAdmin').value,
+        role_id: document.getElementById('staffRole').value
+      });
+      showToast('Access granted');
+      openStaff(openCircleId);
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+    button.disabled = false;
+  }
+
+  async function revoke(adminId, name) {
+    if (!await Shell.confirm({ title: `Remove ${name}?`, text: 'They keep any role they hold in other circles.' })) return;
+    try {
+      await api.del(`/admin/circles/${openCircleId}/staff/${adminId}`);
+      showToast('Access removed');
+      openStaff(openCircleId);
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  }
+
   load();
 </script>
 </body>
