@@ -25,6 +25,8 @@ Be able to sign into the dev circle after registration on the landing page.
 
 Receive communications (in-portal, e-mail, whatsapp, SMS notification) for upcoming scheduled upcoming info/Test.
 
+Open a notification and land on the thing it is about, rather than a list to go searching through.
+
 Be able to initiate feedback within the dev circle aside from the regular scheduled engagement.
 
 Give and withdraw consent.
@@ -44,7 +46,11 @@ See all members
 
 See at a glance, an informational dashboard which covers demography, age, products, engagement histories, etc. 
 
-Be able to create other Circles/group similar to the dev circle as sub circles.
+Be able to create other Circles beside the dev circle, each one a workspace of its own with its own members, cohorts, surveys and feedback. Nothing crosses between them. The dev circle is one circle among them, not the parent of the rest.
+
+Switch between the circles an account can reach, and see at all times which one is being worked in. A developer can belong to more than one. Staff hold a role per circle, so the same person can run one circle and have no access to another.
+
+Grouping people within a circle is what cohorts are for. A circle is where the work happens; a cohort is a slice of the people in it.
 
 Send message blast to:
 
@@ -80,9 +86,23 @@ Select engagement modes in invite for surveys (1 on-1, email, whatsapp)
 
 Bulk add/import users from existing excel worksheet
 
+Download a template wherever there is an import, so the sheet going in is already the shape the system expects.
+
 Manage members (deactivate,  reset password, etc)
 
 See eligible cohorts of users according to their cohorts for surveys.
+
+Write the questions for each survey freely. A discovery initiative sets its own questions, so they can never be fixed in advance, and one survey carries as many questions as it needs.
+
+Where a question has been asked before, be offered the existing one so the answers line up across surveys. Offered, never imposed.
+
+See at a glance, the feedback table by developer, question, survey, source, system, company, work sector, API status, location, month, status or cohort. A question is counted across every survey that asked it, so one question asked in three surveys reads as one line rather than three.
+
+Switch that feedback between the reading view and a table view, keeping whichever grouping is in force. Researchers and analysts work in spreadsheets.
+
+See the entire engagement of a single developer at once — every survey answered, every complaint from feex, every self-initiated feedback and every verbatim, whichever source it arrived from and whichever survey asked it.
+
+Export the feedback on the same terms the table is read by, so what leaves the system is what was on the screen.
 
 System
 Be able to accept user details from the existing landing page to the dev circle.
@@ -122,6 +142,10 @@ Get signal that action has happened so as to update user engagement table to sho
 Avoid manually going to the dev circle to be updating tracking status.
 
 Have permissions created to determine what can be done. Admin can create custom roles and assign permissions to those roles.
+
+Handle feedback tied to a single user account from multiple sources (customerio, feex,  surveys, etc) and map them properly by source to that user.
+
+Be able to take in surveys run outside the dev circle — customer.io, google forms, microsoft forms — with their verbatim responses, and map each response to the developer that gave it. A survey deployed elsewhere still lands here.
 
 Interfaces
 Interface with existing landing page
