@@ -385,13 +385,28 @@ test('a colour that is not a colour is refused', () => {
   assert.ok(issues.some(i => i.field === 'accent'));
 });
 
-test('a logo address that could carry script is refused', () => {
-  for (const url of ['javascript:alert(1)', 'data:text/html,<script>', '//evil.example/logo.png']) {
-    const { theme } = themes.normalize({ logo_url: url });
+test('images are uploaded, not linked to', () => {
+  // Three reasons pointing the same way: the content policy only allows
+  // same-origin images, a remote address puts every member in front of
+  // whoever hosts it, and a link can change to something else after approval
+  for (const url of ['javascript:alert(1)', 'data:text/html,<script>', '//evil.example/logo.png',
+                     'https://cdn.example.ng/logo.png']) {
+    const { theme, issues } = themes.normalize({ logo_url: url });
     assert.equal(theme?.logo_url, undefined, `${url} must not be stored`);
+    assert.ok(issues.some(i => i.field === 'logo_url'));
   }
-  assert.equal(themes.normalize({ logo_url: '/assets/logo.png' }).theme.logo_url, '/assets/logo.png');
-  assert.equal(themes.normalize({ logo_url: 'https://x.ng/l.png' }).theme.logo_url, 'https://x.ng/l.png');
+
+  const stored = '/uploads/0123456789abcdef0123456789abcdef.png';
+  assert.equal(themes.normalize({ logo_url: stored }).theme.logo_url, stored);
+  assert.equal(themes.normalize({ logo_url: '/assets/logo.png' }).theme.logo_url, '/assets/logo.png',
+    'the product\'s own assets are still usable');
+});
+
+test('a path cannot climb out of where uploads live', () => {
+  for (const bad of ['/uploads/../../../etc/passwd', '/assets/../../.env', '/uploads/..%2f..%2fx']) {
+    const { theme } = themes.normalize({ background_image: bad });
+    assert.equal(theme?.background_image, undefined, `${bad} must not be stored`);
+  }
 });
 
 test('only what differs from the default is stored, so a survey follows its circle', () => {
@@ -448,17 +463,17 @@ test('an accent that vanishes into the background is flagged', () => {
 });
 
 test('a background image is dimmed by default, because text has to survive it', () => {
-  const { theme } = themes.normalize({ background_image: 'https://cdn.x.ng/hero.jpg' });
+  const { theme } = themes.normalize({ background_image: '/uploads/aaaabbbbccccddddeeeeffff00001111.jpg' });
   assert.equal(theme.background_overlay, 0.55);
 
   const canvas = themes.toCSS(theme)['--survey-canvas'];
-  assert.ok(canvas.includes('url(https://cdn.x.ng/hero.jpg)'));
+  assert.ok(canvas.includes('url(/uploads/aaaabbbbccccddddeeeeffff00001111.jpg)'));
   assert.ok(canvas.indexOf('linear-gradient') < canvas.indexOf('url('), 'the scrim sits over the image');
 });
 
 test('an author can lift the scrim, but not past the point of no return', () => {
-  assert.equal(themes.normalize({ background_image: '/a.jpg', background_overlay: 0 }).theme.background_overlay, 0);
-  assert.equal(themes.normalize({ background_image: '/a.jpg', background_overlay: 5 }).theme.background_overlay, 0.95);
+  assert.equal(themes.normalize({ background_image: '/uploads/aaaabbbbccccddddeeeeffff00001111.jpg', background_overlay: 0 }).theme.background_overlay, 0);
+  assert.equal(themes.normalize({ background_image: '/uploads/aaaabbbbccccddddeeeeffff00001111.jpg', background_overlay: 5 }).theme.background_overlay, 0.95);
 });
 
 test('an image address that could break out of the CSS it lands in is refused', () => {
@@ -474,11 +489,62 @@ test('an image address that could break out of the CSS it lands in is refused', 
     assert.equal(theme?.background_image, undefined, `${bad} must not be stored`);
     assert.ok(issues.some(i => i.field === 'background_image'));
   }
-  assert.equal(
-    themes.normalize({ background_image: 'https://cdn.x.ng/a%20b.jpg' }).theme.background_image,
-    'https://cdn.x.ng/a%20b.jpg',
-    'a properly encoded address is fine'
-  );
+  const stored = '/uploads/aaaabbbbccccddddeeeeffff00001111.jpg';
+  assert.equal(themes.normalize({ background_image: stored }).theme.background_image, stored,
+    'a stored upload is fine');
+});
+
+// ─── A brand's own typeface ─────────────────────────────────
+
+test('type is offered as pairings, each with something to say for itself', () => {
+  const fonts = Object.entries(themes.FONTS);
+  assert.ok(fonts.length >= 6, 'four options was not a choice');
+  for (const [key, font] of fonts) {
+    assert.ok(font.label, `${key} needs a name`);
+    assert.ok(font.display && font.body, `${key} needs both halves of the pairing`);
+    assert.ok(/system-ui|serif|sans-serif|monospace/.test(font.body),
+      `${key} must end in something every device has`);
+  }
+});
+
+test('choosing your own font without uploading one is refused', () => {
+  // Otherwise it silently falls back to a system stack and reads as a failed upload
+  const { issues } = themes.normalize({ font: 'brand' });
+  assert.ok(issues.some(i => i.field === 'font'));
+});
+
+test('an uploaded font leads the stack, with the fallbacks still behind it', () => {
+  const { theme } = themes.normalize({
+    font: 'brand',
+    brand_font: '/uploads/11112222333344445555666677778888.woff2',
+    brand_font_name: 'Acme Grotesk'
+  });
+  const css = themes.toCSS(theme);
+  assert.ok(css['--font-display'].startsWith("'Acme Grotesk', "));
+  assert.ok(/system-ui/.test(css['--font-display']), 'readable before it loads, and if it never does');
+
+  const face = themes.fontFace(theme);
+  assert.ok(face.includes("font-family: 'Acme Grotesk'"));
+  assert.ok(face.includes("format('woff2')"));
+  assert.ok(face.includes('font-display: swap'), 'a slow connection must not mean a blank question');
+});
+
+test('a font name cannot break out of the declaration it is written into', () => {
+  const { theme } = themes.normalize({
+    font: 'brand',
+    brand_font: '/uploads/11112222333344445555666677778888.woff2',
+    brand_font_name: "Evil'; } body { display: none } @font-face { font-family: 'x"
+  });
+  const face = themes.fontFace(theme);
+  assert.ok(!face.includes('display: none'));
+  assert.ok(!/\}/.test(themes.familyName(theme.brand_font_name)));
+  assert.equal(themes.familyName("Acme'; }"), 'Acme');
+});
+
+test('a font is only served from here, never fetched from a foundry', () => {
+  const { theme, issues } = themes.normalize({ brand_font: 'https://fonts.example/acme.woff2' });
+  assert.equal(theme?.brand_font, undefined);
+  assert.ok(issues.some(i => i.field === 'brand_font'));
 });
 
 test('a dark brand canvas makes the survey dark, whatever the member set', () => {

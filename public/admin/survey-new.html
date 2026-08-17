@@ -110,6 +110,40 @@
     .contrast.warn { background: var(--gold-dim); color: var(--gold-ink); }
     .contrast.bad  { background: var(--rose-dim); color: var(--rose-ink); }
 
+    /* An uploaded asset shows what was uploaded, not the path it landed at */
+    .asset { display: flex; gap: var(--sp-3); align-items: center; }
+    .asset.busy { opacity: 0.5; pointer-events: none; }
+    .asset-thumb {
+      width: 46px; height: 46px;
+      border-radius: var(--r-md);
+      object-fit: contain;
+      background: var(--surface-0);
+      border: 1px solid var(--line);
+      flex-shrink: 0;
+    }
+    .asset-thumb.empty {
+      display: flex; align-items: center; justify-content: center;
+      color: var(--ash-dim); border-style: dashed; font-size: var(--fs-sm);
+    }
+    .asset-meta { min-width: 0; flex: 1; }
+    .asset-name { font-size: var(--fs-xs); display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .asset label.btn { cursor: pointer; }
+
+    /* Type shown in the type it offers */
+    .font-list { display: grid; gap: var(--sp-2); }
+    .font-option {
+      text-align: left;
+      padding: var(--sp-3);
+      border: 1px solid var(--line);
+      border-radius: var(--r-md);
+      background: transparent;
+      cursor: pointer;
+    }
+    .font-option:hover { border-color: var(--line-strong); }
+    .font-option.on { border-color: var(--cd-blue); background: var(--cd-blue-dim); }
+    .font-sample { display: block; font-size: var(--fs-md); }
+    .font-note { display: block; font-size: var(--fs-xs); color: var(--ash-dim); margin-top: 2px; }
+
     .theme-more { margin-bottom: var(--sp-4); }
     .theme-more summary { font-size: var(--fs-xs); color: var(--ash); cursor: pointer; padding: var(--sp-2) 0; }
     .theme-more summary:hover { color: var(--white); }
@@ -1071,6 +1105,17 @@
 
     frame.setAttribute('style', SurveyTheme.toCSSText(theme));
     frame.style.background = theme.background_color || 'var(--surface-0)';
+
+    // A brand font has to be declared, not just referenced, or the preview
+    // silently shows the fallback and the author thinks the upload failed
+    let face = document.getElementById('brandFace');
+    if (!face) {
+      face = document.createElement('style');
+      face.id = 'brandFace';
+      document.head.appendChild(face);
+    }
+    face.textContent = SurveyTheme.fontFace(theme);
+
     if (theme.background !== 'plain' || theme.background_image) {
       frame.style.backgroundImage = 'var(--survey-canvas)';
       frame.style.backgroundSize = 'cover';
@@ -1129,9 +1174,47 @@
     return theme.accent || '#107ebc';
   }
 
+  // ─── Uploading a brand asset ──────────────────────────────
+  // Files are uploaded rather than linked. A survey only ever loads images and
+  // fonts from this origin — which is what stops a member's browser being sent
+  // to somebody else's server, and what stops an approved image being swapped
+  // for something else after the fact.
+
+  function assetRow(key, current, kind = 'image') {
+    const accept = kind === 'font'
+      ? '.woff2,.woff,.ttf,.otf,font/woff2,font/woff,font/ttf,font/otf'
+      : 'image/png,image/jpeg,image/gif,image/webp';
+
+    return `
+      <div class="asset" data-asset="${key}" data-kind="${kind}">
+        ${current && kind === 'image'
+          ? `<img class="asset-thumb" src="${escapeHtml(current)}" alt="">`
+          : `<span class="asset-thumb empty">${kind === 'font' ? 'Aa' : '+'}</span>`}
+        <div class="asset-meta">
+          ${current
+            ? `<span class="asset-name mono">${escapeHtml(current.split('/').pop())}</span>`
+            : `<span class="asset-name dim">Nothing uploaded</span>`}
+          <div class="row" style="gap:var(--sp-2);margin-top:4px">
+            <label class="btn btn-sm btn-secondary">
+              ${current ? 'Replace' : 'Upload'}
+              <input type="file" accept="${accept}" hidden data-upload="${key}" data-upload-kind="${kind}">
+            </label>
+            ${current ? `<button class="btn btn-sm btn-ghost" data-clear-asset="${key}">Remove</button>` : ''}
+          </div>
+        </div>
+      </div>`;
+  }
+
   function renderThemePanel() {
     const theme = SurveyTheme.resolve(state.theme, state.circleTheme);
     const panel = document.getElementById('rail-theme');
+
+    const asset = (key, label, hint = '') => `
+      <div class="field">
+        <label class="label">${escapeHtml(label)}</label>
+        ${assetRow(key, theme[key])}
+        ${hint ? `<p class="hint">${escapeHtml(hint)}</p>` : ''}
+      </div>`;
 
     const choose = (key, values, labels) => `
       <select class="input" data-theme="${key}">
@@ -1211,18 +1294,28 @@
         </div>
       </div>
 
-      <div class="field-row">
-        <div class="field">
-          <label class="label">Type</label>
-          <select class="input" data-theme="font">
-            ${schema.theme.fonts.map(f => `
-              <option value="${f.value}"${theme.font === f.value ? ' selected' : ''}>${escapeHtml(f.label)}</option>`).join('')}
-          </select>
-        </div>
-        <div class="field">
-          <label class="label">Light or dark</label>
-          ${choose('mode', schema.theme.modes, { auto: 'Follow the member', light: 'Always light', dark: 'Always dark' })}
-        </div>
+      <div class="card-title mb-3 mt-4">Type</div>
+      <!-- Each option set in the type it offers: a font list you cannot see is
+           a list of words. -->
+      <div class="font-list">
+        ${schema.theme.fonts.map(f => `
+          <button class="font-option${theme.font === f.value ? ' on' : ''}" data-font="${f.value}">
+            <span class="font-sample" style="font-family:${f.display}">${escapeHtml(f.label)}</span>
+            <span class="font-note">${escapeHtml(f.note || '')}</span>
+          </button>`).join('')}
+      </div>
+      ${theme.font === 'brand' || theme.brand_font ? `
+        <div class="field mt-3">
+          <label class="label">Font file</label>
+          ${assetRow('brand_font', theme.brand_font, 'font')}
+          <input type="text" class="input mt-2" data-theme="brand_font_name" placeholder="What to call it, e.g. Acme Grotesk"
+                 value="${escapeHtml(theme.brand_font_name || '')}">
+          <p class="hint">A .woff2 loads fastest. Whatever you upload is served from here, so nothing about the member reaches its foundry.</p>
+        </div>` : ''}
+
+      <div class="field mt-4">
+        <label class="label">Light or dark</label>
+        ${choose('mode', schema.theme.modes, { auto: 'Follow the member', light: 'Always light', dark: 'Always dark' })}
       </div>
 
       <div class="field-row">
@@ -1237,22 +1330,9 @@
       </div>
 
       <div class="card-title mb-3 mt-4">Images</div>
-      <div class="field">
-        <label class="label">Wordmark</label>
-        <input type="text" class="input" data-theme="logo_url" placeholder="https://… or /assets/…"
-               value="${escapeHtml(theme.logo_url || '')}">
-        <p class="hint">Replaces the Dev Circle mark in the bar and on the opening screen.</p>
-      </div>
-      <div class="field">
-        <label class="label">Opening image</label>
-        <input type="text" class="input" data-theme="header_image" placeholder="https://…"
-               value="${escapeHtml(theme.header_image || '')}">
-      </div>
-      <div class="field">
-        <label class="label">Background image</label>
-        <input type="text" class="input" data-theme="background_image" placeholder="https://…"
-               value="${escapeHtml(theme.background_image || '')}">
-      </div>
+      ${asset('logo_url', 'Wordmark', 'Replaces the Dev Circle mark in the bar and on the opening screen.')}
+      ${asset('header_image', 'Opening image', 'Sits above the headline on the first screen.')}
+      ${asset('background_image', 'Background image')}
       ${theme.background_image ? `
         <div class="field-row">
           <div class="field">
@@ -1354,6 +1434,26 @@
       });
     });
 
+    panel.querySelectorAll('[data-font]').forEach(button => {
+      button.addEventListener('click', () => {
+        state.theme.font = button.dataset.font;
+        renderThemePanel();
+        renderPreview();
+      });
+    });
+
+    panel.querySelectorAll('[data-upload]').forEach(input => {
+      input.addEventListener('change', () => uploadAsset(input));
+    });
+
+    panel.querySelectorAll('[data-clear-asset]').forEach(button => {
+      button.addEventListener('click', () => {
+        delete state.theme[button.dataset.clearAsset];
+        renderThemePanel();
+        renderPreview();
+      });
+    });
+
     panel.querySelectorAll('[data-theme-copy]').forEach(input => {
       input.addEventListener('input', () => {
         const [group, key] = input.dataset.themeCopy.split('.');
@@ -1361,6 +1461,47 @@
         renderPreview();
       });
     });
+  }
+
+  // Sent as base64 in JSON, the same way the member import sends a workbook.
+  // The server reads the bytes to decide what the file really is — the name
+  // and the type the browser declares are both the uploader's to choose, so
+  // neither is worth believing.
+  async function uploadAsset(input) {
+    const file = input.files?.[0];
+    if (!file) return;
+
+    const key = input.dataset.upload;
+    const kind = input.dataset.uploadKind || 'image';
+    const holder = input.closest('.asset');
+    holder?.classList.add('busy');
+
+    try {
+      const base64 = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result).split(',')[1]);
+        reader.onerror = () => reject(new Error('That file could not be read'));
+        reader.readAsDataURL(file);
+      });
+
+      const { asset } = await api.post('/admin/uploads', { file: base64, kind });
+      state.theme[key] = asset.path;
+
+      // Naming a brand font after the file it came from is right often enough
+      // to be worth doing, and always editable
+      if (key === 'brand_font') {
+        state.theme.font = 'brand';
+        if (!state.theme.brand_font_name) {
+          state.theme.brand_font_name = file.name.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' ').trim();
+        }
+      }
+
+      renderThemePanel();
+      renderPreview();
+    } catch (err) {
+      holder?.classList.remove('busy');
+      showToast(err.message, 'error');
+    }
   }
 
   function resetTheme() {

@@ -278,6 +278,15 @@
     for (const [name, value] of Object.entries(vars)) {
       document.documentElement.style.setProperty(name, value);
     }
+
+    // A brand's own typeface has to be declared in a stylesheet rather than
+    // set as a property, so it arrives separately from the rest of the theme
+    const face = SurveyTheme.fontFace(theme);
+    if (face) {
+      const style = document.createElement('style');
+      style.textContent = face;
+      document.head.appendChild(style);
+    }
     // A survey that names a light or dark look — or names its own canvas —
     // overrides the member's setting for the duration, and the toggle steps
     // out of the way rather than pretending to work. A brand's background does

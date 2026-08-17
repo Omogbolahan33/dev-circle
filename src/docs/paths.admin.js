@@ -1454,6 +1454,62 @@ const paths = {
     })
   },
 
+  '/admin/uploads': {
+    post: op({
+      tag: 'Admin · Surveys',
+      permission: 'surveys.write',
+      operationId: 'uploadBrandAsset',
+      summary: 'Upload a logo, image or brand font',
+      description: [
+        'Survey themes reference uploaded files rather than remote addresses. A survey',
+        'only ever loads images and fonts from this origin, which is what keeps a member',
+        'answering one from being sent to somebody else\'s server, and what stops an',
+        'approved image being swapped for something else afterwards.',
+        '',
+        'Send the file base64-encoded, with or without a data URL prefix. **What the file',
+        'is, is decided by its bytes** — the filename, the extension and the declared type',
+        'are all the uploader\'s to choose, so none of them are trusted. It is stored under',
+        'a generated name and served back with a content type taken from its signature.',
+        '',
+        'Images: PNG, JPEG, GIF, WebP. SVG is refused — it is a document format that can',
+        'carry script. Fonts: WOFF2, WOFF, TTF, OTF.',
+        '',
+        'The returned `path` is what goes into a theme field such as `logo_url` or',
+        '`brand_font`. It is served unauthenticated, since a survey answered over a public',
+        'link has to load its own logo; the generated name is what keeps it private.'
+      ].join('\n'),
+      requestBody: jsonBody(object({
+        file: str('The file, base64-encoded. A data: URL prefix is accepted and its declared type ignored'),
+        kind: str('What the caller expects, so a font field cannot be given an image', {
+          enum: ['image', 'font'], default: 'image'
+        })
+      }, { required: ['file'] }), {
+        file: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mP8Xw8AAoMBgDTD2qgAAAAASUVORK5CYII=',
+        kind: 'image'
+      }),
+      responses: {
+        201: json('Stored.', object({
+          asset: object({
+            path: str('Put this in a theme field', { example: '/uploads/0123456789abcdef0123456789abcdef.png' }),
+            kind: str('image or font'),
+            mime: str('What it will be served as, taken from the bytes'),
+            bytes: int('Size on disk'),
+            uploaded_by: id('Admin who uploaded it')
+          })
+        }), {
+          asset: {
+            path: '/uploads/0123456789abcdef0123456789abcdef.png',
+            kind: 'image', mime: 'image/png', bytes: 2048
+          }
+        }),
+        400: json('Not a file of the kind asked for.', ref('Error'), {
+          error: 'That is not an image we can use. Upload a PNG, JPEG, GIF or WebP — not an SVG, which can carry scripts.'
+        }),
+        413: json('Too large.', ref('Error'), { error: 'Files are limited to 3MB' })
+      }
+    })
+  },
+
   '/admin/surveys/schema': {
     get: op({
       tag: 'Admin · Surveys',

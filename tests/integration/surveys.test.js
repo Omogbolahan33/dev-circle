@@ -326,6 +326,77 @@ test('the look can still be changed after members have answered', async () => {
   assert.equal(rewritten.status, 409, 'but the questions are fixed');
 });
 
+// ─── Brand assets ───────────────────────────────────────────
+
+const PNG_BYTES = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, ...Array(32).fill(0)])
+  .toString('base64');
+
+test('a themed survey carries an uploaded file, not a link to one', async () => {
+  const uploaded = await h.post('/api/admin/uploads', { file: PNG_BYTES, kind: 'image' }, { token: adminToken });
+  assert.equal(uploaded.status, 201);
+  assert.match(uploaded.body.asset.path, /^\/uploads\/[a-f0-9]{32}\.png$/);
+
+  const res = await create({
+    questions: [{ type: 'text', text: 'How is it going?' }],
+    theme: { logo_url: uploaded.body.asset.path, background_color: '#0B3D2E', text_color: '#F5EFE0' }
+  });
+  assert.equal(res.status, 201);
+  assert.equal(res.body.survey.theme.logo_url, uploaded.body.asset.path);
+});
+
+test('a remote address is refused in favour of uploading', async () => {
+  const res = await create({
+    questions: [{ type: 'text', text: 'How is it going?' }],
+    theme: { logo_url: 'https://cdn.example.ng/logo.png' }
+  });
+  assert.equal(res.status, 400);
+  assert.match(res.body.error, /upload/i);
+});
+
+test('an uploaded asset is served back with the type its bytes say', async () => {
+  const uploaded = await h.post('/api/admin/uploads', { file: PNG_BYTES }, { token: adminToken });
+  const served = await h.get(uploaded.body.asset.path, { raw: true });
+
+  assert.equal(served.status, 200);
+  assert.equal(served.headers.get('content-type'), 'image/png');
+  assert.equal(served.headers.get('x-content-type-options'), 'nosniff');
+});
+
+test('an asset is reachable without a session, since a public survey needs its logo', async () => {
+  const uploaded = await h.post('/api/admin/uploads', { file: PNG_BYTES }, { token: adminToken });
+  const served = await h.get(uploaded.body.asset.path, { raw: true });
+  assert.equal(served.status, 200, 'no credential was sent');
+});
+
+test('uploading needs the permission that writing a survey needs', async () => {
+  const role = h.makeRole('Reader', ['surveys.read']);
+  const reader = h.makeAdmin({ email: 'reader@creditdirect.ng', roleId: role });
+  const token = await h.loginAdmin(reader.email, reader.password);
+
+  const res = await h.post('/api/admin/uploads', { file: PNG_BYTES }, { token });
+  assert.equal(res.status, 403);
+});
+
+test('HTML dressed up as an image never becomes a file on this origin', async () => {
+  const html = Buffer.from('<html><script>alert(1)</script></html>').toString('base64');
+  const res = await h.post('/api/admin/uploads', { file: html, kind: 'image' }, { token: adminToken });
+  assert.equal(res.status, 400);
+});
+
+test('a survey can be set in a brand\'s own typeface', async () => {
+  const font = Buffer.concat([Buffer.from('wOF2'), Buffer.alloc(48)]).toString('base64');
+  const uploaded = await h.post('/api/admin/uploads', { file: font, kind: 'font' }, { token: adminToken });
+  assert.equal(uploaded.status, 201);
+  assert.equal(uploaded.body.asset.mime, 'font/woff2');
+
+  const res = await create({
+    questions: [{ type: 'text', text: 'How is it going?' }],
+    theme: { font: 'brand', brand_font: uploaded.body.asset.path, brand_font_name: 'Acme Grotesk' }
+  });
+  assert.equal(res.status, 201, JSON.stringify(res.body));
+  assert.equal(res.body.survey.theme.brand_font_name, 'Acme Grotesk');
+});
+
 // ─── Results ────────────────────────────────────────────────
 
 test('the export flattens every answer shape and leaves unasked questions empty', async () => {

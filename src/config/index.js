@@ -59,6 +59,18 @@ const config = {
         : path.join(__dirname, '..', 'data', 'devcircle-sandbox.db'))
   },
 
+  // ─── Uploaded brand assets ────────────────────────────────
+  // Logos, background images and brand fonts uploaded by whoever themes a
+  // survey. Deliberately outside public/: files that arrived from a browser
+  // are served by a route that decides their content type, never by the static
+  // handler that would happily serve them as whatever their extension claims.
+  uploadDir: process.env.DEVCIRCLE_UPLOAD_DIR ||
+    path.join(__dirname, '..', 'data', 'uploads'),
+
+  // Big enough for a wordmark, a hero image or a weight of a brand font;
+  // small enough that it cannot be used as free storage.
+  maxUploadBytes: parseInt(process.env.MAX_UPLOAD_BYTES, 10) || 3 * 1024 * 1024,
+
   // Where this deployment answers. Used to build the links inside outbound
   // mail, which cannot be relative.
   appUrl: (process.env.APP_URL || `http://localhost:${parseInt(process.env.PORT, 10) || 3000}`)

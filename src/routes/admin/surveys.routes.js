@@ -42,7 +42,12 @@ router.get('/surveys/schema', requirePermission('surveys.read'), (req, res) => {
     rating_styles: surveyForm.RATING_STYLES,
     theme: {
       defaults: surveyForm.themes.DEFAULTS,
-      fonts: Object.entries(surveyForm.themes.FONTS).map(([value, f]) => ({ value, label: f.label })),
+      // Sent with the stacks themselves, so the builder can set each option in
+      // its own type — a font list you cannot see is a list of words
+      fonts: Object.entries(surveyForm.themes.FONTS).map(([value, f]) => ({
+        value, label: f.label, note: f.note, display: f.display, body: f.body,
+        needs_upload: !!f.needsUpload
+      })),
       backgrounds: surveyForm.themes.BACKGROUNDS,
       corners: surveyForm.themes.CORNERS,
       layouts: surveyForm.themes.LAYOUTS,

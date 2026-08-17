@@ -55,7 +55,11 @@ const SurveyTheme = (() => {
     background_image: null,
     background_fit: 'cover',
     background_overlay: null,   // how hard to dim an image so text survives it
-    header_image: null          // shown above the opening screen
+    header_image: null,         // shown above the opening screen
+
+    // An uploaded typeface, used when font is 'brand'
+    brand_font: null,
+    brand_font_name: null
   };
 
   const BACKGROUNDS = ['plain', 'tinted', 'gradient'];
@@ -65,31 +69,74 @@ const SurveyTheme = (() => {
   const PROGRESS = ['bar', 'steps', 'count', 'none'];
   const MODES = ['auto', 'light', 'dark'];
 
-  // Only families the page already loads, plus system stacks that need no
-  // network. A theme that pulls a font from a third party would put every
-  // member who answers a survey in front of that third party.
+  // Type as pairings rather than as a list of families, because that is the
+  // decision being made: what the questions are set in, and what the wording
+  // above them is set in. Each is named for the impression it gives, since
+  // "Georgia" tells an author nothing about whether it suits their brand.
+  //
+  // Nothing here is fetched from a third party. The three families the app
+  // already serves are used where they fit, and the rest are system stacks
+  // that need no network at all — a theme that pulled a font from someone
+  // else's CDN would put every member who opens a survey in front of them.
+  // A brand that needs its own face uploads it; see `brand` below.
   const FONTS = {
     default: {
       label: 'Dev Circle',
+      note: 'The product’s own voice',
       display: "'Plus Jakarta Sans', 'Inter', system-ui, sans-serif",
       body: "'DM Sans', 'Inter', system-ui, sans-serif"
     },
-    system: {
-      label: 'System',
-      display: "system-ui, -apple-system, 'Segoe UI', sans-serif",
-      body: "system-ui, -apple-system, 'Segoe UI', sans-serif"
+    neutral: {
+      label: 'Neutral',
+      note: 'Whatever the reader’s device uses — invisible, fast',
+      display: "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif",
+      body: "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
     },
-    serif: {
-      label: 'Serif',
-      display: "Georgia, 'Times New Roman', serif",
-      body: "Georgia, 'Times New Roman', serif"
+    editorial: {
+      label: 'Editorial',
+      note: 'Serif headings over a plain body — considered, unhurried',
+      display: "'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, serif",
+      body: "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
     },
-    mono: {
-      label: 'Mono',
-      display: "'JetBrains Mono', 'Fira Code', monospace",
-      body: "'JetBrains Mono', 'Fira Code', monospace"
+    classic: {
+      label: 'Classic',
+      note: 'Serif throughout — formal, and easy on long questions',
+      display: "Georgia, 'Times New Roman', Times, serif",
+      body: "Georgia, 'Times New Roman', Times, serif"
+    },
+    geometric: {
+      label: 'Geometric',
+      note: 'Round and open — friendly without being soft',
+      display: "'Avenir Next', Avenir, 'Century Gothic', 'Futura', system-ui, sans-serif",
+      body: "'Avenir Next', Avenir, system-ui, -apple-system, sans-serif"
+    },
+    technical: {
+      label: 'Technical',
+      note: 'Monospaced headings — for questions about the API itself',
+      display: "'JetBrains Mono', 'Fira Code', ui-monospace, monospace",
+      body: "'DM Sans', 'Inter', system-ui, sans-serif"
+    },
+    brand: {
+      label: 'Your own font',
+      note: 'Upload a .woff2, .woff, .ttf or .otf',
+      // Filled in from the uploaded file at render time. The fallbacks are
+      // what a member sees for the moment before it loads, and forever if it
+      // fails to — so they are a real stack rather than a bare sans-serif.
+      display: "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif",
+      body: "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif",
+      needsUpload: true
     }
   };
+
+  // The family name a brand font is registered under. Sanitised hard: it is
+  // written into a CSS @font-face declaration, so anything that could close
+  // the string or the block is simply not part of a font name.
+  const familyName = value => trimmed(value)
+    .replace(/[^A-Za-z0-9 _-]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 40)
+    .trim() || 'Brand';
 
   const CORNER_RADII = { sharp: '2px', soft: '10px', round: '20px' };
 
@@ -218,32 +265,44 @@ const SurveyTheme = (() => {
     return { issues, warnings };
   }
 
-  // An image is fetched by every member's browser, so the address is checked
-  // rather than trusted: http(s) or a path on this origin, and nothing that
-  // could carry script.
+  // Images and fonts are uploaded, and what a theme stores is the path they
+  // were stored at. Somewhere else is not an option, for three reasons that
+  // all point the same way: the content policy this app serves under allows
+  // images and fonts from its own origin only, so a remote address would
+  // simply not load; a remote address puts every member who opens a survey in
+  // front of whoever is hosting it; and a link can start returning something
+  // other than what was approved, long after anyone looked.
   //
-  // The characters barred at the end are the ones that would let an address
-  // stop being an address. A background image is written into a CSS url(), so
-  // a quote, a bracket or a semicolon in it could close that url() and start
-  // declaring something else — the same class of problem as an unescaped
-  // quote in SQL, and refused the same way rather than escaped and hoped over.
+  // The characters barred below are the ones that would let a path stop being
+  // a path. A background image is written into a CSS url(), so a quote, a
+  // bracket or a semicolon in it could close that url() and start declaring
+  // something else — the same class of problem as an unescaped quote in SQL,
+  // and refused rather than escaped and hoped over.
   const CSS_BREAKERS = /["'()\\;{}]|\s/;
+
+  // What an upload looks like once stored, plus the app's own assets, so a
+  // theme can point at a wordmark that ships with the product.
+  const OWN_ASSET = /^\/(uploads|assets)\/[A-Za-z0-9._\-/]+$/;
 
   function normalizeAsset(value, field, push) {
     const url = trimmed(value);
     if (!url) return null;
-    if (url.length > 500) { push(field, 'That address is too long'); return null; }
+    if (url.length > 300) { push(field, 'That path is too long'); return null; }
 
     if (CSS_BREAKERS.test(url)) {
-      push(field, 'That address contains characters an image address cannot hold — encode spaces as %20');
+      push(field, 'That path contains characters a file path cannot hold');
       return null;
     }
 
-    if (url.startsWith('//')) { push(field, 'Use a full https:// address'); return null; }
-    if (url.startsWith('/')) return url;
-    if (/^https?:\/\//i.test(url)) return url;
+    if (/^https?:\/\//i.test(url) || url.startsWith('//')) {
+      push(field, 'Upload the file rather than linking to it — a survey only loads images and fonts from here');
+      return null;
+    }
 
-    push(field, 'An image address must start with https:// or /');
+    if (url.includes('..')) { push(field, 'That is not a valid path'); return null; }
+    if (OWN_ASSET.test(url)) return url;
+
+    push(field, 'Upload a file to use here');
     return null;
   }
 
@@ -301,9 +360,22 @@ const SurveyTheme = (() => {
     const background = pick(input.background, BACKGROUNDS, DEFAULTS.background, 'background', push);
     if (background !== DEFAULTS.background) theme.background = background;
 
+    const brandFont = normalizeAsset(input.brand_font, 'brand_font', push);
+    if (brandFont) {
+      theme.brand_font = brandFont;
+      theme.brand_font_name = familyName(input.brand_font_name);
+    }
+
     const font = trimmed(input.font);
-    if (font && !FONTS[font]) push('font', `"${font}" is not one of: ${Object.keys(FONTS).join(', ')}`);
-    else if (font && font !== DEFAULTS.font) theme.font = font;
+    if (font && !FONTS[font]) {
+      push('font', `"${font}" is not one of: ${Object.keys(FONTS).join(', ')}`);
+    } else if (font === 'brand' && !theme.brand_font) {
+      // Choosing "your own font" without one would silently fall back to a
+      // system stack, which reads as the upload having failed
+      push('font', 'Upload a font file to use your own typeface');
+    } else if (font && font !== DEFAULTS.font) {
+      theme.font = font;
+    }
 
     const corner = pick(input.corner, CORNERS, DEFAULTS.corner, 'corner', push);
     if (corner !== DEFAULTS.corner) theme.corner = corner;
@@ -377,7 +449,13 @@ const SurveyTheme = (() => {
     // setting — a brand whose background is near-black is a dark theme
     // whatever the member's own preference says.
     const dark = canvas ? luminance(canvas) < 0.2 : theme.mode === 'dark';
-    const font = FONTS[theme.font] || FONTS.default;
+
+    // An uploaded face leads its own stack, with the pairing's fallbacks
+    // behind it — so the survey is readable in the moment before it loads and
+    // stays readable if it never does.
+    const pairing = FONTS[theme.font] || FONTS.default;
+    const brand = theme.font === 'brand' && theme.brand_font
+      ? `'${familyName(theme.brand_font_name)}', ` : '';
 
     const vars = {
       '--cd-blue': accent,
@@ -385,8 +463,8 @@ const SurveyTheme = (() => {
       '--cd-blue-40': withAlpha(accent, 0.4),
       '--cd-blue-dim': withAlpha(accent, dark ? 0.16 : 0.08),
       '--on-accent': onAccent(accent),
-      '--font-display': font.display,
-      '--font-body': font.body,
+      '--font-display': brand + pairing.display,
+      '--font-body': brand + pairing.body,
       '--r-md': CORNER_RADII[theme.corner] || CORNER_RADII.soft,
       '--r-lg': CORNER_RADII[theme.corner] || CORNER_RADII.soft
     };
@@ -454,11 +532,34 @@ const SurveyTheme = (() => {
   const toCSSText = theme =>
     Object.entries(toCSS(theme)).map(([k, v]) => `${k}: ${v};`).join(' ');
 
+  // The @font-face a brand font needs, or nothing. Kept apart from toCSS
+  // because custom properties go on an element and this has to go in a
+  // stylesheet — the two have different homes even though they are one
+  // decision.
+  //
+  // `swap` on purpose: a member reading a question in a fallback face for a
+  // moment is better than reading nothing at all while a download finishes,
+  // and on a slow Nigerian mobile connection that difference is the survey.
+  function fontFace(resolved) {
+    const theme = resolve(resolved);
+    if (theme.font !== 'brand' || !theme.brand_font) return '';
+
+    const format = /\.woff2$/i.test(theme.brand_font) ? 'woff2'
+      : /\.woff$/i.test(theme.brand_font) ? 'woff'
+      : /\.otf$/i.test(theme.brand_font) ? 'opentype' : 'truetype';
+
+    return `@font-face {
+      font-family: '${familyName(theme.brand_font_name)}';
+      src: url(${theme.brand_font}) format('${format}');
+      font-display: swap;
+    }`;
+  }
+
   return {
     DEFAULTS, FONTS, BACKGROUNDS, CORNERS, LAYOUTS, PROGRESS, MODES, FITS, CORNER_RADII,
     AA, FLOOR,
-    normalize, resolve, toCSS, toCSSText, legibility,
-    normalizeHex, onAccent, contrast, luminance, shade, mix, withAlpha
+    normalize, resolve, toCSS, toCSSText, fontFace, legibility,
+    normalizeHex, onAccent, contrast, luminance, shade, mix, withAlpha, familyName
   };
 })();
 

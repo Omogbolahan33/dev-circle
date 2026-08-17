@@ -39,6 +39,27 @@ app.use(securityHeaders);
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 app.use(express.static(PUBLIC_DIR, { extensions: ['html'] }));
 
+// Brand assets someone uploaded — a wordmark, a background, a brand font.
+// Served by a route rather than by the static handler above, because the
+// content type has to come from the bytes rather than from the extension: a
+// file called logo.png full of HTML must not be served as HTML from our own
+// origin. Unauthenticated on purpose — a survey answered over a public link
+// has to be able to load its own logo — and the name is unguessable, which is
+// the only thing standing in front of it.
+app.get('/uploads/:name', (req, res) => {
+  const asset = require('./services/uploads').read(req.params.name);
+  if (!asset) return res.status(404).type('text/plain').send('Not found');
+
+  res.setHeader('Content-Type', asset.mime);
+  // Nothing is inline that a browser could be talked into interpreting
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Content-Disposition', 'inline');
+  // The name is a content hash of sorts — a new upload gets a new name — so
+  // this can be cached hard and never revalidated.
+  res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+  res.send(asset.buffer);
+});
+
 // A survey addressed to whoever holds its link. The token stays in the path
 // rather than a query string so the address survives being pasted into a chat
 // window, printed on a slide or turned into a QR code — and the page it serves

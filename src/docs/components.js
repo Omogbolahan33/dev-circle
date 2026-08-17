@@ -298,12 +298,26 @@ const schemas = {
   SurveyTheme: object({
     accent: str('Brand colour, as hex. Text drawn on it is worked out from its luminance', { example: '#107EBC' }),
     background: str('Canvas treatment', { enum: ['plain', 'tinted', 'gradient'] }),
-    font: str('Type pairing', { enum: ['default', 'system', 'serif', 'mono'] }),
+    font: str('Type pairing. "brand" uses an uploaded typeface and requires brand_font', {
+      enum: ['default', 'neutral', 'editorial', 'classic', 'geometric', 'technical', 'brand']
+    }),
     corner: str('Corner radius', { enum: ['sharp', 'soft', 'round'] }),
     layout: str('One question per screen, or the whole survey on one page', { enum: ['one_per_page', 'all_at_once'] }),
     progress: str('How progress is shown', { enum: ['bar', 'steps', 'count', 'none'] }),
     mode: str('Force a light or dark look, or follow the member\'s own setting', { enum: ['auto', 'light', 'dark'] }),
-    logo_url: str('Wordmark shown to the member. https:// or a path on this origin', { nullable: true }),
+
+    background_color: str('The canvas, as hex. Naming one makes the survey look the same whatever the member\'s light/dark setting', { nullable: true, example: '#0B3D2E' }),
+    text_color: str('Body text, as hex. Contrast against the background is measured: under 3:1 is refused, under 4.5:1 is saved with a warning', { nullable: true, example: '#F5EFE0' }),
+    surface_color: str('Cards and controls. Derived from the background when not set', { nullable: true }),
+    muted_color: str('Hints, counts and secondary labels. Derived when not set', { nullable: true }),
+
+    logo_url: str('Wordmark. A path from POST /admin/uploads, or one of the app\'s own /assets/ files', { nullable: true, example: '/uploads/0123456789abcdef0123456789abcdef.png' }),
+    header_image: str('Shown above the opening screen', { nullable: true }),
+    background_image: str('Sits behind the survey, under a scrim so text survives it', { nullable: true }),
+    background_fit: str('How the background image sits', { enum: ['cover', 'contain', 'tile'] }),
+    background_overlay: { type: 'number', description: 'How hard the background image is dimmed, 0–0.95. Defaults to 0.55 whenever an image is set', example: 0.55 },
+    brand_font: str('An uploaded typeface, used when font is "brand"', { nullable: true }),
+    brand_font_name: str('What to call it — becomes the CSS family name', { nullable: true, example: 'Acme Grotesk' }),
     intro: object({
       headline: str('Opening screen headline — omit to open on the first question'),
       body: str('Why you are asking'),

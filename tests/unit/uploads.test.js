@@ -1,0 +1,100 @@
+const { test, before, after } = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+
+// Point the store at a throwaway directory before it is first required
+const DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'devcircle-uploads-'));
+process.env.DEVCIRCLE_UPLOAD_DIR = DIR;
+
+const uploads = require('../../src/services/uploads');
+
+after(() => { try { fs.rmSync(DIR, { recursive: true, force: true }); } catch {} });
+
+// Real signatures, since the whole point is that the bytes decide
+const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, ...Array(64).fill(0)]);
+const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, ...Array(64).fill(0)]);
+const WOFF2 = Buffer.concat([Buffer.from('wOF2'), Buffer.alloc(64)]);
+const b64 = buffer => buffer.toString('base64');
+
+// ─── What a file is ─────────────────────────────────────────
+// Everything here follows from one rule: the bytes decide, never the name.
+
+test('an image is stored under a name we generate, not the one it arrived with', () => {
+  const stored = uploads.store(b64(PNG), { kind: 'image' });
+  assert.match(stored.path, /^\/uploads\/[a-f0-9]{32}\.png$/);
+  assert.equal(stored.mime, 'image/png');
+  assert.ok(fs.existsSync(path.join(DIR, path.basename(stored.path))));
+});
+
+test('a data URL from a browser is accepted, and its declared type ignored', () => {
+  // The prefix is the uploader's claim; the bytes behind it are the fact
+  const stored = uploads.store(`data:image/svg+xml;base64,${b64(PNG)}`, { kind: 'image' });
+  assert.equal(stored.mime, 'image/png');
+});
+
+test('HTML dressed up as an image is refused', () => {
+  // Served from our own origin under a .png name, this would be stored XSS
+  const html = Buffer.from('<html><script>alert(1)</script></html>');
+  assert.throws(() => uploads.store(b64(html), { kind: 'image' }), /not an image/i);
+});
+
+test('an SVG is refused however it is labelled', () => {
+  // It is a document format that can carry script; there is no version of an
+  // uploaded SVG that is only a picture
+  const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>');
+  assert.throws(() => uploads.store(b64(svg), { kind: 'image' }), /not an image|scripts/i);
+});
+
+test('a font field will not take an image, and an image field will not take a font', () => {
+  assert.throws(() => uploads.store(b64(PNG), { kind: 'font' }), /image, not a font/i);
+  assert.throws(() => uploads.store(b64(WOFF2), { kind: 'image' }), /font, not an image/i);
+});
+
+test('every accepted image and font format round-trips', () => {
+  assert.equal(uploads.store(b64(JPEG), { kind: 'image' }).mime, 'image/jpeg');
+  assert.equal(uploads.store(b64(WOFF2), { kind: 'font' }).mime, 'font/woff2');
+});
+
+test('an empty or oversized file is refused', () => {
+  assert.throws(() => uploads.store('', { kind: 'image' }), /No file/i);
+  const huge = Buffer.concat([PNG, Buffer.alloc(4 * 1024 * 1024)]);
+  assert.throws(() => uploads.store(b64(huge), { kind: 'image' }), /limited to/i);
+});
+
+// ─── Reading one back ───────────────────────────────────────
+
+test('a stored file is served as what its bytes are', () => {
+  const stored = uploads.store(b64(JPEG), { kind: 'image' });
+  const read = uploads.read(path.basename(stored.path));
+  assert.equal(read.mime, 'image/jpeg');
+  assert.ok(read.buffer.equals(JPEG));
+});
+
+test('a name that is not one of ours reaches nothing', () => {
+  // The pattern is what stops a path being traversed out of the directory
+  for (const name of [
+    '../../../etc/passwd',
+    '..%2f..%2f.env',
+    'not-a-stored-name.png',
+    '/etc/hosts',
+    'aaaabbbbccccddddeeeeffff00001111.exe'
+  ]) {
+    assert.equal(uploads.read(name), null, `${name} must not resolve`);
+  }
+});
+
+test('a file that was tampered with on disk is not served', () => {
+  // Belt and braces: the signature is checked on the way out as well as in
+  const stored = uploads.store(b64(PNG), { kind: 'image' });
+  const file = path.join(DIR, path.basename(stored.path));
+  fs.writeFileSync(file, Buffer.from('<html>swapped after the fact</html>'));
+  assert.equal(uploads.read(path.basename(stored.path)), null);
+});
+
+test('an uploaded path is recognisable as one', () => {
+  assert.ok(uploads.isStored('/uploads/0123456789abcdef0123456789abcdef.png'));
+  assert.ok(!uploads.isStored('https://cdn.example.ng/logo.png'));
+  assert.ok(!uploads.isStored('/assets/logo.png'));
+});
