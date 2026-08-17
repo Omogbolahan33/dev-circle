@@ -14,14 +14,36 @@ const { uuid, parseJSON } = require('../utils/helpers');
 // Only free text is a verbatim. A rating or a picked option is a measurement:
 // it belongs in the survey's own results, and filing it here would bury the
 // sentences under the numbers.
+//
+// A text question held to a format is not free text either — an email address
+// is a field, and filing one as something a developer told us would put
+// contact details in the middle of a page of quotes.
 const VERBATIM_TYPES = new Set(['text']);
+
+// The types that can carry an "Other" box. What someone writes there is in
+// their own words by definition: it is what they said when none of the options
+// were what they meant, which makes it the most pointed sentence on the page.
+const OTHER_TYPES = new Set(['choice', 'dropdown', 'multi_choice']);
+
+const fold = value => String(value ?? '').trim().toLowerCase();
+
+// What was typed rather than picked. Returns null when the member stayed
+// within the options they were offered.
+function otherText(question, answer) {
+  if (!question.allow_other) return null;
+  const offered = new Set((question.options || []).map(fold));
+  const written = (Array.isArray(answer) ? answer : [answer])
+    .map(v => String(v ?? '').trim())
+    .filter(v => v && !offered.has(fold(v)));
+  return written.length ? written.join('; ') : null;
+}
 
 // Prepared on use rather than at load: the handle may point at a sandbox
 const insert = () => db.prepare(`
   INSERT OR IGNORE INTO feedback (
     id, user_id, type, content, category, status, source,
-    survey_id, question_id, canonical_question_id, prompt, circle_id, created_at
-  ) VALUES (?, ?, 'survey_response', ?, ?, 'open', 'survey', ?, ?, ?, ?, ?, COALESCE(?, datetime('now')))
+    survey_id, question_id, canonical_question_id, prompt, circle_id, response_id, created_at
+  ) VALUES (?, ?, 'survey_response', ?, ?, 'open', 'survey', ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')))
 `);
 
 // Pull the free-text answers out of one completed response.
@@ -36,10 +58,18 @@ function extract(survey, answers) {
   const found = [];
 
   for (const question of questions) {
-    if (!VERBATIM_TYPES.has(question.type)) continue;
-
     const answer = answers ? answers[question.id] : undefined;
-    if (typeof answer !== 'string' || !answer.trim()) continue;
+    if (answer === undefined || answer === null) continue;
+
+    let content = null;
+
+    if (VERBATIM_TYPES.has(question.type) && !question.format) {
+      if (typeof answer === 'string' && answer.trim()) content = answer.trim();
+    } else if (OTHER_TYPES.has(question.type)) {
+      content = otherText(question, answer);
+    }
+
+    if (!content) continue;
 
     found.push({
       // The slot inside this survey, and the question it is an instance of.
@@ -47,7 +77,7 @@ function extract(survey, answers) {
       question_id: question.id,
       canonical_question_id: question.question_id || null,
       prompt: question.text || null,
-      content: answer.trim()
+      content
     });
   }
 
@@ -57,16 +87,21 @@ function extract(survey, answers) {
 // File a response's verbatims. Idempotent: the unique index on
 // (user_id, survey_id, question_id) means a replayed submission updates
 // nothing and duplicates nothing.
-function record(userId, survey, answers, { at = null } = {}) {
+//
+// `userId` is null for someone answering over a public link, and `responseId`
+// takes its place as the thing that makes the row unique. What a person
+// without an account wrote is evidence on the same terms as anyone else's —
+// the only difference is that there is no one to attribute it to.
+function record(userId, survey, answers, { at = null, responseId = null } = {}) {
   const verbatims = extract(survey, answers);
   if (!verbatims.length) return { filed: 0, verbatims: [] };
 
   // A verbatim belongs to the circle whose survey drew it out. If the survey
   // carries none, fall back to the member's own — evidence filed against no
   // workspace would be invisible everywhere, which is worse than approximate.
-  const circleId = survey.circle_id || db.prepare(
+  const circleId = survey.circle_id || (userId ? db.prepare(
     'SELECT circle_id FROM circle_members WHERE user_id = ? ORDER BY added_at LIMIT 1'
-  ).get(userId)?.circle_id || null;
+  ).get(userId)?.circle_id : null) || null;
 
   const write = db.transaction(rows => {
     let filed = 0;
@@ -74,9 +109,9 @@ function record(userId, survey, answers, { at = null } = {}) {
       // The survey title is the closest thing to a category the member gave
       // us, and it is what makes a list of verbatims readable at a glance.
       const result = insert().run(
-        uuid(), userId, row.content, survey.title || null,
+        uuid(), userId || null, row.content, survey.title || null,
         survey.id, row.question_id, row.canonical_question_id, row.prompt,
-        circleId, at
+        circleId, responseId, at
       );
       filed += result.changes;
     }
@@ -99,4 +134,4 @@ function forUser(userId, { limit = 100 } = {}) {
   `).all(userId, limit);
 }
 
-module.exports = { record, extract, forUser, VERBATIM_TYPES };
+module.exports = { record, extract, forUser, VERBATIM_TYPES, OTHER_TYPES };

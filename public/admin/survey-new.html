@@ -12,9 +12,11 @@
   <script src="/assets/js/theme.js"></script>
   <style>
     /* Editor on the left, the member's view of it on the right. A survey is
-       written for someone else to answer, so their view stays on screen. */
-    .composer { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: var(--sp-6); align-items: start; }
-    @media (max-width: 1080px) { .composer { grid-template-columns: minmax(0, 1fr); } }
+       written for someone else to answer, so their view stays on screen — and
+       it is the real control, not a drawing of one, so anything the author
+       sets can be tried immediately. */
+    .composer { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: var(--sp-6); align-items: start; }
+    @media (max-width: 1180px) { .composer { grid-template-columns: minmax(0, 1fr); } }
 
     .q-card {
       background: var(--surface-2);
@@ -24,28 +26,111 @@
       margin-bottom: var(--sp-3);
       position: relative;
     }
-    .q-head { display: flex; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-4); }
+    .q-card.invalid { border-color: var(--rose); }
+    /* A question that has been answered is a record, not a draft */
+    .q-card.locked .input { background: transparent; border-style: dashed; }
+    .q-head { display: flex; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-4); flex-wrap: wrap; }
     .q-num { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--cd-blue); }
-    .q-kind { font-size: var(--fs-xs); color: var(--ash-dim); text-transform: uppercase; letter-spacing: 0.08em; }
+    .q-kind {
+      font-size: var(--fs-xs); color: var(--ash-dim);
+      text-transform: uppercase; letter-spacing: 0.08em;
+    }
+    .q-branching {
+      font-size: var(--fs-xs);
+      color: var(--gold-ink);
+      background: var(--gold-dim);
+      padding: 2px var(--sp-2);
+      border-radius: var(--r-sm);
+    }
 
     .option-row { display: flex; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-2); }
     .option-row input { flex: 1; }
+    .option-row .handle { color: var(--ash-dim); font-family: var(--font-mono); font-size: var(--fs-xs); width: 18px; }
+    .exclusive-flag { font-size: 10px; padding: 2px var(--sp-2); border-radius: var(--r-sm); color: var(--ash-dim); border: 1px solid var(--line); }
+    .exclusive-flag.on { color: var(--gold-ink); border-color: var(--cd-gold); background: var(--gold-dim); }
 
-    /* Phone-shaped preview so the question length is judged honestly. */
+    /* Logic reads as a sentence, because that is how it will be explained to
+       whoever inherits the survey. */
+    .logic {
+      border-top: 1px dashed var(--line);
+      margin-top: var(--sp-4);
+      padding-top: var(--sp-4);
+    }
+    .logic-rule { display: flex; gap: var(--sp-2); align-items: center; flex-wrap: wrap; margin-bottom: var(--sp-2); }
+    .logic-rule .input { flex: 1; min-width: 120px; }
+    .logic-lead { font-size: var(--fs-xs); color: var(--ash-dim); white-space: nowrap; }
+
+    .type-menu {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+      gap: var(--sp-2);
+      padding: var(--sp-4);
+      background: var(--surface-2);
+      border: 1px solid var(--line-faint);
+      border-radius: var(--r-lg);
+    }
+    .type-option { text-align: left; padding: var(--sp-3); border: 1px solid var(--line); border-radius: var(--r-md); }
+    .type-option:hover { border-color: var(--cd-blue); background: var(--cd-blue-dim); }
+    .type-option-name { font-size: var(--fs-sm); font-weight: var(--fw-medium); display: block; }
+    .type-option-hint { font-size: var(--fs-xs); color: var(--ash-dim); }
+
+    /* The preview paints itself with the survey's own theme, so it is checked
+       in the colours it will go out in rather than the console's. */
     .preview-frame {
       background: var(--surface-0);
       border: 1px solid var(--line);
       border-radius: var(--r-lg);
       padding: var(--sp-5);
-      min-height: 220px;
+      min-height: 240px;
+      max-height: 70vh;
+      overflow-y: auto;
     }
-    .pv-title { font-family: var(--font-display); font-weight: var(--fw-bold); font-size: var(--fs-md); margin-bottom: var(--sp-2); }
-    .pv-desc { font-size: var(--fs-xs); color: var(--ash); margin-bottom: var(--sp-5); }
-    .pv-q { font-size: var(--fs-sm); font-weight: var(--fw-medium); margin-bottom: var(--sp-3); }
-    .pv-scale { display: flex; gap: var(--sp-1); margin-bottom: var(--sp-2); }
-    .pv-dot { width: 26px; height: 26px; border-radius: 50%; border: 1px solid var(--line); display: flex; align-items: center; justify-content: center; font-size: 10px; color: var(--ash-dim); }
-    .pv-opt { border: 1px solid var(--line); border-radius: var(--r-md); padding: var(--sp-2) var(--sp-3); font-size: var(--fs-xs); color: var(--ash); margin-bottom: var(--sp-2); }
-    .pv-ends { display: flex; justify-content: space-between; font-size: 10px; color: var(--ash-dim); }
+    .preview-frame .sv-ask { font-size: var(--fs-md); }
+    .preview-frame .sv-rate-mark { width: 40px; height: 40px; font-size: var(--fs-sm); }
+    .preview-frame .sv-option { min-height: 40px; padding: var(--sp-2) var(--sp-3); font-size: var(--fs-sm); }
+    .pv-q + .pv-q { margin-top: var(--sp-6); padding-top: var(--sp-6); border-top: 1px solid var(--line-faint); }
+
+    .swatches { display: flex; gap: var(--sp-2); flex-wrap: wrap; margin-top: var(--sp-2); }
+    .swatch { width: 26px; height: 26px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; }
+    .swatch.on { border-color: var(--white); }
+
+    /* The contrast between the two brand colours, stated as a number while it
+       is being chosen rather than reported after saving. */
+    .contrast {
+      display: flex;
+      align-items: baseline;
+      gap: var(--sp-3);
+      padding: var(--sp-3);
+      border-radius: var(--r-md);
+      font-size: var(--fs-xs);
+      margin-bottom: var(--sp-4);
+    }
+    .contrast strong { font-family: var(--font-mono); font-size: var(--fs-sm); }
+    .contrast.good { background: var(--green-dim, var(--tint-1)); color: var(--green-ink); }
+    .contrast.warn { background: var(--gold-dim); color: var(--gold-ink); }
+    .contrast.bad  { background: var(--rose-dim); color: var(--rose-ink); }
+
+    .theme-more { margin-bottom: var(--sp-4); }
+    .theme-more summary { font-size: var(--fs-xs); color: var(--ash); cursor: pointer; padding: var(--sp-2) 0; }
+    .theme-more summary:hover { color: var(--white); }
+
+    .issue-list { margin-top: var(--sp-2); }
+    .issue { font-size: var(--fs-xs); color: var(--rose-ink); }
+
+    /* The link is the distribution for this audience, so it is given the
+       weight an invite button would have had. */
+    .share {
+      border: 1px solid var(--blue-line, var(--line));
+      background: var(--blue-dim);
+      border-radius: var(--r-md);
+      padding: var(--sp-4);
+      margin-top: var(--sp-4);
+    }
+    .share-head { display: flex; gap: var(--sp-3); align-items: flex-start; margin-bottom: var(--sp-3); }
+    .share-mark { font-size: var(--fs-md); }
+    .share-title { font-size: var(--fs-sm); font-weight: var(--fw-medium); }
+    .share-note { font-size: var(--fs-xs); color: var(--ash); line-height: var(--lh-loose); margin-top: 2px; }
+    .share .input { font-size: var(--fs-xs); }
   </style>
 </head>
 <body>
@@ -57,17 +142,17 @@
       <div class="breadcrumb">
         <a href="/admin/surveys.html">Surveys</a>
         <span class="sep">/</span>
-        <span>New survey</span>
+        <span id="crumb">New survey</span>
       </div>
       <div class="page-head-row">
         <div>
-          <h1 class="page-title">New survey</h1>
+          <h1 class="page-title" id="pageTitle">New survey</h1>
           <p class="page-subtitle">Keep it short. Developers answer what respects their time — the estimate you set is shown to them before they start.</p>
         </div>
         <div class="page-actions">
           <a href="/admin/surveys.html" class="btn btn-sm btn-secondary">Cancel</a>
-          <button class="btn btn-sm btn-secondary" onclick="createSurvey('draft')">Save draft</button>
-          <button class="btn btn-sm btn-gold" onclick="createSurvey('active')">Publish</button>
+          <button class="btn btn-sm btn-secondary" onclick="saveSurvey('draft')" id="draftBtn">Save draft</button>
+          <button class="btn btn-sm btn-gold" onclick="saveSurvey('active')" id="publishBtn">Publish</button>
         </div>
       </div>
     </header>
@@ -92,11 +177,34 @@
                 <select class="input" id="sTarget" onchange="toggleCohortTarget()">
                   <option value="all">All members</option>
                   <option value="cohort">A cohort</option>
+                  <option value="anonymous">Anyone with the link</option>
                 </select>
               </div>
               <div class="field hide" id="cohortField">
                 <label class="label">Cohort</label>
                 <select class="input" id="sCohortId"></select>
+              </div>
+            </div>
+
+            <!-- The link audience has no invitations and no reminders, so the
+                 link itself is the whole of the distribution and belongs on
+                 screen the moment it exists. -->
+            <div class="hide" id="linkField">
+              <div class="share">
+                <div class="share-head">
+                  <span class="share-mark">🔗</span>
+                  <div>
+                    <div class="share-title">Answered over a link</div>
+                    <p class="share-note" id="shareNote">
+                      Nobody is invited and nobody is chased. Anyone holding the link can answer once,
+                      without signing in or having an account — and nothing recorded identifies them.
+                    </p>
+                  </div>
+                </div>
+                <div class="row" style="gap:var(--sp-2)" id="shareRow">
+                  <input type="text" class="input mono" id="shareUrl" readonly>
+                  <button class="btn btn-sm btn-secondary" onclick="copyShareLink()">Copy</button>
+                </div>
               </div>
             </div>
             <div class="field-row" style="margin-bottom:0">
@@ -122,20 +230,27 @@
               <span class="dim text-xs" id="qCount">No questions yet</span>
             </div>
 
+            <div class="hide" id="lockNotice"></div>
             <div id="questions"></div>
 
-            <div class="row wrap mt-4" style="gap:var(--sp-2)">
-              <button class="btn btn-sm btn-secondary" onclick="addQuestion('rating')">+ Rating</button>
-              <button class="btn btn-sm btn-secondary" onclick="addQuestion('choice')">+ Choice</button>
-              <button class="btn btn-sm btn-secondary" onclick="addQuestion('text')">+ Text</button>
-            </div>
+            <button class="btn btn-sm btn-secondary mt-3" id="addToggle" onclick="toggleTypeMenu()">+ Add a question</button>
+            <div class="type-menu hide mt-3" id="typeMenu"></div>
           </section>
         </div>
 
         <aside class="rail">
           <section class="card">
-            <div class="card-title mb-4">What the member sees</div>
-            <div class="preview-frame" id="preview"></div>
+            <div class="tabs" style="margin-bottom:var(--sp-4)">
+              <button class="tab active" data-rail="preview">What the member sees</button>
+              <button class="tab" data-rail="theme">Look</button>
+            </div>
+
+            <div id="rail-preview">
+              <div class="preview-frame" id="preview"></div>
+              <p class="hint">This is the real control — try answering it to see where the branching goes.</p>
+            </div>
+
+            <div id="rail-theme" class="hide"></div>
           </section>
         </aside>
 
@@ -146,14 +261,110 @@
 
 <script src="/assets/js/api.js"></script>
 <script src="/assets/js/shell.js"></script>
+<script src="/assets/js/survey-schema.js"></script>
+<script src="/assets/js/survey-theme.js"></script>
+<script src="/assets/js/survey-render.js"></script>
 <script>
   Shell.admin('surveys');
 
-  let questionCount = 0;
+  // ─── State ────────────────────────────────────────────────
+  // The questions are held here, not read back out of the DOM. Branching
+  // points at question ids, so a rule has to survive a card being edited,
+  // moved or renamed — which it cannot if the truth is the markup.
 
-  function toggleCohortTarget() {
-    document.getElementById('cohortField')
-      .classList.toggle('hide', document.getElementById('sTarget').value !== 'cohort');
+  const state = {
+    id: param('id'),           // set when editing an existing survey
+    questions: [],
+    theme: {},
+    circleTheme: null,
+    locked: false,             // answers exist, so questions cannot change
+    issues: [],
+    publicPath: null           // set once a link audience has been saved
+  };
+
+  let schema = null;
+  let previewAnswers = {};
+
+  // Ids are made here in the shape the server uses, because a rule written
+  // before saving has to point at something that still exists after.
+  let made = 0;
+  const newId = () => `q${++made}_${Math.random().toString(16).slice(2, 10)}`;
+
+  // ─── Loading ──────────────────────────────────────────────
+
+  async function load() {
+    try {
+      schema = await api.get('/admin/surveys/schema');
+      state.circleTheme = schema.theme.circle;
+    } catch (err) {
+      showToast('Could not load the question types: ' + err.message, 'error');
+      return;
+    }
+
+    renderTypeMenu();
+    renderThemePanel();
+    loadCohorts();
+
+    if (state.id) await loadExisting();
+    else addQuestion('rating');
+
+    renderQuestions();
+    renderPreview();
+  }
+
+  async function loadExisting() {
+    try {
+      const data = await api.get(`/admin/surveys/${state.id}`);
+      const survey = data.survey;
+
+      state.questions = survey.questions || [];
+      state.theme = survey.theme || {};
+      state.locked = data.questions_locked;
+      if (data.circle_theme) state.circleTheme = data.circle_theme;
+
+      document.getElementById('sTitle').value = survey.title || '';
+      document.getElementById('sDesc').value = survey.description || '';
+      document.getElementById('sTime').value = survey.time_estimate_min || 5;
+      document.getElementById('sChannel').value = survey.engagement_mode || 'in_portal';
+      state.publicPath = survey.public_path || null;
+      document.getElementById('sTarget').value =
+        ['cohort', 'anonymous'].includes(survey.target_type) ? survey.target_type : 'all';
+      toggleCohortTarget();
+
+      document.getElementById('crumb').textContent = survey.title;
+      document.getElementById('pageTitle').textContent = `Edit: ${survey.title}`;
+      document.title = `Dev Circle — ${survey.title}`;
+      document.getElementById('publishBtn').textContent =
+        survey.status === 'active' ? 'Save changes' : 'Publish';
+
+      if (state.locked) {
+        // Rewriting a question that has been answered would leave the answers
+        // attached to wording nobody was shown. The look can still change:
+        // it alters how the rest of the audience sees it, not what they were
+        // asked.
+        document.getElementById('lockNotice').className = 'card mb-4';
+        document.getElementById('lockNotice').innerHTML = `
+          <div class="row" style="gap:var(--sp-3);align-items:flex-start">
+            <span>🔒</span>
+            <div>
+              <div class="text-sm" style="font-weight:var(--fw-medium)">
+                ${data.completed_count} ${survey.target_type === 'anonymous'
+                  ? `${data.completed_count === 1 ? 'person has' : 'people have'}`
+                  : `member${data.completed_count === 1 ? ' has' : 's have'}`} answered this
+              </div>
+              <p class="hint" style="margin-top:2px">
+                The questions are fixed now — changing them would leave those answers
+                attached to wording nobody was shown. Close this survey and write a new
+                version to ask differently. Its look can still be changed.
+              </p>
+            </div>
+          </div>`;
+        document.getElementById('addToggle').classList.add('hide');
+      }
+      renderThemePanel();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
   }
 
   async function loadCohorts() {
@@ -164,176 +375,1105 @@
     } catch { /* audience falls back to everyone */ }
   }
 
-  function addQuestion(type) {
-    questionCount++;
-    const card = document.createElement('div');
-    card.className = 'q-card';
+  function toggleCohortTarget() {
+    const target = document.getElementById('sTarget').value;
+    document.getElementById('cohortField').classList.toggle('hide', target !== 'cohort');
 
-    let body = '';
-    if (type === 'rating') {
-      body = `
-        <div class="field">
-          <label class="label">Question</label>
-          <input type="text" class="input q-text" placeholder="e.g. How clear is the documentation?">
-        </div>
-        <div class="field-row" style="margin-bottom:0">
-          <div class="field" style="margin-bottom:0">
-            <label class="label">Scale</label>
-            <select class="input q-scale"><option value="5">1–5</option><option value="7">1–7</option><option value="10">1–10</option></select>
-          </div>
-          <div class="field" style="margin-bottom:0">
-            <label class="label">Low label</label>
-            <input type="text" class="input q-label-low" placeholder="Unclear">
-          </div>
-        </div>
-        <div class="field mt-4" style="margin-bottom:0">
-          <label class="label">High label</label>
-          <input type="text" class="input q-label-high" placeholder="Very clear">
-        </div>`;
-    } else if (type === 'choice') {
-      body = `
-        <div class="field">
-          <label class="label">Question</label>
-          <input type="text" class="input q-text" placeholder="e.g. What brought you here?">
-        </div>
-        <div class="field" style="margin-bottom:0">
-          <label class="label">Options</label>
-          <div class="options">
-            <div class="option-row"><input type="text" class="input" placeholder="Option 1"><button class="icon-btn" onclick="this.parentElement.remove();renderPreview()">×</button></div>
-            <div class="option-row"><input type="text" class="input" placeholder="Option 2"><button class="icon-btn" onclick="this.parentElement.remove();renderPreview()">×</button></div>
-          </div>
-          <button class="btn btn-sm btn-ghost mt-2" onclick="addOption(this)">+ Add option</button>
-        </div>`;
-    } else {
-      body = `
-        <div class="field">
-          <label class="label">Question</label>
-          <input type="text" class="input q-text" placeholder="e.g. Anything else we should know?">
-        </div>
-        <label class="row-tight text-sm" style="margin-bottom:0;cursor:pointer">
-          <input type="checkbox" class="q-optional"> Answering is optional
-        </label>`;
-    }
+    const byLink = target === 'anonymous';
+    document.getElementById('linkField').classList.toggle('hide', !byLink);
 
-    card.innerHTML = `
-      <div class="q-head">
-        <span class="q-num">Q${questionCount}</span>
-        <span class="q-kind">${type}</span>
-        <span class="spacer"></span>
-        <button class="icon-btn" onclick="this.closest('.q-card').remove();renderPreview()" aria-label="Remove question">×</button>
-      </div>
-      <input type="hidden" class="q-type" value="${type}">
-      ${body}`;
-
-    document.getElementById('questions').appendChild(card);
-    card.querySelector('.q-text').focus();
-    renderPreview();
-  }
-
-  function addOption(btn) {
-    const list = btn.previousElementSibling;
-    const row = document.createElement('div');
-    row.className = 'option-row';
-    row.innerHTML = `<input type="text" class="input" placeholder="Option ${list.children.length + 1}"><button class="icon-btn" onclick="this.parentElement.remove();renderPreview()">×</button>`;
-    list.appendChild(row);
-  }
-
-  function getQuestions() {
-    return Array.from(document.querySelectorAll('.q-card')).map((card, i) => {
-      const type = card.querySelector('.q-type').value;
-      const q = { id: `q${i + 1}`, type, text: card.querySelector('.q-text').value.trim() };
-
-      if (type === 'rating') {
-        q.scale = parseInt(card.querySelector('.q-scale').value, 10);
-        const low = card.querySelector('.q-label-low').value;
-        const high = card.querySelector('.q-label-high').value;
-        if (low || high) q.labels = [low, '', '', '', high];
-      } else if (type === 'choice') {
-        q.options = Array.from(card.querySelectorAll('.options input')).map(i => i.value.trim()).filter(Boolean);
-      } else if (type === 'text') {
-        q.optional = card.querySelector('.q-optional').checked;
+    // The link only exists once the survey does. Saying so beats showing an
+    // empty box that looks broken.
+    if (byLink) {
+      const ready = !!state.publicPath;
+      document.getElementById('shareRow').classList.toggle('hide', !ready);
+      document.getElementById('shareUrl').value = ready ? location.origin + state.publicPath : '';
+      if (!ready) {
+        document.getElementById('shareNote').textContent =
+          'Nobody is invited and nobody is chased. Save the survey and its link appears here — ' +
+          'anyone holding it can answer once, without signing in, and nothing recorded identifies them.';
       }
+    }
+  }
 
-      return q;
+  async function copyShareLink() {
+    const url = document.getElementById('shareUrl').value;
+    try {
+      await navigator.clipboard.writeText(url);
+      showToast('Link copied');
+    } catch {
+      // Clipboard access can be refused; selecting it is the fallback that
+      // always works
+      document.getElementById('shareUrl').select();
+      showToast('Press ⌘C to copy', 'warning');
+    }
+  }
+
+  // ─── The question list ────────────────────────────────────
+
+  function renderTypeMenu() {
+    document.getElementById('typeMenu').innerHTML = schema.types.map(type => `
+      <button class="type-option" data-type="${type.type}">
+        <span class="type-option-name">${escapeHtml(type.label)}</span>
+        <span class="type-option-hint">${escapeHtml(type.hint)}</span>
+      </button>`).join('');
+
+    document.querySelectorAll('.type-option').forEach(button => {
+      button.addEventListener('click', () => {
+        addQuestion(button.dataset.type);
+        toggleTypeMenu(false);
+      });
     });
   }
 
-  // The preview is rendered from the same shape that gets posted, so it
-  // cannot drift from what the member will actually be asked.
-  function renderPreview() {
-    const questions = getQuestions();
-    document.getElementById('qCount').textContent = questions.length
-      ? `${questions.length} question${questions.length === 1 ? '' : 's'} · ~${document.getElementById('sTime').value || 5} min`
-      : 'No questions yet';
-
-    const title = document.getElementById('sTitle').value.trim() || 'Untitled survey';
-    const desc = document.getElementById('sDesc').value.trim();
-
-    document.getElementById('preview').innerHTML = `
-      <div class="pv-title">${escapeHtml(title)}</div>
-      ${desc ? `<div class="pv-desc">${escapeHtml(desc)}</div>` : ''}
-      ${questions.length ? questions.map(q => {
-        if (q.type === 'rating') {
-          const scale = q.scale || 5;
-          return `
-            <div class="mb-4">
-              <div class="pv-q">${escapeHtml(q.text || 'Your question')}</div>
-              <div class="pv-scale">${Array.from({ length: scale }, (_, i) => `<span class="pv-dot">${i + 1}</span>`).join('')}</div>
-              ${q.labels ? `<div class="pv-ends"><span>${escapeHtml(q.labels[0] || '')}</span><span>${escapeHtml(q.labels[4] || '')}</span></div>` : ''}
-            </div>`;
-        }
-        if (q.type === 'choice') {
-          return `
-            <div class="mb-4">
-              <div class="pv-q">${escapeHtml(q.text || 'Your question')}</div>
-              ${(q.options || []).map(o => `<div class="pv-opt">${escapeHtml(o)}</div>`).join('') || '<div class="pv-opt dim">Add options…</div>'}
-            </div>`;
-        }
-        return `
-          <div class="mb-4">
-            <div class="pv-q">${escapeHtml(q.text || 'Your question')}${q.optional ? ' <span class="dim text-xs">(optional)</span>' : ''}</div>
-            <div class="pv-opt" style="min-height:52px">Their answer…</div>
-          </div>`;
-      }).join('') : '<div class="dim text-sm">Add a question to see it here.</div>'}`;
+  function toggleTypeMenu(force) {
+    const menu = document.getElementById('typeMenu');
+    menu.classList.toggle('hide', force === false ? true : force === true ? false : !menu.classList.contains('hide'));
   }
 
-  async function createSurvey(status) {
-    const title = document.getElementById('sTitle').value.trim();
-    if (!title) { showToast('Title required', 'warning'); return; }
+  // Sensible starting points, so a question is answerable the moment it is
+  // added and the preview has something to show.
+  function blank(type) {
+    const question = { id: newId(), type, text: '', required: false };
+    if (['choice', 'dropdown', 'multi_choice', 'ranking'].includes(type)) {
+      question.options = ['', ''];
+    }
+    if (type === 'rating') { question.scale = 5; question.style = 'numbers'; }
+    if (type === 'matrix') { question.rows = ['', '']; question.columns = ['Poor', 'Fine', 'Great']; }
+    if (type === 'text') question.multiline = true;
+    if (type === 'boolean') { question.true_label = 'Yes'; question.false_label = 'No'; }
+    return question;
+  }
 
-    const questions = getQuestions();
-    if (!questions.length) { showToast('Add at least one question', 'warning'); return; }
-    if (questions.some(q => !q.text)) { showToast('Every question needs text', 'warning'); return; }
-    if (questions.some(q => q.type === 'choice' && (!q.options || q.options.length < 2))) {
-      showToast('Choice questions need at least two options', 'warning'); return;
+  function addQuestion(type) {
+    state.questions.push(blank(type));
+    renderQuestions();
+    renderPreview();
+    const cards = document.querySelectorAll('.q-card');
+    cards[cards.length - 1]?.querySelector('.q-text')?.focus();
+  }
+
+  function renderQuestions() {
+    const holder = document.getElementById('questions');
+    holder.innerHTML = state.questions.map((q, i) => card(q, i)).join('');
+    state.questions.forEach((q, i) => bindCard(holder.children[i], q, i));
+
+    const answerable = state.questions.filter(q => SurveySchema.isAnswerable(q)).length;
+    document.getElementById('qCount').textContent = answerable
+      ? `${answerable} question${answerable === 1 ? '' : 's'} · ~${document.getElementById('sTime').value || 5} min`
+      : 'No questions yet';
+  }
+
+  function card(question, index) {
+    const type = schema.types.find(t => t.type === question.type) || { label: question.type };
+    const issues = state.issues.filter(i => i.index === index);
+
+    return `
+      <div class="q-card${issues.length ? ' invalid' : ''}" data-index="${index}">
+        <div class="q-head">
+          <span class="q-num">Q${index + 1}</span>
+          <span class="q-kind">${escapeHtml(type.label)}</span>
+          ${question.visible_if ? '<span class="q-branching">conditional</span>' : ''}
+          <span class="spacer"></span>
+          ${SurveySchema.isAnswerable(question) ? `
+            <label class="row-tight text-xs" style="cursor:pointer;gap:var(--sp-2)">
+              <span class="check${question.required ? ' on' : ''}" data-required>✓</span> Required
+            </label>` : ''}
+          <button class="icon-btn" data-move="up" ${index === 0 ? 'disabled' : ''} aria-label="Move up">↑</button>
+          <button class="icon-btn" data-move="down" ${index === state.questions.length - 1 ? 'disabled' : ''} aria-label="Move down">↓</button>
+          <button class="icon-btn" data-duplicate aria-label="Duplicate">⧉</button>
+          <button class="icon-btn" data-remove aria-label="Remove question">×</button>
+        </div>
+
+        <div class="field">
+          <label class="label">${question.type === 'section' ? 'Heading' : 'Question'}</label>
+          <input type="text" class="input q-text" value="${escapeHtml(question.text || '')}"
+                 placeholder="${escapeHtml(placeholderFor(question.type))}">
+        </div>
+
+        ${editor(question, index)}
+        ${logicEditor(question, index)}
+
+        ${issues.length ? `<div class="issue-list">${issues
+          .map(i => `<p class="issue">⚠ ${escapeHtml(i.message)}</p>`).join('')}</div>` : ''}
+      </div>`;
+  }
+
+  function placeholderFor(type) {
+    const examples = {
+      rating: 'e.g. How clear is the documentation?',
+      nps: 'e.g. How likely are you to recommend our APIs to another developer?',
+      choice: 'e.g. Which environment do you use most?',
+      multi_choice: 'e.g. Which of these have slowed you down?',
+      dropdown: 'e.g. Which country do you operate in?',
+      matrix: 'e.g. How would you rate each of these?',
+      ranking: 'e.g. Put these in the order you would want them built',
+      number: 'e.g. How many API calls do you make on a normal day?',
+      date: 'e.g. When did you go live?',
+      boolean: 'e.g. Have you reached production?',
+      section: 'e.g. About your integration',
+      text: 'e.g. Anything else we should know?'
+    };
+    return examples[type] || 'Your question';
+  }
+
+  // ─── Per-type settings ────────────────────────────────────
+
+  function editor(question, index) {
+    const options = list => `
+      <div class="field" style="margin-bottom:0">
+        <label class="label">Options</label>
+        <div class="options">
+          ${(question[list] || []).map((option, i) => `
+            <div class="option-row" data-list="${list}" data-option="${i}">
+              <span class="handle">${i + 1}</span>
+              <input type="text" class="input" value="${escapeHtml(option)}" placeholder="Option ${i + 1}">
+              ${question.type === 'multi_choice' && list === 'options' ? `
+                <button class="exclusive-flag${(question.exclusive_options || []).includes(option) ? ' on' : ''}"
+                        data-exclusive="${i}" title="Cannot be picked with anything else">only</button>` : ''}
+              <button class="icon-btn" data-drop-option="${i}" aria-label="Remove option">×</button>
+            </div>`).join('')}
+        </div>
+        <button class="btn btn-sm btn-ghost mt-2" data-add-option="${list}">+ Add option</button>
+      </div>`;
+
+    switch (question.type) {
+      case 'text':
+        return `
+          <div class="field-row">
+            <div class="field">
+              <label class="label">Answer format</label>
+              <select class="input" data-set="format">
+                ${schema.text_formats.map(f => `
+                  <option value="${f.value}"${(question.format || 'none') === f.value ? ' selected' : ''}>
+                    ${escapeHtml(f.label)}</option>`).join('')}
+              </select>
+            </div>
+            <div class="field">
+              <label class="label">Longest answer</label>
+              <input type="number" class="input" data-set="max_length" min="1" max="10000"
+                     value="${question.max_length || 2000}">
+            </div>
+          </div>
+          <label class="row-tight text-sm" style="margin-bottom:0;cursor:pointer">
+            <span class="check${question.multiline !== false ? ' on' : ''}" data-set-check="multiline">✓</span>
+            Room for a paragraph
+          </label>`;
+
+      case 'choice':
+      case 'dropdown':
+        return `
+          ${options('options')}
+          <div class="row wrap mt-3" style="gap:var(--sp-4)">
+            <label class="row-tight text-sm" style="cursor:pointer">
+              <span class="check${question.allow_other ? ' on' : ''}" data-set-check="allow_other">✓</span>
+              Offer "something else"
+            </label>
+            <label class="row-tight text-sm" style="cursor:pointer">
+              <span class="check${question.randomize ? ' on' : ''}" data-set-check="randomize">✓</span>
+              Shuffle the order
+            </label>
+          </div>`;
+
+      case 'multi_choice':
+        return `
+          ${options('options')}
+          <div class="field-row mt-3">
+            <div class="field" style="margin-bottom:0">
+              <label class="label">Pick at least</label>
+              <input type="number" class="input" data-set="min_select" min="0" max="20"
+                     value="${question.min_select || ''}" placeholder="Any">
+            </div>
+            <div class="field" style="margin-bottom:0">
+              <label class="label">Pick at most</label>
+              <input type="number" class="input" data-set="max_select" min="1" max="20"
+                     value="${question.max_select || ''}" placeholder="No limit">
+            </div>
+          </div>
+          <div class="row wrap mt-3" style="gap:var(--sp-4)">
+            <label class="row-tight text-sm" style="cursor:pointer">
+              <span class="check${question.allow_other ? ' on' : ''}" data-set-check="allow_other">✓</span>
+              Offer "something else"
+            </label>
+            <label class="row-tight text-sm" style="cursor:pointer">
+              <span class="check${question.randomize ? ' on' : ''}" data-set-check="randomize">✓</span>
+              Shuffle the order
+            </label>
+          </div>
+          <p class="hint">Mark an option <strong>only</strong> when it cannot be true alongside the others — "None of these".</p>`;
+
+      case 'ranking':
+        return options('options');
+
+      case 'rating':
+        return `
+          <div class="field-row">
+            <div class="field">
+              <label class="label">Scale</label>
+              <select class="input" data-set="scale">
+                ${[3, 4, 5, 7, 10].map(n => `
+                  <option value="${n}"${(question.scale || 5) === n ? ' selected' : ''}>1–${n}</option>`).join('')}
+              </select>
+            </div>
+            <div class="field">
+              <label class="label">Shown as</label>
+              <select class="input" data-set="style">
+                ${schema.rating_styles.map(s => `
+                  <option value="${s}"${(question.style || 'numbers') === s ? ' selected' : ''}>${s}</option>`).join('')}
+              </select>
+            </div>
+          </div>
+          <div class="field-row" style="margin-bottom:0">
+            <div class="field" style="margin-bottom:0">
+              <label class="label">Low end means</label>
+              <input type="text" class="input" data-set="label_low" placeholder="Unclear"
+                     value="${escapeHtml(question.label_low || (question.labels || [])[0] || '')}">
+            </div>
+            <div class="field" style="margin-bottom:0">
+              <label class="label">High end means</label>
+              <input type="text" class="input" data-set="label_high" placeholder="Very clear"
+                     value="${escapeHtml(question.label_high || (question.labels || []).slice(-1)[0] || '')}">
+            </div>
+          </div>`;
+
+      case 'nps':
+        return `
+          <p class="hint mb-3">Fixed at 0–10 and scored as promoters minus detractors, which is the only thing that makes it comparable with anyone else's NPS.</p>
+          <div class="field-row" style="margin-bottom:0">
+            <div class="field" style="margin-bottom:0">
+              <label class="label">0 means</label>
+              <input type="text" class="input" data-set="label_low" placeholder="Not at all likely"
+                     value="${escapeHtml(question.label_low || '')}">
+            </div>
+            <div class="field" style="margin-bottom:0">
+              <label class="label">10 means</label>
+              <input type="text" class="input" data-set="label_high" placeholder="Extremely likely"
+                     value="${escapeHtml(question.label_high || '')}">
+            </div>
+          </div>`;
+
+      case 'matrix':
+        return `
+          <div class="field-row">
+            <div>${options('rows').replace('>Options<', '>Rows<')}</div>
+            <div>${options('columns').replace('>Options<', '>Columns<')}</div>
+          </div>
+          <label class="row-tight text-sm" style="margin-bottom:0;cursor:pointer">
+            <span class="check${question.multi ? ' on' : ''}" data-set-check="multi">✓</span>
+            Allow more than one per row
+          </label>`;
+
+      case 'number':
+        return `
+          <div class="field-row">
+            <div class="field">
+              <label class="label">Smallest</label>
+              <input type="number" class="input" data-set="min" value="${question.min ?? ''}" placeholder="Any">
+            </div>
+            <div class="field">
+              <label class="label">Largest</label>
+              <input type="number" class="input" data-set="max" value="${question.max ?? ''}" placeholder="Any">
+            </div>
+            <div class="field">
+              <label class="label">Unit</label>
+              <input type="text" class="input" data-set="unit" value="${escapeHtml(question.unit || '')}" placeholder="calls/day">
+            </div>
+          </div>
+          <label class="row-tight text-sm" style="margin-bottom:0;cursor:pointer">
+            <span class="check${question.integer ? ' on' : ''}" data-set-check="integer">✓</span>
+            Whole numbers only
+          </label>`;
+
+      case 'date':
+        return `
+          <div class="field-row" style="margin-bottom:0">
+            <div class="field" style="margin-bottom:0">
+              <label class="label">No earlier than</label>
+              <input type="date" class="input" data-set="min" value="${escapeHtml(question.min || '')}">
+            </div>
+            <div class="field" style="margin-bottom:0">
+              <label class="label">No later than</label>
+              <input type="date" class="input" data-set="max" value="${escapeHtml(question.max || '')}">
+            </div>
+          </div>`;
+
+      case 'boolean':
+        return `
+          <div class="field-row" style="margin-bottom:0">
+            <div class="field" style="margin-bottom:0">
+              <label class="label">Yes reads as</label>
+              <input type="text" class="input" data-set="true_label" value="${escapeHtml(question.true_label || 'Yes')}">
+            </div>
+            <div class="field" style="margin-bottom:0">
+              <label class="label">No reads as</label>
+              <input type="text" class="input" data-set="false_label" value="${escapeHtml(question.false_label || 'No')}">
+            </div>
+          </div>`;
+
+      case 'section':
+        return `
+          <div class="field" style="margin-bottom:0">
+            <label class="label">Note</label>
+            <textarea class="input" data-set="description"
+              placeholder="What this part is about, or how far in they are.">${escapeHtml(question.description || '')}</textarea>
+          </div>`;
+
+      default:
+        return '';
+    }
+  }
+
+  // ─── Branching ────────────────────────────────────────────
+  // Only earlier questions can be depended on. That is not a limitation of the
+  // editor — a question whose visibility depends on an answer not yet given
+  // has no defined state, so the survey would behave differently depending on
+  // which way the member walked through it.
+
+  function logicEditor(question, index) {
+    const earlier = state.questions.slice(0, index)
+      .filter(q => SurveySchema.CONDITIONABLE.has(q.type) && q.text);
+
+    if (!earlier.length) {
+      return index === 0 ? '' :
+        '<p class="hint mt-4">Give an earlier question its wording to be able to branch on it.</p>';
     }
 
-    const targetType = document.getElementById('sTarget').value;
+    if (!question.visible_if) {
+      return `<div class="logic"><button class="btn btn-sm btn-ghost" data-add-logic>+ Only show this sometimes</button></div>`;
+    }
 
-    try {
-      await api.post('/admin/surveys', {
-        title,
-        description: document.getElementById('sDesc').value.trim(),
-        questions,
-        target_type: targetType,
-        target_ids: targetType === 'cohort' ? [document.getElementById('sCohortId').value] : [],
-        engagement_mode: document.getElementById('sChannel').value,
-        time_estimate_min: parseInt(document.getElementById('sTime').value, 10) || 5,
-        status
+    const rules = question.visible_if.rules || [];
+
+    return `
+      <div class="logic">
+        <div class="row" style="gap:var(--sp-2);margin-bottom:var(--sp-3)">
+          <span class="logic-lead">Show this question when</span>
+          <select class="input" data-logic-match style="width:auto">
+            <option value="all"${question.visible_if.match !== 'any' ? ' selected' : ''}>all of these hold</option>
+            <option value="any"${question.visible_if.match === 'any' ? ' selected' : ''}>any of these hold</option>
+          </select>
+          <span class="spacer"></span>
+          <button class="icon-btn" data-drop-logic aria-label="Always show this question">×</button>
+        </div>
+        ${rules.map((rule, r) => ruleRow(rule, r, earlier)).join('')}
+        <button class="btn btn-sm btn-ghost mt-2" data-add-rule>+ Add a condition</button>
+      </div>`;
+  }
+
+  function ruleRow(rule, r, earlier) {
+    const source = earlier.find(q => q.id === rule.question) || earlier[0];
+    const allowed = SurveySchema.operatorsFor(source ? source.type : 'text');
+
+    return `
+      <div class="logic-rule" data-rule="${r}">
+        <select class="input" data-rule-question>
+          ${earlier.map(q => `
+            <option value="${q.id}"${q.id === rule.question ? ' selected' : ''}>
+              ${escapeHtml(q.text.slice(0, 48))}${q.text.length > 48 ? '…' : ''}</option>`).join('')}
+        </select>
+        <select class="input" data-rule-op style="max-width:150px">
+          ${schema.operators.filter(o => allowed.includes(o.op)).map(o => `
+            <option value="${o.op}"${o.op === rule.op ? ' selected' : ''}>${escapeHtml(o.label)}</option>`).join('')}
+        </select>
+        ${ruleValue(rule, source)}
+        <button class="icon-btn" data-drop-rule="${r}" aria-label="Remove condition">×</button>
+      </div>`;
+  }
+
+  // The value control follows the question being tested: options come from a
+  // list, because a rule compared against text nobody can type correctly is a
+  // branch that never fires and never says why.
+  function ruleValue(rule, source) {
+    const operator = schema.operators.find(o => o.op === rule.op);
+    if (operator && operator.needsValue === false) return '<span class="spacer"></span>';
+    if (!source) return '';
+
+    if (source.options) {
+      return `
+        <select class="input" data-rule-value>
+          ${(source.options || []).filter(Boolean).map(o => `
+            <option value="${escapeHtml(o)}"${o === rule.value ? ' selected' : ''}>${escapeHtml(o)}</option>`).join('')}
+          ${source.allow_other ? `<option value="__other__"${rule.value === '__other__' ? ' selected' : ''}>Something else</option>` : ''}
+        </select>`;
+    }
+    if (source.type === 'boolean') {
+      return `
+        <select class="input" data-rule-value>
+          <option value="true"${rule.value === true ? ' selected' : ''}>${escapeHtml(source.true_label || 'Yes')}</option>
+          <option value="false"${rule.value === false ? ' selected' : ''}>${escapeHtml(source.false_label || 'No')}</option>
+        </select>`;
+    }
+    if (source.type === 'date') {
+      return `<input type="date" class="input" data-rule-value value="${escapeHtml(rule.value || '')}">`;
+    }
+    if (['rating', 'nps', 'number'].includes(source.type)) {
+      return `<input type="number" class="input" data-rule-value value="${escapeHtml(rule.value ?? '')}">`;
+    }
+    return `<input type="text" class="input" data-rule-value value="${escapeHtml(rule.value ?? '')}" placeholder="…">`;
+  }
+
+  // ─── Wiring one card ──────────────────────────────────────
+  // Bound per card rather than re-rendering on every keystroke: a card that
+  // redraws itself as you type takes the cursor with it.
+
+  function bindCard(el, question, index) {
+    if (!el) return;
+
+    // Once anyone has answered, the questions are what they were asked. The
+    // card is left legible rather than hidden — an author needs to read what
+    // went out — but nothing in it can be moved, reworded or removed.
+    if (state.locked) {
+      el.querySelectorAll('input, select, textarea, button').forEach(c => { c.disabled = true; });
+      el.querySelectorAll('.check, .exclusive-flag').forEach(c => {
+        c.style.pointerEvents = 'none';
+        c.style.opacity = '0.6';
+      });
+      el.classList.add('locked');
+      return;
+    }
+
+    const redraw = () => { renderQuestions(); renderPreview(); };
+    const touch = () => renderPreview();
+
+    el.querySelector('.q-text')?.addEventListener('input', e => {
+      question.text = e.target.value;
+      touch();
+    });
+
+    el.querySelector('[data-required]')?.addEventListener('click', () => {
+      question.required = !question.required;
+      redraw();
+    });
+
+    el.querySelectorAll('[data-move]').forEach(button => {
+      button.addEventListener('click', () => move(index, button.dataset.move === 'up' ? -1 : 1));
+    });
+    el.querySelector('[data-remove]')?.addEventListener('click', () => remove(index));
+    el.querySelector('[data-duplicate]')?.addEventListener('click', () => duplicate(index));
+
+    // Plain settings: number inputs come back as numbers so the schema is not
+    // asked to guess what "5" means.
+    el.querySelectorAll('[data-set]').forEach(input => {
+      input.addEventListener('input', () => {
+        const key = input.dataset.set;
+        const value = input.type === 'number'
+          ? (input.value === '' ? undefined : Number(input.value))
+          : input.value;
+        if (value === undefined || value === '') delete question[key];
+        else question[key] = value;
+        touch();
+      });
+      if (input.tagName === 'SELECT') {
+        input.addEventListener('change', () => {
+          // Scale and format change what the control looks like
+          renderQuestions(); renderPreview();
+        });
+      }
+    });
+
+    el.querySelectorAll('[data-set-check]').forEach(check => {
+      check.addEventListener('click', () => {
+        const key = check.dataset.setCheck;
+        question[key] = !question[key];
+        redraw();
+      });
+    });
+
+    // Options, rows and columns
+    el.querySelectorAll('.option-row').forEach(row => {
+      const list = row.dataset.list;
+      const i = Number(row.dataset.option);
+
+      row.querySelector('input').addEventListener('input', e => {
+        const before = question[list][i];
+        question[list][i] = e.target.value;
+        // An option marked exclusive keeps that mark when it is renamed
+        if (question.exclusive_options) {
+          question.exclusive_options = question.exclusive_options
+            .map(o => (o === before ? e.target.value : o));
+        }
+        touch();
       });
 
-      showToast(`Survey ${status === 'active' ? 'published' : 'saved as draft'}`);
-      setTimeout(() => window.location.href = '/admin/surveys.html', 900);
+      row.querySelector('[data-drop-option]')?.addEventListener('click', () => {
+        question[list].splice(i, 1);
+        redraw();
+      });
+
+      row.querySelector('[data-exclusive]')?.addEventListener('click', () => {
+        const option = question[list][i];
+        const held = question.exclusive_options || [];
+        question.exclusive_options = held.includes(option)
+          ? held.filter(o => o !== option)
+          : held.concat(option);
+        redraw();
+      });
+    });
+
+    el.querySelectorAll('[data-add-option]').forEach(button => {
+      button.addEventListener('click', () => {
+        const list = button.dataset.addOption;
+        question[list] = (question[list] || []).concat('');
+        redraw();
+      });
+    });
+
+    // Branching
+    el.querySelector('[data-add-logic]')?.addEventListener('click', () => {
+      const earlier = state.questions.slice(0, index)
+        .filter(q => SurveySchema.CONDITIONABLE.has(q.type) && q.text);
+      const source = earlier[earlier.length - 1];
+      question.visible_if = {
+        match: 'all',
+        rules: [{ question: source.id, op: SurveySchema.operatorsFor(source.type)[0], value: firstValue(source) }]
+      };
+      redraw();
+    });
+
+    el.querySelector('[data-drop-logic]')?.addEventListener('click', () => {
+      delete question.visible_if;
+      redraw();
+    });
+
+    el.querySelector('[data-logic-match]')?.addEventListener('change', e => {
+      question.visible_if.match = e.target.value;
+      touch();
+    });
+
+    el.querySelector('[data-add-rule]')?.addEventListener('click', () => {
+      const earlier = state.questions.slice(0, index)
+        .filter(q => SurveySchema.CONDITIONABLE.has(q.type) && q.text);
+      const source = earlier[earlier.length - 1];
+      question.visible_if.rules.push({
+        question: source.id, op: SurveySchema.operatorsFor(source.type)[0], value: firstValue(source)
+      });
+      redraw();
+    });
+
+    el.querySelectorAll('[data-rule]').forEach(row => {
+      const r = Number(row.dataset.rule);
+      const rule = question.visible_if.rules[r];
+
+      row.querySelector('[data-rule-question]')?.addEventListener('change', e => {
+        const source = state.questions.find(q => q.id === e.target.value);
+        rule.question = e.target.value;
+        // The operator and the value belong to the question being tested, so
+        // changing it starts them again rather than carrying over a
+        // comparison that no longer applies.
+        rule.op = SurveySchema.operatorsFor(source.type)[0];
+        rule.value = firstValue(source);
+        redraw();
+      });
+
+      row.querySelector('[data-rule-op]')?.addEventListener('change', e => {
+        rule.op = e.target.value;
+        redraw();
+      });
+
+      row.querySelector('[data-rule-value]')?.addEventListener('input', e => {
+        const source = state.questions.find(q => q.id === rule.question);
+        rule.value = source && source.type === 'boolean' ? e.target.value === 'true'
+          : e.target.type === 'number' ? Number(e.target.value)
+          : e.target.value;
+        touch();
+      });
+      row.querySelector('[data-rule-value]')?.addEventListener('change', e => {
+        const source = state.questions.find(q => q.id === rule.question);
+        rule.value = source && source.type === 'boolean' ? e.target.value === 'true'
+          : e.target.type === 'number' ? Number(e.target.value)
+          : e.target.value;
+        touch();
+      });
+
+      row.querySelector('[data-drop-rule]')?.addEventListener('click', () => {
+        question.visible_if.rules.splice(r, 1);
+        if (!question.visible_if.rules.length) delete question.visible_if;
+        redraw();
+      });
+    });
+  }
+
+  function firstValue(source) {
+    if (source.options) return (source.options.filter(Boolean)[0]) || '';
+    if (source.type === 'boolean') return true;
+    if (['rating', 'nps', 'number'].includes(source.type)) return 0;
+    return '';
+  }
+
+  // ─── Structural changes ───────────────────────────────────
+  // Moving or removing a question can strand a rule that pointed at it, so
+  // every rule is checked against what is still in front of it afterwards.
+
+  function move(index, by) {
+    const to = index + by;
+    if (to < 0 || to >= state.questions.length) return;
+    const [question] = state.questions.splice(index, 1);
+    state.questions.splice(to, 0, question);
+    pruneLogic();
+    renderQuestions();
+    renderPreview();
+  }
+
+  async function remove(index) {
+    const question = state.questions[index];
+    const dependents = state.questions.filter(q =>
+      (q.visible_if?.rules || []).some(rule => rule.question === question.id));
+
+    if (dependents.length) {
+      const ok = await Shell.confirm({
+        title: 'Remove this question?',
+        text: `${dependents.length} later question${dependents.length === 1 ? '' : 's'} branch on it. ` +
+              `Removing it makes ${dependents.length === 1 ? 'that one' : 'those'} unconditional.`,
+        ok: 'Remove'
+      });
+      if (!ok) return;
+    }
+
+    state.questions.splice(index, 1);
+    pruneLogic();
+    renderQuestions();
+    renderPreview();
+  }
+
+  function duplicate(index) {
+    const copy = JSON.parse(JSON.stringify(state.questions[index]));
+    copy.id = newId();
+    // A copy sitting directly under the original would be shown by the same
+    // condition, which is almost never what duplicating is for — but keeping
+    // it is still closer to the author's intent than dropping it silently.
+    state.questions.splice(index + 1, 0, copy);
+    renderQuestions();
+    renderPreview();
+  }
+
+  function pruneLogic() {
+    state.questions.forEach((question, index) => {
+      if (!question.visible_if) return;
+      const before = new Set(state.questions.slice(0, index).map(q => q.id));
+      question.visible_if.rules = question.visible_if.rules.filter(rule => before.has(rule.question));
+      if (!question.visible_if.rules.length) delete question.visible_if;
+    });
+  }
+
+  // ─── Preview ──────────────────────────────────────────────
+  // Rendered from the same definition that gets posted, with the same controls
+  // the member will use, under the theme it will go out in.
+
+  function renderPreview() {
+    const frame = document.getElementById('preview');
+
+    // Run through the normalizer first, so the preview is what would be
+    // stored rather than what has been typed. A half-finished colour or an
+    // address that will be refused is shown as its absence, which is what the
+    // member would get — and it keeps unvalidated text out of an inline style.
+    const { theme: stored } = SurveyTheme.normalize({ ...state.circleTheme, ...state.theme });
+    const theme = SurveyTheme.resolve(stored);
+
+    frame.setAttribute('style', SurveyTheme.toCSSText(theme));
+    frame.style.background = theme.background_color || 'var(--surface-0)';
+    if (theme.background !== 'plain' || theme.background_image) {
+      frame.style.backgroundImage = 'var(--survey-canvas)';
+      frame.style.backgroundSize = 'cover';
+    }
+
+    const questions = state.questions.filter(q => q.text);
+    if (!questions.length) {
+      frame.innerHTML = '<div class="dim text-sm">Write a question to see it here.</div>';
+      return;
+    }
+
+    const shown = SurveySchema.visible(questions, previewAnswers);
+    const hidden = questions.length - shown.length;
+
+    frame.innerHTML = `
+      ${theme.header_image ? `<img src="${escapeHtml(theme.header_image)}" alt=""
+         style="width:100%;max-height:110px;object-fit:cover;border-radius:var(--r-md);margin-bottom:var(--sp-4);display:block">` : ''}
+      ${theme.logo_url ? `<img src="${escapeHtml(theme.logo_url)}" alt="" style="max-height:28px;margin-bottom:var(--sp-4)">` : ''}
+      <div class="sv-ask" style="font-size:var(--fs-md);margin-bottom:var(--sp-4)">
+        ${escapeHtml(document.getElementById('sTitle').value.trim() || 'Untitled survey')}
+      </div>
+      ${shown.map((q, i) => `
+        <div class="pv-q">
+          ${SurveySchema.isAnswerable(q)
+            ? SurveyRender.heading(q, { number: shown.slice(0, i + 1).filter(x => SurveySchema.isAnswerable(x)).length })
+            : `<div class="sv-section-mark">Section</div><h2 class="sv-ask">${escapeHtml(q.text)}</h2>`}
+          <div class="sv-control" data-preview="${escapeHtml(q.id)}"></div>
+        </div>`).join('')}
+      ${hidden ? `<p class="hint mt-4">${hidden} question${hidden === 1 ? '' : 's'} hidden by the answers above.</p>` : ''}`;
+
+    for (const question of shown) {
+      const holder = frame.querySelector(`[data-preview="${CSS.escape(question.id)}"]`);
+      if (!holder || !SurveySchema.isAnswerable(question)) continue;
+      SurveyRender.mount(holder, question, {
+        value: previewAnswers[question.id],
+        seed: 'preview',
+        onChange: value => { previewAnswers[question.id] = value; renderPreview(); }
+      });
+    }
+  }
+
+  // ─── Theme panel ──────────────────────────────────────────
+
+  const PRESETS = ['#107EBC', '#E6B473', '#0D9488', '#8B7CF6', '#E11D48', '#16A34A', '#945A39', '#1A1A2E'];
+
+  // A colour input cannot be empty, so an unset one shows where it would land
+  // rather than a misleading black.
+  function fallbackFor(key) {
+    const theme = SurveyTheme.resolve(state.theme, state.circleTheme);
+    if (theme[key]) return theme[key];
+    const light = !theme.background_color || SurveyTheme.luminance(theme.background_color) >= 0.2;
+    if (key === 'background_color') return light ? '#f5f2ed' : '#16162a';
+    if (key === 'text_color') return light ? '#1a1a2e' : '#ffffff';
+    if (key === 'surface_color') return light ? '#ffffff' : '#242438';
+    if (key === 'muted_color') return light ? '#5a5a6e' : '#a0a0b8';
+    return theme.accent || '#107ebc';
+  }
+
+  function renderThemePanel() {
+    const theme = SurveyTheme.resolve(state.theme, state.circleTheme);
+    const panel = document.getElementById('rail-theme');
+
+    const choose = (key, values, labels) => `
+      <select class="input" data-theme="${key}">
+        ${values.map(v => `<option value="${v}"${theme[key] === v ? ' selected' : ''}>
+          ${escapeHtml(labels ? labels[v] || v : v)}</option>`).join('')}
+      </select>`;
+
+    // A colour the author names outright. The text field takes a hex from a
+    // brand guide, which is how these actually arrive.
+    const colour = (key, label, { hint = '', clearable = false } = {}) => `
+      <div class="field">
+        <label class="label">${escapeHtml(label)}</label>
+        <div class="row" style="gap:var(--sp-2)">
+          <input type="color" class="input" data-theme="${key}"
+                 value="${theme[key] || fallbackFor(key)}" style="width:46px;padding:2px;height:36px;flex:none">
+          <input type="text" class="input" data-theme-hex="${key}" placeholder="${clearable ? 'Follows the theme' : ''}"
+                 value="${escapeHtml(theme[key] || '')}" style="font-family:var(--font-mono)">
+          ${clearable ? `<button class="icon-btn" data-clear-theme="${key}" title="Back to the default">×</button>` : ''}
+        </div>
+        ${hint ? `<p class="hint">${hint}</p>` : ''}
+      </div>`;
+
+    // What is on screen right now, so a warning is about the combination the
+    // member will see rather than about one colour in isolation
+    const readable = SurveyTheme.legibility(theme);
+    const ratio = theme.background_color && theme.text_color
+      ? SurveyTheme.contrast(theme.text_color, theme.background_color) : null;
+
+    panel.innerHTML = `
+      <div class="field">
+        <label class="label">Accent</label>
+        <div class="row" style="gap:var(--sp-3)">
+          <input type="color" class="input" data-theme="accent" value="${theme.accent}" style="width:52px;padding:2px;height:36px">
+          <input type="text" class="input" data-theme-hex="accent" value="${theme.accent}" style="font-family:var(--font-mono)">
+        </div>
+        <div class="swatches">
+          ${PRESETS.map(hex => `
+            <button class="swatch${theme.accent.toLowerCase() === hex.toLowerCase() ? ' on' : ''}"
+                    style="background:${hex}" data-swatch="${hex}" aria-label="${hex}"></button>`).join('')}
+        </div>
+        <p class="hint">Buttons and progress take this. Text on it is worked out from its brightness, so a pale accent gets dark type rather than white on white.</p>
+      </div>
+
+      <div class="card-title mb-3 mt-4">Brand colours</div>
+      <p class="hint" style="margin-top:0;margin-bottom:var(--sp-3)">
+        Leave these empty and the survey follows the member's light or dark setting.
+        Name a background and everything between it and the text — cards, borders,
+        secondary labels — is worked out from the pair.
+      </p>
+      ${colour('background_color', 'Background', { clearable: true })}
+      ${colour('text_color', 'Text', { clearable: true })}
+
+      ${ratio ? `
+        <div class="contrast ${readable.issues.length ? 'bad' : readable.warnings.length ? 'warn' : 'good'}">
+          <strong>${ratio.toFixed(1)}:1</strong>
+          ${readable.issues.length ? 'Not readable — this will be refused'
+            : readable.warnings.length ? 'Readable, but tight for body text'
+            : 'Comfortable to read'}
+        </div>` : ''}
+      ${readable.warnings.filter(w => w.field !== 'text_color').map(w =>
+        `<p class="hint" style="color:var(--gold-ink)">${escapeHtml(w.message)}</p>`).join('')}
+
+      <details class="theme-more">
+        <summary>Finer control</summary>
+        ${colour('surface_color', 'Cards and controls', { clearable: true, hint: 'Defaults to a shade off the background.' })}
+        ${colour('muted_color', 'Secondary text', { clearable: true, hint: 'Hints, counts and labels.' })}
+      </details>
+
+      <div class="field-row mt-4">
+        <div class="field">
+          <label class="label">Wash</label>
+          ${choose('background', schema.theme.backgrounds, { plain: 'None', tinted: 'Tinted', gradient: 'Gradient' })}
+        </div>
+        <div class="field">
+          <label class="label">Corners</label>
+          ${choose('corner', schema.theme.corners, { sharp: 'Sharp', soft: 'Soft', round: 'Round' })}
+        </div>
+      </div>
+
+      <div class="field-row">
+        <div class="field">
+          <label class="label">Type</label>
+          <select class="input" data-theme="font">
+            ${schema.theme.fonts.map(f => `
+              <option value="${f.value}"${theme.font === f.value ? ' selected' : ''}>${escapeHtml(f.label)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="field">
+          <label class="label">Light or dark</label>
+          ${choose('mode', schema.theme.modes, { auto: 'Follow the member', light: 'Always light', dark: 'Always dark' })}
+        </div>
+      </div>
+
+      <div class="field-row">
+        <div class="field">
+          <label class="label">One page or one question</label>
+          ${choose('layout', schema.theme.layouts, { one_per_page: 'One at a time', all_at_once: 'All on one page' })}
+        </div>
+        <div class="field">
+          <label class="label">Progress</label>
+          ${choose('progress', schema.theme.progress, { bar: 'Bar', steps: 'Steps', count: 'Count only', none: 'None' })}
+        </div>
+      </div>
+
+      <div class="card-title mb-3 mt-4">Images</div>
+      <div class="field">
+        <label class="label">Wordmark</label>
+        <input type="text" class="input" data-theme="logo_url" placeholder="https://… or /assets/…"
+               value="${escapeHtml(theme.logo_url || '')}">
+        <p class="hint">Replaces the Dev Circle mark in the bar and on the opening screen.</p>
+      </div>
+      <div class="field">
+        <label class="label">Opening image</label>
+        <input type="text" class="input" data-theme="header_image" placeholder="https://…"
+               value="${escapeHtml(theme.header_image || '')}">
+      </div>
+      <div class="field">
+        <label class="label">Background image</label>
+        <input type="text" class="input" data-theme="background_image" placeholder="https://…"
+               value="${escapeHtml(theme.background_image || '')}">
+      </div>
+      ${theme.background_image ? `
+        <div class="field-row">
+          <div class="field">
+            <label class="label">How it sits</label>
+            ${choose('background_fit', schema.theme.fits, { cover: 'Fills the screen', contain: 'Fits inside', tile: 'Tiles' })}
+          </div>
+          <div class="field">
+            <label class="label">Dimmed by ${Math.round((theme.background_overlay ?? 0.55) * 100)}%</label>
+            <input type="range" min="0" max="95" step="5" data-theme-range="background_overlay"
+                   value="${Math.round((theme.background_overlay ?? 0.55) * 100)}" style="width:100%">
+          </div>
+        </div>
+        <p class="hint">A photograph behind text is the quickest way to make a survey unreadable, so it is dimmed unless you say otherwise.</p>` : ''}
+
+      <div class="card-title mb-3 mt-4">Opening screen</div>
+      <div class="field">
+        <input type="text" class="input" data-theme-copy="intro.headline" placeholder="Headline — leave empty to open on the first question"
+               value="${escapeHtml(theme.intro?.headline || '')}">
+      </div>
+      <div class="field">
+        <textarea class="input" data-theme-copy="intro.body" placeholder="Why you are asking, and what happens to the answers">${escapeHtml(theme.intro?.body || '')}</textarea>
+      </div>
+      <div class="field">
+        <input type="text" class="input" data-theme-copy="intro.button" placeholder="Button — defaults to Start"
+               value="${escapeHtml(theme.intro?.button || '')}">
+      </div>
+
+      <div class="card-title mb-3 mt-4">Closing screen</div>
+      <div class="field">
+        <input type="text" class="input" data-theme-copy="thank_you.headline" placeholder="Headline — defaults to thanking them by name"
+               value="${escapeHtml(theme.thank_you?.headline || '')}">
+      </div>
+      <div class="field">
+        <textarea class="input" data-theme-copy="thank_you.body" placeholder="What happens next">${escapeHtml(theme.thank_you?.body || '')}</textarea>
+      </div>
+
+      <div class="row wrap" style="gap:var(--sp-2)">
+        <button class="btn btn-sm btn-secondary" onclick="resetTheme()">Reset to the workspace look</button>
+        <button class="btn btn-sm btn-ghost" onclick="saveCircleTheme()">Make this the workspace default</button>
+      </div>`;
+
+    // Colour pickers and plain fields. The contrast readout has to move with
+    // them, so anything that changes a colour redraws the panel — but only
+    // after the value settles, or the picker closes on every drag.
+    const colourKeys = ['accent', 'background_color', 'text_color', 'surface_color', 'muted_color'];
+
+    panel.querySelectorAll('[data-theme]').forEach(input => {
+      const key = input.dataset.theme;
+      const apply = ({ settle }) => {
+        state.theme[key] = input.value;
+        if (colourKeys.includes(key)) {
+          const twin = panel.querySelector(`[data-theme-hex="${key}"]`);
+          if (twin) twin.value = input.value;
+          if (settle) { renderThemePanel(); renderPreview(); return; }
+        }
+        renderPreview();
+      };
+      input.addEventListener('input', () => apply({ settle: false }));
+      input.addEventListener('change', () => apply({ settle: true }));
+    });
+
+    // A hex typed from a brand guide. Applied only once it is a whole colour,
+    // so the preview does not flicker through "#1", "#1a", "#1a2".
+    panel.querySelectorAll('[data-theme-hex]').forEach(input => {
+      input.addEventListener('input', () => {
+        const key = input.dataset.themeHex;
+        const value = SurveyTheme.normalizeHex(input.value);
+        if (!value && input.value.trim()) return;
+        if (value) state.theme[key] = value;
+        else delete state.theme[key];
+        const picker = panel.querySelector(`[data-theme="${key}"]`);
+        if (picker && value) picker.value = value;
+        renderPreview();
+      });
+      input.addEventListener('blur', renderThemePanel);
+    });
+
+    panel.querySelectorAll('[data-clear-theme]').forEach(button => {
+      button.addEventListener('click', () => {
+        delete state.theme[button.dataset.clearTheme];
+        renderThemePanel();
+        renderPreview();
+      });
+    });
+
+    panel.querySelectorAll('[data-theme-range]').forEach(input => {
+      input.addEventListener('input', () => {
+        state.theme[input.dataset.themeRange] = Number(input.value) / 100;
+        renderPreview();
+      });
+      input.addEventListener('change', renderThemePanel);
+    });
+
+    panel.querySelectorAll('[data-swatch]').forEach(swatch => {
+      swatch.addEventListener('click', () => {
+        state.theme.accent = swatch.dataset.swatch;
+        renderThemePanel();
+        renderPreview();
+      });
+    });
+
+    panel.querySelectorAll('[data-theme-copy]').forEach(input => {
+      input.addEventListener('input', () => {
+        const [group, key] = input.dataset.themeCopy.split('.');
+        state.theme[group] = { ...(state.theme[group] || {}), [key]: input.value };
+        renderPreview();
+      });
+    });
+  }
+
+  function resetTheme() {
+    state.theme = {};
+    previewAnswers = {};
+    renderThemePanel();
+    renderPreview();
+  }
+
+  async function saveCircleTheme() {
+    const circleId = Auth.getCircle();
+    if (!circleId) { showToast('Pick a workspace first', 'warning'); return; }
+    try {
+      await api.put(`/admin/circles/${circleId}`, { survey_theme: state.theme });
+      state.circleTheme = { ...state.theme };
+      showToast('Every new survey here starts from this look');
     } catch (err) {
       showToast(err.message, 'error');
     }
   }
 
-  document.addEventListener('input', renderPreview);
-  document.addEventListener('change', renderPreview);
+  document.querySelectorAll('[data-rail]').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('[data-rail]').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      document.getElementById('rail-preview').classList.toggle('hide', tab.dataset.rail !== 'preview');
+      document.getElementById('rail-theme').classList.toggle('hide', tab.dataset.rail !== 'theme');
+    });
+  });
 
-  loadCohorts();
-  renderPreview();
+  // ─── Saving ───────────────────────────────────────────────
+
+  async function saveSurvey(status) {
+    const title = document.getElementById('sTitle').value.trim();
+    if (!title) { showToast('Title required', 'warning'); return; }
+
+    // Checked here against the same definition the server uses, so the
+    // refusal arrives against the question that caused it rather than as a
+    // sentence at the top of the page.
+    const check = SurveySchema.normalizeQuestions(state.questions);
+    state.issues = check.issues;
+
+    if (check.issues.length) {
+      renderQuestions();
+      const general = check.issues.find(i => i.index === -1);
+      showToast(general ? general.message : `Question ${check.issues[0].number}: ${check.issues[0].message}`, 'warning');
+      document.querySelector('.q-card.invalid')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+
+    const targetType = document.getElementById('sTarget').value;
+    const body = {
+      title,
+      description: document.getElementById('sDesc').value.trim(),
+      questions: state.questions,
+      theme: Object.keys(state.theme).length ? state.theme : null,
+      target_type: targetType,
+      target_ids: targetType === 'cohort' ? [document.getElementById('sCohortId').value] : [],
+      engagement_mode: document.getElementById('sChannel').value,
+      time_estimate_min: parseInt(document.getElementById('sTime').value, 10) || 5,
+      status
+    };
+
+    try {
+      let saved;
+      if (state.id) {
+        // A survey with answers keeps its questions; sending them back would
+        // be refused, and rightly so.
+        if (state.locked) delete body.questions;
+        saved = await api.put(`/admin/surveys/${state.id}`, body);
+      } else {
+        saved = await api.post('/admin/surveys', body);
+        state.id = saved.survey.id;
+      }
+
+      showToast(`Survey ${status === 'active' ? 'published' : 'saved as draft'}`);
+
+      // A link audience has nothing to send, so the author's next act is to
+      // copy the link. Leaving them on the page with it in front of them beats
+      // returning to a list where they would have to find it again.
+      if (saved.survey?.public_path) {
+        state.publicPath = saved.survey.public_path;
+        toggleCohortTarget();
+        document.getElementById('shareUrl')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        (saved.warnings || []).forEach(w => showToast(w.message, 'warning'));
+        return;
+      }
+
+      // Saved, and still worth saying. A brand combination that is legible but
+      // tight is the author's call, so it is reported rather than refused —
+      // and they get a moment to read it before the page moves on.
+      if (saved.warnings?.length) {
+        saved.warnings.forEach(w => showToast(w.message, 'warning'));
+        setTimeout(() => window.location.href = '/admin/surveys.html', 3200);
+        return;
+      }
+      setTimeout(() => window.location.href = '/admin/surveys.html', 900);
+    } catch (err) {
+      // The server reports issues per question too, so they land in the same
+      // place the local check would have put them.
+      if (err.body && Array.isArray(err.body.issues)) {
+        state.issues = err.body.issues;
+        renderQuestions();
+        document.querySelector('.q-card.invalid')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+      showToast(err.message, 'error');
+    }
+  }
+
+  document.getElementById('sTitle').addEventListener('input', renderPreview);
+  document.getElementById('sTime').addEventListener('input', renderQuestions);
+
+  load();
 </script>
 </body>
 </html>

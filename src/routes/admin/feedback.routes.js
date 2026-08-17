@@ -34,7 +34,7 @@ router.get('/feedback', requirePermission('feedback.read'), (req, res) => {
     SELECT f.*, u.name as user_name, u.email as user_email, u.company as user_company,
            s.title as survey_title
     FROM feedback f
-    JOIN users u ON u.id = f.user_id
+    LEFT JOIN users u ON u.id = f.user_id
     LEFT JOIN surveys s ON s.id = f.survey_id
     WHERE ${where.join(' AND ')}
     ORDER BY f.created_at DESC

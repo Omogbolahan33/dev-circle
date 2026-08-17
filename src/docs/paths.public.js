@@ -836,26 +836,206 @@ const paths = {
       tag: 'Member surveys',
       operationId: 'startSurvey',
       summary: 'Open a survey and get its questions',
-      description: 'Idempotent — starting an already-started survey returns the same in-progress response rather than creating a second one.',
+      description: [
+        'Idempotent — starting an already-started survey returns the same in-progress',
+        'response rather than creating a second one, along with any answers saved on a',
+        'previous sitting.',
+        '',
+        'The survey comes back with its theme already resolved: the survey\'s own look',
+        'over its circle\'s over the product default, so a client never has to know the',
+        'order of precedence.'
+      ].join('\n'),
       parameters: [path('id', 'Survey id')],
       responses: {
         200: json('The survey and this member\'s response record.', object({
           survey: ref('Survey'),
-          response: ref('SurveyResponse')
+          response: ref('SurveyResponse'),
+          answers: object({}, { description: 'Answers kept from an earlier sitting, keyed by question id' })
         }), {
           survey: {
             id: 's1', title: 'Sandbox onboarding experience', status: 'active',
-            questions: [{ id: 'q1_8c3d21ff', type: 'rating', text: 'How clear is our API documentation?' }],
+            questions: [{ id: 'q1_8c3d21ff', type: 'rating', text: 'How clear is our API documentation?', scale: 5, required: true }],
+            theme: { accent: '#107EBC', layout: 'one_per_page', progress: 'bar' },
             time_estimate_min: 5
           },
           response: {
             id: 'r1', survey_id: 's1', user_id: MEMBER_EXAMPLE.id,
             answers: {}, completed_at: null, triggered_by: 'manual', created_at: '2026-08-14 09:50:12'
-          }
+          },
+          answers: {}
         }),
         404: json('No such active survey.', ref('Error'), { error: 'Survey not found' }),
         409: json('Already completed.', ref('Error'), { error: 'Survey already completed' }),
         410: json('The survey has closed.', ref('Error'), { error: 'This survey has closed' })
+      }
+    })
+  },
+
+  // ─── Answering over a link ────────────────────────────────
+  '/public/surveys/{token}': {
+    get: op({
+      tag: 'Open surveys',
+      auth: 'none',
+      operationId: 'getOpenSurvey',
+      summary: 'The survey behind a link',
+      description: [
+        'Takes no credential. The token is the authorisation, and it opens exactly one',
+        'survey — there is no endpoint here that accepts a survey id.',
+        '',
+        'A token that never existed, one whose survey has closed, and one that has expired',
+        'all answer 404 identically, so this cannot be used to work out which tokens are',
+        'real. The survey comes back with its theme resolved and without anything about how',
+        'it is run: no targeting, no circle, no response counts.'
+      ].join('\n'),
+      parameters: [path('token', 'The token from the survey\'s link')],
+      responses: {
+        200: json('The survey, as a respondent sees it.', object({ survey: ref('Survey') }), {
+          survey: {
+            id: 's7', title: 'What stopped you finishing the sandbox setup?',
+            description: 'Three questions, no account needed.',
+            questions: [{ id: 'q1_8c3d21ff', type: 'nps', text: 'How likely are you to recommend our APIs?', required: true, scale: 10 }],
+            theme: { accent: '#107EBC', layout: 'one_per_page' },
+            time_estimate_min: 3, expires_at: null
+          }
+        }),
+        404: json('No open survey behind this link.', ref('Error'), {
+          error: 'This survey is not open. The link may have expired, or it may have closed.'
+        })
+      }
+    })
+  },
+
+  '/public/surveys/{token}/start': {
+    post: op({
+      tag: 'Open surveys',
+      auth: 'none',
+      operationId: 'startOpenSurvey',
+      summary: 'Begin a submission',
+      description: [
+        'Creates a submission and returns the key that owns it. No account is created and',
+        'nothing recorded identifies the respondent.',
+        '',
+        'Send the key back on later calls to add to the same submission — a refreshed tab',
+        'is then the same respondent rather than a second one. The key is shown once and',
+        'cannot be recovered, because recovering it would mean being able to identify who',
+        'it belongs to.'
+      ].join('\n'),
+      parameters: [path('token', 'The token from the survey\'s link')],
+      requestBody: jsonBody(object({
+        response_key: str('A key from an earlier start, to carry on that submission')
+      }, { required: [] }), {}, { required: false }),
+      responses: {
+        200: json('The submission, and the key that owns it.', object({
+          survey: ref('Survey'),
+          response_key: str('Send this back to add to the same submission'),
+          answers: object({}, { description: 'Answers already held against it' })
+        }), {
+          survey: { id: 's7', title: 'What stopped you finishing the sandbox setup?' },
+          response_key: 'Zx8Q2m_K1pWv7sT4nR6yB0aC',
+          answers: {}
+        }),
+        404: json('No open survey behind this link.', ref('Error'), {
+          error: 'This survey is not open. The link may have expired, or it may have closed.'
+        }),
+        409: json('This key has already submitted.', ref('Error'), {
+          error: 'You have already answered this one. Thank you.'
+        })
+      }
+    })
+  },
+
+  '/public/surveys/{token}/progress': {
+    patch: op({
+      tag: 'Open surveys',
+      auth: 'none',
+      operationId: 'saveOpenSurveyProgress',
+      summary: 'Keep what has been answered so far',
+      description: 'As for a member, but owned by the response key rather than by a session. Answers to questions this survey does not contain are dropped.',
+      parameters: [path('token', 'The token from the survey\'s link')],
+      requestBody: jsonBody(object({
+        response_key: str('The key returned by start'),
+        answers: object({}, { description: 'Question id → answer, as far as they have got' })
+      }, { required: ['response_key', 'answers'] }), {
+        response_key: 'Zx8Q2m_K1pWv7sT4nR6yB0aC',
+        answers: { q1_8c3d21ff: 4 }
+      }),
+      responses: {
+        200: json('Held.', object({ saved: int('How many answers are being kept') }), { saved: 1 }),
+        400: json('No answers object.', ref('Error'), { error: 'answers object required' }),
+        404: json('No open survey, or no submission for this key.', ref('Error'), { error: 'Start the survey first' }),
+        409: json('Already submitted.', ref('Error'), { error: 'Already completed' }),
+        413: json('More than a survey in progress can hold.', ref('Error'), {
+          error: 'That is more than a survey in progress can hold'
+        })
+      }
+    })
+  },
+
+  '/public/surveys/{token}/respond': {
+    post: op({
+      tag: 'Open surveys',
+      auth: 'none',
+      operationId: 'respondToOpenSurvey',
+      summary: 'Submit answers',
+      description: [
+        'Held to exactly the checks a member\'s submission is held to — required answers,',
+        'branching, option limits, answer shapes — from the same definition. An answer',
+        'arriving without an account is not an answer trusted more.',
+        '',
+        'Free-text answers are filed as feedback in the respondent\'s own words, against no',
+        'member. No engagement event is written, because engagement is a record of what a',
+        'member has done and there is no member here.'
+      ].join('\n'),
+      parameters: [path('token', 'The token from the survey\'s link')],
+      requestBody: jsonBody(object({
+        response_key: str('The key returned by start'),
+        answers: object({}, { description: 'Question id → answer, in the shape each question expects' })
+      }, { required: ['response_key', 'answers'] }), {
+        response_key: 'Zx8Q2m_K1pWv7sT4nR6yB0aC',
+        answers: { q1_8c3d21ff: 4, q2_1f4a9b02: 'The callback signature was not documented.' }
+      }),
+      responses: {
+        200: json('Recorded.', object({
+          message: str('Confirmation'),
+          answered: int('How many questions this respondent was actually shown'),
+          discarded: int('Answers dropped because their branch never asked them'),
+          verbatims: int('Written answers filed as feedback')
+        }), { message: 'Survey completed', answered: 3, discarded: 0, verbatims: 1 }),
+        400: json('A missing required answer, or an answer the question does not accept.', ref('Error'), {
+          error: 'Some required questions have not been answered',
+          errors: { q1_8c3d21ff: 'This one is required' },
+          missing: ['q1_8c3d21ff']
+        }),
+        404: json('No open survey, or no submission for this key.', ref('Error'), { error: 'Start the survey first' }),
+        409: json('Already submitted.', ref('Error'), { error: 'Already completed' })
+      }
+    })
+  },
+
+  '/users/surveys/{id}/progress': {
+    patch: op({
+      tag: 'Member surveys',
+      operationId: 'saveSurveyProgress',
+      summary: 'Keep what has been answered so far',
+      description: [
+        'Replaces the answers held against an in-progress response, so a member who leaves',
+        'a long survey can pick it up where they left off. Answers to questions this survey',
+        'does not contain are dropped.',
+        '',
+        'Nothing else is validated: a half-typed answer is exactly what this exists to hold.',
+        'Validation belongs at submission, where the member says they are finished.'
+      ].join('\n'),
+      parameters: [path('id', 'Survey id')],
+      requestBody: jsonBody(object({
+        answers: object({}, { description: 'Question id → answer, as far as they have got' })
+      }, { required: ['answers'] }), {
+        answers: { q1_8c3d21ff: 4 }
+      }),
+      responses: {
+        200: json('Held.', object({ saved: int('How many answers are being kept') }), { saved: 1 }),
+        400: json('No answers object.', ref('Error'), { error: 'answers object required' }),
+        404: json('No such survey, or it was never started.', ref('Error'), { error: 'Start the survey first' }),
+        409: json('Already completed.', ref('Error'), { error: 'Already completed' })
       }
     })
   },
@@ -868,25 +1048,47 @@ const paths = {
       description: [
         'Answers are keyed by question id — the ids returned by `/users/surveys/{id}/start`.',
         'An answer to a question this survey does not contain is rejected outright.',
-        'Completing a survey counts toward the engagement streak and cancels any reminder',
-        'still queued for it.'
+        '',
+        'Every answer is checked against the question that drew it: a rating within its',
+        'scale, an option that was actually offered, a multi-choice within its limits.',
+        'Required answers are enforced only for the questions this member was shown —',
+        'branching means a required question inside a path they never took is not',
+        'required of them. Answers to questions their branch skipped are discarded rather',
+        'than refused, because backing out of a branch is ordinary behaviour and the',
+        'answer has been retracted.',
+        '',
+        'Completing a survey counts toward the engagement streak, files free-text answers',
+        'as feedback in the member\'s own words, and cancels any reminder still queued.'
       ].join('\n'),
       parameters: [path('id', 'Survey id')],
       requestBody: jsonBody(object({
-        answers: object({}, { description: 'Question id → answer. Multi-choice answers are arrays of strings.' })
+        answers: object({}, {
+          description: [
+            'Question id → answer. The shape follows the question: a number for rating,',
+            'nps and number; a string for text, choice, dropdown and date; an array of',
+            'strings for multi_choice and ranking; a boolean for boolean; and an object of',
+            'row → column for matrix.'
+          ].join(' ')
+        })
       }, { required: ['answers'] }), {
         answers: {
           q1_8c3d21ff: 4,
-          q2_1f4a9b02: 'The callback signature was not documented for the sandbox.'
+          q2_1f4a9b02: ['Documentation', 'Latency'],
+          q3_77b0e412: { Documentation: 'Fine', Sandbox: 'Great' },
+          q4_51ac8d90: 'The callback signature was not documented for the sandbox.'
         }
       }),
       responses: {
         200: json('Recorded.', object({
           message: str('Confirmation'),
-          streak: int('The member\'s streak after this, or null if unchanged', { nullable: true })
-        }), { message: 'Survey completed', streak: 5 }),
-        400: json('No answers, or an answer to an unknown question.', ref('Error'), {
-          error: 'Unknown question in answers', questions: ['q9_deadbeef']
+          streak: int('The member\'s streak after this, or null if unchanged', { nullable: true }),
+          answered: int('How many questions this member was actually shown'),
+          discarded: int('Answers dropped because their branch never asked them')
+        }), { message: 'Survey completed', streak: 5, answered: 4, discarded: 0 }),
+        400: json('An unknown question, a missing required answer, or an answer the question does not accept.', ref('Error'), {
+          error: 'Some required questions have not been answered',
+          errors: { q2_1f4a9b02: 'Pick at least 1', q4_51ac8d90: 'This one is required' },
+          missing: ['q4_51ac8d90']
         }),
         404: json('No such survey, or it was never started.', ref('Error'), { error: 'Start the survey first' }),
         409: json('Already completed.', ref('Error'), { error: 'Already completed' })

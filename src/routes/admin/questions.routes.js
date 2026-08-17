@@ -22,9 +22,14 @@ router.get('/questions', requirePermission('feedback.read'), (req, res) => {
     // render them identically
     totals: {
       questions: catalogue.length,
+      // Counted the same way the per-question numbers are: someone who
+      // answered over a public link has no user_id, and COUNT(DISTINCT) skips
+      // nulls, so a plain count would quietly leave every one of them out of
+      // the headline while listing their answers underneath it.
       developers: db.prepare(`
-        SELECT COUNT(DISTINCT user_id) as c FROM feedback
-        WHERE source IN ('survey', 'external_survey') AND circle_id = ?
+        SELECT COUNT(DISTINCT COALESCE(f.user_id, 'anon:' || COALESCE(f.response_id, f.id))) as c
+        FROM feedback f
+        WHERE f.source IN ('survey', 'external_survey') AND f.circle_id = ?
       `).get(req.circleId).c,
       answers: catalogue.reduce((sum, q) => sum + q.answer_count, 0)
     }

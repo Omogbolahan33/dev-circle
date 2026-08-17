@@ -31,11 +31,36 @@
     .avg .of { font-size: var(--fs-sm); color: var(--ash); font-weight: var(--fw-regular); }
 
     .choice-row { display: grid; grid-template-columns: minmax(90px, 180px) 1fr auto; gap: var(--sp-3); align-items: center; margin-bottom: var(--sp-3); font-size: var(--fs-sm); }
-    .choice-track { height: 6px; background: var(--tint-2); border-radius: var(--r-full); overflow: hidden; }
-    .choice-fill { height: 100%; background: var(--cd-blue); border-radius: var(--r-full); }
+    .choice-track { display: block; height: 6px; background: var(--tint-2); border-radius: var(--r-full); overflow: hidden; }
+    /* Both are spans, and an inline element takes no height: without this the
+       bar has a width and draws nothing. */
+    .choice-fill { display: block; height: 100%; background: var(--cd-blue); border-radius: var(--r-full); }
 
     .verbatim { padding: var(--sp-3) 0 var(--sp-3) var(--sp-4); border-left: 2px solid var(--cd-clay); margin-bottom: var(--sp-3); font-size: var(--fs-sm); line-height: var(--lh-loose); color: var(--ash); }
     .verbatim .who { display: block; font-size: var(--fs-xs); color: var(--ash-dim); margin-top: var(--sp-2); }
+
+    /* NPS is three groups and a number, never an average — the mean of a
+       recommendation score is the standard way of hiding that half your
+       members are actively unhappy. */
+    .nps-split { display: flex; height: 30px; border-radius: var(--r-sm); overflow: hidden; margin-bottom: var(--sp-3); }
+    .nps-part { display: flex; align-items: center; justify-content: center; font-size: var(--fs-xs); color: var(--on-accent); }
+    .nps-part.promoters { background: var(--emerald); }
+    .nps-part.passives  { background: var(--surface-4); color: var(--ash); }
+    .nps-part.detractors { background: var(--rose); }
+    .nps-legend { display: flex; gap: var(--sp-5); font-size: var(--fs-xs); color: var(--ash-dim); }
+
+    /* A grid is read across its rows, so the summary keeps that shape rather
+       than becoming one bar chart per row. */
+    .grid-table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
+    .grid-table th { font-size: var(--fs-xs); color: var(--ash-dim); font-weight: var(--fw-medium); padding: var(--sp-2); text-align: center; }
+    .grid-table th[scope="row"] { text-align: left; color: var(--white); font-size: var(--fs-sm); }
+    .grid-table td { padding: var(--sp-2); text-align: center; border-top: 1px solid var(--line-faint); }
+    .grid-cell { display: block; border-radius: var(--r-sm); padding: var(--sp-1) 0; font-family: var(--font-mono); font-size: var(--fs-xs); }
+
+    .rank-row { display: grid; grid-template-columns: 28px 1fr auto; gap: var(--sp-3); align-items: center; margin-bottom: var(--sp-2); font-size: var(--fs-sm); }
+    .rank-pos { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--blue-ink); }
+
+    .asked-note { font-size: var(--fs-xs); color: var(--gold-ink); margin-bottom: var(--sp-3); }
   </style>
 </head>
 <body>
@@ -84,6 +109,7 @@
 
 <script src="/assets/js/api.js"></script>
 <script src="/assets/js/shell.js"></script>
+<script src="/assets/js/survey-schema.js"></script>
 <script>
   Shell.admin('surveys');
 
@@ -105,14 +131,34 @@
 
       document.getElementById('actions').innerHTML = `
         ${badge(survey.status, survey.status === 'active' ? 'active' : survey.status === 'draft' ? 'warn' : 'inactive')}
+        ${survey.public_path
+          ? `<button class="btn btn-sm btn-secondary" onclick="copyLink()">Copy link</button>` : ''}
+        <a class="btn btn-sm btn-secondary" href="/admin/survey-new.html?id=${survey.id}">Edit</a>
         <button class="btn btn-sm btn-secondary" onclick="exportResponses()">Export CSV</button>`;
 
+      window.copyLink = async () => {
+        try {
+          await navigator.clipboard.writeText(location.origin + survey.public_path);
+          showToast('Link copied — anyone holding it can answer, no account needed');
+        } catch { showToast(location.origin + survey.public_path, 'warning'); }
+      };
+
       const rate = responses.length ? Math.round((completed.length / responses.length) * 100) : 0;
+
+      // Nobody is invited to a survey answered over a link, so "invited" and
+      // "response rate" would both be measuring something that never happened.
+      // What can be counted is how many opened it and how many finished.
+      const byLink = survey.target_type === 'anonymous';
+
       document.getElementById('figures').innerHTML = `
-        <div><div class="figure-value">${responses.length}</div><div class="figure-label">Invited</div></div>
+        <div><div class="figure-value">${responses.length}</div>
+             <div class="figure-label">${byLink ? 'Opened it' : 'Invited'}</div></div>
         <div><div class="figure-value">${completed.length}</div><div class="figure-label">Completed</div></div>
-        <div><div class="figure-value">${rate}<span class="unit">%</span></div><div class="figure-label">Response rate</div></div>
-        <div><div class="figure-value">${survey.questions.length}</div><div class="figure-label">Questions</div></div>`;
+        <div><div class="figure-value">${rate}<span class="unit">%</span></div>
+             <div class="figure-label">${byLink ? 'Finished it' : 'Response rate'}</div></div>
+        <div><div class="figure-value">${
+          survey.questions.filter(q => SurveySchema.isAnswerable(q)).length
+        }</div><div class="figure-label">Questions</div></div>`;
 
       renderAnalysis(survey.questions, completed);
       renderIndividual(survey.questions, completed);
@@ -132,70 +178,211 @@
       return;
     }
 
-    el.innerHTML = questions.map((q, i) => {
-      const answers = completed.map(r => r.answers[q.id]).filter(a => a !== undefined && a !== null && a !== '');
-      let body = '<p class="dim text-sm">No answers to this question.</p>';
+    let number = 0;
 
-      if (answers.length && q.type === 'rating') {
-        const scale = q.scale || 5;
-        const counts = {};
-        for (let v = 1; v <= scale; v++) counts[v] = 0;
-        answers.forEach(a => { const v = Math.round(a); if (counts[v] !== undefined) counts[v]++; });
-
-        const max = Math.max(...Object.values(counts), 1);
-        const avg = (answers.reduce((s, a) => s + Number(a), 0) / answers.length).toFixed(1);
-
-        body = `
-          <div class="avg">${avg}<span class="of"> / ${scale} average</span></div>
-          <div class="dist">
-            ${Array.from({ length: scale }, (_, k) => {
-              const v = k + 1;
-              return `
-                <div class="dist-col">
-                  <span class="dist-n">${counts[v]}</span>
-                  <span class="dist-bar" style="height:${(counts[v] / max) * 100}%"></span>
-                  <span class="dist-x">${v}</span>
-                </div>`;
-            }).join('')}
-          </div>
-          ${q.labels ? `<div class="row text-xs dim mt-2"><span>${escapeHtml(q.labels[0] || '')}</span><span class="spacer"></span><span>${escapeHtml(q.labels[4] || '')}</span></div>` : ''}`;
+    el.innerHTML = questions.map(q => {
+      // A section is where the survey said something, not where it asked
+      if (!SurveySchema.isAnswerable(q)) {
+        return `<section class="q-block"><div class="q-kicker">Section</div>
+                <h3 class="q-ask">${escapeHtml(q.text)}</h3></section>`;
       }
+      number++;
 
-      if (answers.length && q.type === 'choice') {
-        const counts = {};
-        answers.forEach(a => { counts[a] = (counts[a] || 0) + 1; });
-        const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
-        const max = sorted[0][1];
-
-        body = sorted.map(([label, count]) => `
-          <div class="choice-row">
-            <span class="truncate">${escapeHtml(label)}</span>
-            <span class="choice-track"><span class="choice-fill" style="width:${(count / max) * 100}%"></span></span>
-            <span class="mono text-xs">${count} · ${Math.round((count / answers.length) * 100)}%</span>
-          </div>`).join('');
-      }
-
-      if (answers.length && q.type === 'text') {
-        // Open answers are quoted, not counted — the words are the finding.
-        body = completed
-          .filter(r => r.answers[q.id])
-          .slice(0, 12)
-          .map(r => `
-            <blockquote class="verbatim">
-              ${escapeHtml(String(r.answers[q.id]))}
-              <span class="who">${escapeHtml(r.user_name)}</span>
-            </blockquote>`).join('') +
-          (answers.length > 12 ? `<p class="dim text-xs">+${answers.length - 12} more</p>` : '');
-      }
+      // Only the members this question was actually put to. With branching,
+      // a percentage over everyone who finished the survey is a different
+      // number about a different population.
+      const shown = completed.filter(r => !r.asked || r.asked.includes(q.id));
+      const answered = shown.filter(r => SurveySchema.isAnswered(q, r.answers[q.id]));
+      const answers = answered.map(r => r.answers[q.id]);
 
       return `
         <section class="q-block">
-          <div class="q-kicker">Q${i + 1} · ${q.type} · ${answers.length} answered</div>
+          <div class="q-kicker">Q${number} · ${escapeHtml(q.type)} · ${answers.length} answered${
+            q.required ? ' · required' : ''}</div>
           <h3 class="q-ask">${escapeHtml(q.text)}</h3>
-          ${body}
+          ${shown.length < completed.length
+            ? `<p class="asked-note">Asked of ${shown.length} of ${completed.length} — the rest were branched past it.</p>`
+            : ''}
+          ${answers.length ? summary(q, answers, answered) : '<p class="dim text-sm">No answers to this question.</p>'}
         </section>`;
     }).join('');
   }
+
+  // One summary per kind of answer. The shape of the answer is the finding, so
+  // a ranking is not reduced to a count and a grid is not flattened into bars.
+  function summary(q, answers, answered) {
+    switch (q.type) {
+      case 'rating':
+        return distribution(answers, 1, q.scale || 5, q.labels);
+
+      case 'nps': {
+        const nps = SurveySchema.npsScore(answers);
+        const pct = n => (n / nps.responses) * 100;
+        return `
+          <div class="avg">${nps.score > 0 ? '+' : ''}${nps.score}<span class="of"> NPS</span></div>
+          <div class="nps-split">
+            ${nps.detractors ? `<span class="nps-part detractors" style="width:${pct(nps.detractors)}%">${nps.detractors}</span>` : ''}
+            ${nps.passives ? `<span class="nps-part passives" style="width:${pct(nps.passives)}%">${nps.passives}</span>` : ''}
+            ${nps.promoters ? `<span class="nps-part promoters" style="width:${pct(nps.promoters)}%">${nps.promoters}</span>` : ''}
+          </div>
+          <div class="nps-legend">
+            <span>Detractors 0–6: ${nps.detractors}</span>
+            <span>Passives 7–8: ${nps.passives}</span>
+            <span>Promoters 9–10: ${nps.promoters}</span>
+          </div>
+          ${distribution(answers, 0, 10)}`;
+      }
+
+      case 'number': {
+        const values = answers.map(Number).filter(Number.isFinite).sort((a, b) => a - b);
+        const median = values[Math.floor(values.length / 2)];
+        const mean = values.reduce((s, v) => s + v, 0) / values.length;
+        return `
+          <div class="avg">${round(median)}<span class="of"> median${q.unit ? ' ' + escapeHtml(q.unit) : ''}</span></div>
+          <div class="kv">
+            <div class="kv-row"><span class="kv-key">Mean</span><span class="kv-val mono">${round(mean)}</span></div>
+            <div class="kv-row"><span class="kv-key">Lowest</span><span class="kv-val mono">${round(values[0])}</span></div>
+            <div class="kv-row"><span class="kv-key">Highest</span><span class="kv-val mono">${round(values[values.length - 1])}</span></div>
+          </div>`;
+      }
+
+      case 'choice':
+      case 'dropdown':
+      case 'boolean':
+      case 'multi_choice': {
+        const counts = {};
+        for (const answer of answers) {
+          for (const value of (Array.isArray(answer) ? answer : [answer])) {
+            const label = q.type === 'boolean'
+              ? (value ? (q.true_label || 'Yes') : (q.false_label || 'No'))
+              : String(value);
+            counts[label] = (counts[label] || 0) + 1;
+          }
+        }
+        const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+        const max = sorted[0][1];
+
+        return sorted.map(([label, count]) => `
+          <div class="choice-row">
+            <span class="truncate" title="${escapeHtml(label)}">${escapeHtml(label)}</span>
+            <span class="choice-track"><span class="choice-fill" style="width:${(count / max) * 100}%"></span></span>
+            <span class="mono text-xs">${count} · ${Math.round((count / answers.length) * 100)}%</span>
+          </div>`).join('') +
+          // Where several may be picked, the percentages are of people and so
+          // do not add to a hundred. Saying so costs one line and saves the
+          // reader assuming the numbers are wrong.
+          (q.type === 'multi_choice'
+            ? '<p class="hint">Percentages are of respondents, so they add to more than 100.</p>' : '');
+      }
+
+      case 'ranking': {
+        // Average position, because "picked first by 12" and "second by
+        // everyone" are different results and only one of them is a mandate.
+        const totals = {};
+        for (const answer of answers) {
+          (answer || []).forEach((option, i) => {
+            totals[option] = totals[option] || { sum: 0, n: 0, first: 0 };
+            totals[option].sum += i + 1;
+            totals[option].n++;
+            if (i === 0) totals[option].first++;
+          });
+        }
+        return Object.entries(totals)
+          .map(([option, t]) => ({ option, avg: t.sum / t.n, first: t.first }))
+          .sort((a, b) => a.avg - b.avg)
+          .map((row, i) => `
+            <div class="rank-row">
+              <span class="rank-pos">#${i + 1}</span>
+              <span class="truncate">${escapeHtml(row.option)}</span>
+              <span class="mono text-xs dim">avg ${row.avg.toFixed(1)} · first by ${row.first}</span>
+            </div>`).join('');
+      }
+
+      case 'matrix': {
+        const rows = q.rows || [];
+        const columns = q.columns || [];
+        const tally = {};
+        for (const answer of answers) {
+          for (const [row, picked] of Object.entries(answer || {})) {
+            tally[row] = tally[row] || {};
+            for (const column of (Array.isArray(picked) ? picked : [picked])) {
+              tally[row][column] = (tally[row][column] || 0) + 1;
+            }
+          }
+        }
+        return `
+          <div class="table-scroll">
+            <table class="grid-table">
+              <thead><tr><th></th>${columns.map(c => `<th>${escapeHtml(c)}</th>`).join('')}</tr></thead>
+              <tbody>
+                ${rows.map(row => {
+                  const counts = tally[row] || {};
+                  const total = Object.values(counts).reduce((s, n) => s + n, 0) || 1;
+                  return `
+                    <tr>
+                      <th scope="row">${escapeHtml(row)}</th>
+                      ${columns.map(column => {
+                        const n = counts[column] || 0;
+                        const share = n / total;
+                        return `<td><span class="grid-cell" style="background:${
+                          n ? `rgba(16,126,188,${0.12 + share * 0.6})` : 'transparent'}">${
+                          n ? Math.round(share * 100) + '%' : '—'}</span></td>`;
+                      }).join('')}
+                    </tr>`;
+                }).join('')}
+              </tbody>
+            </table>
+          </div>`;
+      }
+
+      case 'date': {
+        const sorted = answers.slice().sort();
+        return `
+          <div class="kv">
+            <div class="kv-row"><span class="kv-key">Earliest</span><span class="kv-val mono">${escapeHtml(sorted[0])}</span></div>
+            <div class="kv-row"><span class="kv-key">Latest</span><span class="kv-val mono">${escapeHtml(sorted[sorted.length - 1])}</span></div>
+          </div>`;
+      }
+
+      default:
+        // Open answers are quoted, not counted — the words are the finding.
+        return answered.slice(0, 12).map(r => `
+          <blockquote class="verbatim">
+            ${escapeHtml(String(r.answers[q.id]))}
+            <span class="who">${r.user_name ? escapeHtml(r.user_name) : 'Anonymous'}</span>
+          </blockquote>`).join('') +
+          (answered.length > 12 ? `<p class="dim text-xs">+${answered.length - 12} more</p>` : '');
+    }
+  }
+
+  // The spread, not just the middle: a flat distribution and a hard split have
+  // the same average and mean opposite things.
+  function distribution(answers, from, to, labels) {
+    const counts = {};
+    for (let v = from; v <= to; v++) counts[v] = 0;
+    answers.forEach(a => { const v = Math.round(Number(a)); if (counts[v] !== undefined) counts[v]++; });
+
+    const max = Math.max(...Object.values(counts), 1);
+    const avg = answers.reduce((s, a) => s + Number(a), 0) / answers.length;
+
+    return `
+      ${from === 1 ? `<div class="avg">${avg.toFixed(1)}<span class="of"> / ${to} average</span></div>` : ''}
+      <div class="dist">
+        ${Object.keys(counts).map(v => `
+          <div class="dist-col">
+            <span class="dist-n">${counts[v]}</span>
+            <span class="dist-bar" style="height:${(counts[v] / max) * 100}%"></span>
+            <span class="dist-x">${v}</span>
+          </div>`).join('')}
+      </div>
+      ${labels && (labels[0] || labels[labels.length - 1])
+        ? `<div class="row text-xs dim mt-2">
+             <span>${escapeHtml(labels[0] || '')}</span><span class="spacer"></span>
+             <span>${escapeHtml(labels[labels.length - 1] || '')}</span>
+           </div>` : ''}`;
+  }
+
+  const round = n => (Number.isInteger(n) ? n : n.toFixed(1));
 
   function renderIndividual(questions, completed) {
     const table = document.getElementById('responseTable');
@@ -205,24 +392,43 @@
       return;
     }
 
+    // Sections hold no answer, so they hold no column
+    const asked = questions.filter(q => SurveySchema.isAnswerable(q));
+
     table.innerHTML = `
       <thead>
         <tr>
           <th>Respondent</th>
-          ${questions.map(q => `<th>${escapeHtml(q.text.slice(0, 34))}${q.text.length > 34 ? '…' : ''}</th>`).join('')}
+          ${asked.map(q => `<th>${escapeHtml(q.text.slice(0, 34))}${q.text.length > 34 ? '…' : ''}</th>`).join('')}
           <th>Submitted</th>
         </tr>
       </thead>
       <tbody>
         ${completed.map(r => `
-          <tr class="row-link" onclick="window.location.href='/admin/member.html?id=${r.user_id}'">
-            <td>${identityCell(r.user_name, r.user_email)}</td>
-            ${questions.map(q => {
-              const val = r.answers[q.id];
-              if (val === undefined || val === '') return '<td class="dim">—</td>';
-              if (q.type === 'rating') return `<td class="mono tnum">${val}/${q.scale || 5}</td>`;
-              if (q.type === 'choice') return `<td class="text-sm">${escapeHtml(String(val))}</td>`;
-              return `<td class="text-xs muted" style="max-width:240px">${escapeHtml(String(val).slice(0, 90))}${String(val).length > 90 ? '…' : ''}</td>`;
+          <tr class="${r.user_id ? 'row-link' : ''}"
+              ${r.user_id ? `onclick="window.location.href='/admin/member.html?id=${r.user_id}'"` : ''}>
+            <td>${r.user_id
+              ? identityCell(r.user_name, r.user_email)
+              : `<div class="identity-meta">
+                   <div class="identity-name dim">Anonymous</div>
+                   <div class="identity-sub">Answered over the link</div>
+                 </div>`}</td>
+            ${asked.map(q => {
+              // Never shown and left unanswered are different facts: one is a
+              // question they declined, the other was never put to them.
+              if (r.asked && !r.asked.includes(q.id)) {
+                return '<td class="dim text-xs" title="Not asked — branched past">·</td>';
+              }
+              const value = r.answers[q.id];
+              if (value === undefined || value === null || value === '') return '<td class="dim">—</td>';
+
+              const text = SurveySchema.answerToText(q, value);
+              if (['rating', 'nps', 'number'].includes(q.type)) return `<td class="mono tnum">${escapeHtml(text)}</td>`;
+              if (q.type === 'text') {
+                return `<td class="text-xs muted" style="max-width:240px">${
+                  escapeHtml(text.slice(0, 90))}${text.length > 90 ? '…' : ''}</td>`;
+              }
+              return `<td class="text-sm">${escapeHtml(text)}</td>`;
             }).join('')}
             <td class="text-xs muted nowrap">${formatDate(r.completed_at)}</td>
           </tr>`).join('')}

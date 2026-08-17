@@ -884,6 +884,202 @@ function define(db) {
           `).run();
         }
       }
+    },
+    {
+      id: 24,
+      name: 'survey_questions_and_themes',
+      up() {
+        // A survey could ask three things: a 1–5 rating, one option out of a
+        // list, or a paragraph. Everything else a discovery round actually
+        // needs — a grid, a ranking, a date, a number, "pick up to three",
+        // NPS — had to be faked as a choice question and then untangled by
+        // hand afterwards.
+        //
+        // Worse, none of it was checked. A question could be stored with no
+        // options at all, and an answer of "banana" to a 1–5 rating was
+        // written to the database exactly as sent, because nothing on either
+        // side of the wire had an opinion about what an answer was.
+        //
+        // Question types, branching, compulsory answers and option limits now
+        // live in one definition that the builder, the member's page and this
+        // server all read (public/assets/js/survey-schema.js). This migration
+        // brings existing surveys into that shape.
+
+        // How the survey looks to the member: accent, wordmark, opening and
+        // closing, layout. Nullable — a survey without one follows its circle,
+        // and a circle without one follows the product.
+        addColumn('surveys', 'theme', 'TEXT');
+        addColumn('circles', 'survey_theme', 'TEXT');
+
+        const surveys = db.prepare('SELECT id, questions FROM surveys').all();
+        const update = db.prepare('UPDATE surveys SET questions = ? WHERE id = ?');
+        let rewritten = 0;
+
+        for (const survey of surveys) {
+          let questions;
+          try { questions = JSON.parse(survey.questions || '[]'); } catch { continue; }
+          if (!Array.isArray(questions) || !questions.length) continue;
+
+          const next = questions.map(question => {
+            const { optional, ...rest } = question;
+
+            // "Answering is optional" was offered on text questions only, and
+            // was never enforced anywhere — so it is the one place an author
+            // said anything about compulsion, and the only place we can honour
+            // it. Every other question becomes optional rather than required:
+            // a live survey must not start rejecting members who are partway
+            // through it because this shipped.
+            const required = question.type === 'text' ? optional !== true : false;
+
+            return { ...rest, required };
+          });
+
+          update.run(JSON.stringify(next), survey.id);
+          rewritten++;
+        }
+
+        if (rewritten) console.log(`  ${rewritten} survey(s) carried into the new question schema`);
+      }
+    },
+    {
+      id: 25,
+      name: 'anonymous_respondents',
+      up() {
+        // Every survey so far could only be answered by someone with an
+        // account, because a response was keyed to a member and there was no
+        // other kind of respondent. That rules out the discovery you most want
+        // to do: asking developers who bounced off the sandbox before they
+        // registered, or handing a link to a room at a meetup.
+        //
+        // So a survey can now be addressed to whoever holds its link. Three
+        // tables have to admit a respondent who is not a member — and each of
+        // them says "not a member" as NULL rather than as a placeholder user
+        // row, because a fake member would be counted as a member by every
+        // query that has ever been written against these tables.
+
+        // Rebuilding a table means dropping it, and these are tables other
+        // tables point at — so with foreign keys on, the drop fails the moment
+        // there is real data to protect. Deferring moves that check to the
+        // commit, by which point the table exists again under its own name
+        // with every row in it. PRAGMA foreign_keys cannot be changed inside a
+        // transaction, and each migration runs in one, so this is the form
+        // that works here.
+        db.pragma('defer_foreign_keys = ON');
+
+        // Each rebuild starts from the table's own definition rather than from
+        // one written out here. These tables have been added to by six earlier
+        // migrations; a hand-copied column list would silently drop whatever
+        // it forgot, and the loss would not show up until someone went looking
+        // for data that had quietly stopped being written.
+        function rebuild(table, edit) {
+          const original = db.prepare(
+            'SELECT sql FROM sqlite_master WHERE type = ? AND name = ?'
+          ).get('table', table).sql;
+
+          const columns = db.prepare(`PRAGMA table_info(${table})`).all().map(c => c.name).join(', ');
+          const ddl = edit(original.replace(
+            new RegExp(`CREATE TABLE\\s+"?${table}"?`, 'i'),
+            `CREATE TABLE ${table}_new`
+          ));
+
+          db.exec(`
+            ${ddl};
+            INSERT INTO ${table}_new (${columns}) SELECT ${columns} FROM ${table};
+            DROP TABLE ${table};
+            ALTER TABLE ${table}_new RENAME TO ${table};
+          `);
+        }
+
+        // ── surveys: a new audience, and the link that reaches it
+        // target_type is a CHECK constraint, so admitting a value means
+        // rebuilding the table.
+        // The guards below fail loudly if a table is not shaped the way this
+        // migration expects, rather than rebuilding it into something subtly
+        // different. Finding the change already made is not a failure.
+        rebuild('surveys', ddl => {
+          if (/target_type[^)]*anonymous/i.test(ddl)) return ddl;
+          const widened = ddl.replace(
+            /CHECK\s*\(\s*target_type\s+IN\s*\([^)]*\)\s*\)/i,
+            "CHECK(target_type IN ('all','cohort','specific','anonymous'))"
+          );
+          if (widened === ddl) throw new Error('surveys.target_type constraint not found');
+          return widened;
+        });
+
+        // The link itself. Unguessable, because it is the only thing standing
+        // between the survey and the open internet.
+        addColumn('surveys', 'public_token', 'TEXT');
+        db.exec(`
+          CREATE UNIQUE INDEX IF NOT EXISTS idx_surveys_public_token
+            ON surveys(public_token) WHERE public_token IS NOT NULL;
+        `);
+
+        // ── survey_responses: a response with no member behind it.
+        // Nullable rather than pointed at a placeholder user: "how many
+        // members answered" must not quietly start counting people who are
+        // not members.
+        rebuild('survey_responses', ddl => {
+          const relaxed = /user_id\s+TEXT\s+NOT\s+NULL/i.test(ddl)
+            ? ddl.replace(/user_id\s+TEXT\s+NOT\s+NULL\s+REFERENCES/i, 'user_id TEXT REFERENCES')
+            : ddl;
+          if (relaxed === ddl && /user_id\s+TEXT\s+NOT\s+NULL/i.test(ddl)) {
+            throw new Error('survey_responses.user_id constraint not found');
+          }
+          return relaxed.replace(
+            /triggered_by\s+TEXT\s+DEFAULT\s+'manual'\s+CHECK\s*\(\s*triggered_by\s+IN\s*\([^)]*\)\s*\)/i,
+            "triggered_by TEXT DEFAULT 'manual' CHECK(triggered_by IN ('manual','system','customer_io','link'))"
+          );
+        });
+
+        addColumn('survey_responses', 'respondent_kind', "TEXT DEFAULT 'member'");
+        // Hashed, like every other bearer secret here. It lets one anonymous
+        // respondent return to their own half-finished response and nobody
+        // else's.
+        addColumn('survey_responses', 'anonymous_key_hash', 'TEXT');
+        db.prepare("UPDATE survey_responses SET respondent_kind = 'member' WHERE respondent_kind IS NULL").run();
+
+        db.exec(`
+          CREATE INDEX IF NOT EXISTS idx_survey_responses_survey ON survey_responses(survey_id);
+          CREATE INDEX IF NOT EXISTS idx_survey_responses_user ON survey_responses(user_id);
+          CREATE INDEX IF NOT EXISTS idx_survey_responses_anon
+            ON survey_responses(anonymous_key_hash) WHERE anonymous_key_hash IS NOT NULL;
+        `);
+
+        // ── feedback: what an anonymous respondent wrote is still evidence.
+        // Filed the way a member's words are, minus the member. Dropping it
+        // instead would mean the answers from the audience you most need to
+        // hear from are the ones that vanish.
+        rebuild('feedback', ddl => {
+          if (!/user_id\s+TEXT\s+NOT\s+NULL/i.test(ddl)) return ddl;
+          const relaxed = ddl.replace(/user_id\s+TEXT\s+NOT\s+NULL\s+REFERENCES/i, 'user_id TEXT REFERENCES');
+          if (relaxed === ddl) throw new Error('feedback.user_id constraint not found');
+          return relaxed;
+        });
+
+        // Which response it came out of, so an anonymous answer can still be
+        // traced back to the submission that carried it
+        addColumn('feedback', 'response_id', 'TEXT');
+
+        db.exec(`
+          CREATE INDEX IF NOT EXISTS idx_feedback_user ON feedback(user_id);
+          CREATE INDEX IF NOT EXISTS idx_feedback_status ON feedback(status);
+          CREATE INDEX IF NOT EXISTS idx_feedback_question ON feedback(canonical_question_id);
+          CREATE INDEX IF NOT EXISTS idx_feedback_circle ON feedback(circle_id);
+
+          -- One answer per question per member per survey, as before
+          CREATE UNIQUE INDEX IF NOT EXISTS idx_feedback_verbatim
+            ON feedback(user_id, survey_id, question_id)
+            WHERE question_id IS NOT NULL AND survey_id IS NOT NULL AND user_id IS NOT NULL;
+          -- The same guard for someone with no account, keyed to the
+          -- submission instead: a re-delivered response is not a second opinion.
+          CREATE UNIQUE INDEX IF NOT EXISTS idx_feedback_verbatim_anon
+            ON feedback(response_id, question_id)
+            WHERE response_id IS NOT NULL AND question_id IS NOT NULL;
+          CREATE UNIQUE INDEX IF NOT EXISTS idx_feedback_external_response
+            ON feedback(source_system, external_response_id)
+            WHERE external_response_id IS NOT NULL;
+        `);
+      }
     }
   ];
   return migrations;
@@ -924,6 +1120,21 @@ function run(db, { log = () => {} } = {}) {
   const done = new Set(applied(db).map(r => r.id));
   const ran = [];
 
+  // SQLite cannot drop a NOT NULL or widen a CHECK in place, so those changes
+  // are made by building the table again and renaming it into position. That
+  // means dropping a table other tables point at, which foreign key
+  // enforcement refuses outright — and deferring the check does not help,
+  // because a dropped parent counts as a violation that reappearing under the
+  // same name never clears. Turning enforcement off for the duration is the
+  // procedure SQLite documents for exactly this.
+  //
+  // It is only safe because of the check afterwards: every migration is
+  // followed by a full integrity scan, so a rebuild that stranded a row fails
+  // here rather than months later at whatever query first noticed.
+  const enforcing = db.pragma('foreign_keys', { simple: true });
+  if (enforcing) db.pragma('foreign_keys = OFF');
+
+  try {
   for (const migration of all) {
     if (done.has(migration.id)) continue;
 
@@ -934,8 +1145,21 @@ function run(db, { log = () => {} } = {}) {
         .run(migration.id, migration.name);
     })();
 
+    const stranded = db.pragma('foreign_key_check');
+    if (stranded.length) {
+      throw new Error(
+        `migration ${migration.id} (${migration.name}) left ${stranded.length} row(s) ` +
+        `pointing at nothing: ${JSON.stringify(stranded.slice(0, 3))}`
+      );
+    }
+
     ran.push(migration);
     log(`migration ${migration.id}: ${migration.name}`);
+  }
+  } finally {
+    // Restored whatever happened above, so a failed migration cannot leave the
+    // connection running without referential integrity
+    if (enforcing) db.pragma('foreign_keys = ON');
   }
 
   return ran;

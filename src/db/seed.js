@@ -6,6 +6,7 @@ const { NO_PASSWORD, normalizePhone } = require('../utils/identity');
 const { generateApiKey, hashApiKey } = require('../middleware/auth');
 const verbatims = require('../services/verbatims');
 const questionsService = require('../services/questions');
+const surveyForm = require('../services/surveyForm');
 
 function uuid() { return crypto.randomUUID(); }
 
@@ -264,11 +265,14 @@ const surveys = [
   {
     id: uuid(), title: 'Onboarding Experience Feedback', description: 'Help us understand your first impressions',
     questions: [
-      { id: 'q1', type: 'rating', text: 'How easy was the registration process?', scale: 5 },
-      { id: 'q2', type: 'rating', text: 'How clear was the initial documentation?', scale: 5 },
-      { id: 'q3', type: 'choice', text: 'What brought you to Credit Direct APIs?', options: ['Business integration', 'Personal project', 'Evaluation', 'Client requirement'] },
-      { id: 'q4', type: 'text', text: 'What could we improve about the onboarding?', optional: true },
-      { id: 'q5', type: 'text', text: 'What nearly stopped you from finishing?', optional: true }
+      { id: 'q1', type: 'rating', text: 'How easy was the registration process?', scale: 5, required: true, label_low: 'A struggle', label_high: 'Effortless' },
+      { id: 'q2', type: 'rating', text: 'How clear was the initial documentation?', scale: 5, required: true },
+      { id: 'q3', type: 'choice', text: 'What brought you to Credit Direct APIs?', options: ['Business integration', 'Personal project', 'Evaluation', 'Client requirement'], allow_other: true, required: true },
+      { id: 'q4', type: 'text', text: 'What could we improve about the onboarding?' },
+      // Only asked of the people who found it hard — the ones who breezed
+      // through have nothing to say here and being asked anyway is the cost
+      { id: 'q5', type: 'text', text: 'What nearly stopped you from finishing?',
+        visible_if: { match: 'all', rules: [{ question: 'q1', op: 'lte', value: 3 }] } }
     ],
     target_type: 'all', engagement_mode: 'in_portal', time_estimate_min: 3,
     trigger_event: 'api_key_generated'
@@ -276,34 +280,86 @@ const surveys = [
   {
     id: uuid(), title: 'API Documentation Clarity', description: 'Rate the quality of our developer docs',
     questions: [
-      { id: 'q1', type: 'rating', text: 'How would you rate the clarity of our API documentation?', scale: 5, labels: ['Unclear', '', 'Neutral', '', 'Clear'] },
-      { id: 'q2', type: 'rating', text: 'How easy is it to find what you need?', scale: 5 },
-      { id: 'q3', type: 'rating', text: 'Are the code examples helpful?', scale: 5 },
-      { id: 'q4', type: 'choice', text: 'Which section needs the most improvement?', options: ['Authentication', 'Endpoints reference', 'Error handling', 'Webhooks', 'Tutorials'] },
-      { id: 'q5', type: 'text', text: 'Any specific feedback on the docs?', optional: true },
-      { id: 'q6', type: 'text', text: 'Which example would have saved you the most time?', optional: true }
+      { id: 'q1', type: 'matrix', text: 'How would you rate each part of the documentation?',
+        rows: ['Authentication', 'Endpoints reference', 'Error handling', 'Webhooks'],
+        columns: ['Poor', 'Adequate', 'Good', 'Excellent'], required: true },
+      { id: 'q2', type: 'multi_choice', text: 'Which of these have cost you time?',
+        options: ['Missing examples', 'Out-of-date responses', 'No sandbox equivalents', 'Unclear error codes', 'None of these'],
+        exclusive_options: ['None of these'], min_select: 1, required: true },
+      { id: 'q3', type: 'ranking', text: 'Put these in the order you would have them fixed',
+        options: ['More code examples', 'A Postman collection', 'Clearer errors', 'Webhook guides'] },
+      { id: 'q4', type: 'text', text: 'Which example would have saved you the most time?' }
     ],
-    target_type: 'all', engagement_mode: 'in_portal', time_estimate_min: 5
+    target_type: 'all', engagement_mode: 'in_portal', time_estimate_min: 5,
+    theme: { accent: '#0D9488', progress: 'steps' }
   },
   {
     id: uuid(), title: 'Sandbox → Production Journey', description: 'Tell us about your path to going live',
     questions: [
-      { id: 'q1', type: 'rating', text: 'How smooth was the transition from sandbox to production?', scale: 5 },
-      { id: 'q2', type: 'choice', text: 'What was the biggest challenge?', options: ['KYB process', 'API configuration', 'Testing limitations', 'Documentation gaps', 'Support response time'] },
-      { id: 'q3', type: 'rating', text: 'How satisfied are you with the sandbox environment?', scale: 5 },
-      { id: 'q4', type: 'text', text: 'What would have made the journey faster?', optional: true },
-      { id: 'q5', type: 'text', text: 'What surprised you once you were live?', optional: true }
+      { id: 'q1', type: 'nps', text: 'How likely are you to recommend our APIs to another developer?',
+        required: true, label_low: 'Not at all likely', label_high: 'Extremely likely' },
+      { id: 'q2', type: 'multi_choice', text: 'What went wrong?',
+        options: ['KYB process', 'API configuration', 'Testing limitations', 'Documentation gaps', 'Support response time'],
+        min_select: 1, max_select: 3, allow_other: true, required: true,
+        visible_if: { match: 'all', rules: [{ question: 'q1', op: 'lte', value: 6 }] } },
+      { id: 'q3', type: 'text', text: 'What is working well enough that we should not touch it?',
+        visible_if: { match: 'all', rules: [{ question: 'q1', op: 'gte', value: 9 }] } },
+      { id: 'q4', type: 'section', text: 'About your integration' },
+      { id: 'q5', type: 'date', text: 'When did you make your first production call?' },
+      { id: 'q6', type: 'number', text: 'Roughly how many calls do you make on a normal day?',
+        min: 0, integer: true, unit: 'calls/day' },
+      { id: 'q7', type: 'text', text: 'What would have made the journey faster?' }
     ],
     target_type: 'cohort', target_ids: [cohorts[4].id], engagement_mode: 'email', time_estimate_min: 4,
-    trigger_event: 'first_production_call', reminder_after_days: 5
+    trigger_event: 'first_production_call', reminder_after_days: 5,
+    theme: {
+      accent: '#E6B473', background: 'tinted',
+      intro: {
+        headline: 'You made it to production',
+        body: 'Four minutes on how the journey went. Your answers go to the engineers building the APIs you integrate with — not to a ticket queue.',
+        button: 'Tell them'
+      },
+      thank_you: { headline: 'Noted, and read', body: 'Every answer here is read by the team before the next release is planned.' }
+    }
+  },
+  {
+    // The audience you cannot reach any other way: developers who gave up
+    // before they ever registered. There is no cohort for people who are not
+    // members, so the link is the only way to ask them.
+    id: uuid(), title: 'What stopped you finishing the sandbox setup?',
+    description: 'Three questions, no account needed. From the team that builds the sandbox.',
+    target_type: 'anonymous',
+    public_token: 'demo' + crypto.randomBytes(18).toString('base64url'),
+    questions: [
+      { id: 'q1', type: 'choice', text: 'How far did you get?',
+        options: ['Never got a key', 'Got a key, no successful call', 'Made calls, then stopped', 'Still trying'],
+        required: true },
+      { id: 'q2', type: 'multi_choice', text: 'What got in the way?',
+        options: ['Documentation', 'Sign-up itself', 'Waiting on approval', 'Errors I could not decode', 'Chose another provider'],
+        min_select: 1, allow_other: true, required: true },
+      { id: 'q3', type: 'text', text: 'What would have kept you going?' }
+    ],
+    engagement_mode: 'in_portal', time_estimate_min: 2,
+    theme: {
+      background_color: '#0B1F2A', text_color: '#EAF4F7', accent: '#2DD4BF', corner: 'round',
+      intro: {
+        headline: 'You did not finish. We would like to know why.',
+        body: 'Two minutes, no sign-in, and nothing here identifies you. It goes to the engineers who own the sandbox.',
+        button: 'Tell them'
+      },
+      thank_you: { headline: 'Thank you — that is exactly what we needed', body: 'No account, no follow-up, no marketing. Just the answer.' }
+    }
   },
   {
     id: uuid(), title: 'KYB Process Feedback', description: 'Rate your KYB verification experience',
     questions: [
-      { id: 'q1', type: 'rating', text: 'How would you rate the KYB process?', scale: 5 },
-      { id: 'q2', type: 'rating', text: 'How clear were the document requirements?', scale: 5 },
-      { id: 'q3', type: 'choice', text: 'How long did KYB take?', options: ['Less than 24 hours', '1-3 days', '3-7 days', 'More than a week'] },
-      { id: 'q4', type: 'text', text: 'Any issues during KYB?', optional: true }
+      { id: 'q1', type: 'rating', text: 'How would you rate the KYB process?', scale: 5, style: 'stars', required: true },
+      { id: 'q2', type: 'boolean', text: 'Were the document requirements clear before you started?',
+        true_label: 'Yes, clear', false_label: 'No, I had to guess', required: true },
+      { id: 'q3', type: 'choice', text: 'How long did KYB take?',
+        options: ['Less than 24 hours', '1-3 days', '3-7 days', 'More than a week'], required: true },
+      { id: 'q4', type: 'text', text: 'What was unclear?',
+        visible_if: { match: 'all', rules: [{ question: 'q2', op: 'is', value: false }] } }
     ],
     target_type: 'cohort', target_ids: [cohorts[2].id], engagement_mode: 'email', time_estimate_min: 3,
     trigger_event: 'kyb_completed', reminder_after_days: 7
@@ -311,20 +367,29 @@ const surveys = [
 ];
 
 const surveyStmt = db.prepare(`
-  INSERT INTO surveys (id, title, description, questions, status, target_type, target_ids,
-                       engagement_mode, time_estimate_min, trigger_event, reminder_after_days, created_by)
-  VALUES (?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?)
+  INSERT INTO surveys (id, title, description, questions, theme, status, target_type, target_ids,
+                       engagement_mode, time_estimate_min, trigger_event, reminder_after_days,
+                       public_token, created_by)
+  VALUES (?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?)
 `);
 
 for (const s of surveys) {
-  // Through the service, so seeded surveys carry question identities the same
-  // way an authored one does
-  s.questions = questionsService.attachToSurvey(s.questions, { createdBy: admins[0].id });
+  // Through the same door an authored survey goes through, so seeded data
+  // carries question identities the same way — and so a seed that drifts out
+  // of what a survey may contain fails here rather than in front of a member.
+  const definition = surveyForm.normalizeDefinition(s, { createdBy: admins[0].id });
+  if (definition.issues.length) {
+    throw new Error(`Seed survey "${s.title}": ${surveyForm.issueSummary(definition.issues)}`);
+  }
+  s.questions = definition.questions;
+
   surveyStmt.run(
     s.id, s.title, s.description, JSON.stringify(s.questions),
+    definition.theme ? JSON.stringify(definition.theme) : null,
     s.target_type, JSON.stringify(s.target_ids || []),
     s.engagement_mode, s.time_estimate_min,
-    s.trigger_event || null, s.reminder_after_days || null, admins[0].id
+    s.trigger_event || null, s.reminder_after_days || null,
+    s.public_token || null, admins[0].id
   );
 }
 console.log(`✓ ${surveys.length} surveys created (${db.prepare('SELECT COUNT(*) c FROM questions').get().c} questions)`);
@@ -350,17 +415,71 @@ const VERBATIMS = [
   'Support answered in under two hours on a production issue. That is why we stayed.'
 ];
 
+const pick = list => list[Math.floor(Math.random() * list.length)];
+const between = (from, to) => from + Math.floor(Math.random() * (to - from + 1));
+
+// One plausible answer to one question. Kept honest about the shape each type
+// expects, because seeded data that a live submission would have refused is
+// data every screen then has to be defensive about.
+function inventAnswer(q) {
+  switch (q.type) {
+    case 'rating': return between(1, q.scale || 5);
+    case 'nps': return between(0, 10);
+    case 'number': return between(q.min ?? 50, Math.min(q.max ?? 5000, 5000));
+    case 'date': return new Date(Date.now() - between(30, 400) * 86400000).toISOString().slice(0, 10);
+    case 'boolean': return Math.random() > 0.4;
+    case 'choice':
+    case 'dropdown': return pick(q.options);
+    case 'multi_choice': {
+      const exclusive = q.exclusive_options || [];
+      // Sometimes the "None of these" answer, which is the one that has to
+      // stand alone — worth having in the data so the screens meet it
+      if (exclusive.length && Math.random() > 0.75) return [pick(exclusive)];
+      const open = q.options.filter(o => !exclusive.includes(o));
+      const most = Math.min(q.max_select || open.length, open.length);
+      const many = between(Math.max(1, q.min_select || 1), most);
+      return open.slice().sort(() => Math.random() - 0.5).slice(0, many);
+    }
+    case 'ranking': return q.options.slice().sort(() => Math.random() - 0.5);
+    case 'matrix':
+      return Object.fromEntries(q.rows.map(row => [row, pick(q.columns)]));
+    case 'text':
+      return q.format ? null : pick(VERBATIMS);
+    default:
+      return null;
+  }
+}
+
 let responseCount = 0;
 for (const dev of developers) {
   for (const survey of surveys) {
+    // A link survey is answered by people who are not members, so putting
+    // member responses against it would seed a state that cannot occur
+    if (survey.target_type === 'anonymous') continue;
     if (Math.random() > 0.4) {
       const answers = {};
+
+      // Answered in order, re-reading what is on offer after each one, so a
+      // branch only gets an answer when this member's earlier answers actually
+      // opened it. Answering the whole list would seed responses no member
+      // could have given.
       for (const q of survey.questions) {
-        if (q.type === 'rating') answers[q.id] = Math.ceil(Math.random() * 5);
-        else if (q.type === 'choice') answers[q.id] = q.options[Math.floor(Math.random() * q.options.length)];
-        else if (q.type === 'text' && Math.random() > 0.4) {
-          answers[q.id] = VERBATIMS[Math.floor(Math.random() * VERBATIMS.length)];
-        }
+        if (!surveyForm.isAnswerable(q)) continue;
+        if (!surveyForm.visible(survey.questions, answers).some(shown => shown.id === q.id)) continue;
+        // Optional questions go unanswered sometimes, which is what makes a
+        // response rate mean anything
+        if (!q.required && Math.random() > 0.65) continue;
+
+        const invented = inventAnswer(q);
+        if (invented !== null) answers[q.id] = invented;
+      }
+
+      // The same check a submission goes through. A seed that drifts out of
+      // what a survey accepts fails here rather than becoming data every
+      // screen has to be defensive about.
+      const checked = surveyForm.checkResponse(survey.questions, answers);
+      if (!checked.ok) {
+        throw new Error(`Seed response to "${survey.title}": ${JSON.stringify(checked.errors)}`);
       }
 
       const completedDaysAgo = Math.floor(Math.random() * 30);
@@ -380,11 +499,54 @@ for (const dev of developers) {
   }
 }
 
+// ─── Answers from people with no account ────────────────────
+// The link survey's respondents. They have no user row by definition, which is
+// the state every screen reading responses has to cope with — so the demo data
+// contains it rather than leaving it to be discovered in production.
+const anonymousResponse = db.prepare(`
+  INSERT INTO survey_responses (id, survey_id, user_id, respondent_kind, anonymous_key_hash,
+                                answers, completed_at, triggered_by)
+  VALUES (?, ?, NULL, 'anonymous', ?, ?, datetime('now', ?), 'link')
+`);
+
+let anonymousCount = 0;
+for (const survey of surveys.filter(s => s.target_type === 'anonymous')) {
+  for (let i = 0; i < 14; i++) {
+    const answers = {};
+    for (const q of survey.questions) {
+      if (!surveyForm.isAnswerable(q)) continue;
+      if (!surveyForm.visible(survey.questions, answers).some(shown => shown.id === q.id)) continue;
+      if (!q.required && Math.random() > 0.55) continue;
+      const invented = inventAnswer(q);
+      if (invented !== null) answers[q.id] = invented;
+    }
+
+    const checked = surveyForm.checkResponse(survey.questions, answers);
+    if (!checked.ok) throw new Error(`Seed link response: ${JSON.stringify(checked.errors)}`);
+
+    const id = uuid();
+    const daysAgo = Math.floor(Math.random() * 21);
+    anonymousResponse.run(
+      id, survey.id,
+      crypto.createHash('sha256').update(uuid()).digest('hex'),
+      JSON.stringify(checked.answers), `-${daysAgo} days`
+    );
+
+    // Filed as evidence the same way a member's words are, minus the member
+    verbatims.record(null, survey, checked.answers, {
+      responseId: id,
+      at: new Date(Date.now() - daysAgo * 86400000).toISOString().slice(0, 19).replace('T', ' ')
+    });
+    anonymousCount++;
+  }
+}
+
 db.prepare('UPDATE feedback SET circle_id = ? WHERE circle_id IS NULL').run(rootCircleId);
 db.prepare('UPDATE questions SET circle_id = ? WHERE circle_id IS NULL').run(rootCircleId);
 
 const verbatimCount = db.prepare("SELECT COUNT(*) c FROM feedback WHERE source = 'survey'").get().c;
 console.log(`✓ ${responseCount} survey responses created (${verbatimCount} verbatims filed as feedback)`);
+console.log(`✓ ${anonymousCount} answered over a public link, with no account`);
 
 // ─── Engagement History ─────────────────────────────────────
 const ehStmt = db.prepare(`

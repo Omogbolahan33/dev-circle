@@ -104,7 +104,7 @@
               ${s.description ? `<div class="survey-desc">${escapeHtml(s.description)}</div>` : ''}
               <div class="survey-cost">
                 <span>~${s.time_estimate_min} min</span>
-                <span>${s.questions.length} question${s.questions.length === 1 ? '' : 's'}</span>
+                <span>${s.question_count} question${s.question_count === 1 ? '' : 's'}</span>
                 <span>${escapeHtml(MODES[s.engagement_mode] || s.engagement_mode)}</span>
               </div>
             </div>
@@ -124,7 +124,7 @@
           <div class="row-item">
             <div style="flex:1;min-width:0">
               <div class="row-item-title">${escapeHtml(s.title)}</div>
-              <div class="row-item-meta">${s.questions.length} question${s.questions.length === 1 ? '' : 's'} · ${escapeHtml(MODES[s.engagement_mode] || s.engagement_mode)}</div>
+              <div class="row-item-meta">${s.question_count} question${s.question_count === 1 ? '' : 's'} · ${escapeHtml(MODES[s.engagement_mode] || s.engagement_mode)}</div>
             </div>
             ${badge('answered', 'active')}
           </div>`).join('')

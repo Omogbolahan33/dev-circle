@@ -8,6 +8,7 @@ const verbatims = require('../services/verbatims');
 const notifications = require('../services/notifications');
 const circles = require('../services/circles');
 const scheduler = require('../services/scheduler');
+const surveyForm = require('../services/surveyForm');
 
 const router = express.Router();
 
@@ -528,13 +529,26 @@ router.get('/surveys', requireAuth, (req, res) => {
     SELECT survey_id FROM survey_responses WHERE user_id = ? AND completed_at IS NOT NULL
   `).all(req.user.id).map(r => r.survey_id);
 
-  const result = eligible.map(s => ({
-    ...s,
-    questions: parseJSON(s.questions, []),
-    target_ids: parseJSON(s.target_ids, []),
-    completed: completed.includes(s.id),
-    already_responded: completed.includes(s.id)
-  }));
+  // A survey already begun and left is the thing a member most wants to see
+  // first, so the list says how far in they were rather than offering it as
+  // though it were untouched.
+  const started = new Map(db.prepare(`
+    SELECT survey_id, answers FROM survey_responses
+    WHERE user_id = ? AND completed_at IS NULL
+  `).all(req.user.id).map(r => [r.survey_id, Object.keys(parseJSON(r.answers, {})).length]));
+
+  const result = eligible.map(s => {
+    const survey = surveyForm.hydrate(s);
+    return {
+      ...survey,
+      completed: completed.includes(s.id),
+      already_responded: completed.includes(s.id),
+      answered_so_far: started.get(s.id) || 0,
+      // Sections are not questions, and counting them makes "5 questions,
+      // about 2 minutes" a promise the survey does not keep
+      question_count: survey.questions.filter(surveyForm.isAnswerable).length
+    };
+  });
 
   res.json({ surveys: result });
 });
@@ -566,10 +580,68 @@ router.post('/surveys/:id/start', requireAuth, (req, res) => {
   const response = db.prepare('SELECT * FROM survey_responses WHERE survey_id = ? AND user_id = ?')
     .get(survey.id, req.user.id);
 
+  const hydrated = surveyForm.hydrate(survey);
+
   res.json({
-    survey: { ...survey, questions: parseJSON(survey.questions, []) },
-    response
+    survey: {
+      ...hydrated,
+      // What the member's page paints itself with: the survey's own look over
+      // its circle's over the product's, resolved here so the page never has
+      // to know the order of precedence.
+      theme: surveyForm.themes.resolve(
+        hydrated.theme,
+        parseJSON(circles.byId(survey.circle_id)?.survey_theme, null)
+      )
+    },
+    response,
+    // Answers kept from a previous sitting, so leaving a long survey and
+    // coming back is not the same as starting again
+    answers: parseJSON(response.answers, {})
   });
+});
+
+// PATCH /api/users/surveys/:id/progress
+// Keeping what has been answered so far. "Save & exit" offered to do this and
+// then discarded everything, which is a promise a survey cannot afford to
+// break — a member who loses fifteen answers does not come back for a
+// sixteenth.
+//
+// Nothing is validated here beyond the questions being real: a half-typed
+// answer is exactly what this exists to hold. Validation belongs at the point
+// of submission, where the member is saying they are finished.
+router.patch('/surveys/:id/progress', requireAuth, (req, res) => {
+  const { answers } = req.body;
+  if (!answers || typeof answers !== 'object' || Array.isArray(answers)) {
+    return res.status(400).json({ error: 'answers object required' });
+  }
+
+  const survey = db.prepare('SELECT * FROM surveys WHERE id = ?').get(req.params.id);
+  if (!survey) return res.status(404).json({ error: 'Survey not found' });
+
+  const response = db.prepare('SELECT * FROM survey_responses WHERE survey_id = ? AND user_id = ?')
+    .get(survey.id, req.user.id);
+  if (!response) return res.status(404).json({ error: 'Start the survey first' });
+  if (response.completed_at) return res.status(409).json({ error: 'Already completed' });
+
+  const questionIds = new Set(surveyForm.hydrate(survey).questions.map(q => q.id));
+  const kept = Object.fromEntries(
+    Object.entries(answers).filter(([id]) => questionIds.has(id))
+  );
+
+  // The one check this endpoint cannot skip. Everywhere else a text answer is
+  // held to the question's own limit, but that is exactly what is deliberately
+  // not enforced here — so without a ceiling this is an authenticated way to
+  // write unbounded data, one PATCH at a time. Generous enough that no real
+  // half-finished survey meets it.
+  const serialized = JSON.stringify(kept);
+  if (serialized.length > 100_000) {
+    return res.status(413).json({ error: 'That is more than a survey in progress can hold' });
+  }
+
+  db.prepare('UPDATE survey_responses SET answers = ? WHERE id = ?')
+    .run(serialized, response.id);
+
+  res.json({ saved: Object.keys(kept).length });
 });
 
 // POST /api/users/surveys/:id/respond
@@ -587,21 +659,40 @@ router.post('/surveys/:id/respond', requireAuth, (req, res) => {
   if (!response) return res.status(404).json({ error: 'Start the survey first' });
   if (response.completed_at) return res.status(409).json({ error: 'Already completed' });
 
+  const questions = surveyForm.hydrate(survey).questions;
+
   // Reject answers to questions this survey does not contain
-  const questionIds = new Set(parseJSON(survey.questions, []).map(q => q.id));
+  const questionIds = new Set(questions.map(q => q.id));
   const unknown = Object.keys(answers).filter(k => !questionIds.has(k));
   if (unknown.length) {
     return res.status(400).json({ error: 'Unknown question in answers', questions: unknown });
   }
 
+  // The same check the member's page ran, from the same definition — because
+  // the page is a courtesy and this is the guarantee. Everything the survey
+  // promised about itself is settled here: required answers are present,
+  // ratings are within their scale, an option picked is one that was offered,
+  // and a question the member's branch never reached is neither required of
+  // them nor recorded against them.
+  const checked = surveyForm.checkResponse(questions, answers);
+  if (!checked.ok) {
+    return res.status(400).json({
+      error: checked.missing.length
+        ? 'Some required questions have not been answered'
+        : 'Some answers could not be accepted',
+      errors: checked.errors,
+      missing: checked.missing
+    });
+  }
+
   db.prepare(`
     UPDATE survey_responses SET answers = ?, completed_at = datetime('now')
     WHERE id = ?
-  `).run(JSON.stringify(answers), response.id);
+  `).run(JSON.stringify(checked.answers), response.id);
 
   // Free-text answers are feedback, so they are filed with the rest of it
   // rather than left inside this one response's JSON where nobody can find them
-  const { filed } = verbatims.record(req.user.id, survey, answers);
+  const { filed } = verbatims.record(req.user.id, survey, checked.answers);
 
   const { streak } = engagement.record(req.user.id, 'survey_completed', {
     referenceId: survey.id,
@@ -614,7 +705,15 @@ router.post('/surveys/:id/respond', requireAuth, (req, res) => {
     WHERE user_id = ? AND source_id = ? AND status = 'queued'
   `).run(req.user.id, survey.id);
 
-  res.json({ message: 'Survey completed', streak: streak ? streak.streak : null });
+  res.json({
+    message: 'Survey completed',
+    streak: streak ? streak.streak : null,
+    answered: checked.asked.length,
+    // Answers to questions the member's branch took them past. Reported
+    // rather than silently dropped, so a client that got its own branching
+    // wrong can be found out.
+    discarded: checked.dropped.length
+  });
 });
 
 module.exports = router;

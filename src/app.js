@@ -39,6 +39,16 @@ app.use(securityHeaders);
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 app.use(express.static(PUBLIC_DIR, { extensions: ['html'] }));
 
+// A survey addressed to whoever holds its link. The token stays in the path
+// rather than a query string so the address survives being pasted into a chat
+// window, printed on a slide or turned into a QR code — and the page it serves
+// is the same runner members answer on, so the two cannot drift apart. The
+// token is read by the page and never used here, because everything it opens
+// is decided by the API.
+app.get('/s/:token', (req, res) => {
+  res.sendFile(path.join(PUBLIC_DIR, 'member', 'survey.html'));
+});
+
 // Swagger UI ships as static assets in a package rather than in public/, and
 // the API reference page loads them from here. Only the two files that page
 // names are reachable: publishing a package directory wholesale would also

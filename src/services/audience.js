@@ -89,6 +89,12 @@ function resolveAudience(survey) {
   const targets = parseJSON(survey.target_ids, []) || [];
   const scope = circleScope(survey.circle_id);
 
+  // A survey addressed to whoever holds its link has no audience to resolve.
+  // Nobody is invited and nobody is chased: the link is the distribution, and
+  // returning an empty list here is what makes every caller — invite,
+  // reminder, the audience preview — do nothing rather than something odd.
+  if (survey.target_type === 'anonymous') return [];
+
   if (survey.target_type === 'all') {
     return db.prepare(`SELECT * FROM users u WHERE u.status = 'active' ${scope.clause}`)
       .all(...scope.params);

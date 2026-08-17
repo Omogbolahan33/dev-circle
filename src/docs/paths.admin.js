@@ -1389,9 +1389,15 @@ const paths = {
       operationId: 'createSurvey',
       summary: 'Create a survey',
       description: [
-        'Created as a draft — activate it with `PUT /admin/surveys/{id}` before inviting',
-        'anyone. Every question is given a stable id if you do not supply one, because',
-        'responses and exports are keyed by it.',
+        'Send `status: "active"` to publish immediately; anything else is saved as a draft',
+        'and activated later with `PUT /admin/surveys/{id}`. Every question is given a',
+        'stable id if you do not supply one, because responses, branching and exports are',
+        'keyed by it.',
+        '',
+        'Questions are validated against the survey schema — see `GET /admin/surveys/schema`',
+        'for the types and what each accepts. A survey that cannot be answered is refused',
+        'with every reason at once, each carrying the index of the question it belongs to.',
+        'A draft may have no questions yet; an active survey may not.',
         '',
         'Setting `trigger_event` wires the survey to an integration event, so a member is',
         'invited automatically the first time they do that thing.'
@@ -1400,6 +1406,8 @@ const paths = {
         title: str('Survey title'),
         description: str('Shown above the questions'),
         questions: arrayOf(ref('SurveyQuestion'), 'The questions, in order'),
+        theme: ref('SurveyTheme'),
+        status: str('Publish on creation, or keep it as a draft', { enum: ['draft', 'active'], default: 'draft' }),
         target_type: str('Who it is for', { enum: ['all', 'cohort', 'specific'], default: 'all' }),
         target_ids: arrayOf({ type: 'string' }, 'Cohort or member ids, depending on target_type'),
         engagement_mode: str('How the invitation reaches them', { enum: ['1-on-1', 'email', 'whatsapp', 'in_portal'], default: 'in_portal' }),
@@ -1412,10 +1420,17 @@ const paths = {
         title: 'Sandbox onboarding experience',
         description: 'Five minutes on how your first integration went.',
         questions: [
-          { type: 'rating', text: 'How clear is our API documentation?', required: true },
-          { type: 'long_text', text: 'What slowed you down most?', required: false },
-          { type: 'single_choice', text: 'Which product did you start with?', options: ['Lending', 'Payments', 'Collections'] }
+          { id: 'q1_8c3d21ff', type: 'nps', text: 'How likely are you to recommend our APIs to another developer?', required: true },
+          {
+            type: 'multi_choice', text: 'What slowed you down most?',
+            options: ['Documentation', 'Sandbox errors', 'Latency', 'Support response time'],
+            min_select: 1, max_select: 2, allow_other: true,
+            // Only asked of the developers who are not recommending us
+            visible_if: { match: 'all', rules: [{ question: 'q1_8c3d21ff', op: 'lte', value: 6 }] }
+          },
+          { type: 'text', text: 'Anything else we should know?', multiline: true, max_length: 500 }
         ],
+        theme: { accent: '#107EBC', progress: 'steps' },
         target_type: 'cohort',
         target_ids: ['c2'],
         engagement_mode: 'email',
@@ -1424,37 +1439,114 @@ const paths = {
         reminder_after_days: 3
       }),
       responses: {
-        201: json('Created as a draft.', object({ survey: ref('Survey') }), {
+        201: json('Created.', object({ survey: ref('Survey') }), {
           survey: {
             id: 's1', title: 'Sandbox onboarding experience', status: 'draft',
-            questions: [{ id: 'q1_8c3d21ff', type: 'rating', text: 'How clear is our API documentation?', required: true }],
+            questions: [{ id: 'q1_8c3d21ff', type: 'nps', text: 'How likely are you to recommend our APIs to another developer?', required: true, scale: 10 }],
             engagement_mode: 'email', time_estimate_min: 5
           }
         }),
-        400: json('Missing fields, or questions that are not an array.', ref('Error'), {
-          error: 'title and questions required'
+        400: json('Missing fields, or a survey that cannot be answered.', ref('Error'), {
+          error: 'Question 2: Needs at least two options to choose between',
+          issues: [{ index: 1, number: 2, field: 'options', message: 'Needs at least two options to choose between' }]
+        })
+      }
+    })
+  },
+
+  '/admin/surveys/schema': {
+    get: op({
+      tag: 'Admin · Surveys',
+      permission: 'surveys.read',
+      operationId: 'getSurveySchema',
+      summary: 'The question types a survey may contain',
+      description: [
+        'What a survey can be made of: the question types, the comparisons branching can',
+        'be written from, and the theme vocabulary. A builder draws itself from this',
+        'rather than carrying its own copy, so a type added here needs no second edit',
+        'anywhere else.'
+      ].join('\n'),
+      responses: {
+        200: json('The vocabulary.', object({
+          types: arrayOf(object({
+            type: str('Type name, as sent in a question'),
+            label: str('How it reads in an interface'),
+            hint: str('What it is for'),
+            answerable: bool('False for furniture like a section heading'),
+            verbatim: bool('Whether answers are filed as feedback in the member\'s own words')
+          }), 'Question types'),
+          operators: arrayOf(object({
+            op: str('Operator name'),
+            label: str('How it reads'),
+            needsValue: bool('Whether a value must be compared against')
+          }), 'Branching comparisons'),
+          operators_by_type: object({}, { description: 'Question type → the operators that make sense for it' }),
+          text_formats: arrayOf(object({ value: str('Format name'), label: str('How it reads') }), 'What a text answer can be held to'),
+          rating_styles: arrayOf({ type: 'string' }, 'How a rating can be drawn'),
+          theme: object({}, { description: 'Theme defaults, the choices for each setting, and this circle\'s own default' })
+        }), {
+          types: [
+            { type: 'rating', label: 'Rating', hint: 'A scale with labelled ends', answerable: true },
+            { type: 'section', label: 'Section', hint: 'A heading or note between questions — nothing to answer', answerable: false }
+          ],
+          operators: [{ op: 'lte', label: 'is at most', needsValue: true }],
+          rating_styles: ['numbers', 'stars', 'faces']
         })
       }
     })
   },
 
   '/admin/surveys/{id}': {
+    get: op({
+      tag: 'Admin · Surveys',
+      permission: 'surveys.read',
+      operationId: 'getSurvey',
+      summary: 'One survey, with whether its questions can still be changed',
+      description: [
+        'The survey as stored, the look it inherits from its circle, and whether anyone',
+        'has answered it yet. Questions are fixed the moment the first response lands,',
+        'so an editor needs to know that before it lets someone start rewriting.'
+      ].join('\n'),
+      parameters: [path('id', 'Survey id')],
+      responses: {
+        200: json('The survey.', object({
+          survey: ref('Survey'),
+          circle_theme: ref('SurveyTheme'),
+          completed_count: int('Members who have finished it'),
+          questions_locked: bool('True once anyone has responded')
+        }), {
+          survey: {
+            id: 's1', title: 'Sandbox onboarding experience', status: 'active',
+            questions: [{ id: 'q1_8c3d21ff', type: 'rating', text: 'How clear is our API documentation?', required: true, scale: 5 }],
+            theme: { accent: '#107EBC' }, engagement_mode: 'email', time_estimate_min: 5
+          },
+          circle_theme: { accent: '#107EBC' },
+          completed_count: 51,
+          questions_locked: true
+        }),
+        404: json('No such survey.', ref('Error'), { error: 'Survey not found' })
+      }
+    }),
     put: op({
       tag: 'Admin · Surveys',
       permission: 'surveys.write',
       operationId: 'updateSurvey',
       summary: 'Update a survey, or change its status',
       description: [
-        'This is how a draft becomes active: send `{ "status": "active" }`.',
+        'This is how a draft becomes active: send `{ "status": "active" }`. A survey with',
+        'no questions cannot be activated.',
         '',
         'Questions cannot be changed once anyone has responded — that would orphan the',
-        'answers already collected. Close the survey and create a new version instead.'
+        'answers already collected. Close the survey and create a new version instead.',
+        'The theme can be changed at any point, including while collecting: it changes',
+        'how the rest of the audience sees the survey, not what anyone was asked.'
       ].join('\n'),
       parameters: [path('id', 'Survey id')],
       requestBody: jsonBody(object({
         title: str('Survey title'),
         description: str('Shown above the questions'),
         questions: arrayOf(ref('SurveyQuestion'), 'Only while nobody has responded'),
+        theme: ref('SurveyTheme'),
         status: str('Lifecycle state', { enum: ['draft', 'active', 'closed'] }),
         target_type: str('Who it is for', { enum: ['all', 'cohort', 'specific'] }),
         target_ids: arrayOf({ type: 'string' }, 'Cohort or member ids'),
@@ -1468,7 +1560,9 @@ const paths = {
         200: json('The updated survey.', object({ survey: ref('Survey') }), {
           survey: { id: 's1', title: 'Sandbox onboarding experience', status: 'active' }
         }),
-        400: json('Nothing to update, or an invalid value.', ref('Error'), { error: 'Invalid status' }),
+        400: json('Nothing to update, an invalid value, or publishing a survey with no questions.', ref('Error'), {
+          error: 'Add at least one question before publishing'
+        }),
         404: json('No such survey.', ref('Error'), { error: 'Survey not found' }),
         409: json('Questions cannot change after responses exist.', ref('Error'), {
           error: 'Cannot change questions — 51 member(s) have already responded. Close this survey and create a new version.'

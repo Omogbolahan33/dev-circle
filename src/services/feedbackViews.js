@@ -9,9 +9,12 @@ const db = require('../db');
 // Every axis is declared once, here, so the screen, the counts and the export
 // cannot disagree about what a grouping means.
 
+// Left joined onto users, because an answer given over a survey's public link
+// has no member behind it. An inner join would drop every one of them from
+// each of these four views at once, without anything on screen saying so.
 const FROM = `
   FROM feedback f
-  JOIN users u ON u.id = f.user_id
+  LEFT JOIN users u ON u.id = f.user_id
   LEFT JOIN surveys s ON s.id = f.survey_id
   LEFT JOIN questions q ON q.id = f.canonical_question_id
 `;
@@ -175,7 +178,7 @@ function group(axis, query = {}) {
     return db.prepare(`
       SELECT m.${g.column} as key, n.name as label, NULL as context,
              COUNT(f.id) as answer_count,
-             COUNT(DISTINCT f.user_id) as developer_count,
+             COUNT(DISTINCT COALESCE(f.user_id, 'anon:' || COALESCE(f.response_id, f.id))) as developer_count,
              MAX(f.created_at) as last_at
       ${FROM}
       JOIN ${g.table} m ON m.user_id = f.user_id
@@ -192,7 +195,7 @@ function group(axis, query = {}) {
   return db.prepare(`
     SELECT ${g.key} as key, ${g.name} as label, ${g.context || 'NULL'} as context,
            COUNT(f.id) as answer_count,
-           COUNT(DISTINCT f.user_id) as developer_count,
+           COUNT(DISTINCT COALESCE(f.user_id, 'anon:' || COALESCE(f.response_id, f.id))) as developer_count,
            MAX(f.created_at) as last_at
     ${FROM}
     WHERE ${where} ${g.having ? `AND ${g.having}` : ''} AND ${g.key} IS NOT NULL
@@ -223,7 +226,7 @@ function summarise(query = {}) {
   const { where, params } = conditions(query);
   return db.prepare(`
     SELECT COUNT(f.id) as answers,
-           COUNT(DISTINCT f.user_id) as developers,
+           COUNT(DISTINCT COALESCE(f.user_id, 'anon:' || COALESCE(f.response_id, f.id))) as developers,
            COUNT(DISTINCT f.canonical_question_id) as questions
     ${FROM} WHERE ${where}
   `).get(...params);

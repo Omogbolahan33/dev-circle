@@ -330,7 +330,7 @@
         <div class="next-action">
           <div class="eyebrow">${waiting.length} survey${waiting.length === 1 ? '' : 's'} waiting</div>
           <div class="headline">${escapeHtml(s.title)}</div>
-          <p class="detail">${escapeHtml(s.description || 'Your answers shape what gets built next.')} About ${s.time_estimate_min} minutes, ${s.questions.length} question${s.questions.length === 1 ? '' : 's'}.</p>
+          <p class="detail">${escapeHtml(s.description || 'Your answers shape what gets built next.')} About ${s.time_estimate_min} minutes, ${s.question_count} question${s.question_count === 1 ? '' : 's'}.</p>
           <a class="btn btn-primary" href="/member/survey.html?id=${s.id}">Start survey</a>
         </div>`;
       return;
@@ -361,7 +361,7 @@
         ${s.description ? `<p class="invite-desc">${escapeHtml(s.description)}</p>` : ''}
         <div class="invite-foot">
           <span class="btn btn-sm btn-primary">Start</span>
-          <span class="invite-cost">~${s.time_estimate_min} min · ${s.questions.length} question${s.questions.length === 1 ? '' : 's'}</span>
+          <span class="invite-cost">~${s.time_estimate_min} min · ${s.question_count} question${s.question_count === 1 ? '' : 's'}</span>
         </div>
       </a>`).join('');
   }

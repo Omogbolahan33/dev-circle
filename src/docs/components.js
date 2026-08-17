@@ -241,17 +241,86 @@ const schemas = {
   // ── Surveys ──
   SurveyQuestion: object({
     id: str('Stable question id. Generated if you omit it — answers are keyed by this', { example: 'q1_8c3d21ff' }),
-    type: str('How the question is answered', { enum: ['text', 'long_text', 'single_choice', 'multi_choice', 'rating', 'nps'], example: 'rating' }),
+    type: str('How the question is answered', {
+      enum: [
+        'text', 'choice', 'multi_choice', 'dropdown', 'rating', 'nps',
+        'matrix', 'ranking', 'number', 'date', 'boolean', 'section'
+      ],
+      example: 'rating'
+    }),
     text: str('The question as the member reads it', { example: 'How clear is our API documentation?' }),
-    options: arrayOf({ type: 'string' }, 'Choices, for the choice types'),
-    required: bool('Whether an answer must be given')
+    description: str('A note under the question'),
+    required: bool('Whether an answer must be given. Only enforced if the member is shown the question'),
+    visible_if: ref('SurveyLogic'),
+
+    options: arrayOf({ type: 'string' }, 'Choices — choice, multi_choice, dropdown and ranking'),
+    allow_other: bool('Offer a free-text "something else" alongside the options'),
+    randomize: bool('Shuffle the options, to take the edge off order effects'),
+    min_select: int('Fewest choices accepted — multi_choice'),
+    max_select: int('Most choices accepted — multi_choice'),
+    exclusive_options: arrayOf({ type: 'string' }, 'Options that cannot be held with any other, e.g. "None of these"'),
+
+    scale: int('Highest point on the scale, 2–10 — rating. Always 10 for nps', { example: 5 }),
+    style: str('How a rating is drawn', { enum: ['numbers', 'stars', 'faces'] }),
+    labels: arrayOf({ type: 'string' }, 'What the points mean, ends first — rating'),
+    label_low: str('What the bottom of the scale means'),
+    label_high: str('What the top of the scale means'),
+
+    rows: arrayOf({ type: 'string' }, 'Things being rated — matrix'),
+    columns: arrayOf({ type: 'string' }, 'The shared scale — matrix'),
+    multi: bool('Allow more than one column per row — matrix'),
+
+    format: str('What a text answer must look like', { enum: ['none', 'email', 'url', 'phone'] }),
+    multiline: bool('Draw a paragraph box rather than a single line — text'),
+    min_length: int('Shortest answer accepted — text'),
+    max_length: int('Longest answer accepted — text', { example: 2000 }),
+
+    min: str('Smallest number, or earliest date (YYYY-MM-DD)'),
+    max: str('Largest number, or latest date (YYYY-MM-DD)'),
+    integer: bool('Whole numbers only — number'),
+    unit: str('Unit shown beside the box — number', { example: 'calls/day' }),
+    true_label: str('What "yes" reads as — boolean'),
+    false_label: str('What "no" reads as — boolean')
   }, { required: ['type', 'text'] }),
+
+  SurveyLogic: object({
+    match: str('Whether every rule must hold or any one of them', { enum: ['all', 'any'], example: 'all' }),
+    rules: arrayOf(object({
+      question: str('Id of an earlier question. A rule may only look backwards', { example: 'q1_8c3d21ff' }),
+      op: str('The comparison', {
+        enum: ['is', 'is_not', 'includes', 'not_includes', 'gt', 'gte', 'lt', 'lte', 'answered', 'not_answered'],
+        example: 'lte'
+      }),
+      value: { description: 'What to compare against. Omitted for answered / not_answered', example: 6 }
+    }), 'Conditions on answers already given')
+  }, { description: 'Shows a question only when earlier answers say it is worth asking' }),
+
+  SurveyTheme: object({
+    accent: str('Brand colour, as hex. Text drawn on it is worked out from its luminance', { example: '#107EBC' }),
+    background: str('Canvas treatment', { enum: ['plain', 'tinted', 'gradient'] }),
+    font: str('Type pairing', { enum: ['default', 'system', 'serif', 'mono'] }),
+    corner: str('Corner radius', { enum: ['sharp', 'soft', 'round'] }),
+    layout: str('One question per screen, or the whole survey on one page', { enum: ['one_per_page', 'all_at_once'] }),
+    progress: str('How progress is shown', { enum: ['bar', 'steps', 'count', 'none'] }),
+    mode: str('Force a light or dark look, or follow the member\'s own setting', { enum: ['auto', 'light', 'dark'] }),
+    logo_url: str('Wordmark shown to the member. https:// or a path on this origin', { nullable: true }),
+    intro: object({
+      headline: str('Opening screen headline — omit to open on the first question'),
+      body: str('Why you are asking'),
+      button: str('Label on the start button')
+    }, { description: 'An opening screen, shown before the first question' }),
+    thank_you: object({
+      headline: str('Closing headline'),
+      body: str('What happens to their answers')
+    }, { description: 'The closing screen' })
+  }, { description: 'How a survey looks. A survey without one follows its circle; a circle without one follows the product.' }),
 
   Survey: object({
     id: id('Survey id'),
     title: str('Survey title', { example: 'Sandbox onboarding experience' }),
     description: str('Shown above the questions', { nullable: true }),
     questions: arrayOf(ref('SurveyQuestion'), 'The questions, in order'),
+    theme: ref('SurveyTheme'),
     status: str('Only an active survey is visible to members', { enum: ['draft', 'active', 'closed'], example: 'active' }),
     target_type: str('Who the survey is for', { enum: ['all', 'cohort', 'specific'], example: 'cohort' }),
     target_ids: arrayOf({ type: 'string' }, 'Cohort ids or member ids, depending on target_type'),

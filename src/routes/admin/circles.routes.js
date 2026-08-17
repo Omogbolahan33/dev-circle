@@ -5,6 +5,7 @@ const { requirePermission } = require('../../middleware/auth');
 const { requireGlobalAdmin } = require('../../middleware/circleContext');
 const circles = require('../../services/circles');
 const cohortRules = require('../../services/cohortRules');
+const surveyForm = require('../../services/surveyForm');
 
 const router = express.Router();
 
@@ -106,20 +107,39 @@ router.put('/:id', requirePermission('circles.write'), (req, res) => {
     return res.status(403).json({ error: 'You do not have access to that circle.' });
   }
 
-  const { name, description, color } = req.body;
+  const { name, description, color, survey_theme } = req.body;
   const updates = [];
   const params = [];
+  const themeWarnings = [];
 
   if (name) { updates.push('name = ?'); params.push(name); }
   if (description !== undefined) { updates.push('description = ?'); params.push(description); }
   if (color) { updates.push('color = ?'); params.push(color); }
+
+  // The look every survey in this workspace starts from, so a circle running
+  // its own programme is not re-themed one survey at a time. Null clears it.
+  if (survey_theme !== undefined) {
+    if (survey_theme === null) {
+      updates.push('survey_theme = ?'); params.push(null);
+    } else {
+      const { theme, issues, warnings } = surveyForm.themes.normalize(survey_theme);
+      if (issues.length) {
+        return res.status(400).json({ error: issues[0].message, issues });
+      }
+      themeWarnings.push(...warnings);
+      updates.push('survey_theme = ?'); params.push(theme ? JSON.stringify(theme) : null);
+    }
+  }
 
   if (!updates.length) return res.status(400).json({ error: 'No fields to update' });
 
   params.push(circle.id);
   db.prepare(`UPDATE circles SET ${updates.join(', ')} WHERE id = ?`).run(...params);
 
-  res.json({ circle: circles.byId(circle.id) });
+  res.json({
+    circle: circles.byId(circle.id),
+    ...(themeWarnings.length ? { warnings: themeWarnings } : {})
+  });
 });
 
 // DELETE /api/admin/circles/:id — archive, keeping the history attached to it

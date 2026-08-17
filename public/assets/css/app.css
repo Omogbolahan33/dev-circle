@@ -1805,3 +1805,221 @@ textarea.input { min-height: 90px; line-height: var(--lh-normal); }
   border-radius: var(--r-sm);
 }
 .circle-manage:hover { background: var(--cd-blue-dim); color: var(--white); }
+
+/* ─── Survey controls ────────────────────────────────────────
+   The controls a member answers with, and the same ones the builder previews
+   with. They live here rather than in either page because a preview that is
+   styled separately from the real thing is a preview of something else.
+
+   Sizing is set by the smallest screen a developer will answer on: hit targets
+   stay above 44px, and nothing depends on hover to be discoverable. Everything
+   colours from --cd-blue, which a themed survey overrides per page, so a
+   circle's accent reaches every control without a second set of rules.
+   ─────────────────────────────────────────────────────────── */
+
+.sv-ask {
+  font-family: var(--font-display);
+  font-weight: var(--fw-bold);
+  font-size: var(--fs-xl);
+  letter-spacing: -0.02em;
+  line-height: var(--lh-tight);
+  margin-bottom: var(--sp-3);
+}
+.sv-note { color: var(--ash); font-size: var(--fs-sm); line-height: var(--lh-loose); margin-bottom: var(--sp-5); }
+.sv-ask + .sv-control, .sv-note + .sv-control { margin-top: var(--sp-6); }
+.sv-number-kicker { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--cd-blue); margin-bottom: var(--sp-3); }
+
+/* An asterisk alone has never told anyone anything, so it is always paired
+   with a legend where the questions start. */
+.sv-required { color: var(--rose-ink); margin-left: 4px; font-weight: var(--fw-regular); }
+
+.sv-options { display: flex; flex-direction: column; gap: var(--sp-2); }
+
+.sv-option {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  width: 100%;
+  min-height: 48px;
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: transparent;
+  color: inherit;
+  font-size: var(--fs-base);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-out),
+              background var(--duration-fast) var(--ease-out);
+}
+.sv-option:hover { border-color: var(--line-strong); }
+.sv-option.picked { border-color: var(--cd-blue); background: var(--cd-blue-dim); }
+.sv-option:focus-visible { outline: 2px solid var(--cd-blue); outline-offset: 2px; }
+
+.sv-mark {
+  width: 18px; height: 18px;
+  border: 1px solid var(--line-strong);
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--duration-fast) var(--ease-out);
+}
+.sv-mark.box { border-radius: var(--r-sm); }
+.sv-option.picked .sv-mark { border: 5px solid var(--cd-blue); }
+.sv-option.picked .sv-mark.box { border: 1px solid var(--cd-blue); background: var(--cd-blue); }
+.sv-option.picked .sv-mark.box::after { content: '✓'; color: var(--on-accent); font-size: 11px; }
+
+.sv-other { padding-right: var(--sp-3); }
+.sv-other-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--white);
+  font-size: var(--fs-base);
+  min-width: 0;
+}
+.sv-other-input::placeholder { color: var(--ash-dim); }
+.sv-other-input:focus { outline: none; }
+
+.sv-count { text-align: right; font-size: var(--fs-xs); color: var(--ash-dim); margin-top: var(--sp-2); }
+
+/* Rating and NPS: the numbers are the control. NPS is eleven wide, so it
+   wraps rather than shrinking below a thumb. */
+.sv-rating { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
+.sv-rate {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-2);
+  background: transparent;
+  cursor: pointer;
+}
+.sv-rate-mark {
+  width: 52px; height: 52px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-display);
+  font-weight: var(--fw-semibold);
+  font-size: var(--fs-md);
+  color: var(--ash);
+  transition: all var(--duration-fast) var(--ease-out);
+}
+.sv-rate:hover .sv-rate-mark { border-color: var(--cd-blue-40); color: var(--white); }
+.sv-rate.picked .sv-rate-mark,
+.sv-rate.lit .sv-rate-mark { background: var(--cd-blue); border-color: var(--cd-blue); color: var(--on-accent); }
+.sv-rate.star .sv-rate-mark { border: none; background: transparent; font-size: var(--fs-2xl); color: var(--line-strong); }
+.sv-rate.star.lit .sv-rate-mark,
+.sv-rate.star.picked .sv-rate-mark { background: transparent; color: var(--cd-gold); }
+.sv-rate-label { font-size: 10px; color: var(--ash-dim); max-width: 64px; text-align: center; }
+
+.sv-nps-row { display: flex; gap: var(--sp-1); flex-wrap: wrap; }
+.sv-nps {
+  flex: 1 1 52px;
+  min-width: 44px;
+  height: 48px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--ash);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out);
+}
+.sv-nps:hover { border-color: var(--cd-blue-40); color: var(--white); }
+.sv-nps.picked { background: var(--cd-blue); border-color: var(--cd-blue); color: var(--on-accent); }
+
+.sv-ends {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  font-size: var(--fs-xs);
+  color: var(--ash-dim);
+  margin-top: var(--sp-3);
+}
+
+/* A grid is the one control that cannot be made to fit a phone, so it scrolls
+   sideways with the row labels holding their place. */
+.sv-matrix-scroll { overflow-x: auto; margin: 0 calc(-1 * var(--sp-2)); padding: 0 var(--sp-2); }
+.sv-matrix { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
+.sv-matrix th {
+  font-weight: var(--fw-medium);
+  color: var(--ash);
+  padding: var(--sp-2) var(--sp-3);
+  text-align: center;
+  font-size: var(--fs-xs);
+}
+.sv-matrix th[scope="row"] {
+  text-align: left;
+  color: var(--white);
+  font-size: var(--fs-sm);
+  position: sticky;
+  left: 0;
+  background: var(--surface-0);
+  min-width: 130px;
+}
+.sv-matrix td { text-align: center; padding: var(--sp-2); border-top: 1px solid var(--line-faint); }
+.sv-matrix tbody tr:hover { background: var(--tint-1); }
+.sv-matrix .sv-mark { cursor: pointer; margin: 0 auto; }
+.sv-matrix .sv-mark.on { border: 5px solid var(--cd-blue); }
+.sv-matrix .sv-mark.box.on { border: 1px solid var(--cd-blue); background: var(--cd-blue); }
+.sv-matrix .sv-mark.box.on::after { content: '✓'; color: var(--on-accent); font-size: 11px; }
+
+/* Ranking moves by button rather than by drag: a drag that has to work on a
+   phone, with a keyboard and with a screen reader is three implementations,
+   and this one is all three. */
+.sv-rank { list-style: none; display: flex; flex-direction: column; gap: var(--sp-2); }
+.sv-rank-item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+}
+.sv-rank-n {
+  width: 24px; height: 24px;
+  border-radius: 50%;
+  background: var(--cd-blue-dim);
+  color: var(--blue-ink);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.sv-rank-text { flex: 1; min-width: 0; font-size: var(--fs-base); }
+.sv-rank-moves { display: flex; gap: var(--sp-1); flex-shrink: 0; }
+/* These are the only way to answer a ranking, so they are sized as a control
+   rather than as an icon — a 28px target is a miss on a phone. */
+.sv-rank-moves .icon-btn { width: 40px; height: 40px; }
+@media (pointer: coarse) { .sv-rank-moves .icon-btn { width: 44px; height: 44px; } }
+
+.sv-number { display: flex; align-items: center; gap: var(--sp-3); }
+.sv-number .input { max-width: 200px; }
+.sv-unit { color: var(--ash); font-size: var(--fs-sm); }
+
+.sv-boolean { flex-direction: row; }
+.sv-boolean .sv-option { flex: 1; justify-content: center; }
+
+/* A section is a rest, not a question: it says where you are and how much is
+   left, which is the only thing a long survey can offer in exchange. */
+.sv-section-mark {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--cd-blue);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-bottom: var(--sp-3);
+}
+
+.sv-error {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  font-size: var(--fs-sm);
+  color: var(--rose-ink);
+  margin-top: var(--sp-4);
+}

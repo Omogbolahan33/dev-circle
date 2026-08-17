@@ -103,10 +103,14 @@ const Auth = {
   },
 
   headers() {
-    const headers = {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer ' + this.getToken()
-    };
+    const headers = { 'Content-Type': 'application/json' };
+
+    // Omitted when there is no session rather than sent as "Bearer null".
+    // The public survey link is answered with no account at all, and a
+    // credential-shaped header carrying nothing is worse than none: it reads
+    // as a failed sign-in everywhere it is logged.
+    const token = this.getToken();
+    if (token) headers.Authorization = 'Bearer ' + token;
 
     // Omitted when unset, so the server falls back to the first circle this
     // account can reach — a single-workspace install needs no ceremony.
@@ -136,7 +140,13 @@ async function api(path, options = {}) {
   const data = await res.json();
 
   if (!res.ok) {
-    throw new Error(data.error || `API error ${res.status}`);
+    // The message is what gets shown; the body is what a caller needs when a
+    // refusal is itemised — a survey that names which questions were rejected
+    // can put each one where it belongs instead of printing one sentence.
+    const error = new Error(data.error || `API error ${res.status}`);
+    error.status = res.status;
+    error.body = data;
+    throw error;
   }
 
   return data;
@@ -146,6 +156,8 @@ async function api(path, options = {}) {
 api.get = (path) => api(path);
 api.post = (path, body) => api(path, { method: 'POST', body: JSON.stringify(body) });
 api.put = (path, body) => api(path, { method: 'PUT', body: JSON.stringify(body) });
+api.patch = (path, body, options = {}) =>
+  api(path, { method: 'PATCH', body: JSON.stringify(body), ...options });
 api.del = (path) => api(path, { method: 'DELETE' });
 
 // Downloads need the auth header, so they cannot be a plain link. The server

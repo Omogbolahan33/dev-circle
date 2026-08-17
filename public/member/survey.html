@@ -12,8 +12,29 @@
   <script src="/assets/js/theme.js"></script>
   <style>
     /* Answering a survey is a focused mode: no nav, no sidebar, one question
-       at a time. The only things on screen are the question and the way out. */
-    body { display: flex; flex-direction: column; min-height: 100vh; }
+       at a time unless the survey says otherwise. The only things on screen
+       are the question and the way out.
+
+       Everything colourable reads from the custom properties the survey's
+       theme writes onto <html>, so a themed survey needs no rules of its own. */
+    body {
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+      background: var(--surface-0);
+    }
+    /* The brand's canvas: a wash, a photograph, or both. Fixed behind
+       everything and inert, so a background image never intercepts a tap
+       meant for an answer. */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background: var(--survey-canvas, transparent);
+      pointer-events: none;
+      z-index: 0;
+    }
+    .survey-bar, .progress-strip, main, .survey-foot { position: relative; z-index: 1; }
 
     .survey-bar {
       display: flex;
@@ -24,10 +45,31 @@
       border-bottom: 1px solid var(--line-faint);
       flex-shrink: 0;
     }
-    .survey-name { font-size: var(--fs-sm); color: var(--ash); }
+    /* The title is context, not content — on a phone it gives way to the
+       question rather than taking three lines of the screen before it. */
+    .survey-name {
+      font-size: var(--fs-sm);
+      color: var(--ash);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      min-width: 0;
+    }
+    .survey-logo { max-height: 28px; max-width: 160px; object-fit: contain; }
+    @media (max-width: 560px) {
+      .survey-bar { gap: var(--sp-3); padding: 0 var(--sp-4); }
+      .survey-name { max-width: 40vw; }
+    }
 
     .progress-strip { padding: var(--sp-4) var(--sp-6) 0; max-width: 640px; margin: 0 auto; width: 100%; }
     .progress-meta { display: flex; justify-content: space-between; font-size: var(--fs-xs); color: var(--ash-dim); margin-top: var(--sp-2); }
+
+    /* Steps: one tick per question asked so far, filling as they are answered.
+       Only drawn when the survey is short enough for a tick to be visible. */
+    .steps { display: flex; gap: 4px; }
+    .step { flex: 1; height: 3px; border-radius: 2px; background: var(--line); transition: background var(--duration-fast) var(--ease-out); }
+    .step.done { background: var(--cd-blue); }
+    .step.here { background: var(--cd-blue-40); }
 
     main {
       flex: 1;
@@ -36,52 +78,15 @@
       justify-content: center;
       padding: var(--sp-8) var(--sp-6);
     }
+    main.scrolling { align-items: flex-start; }
 
     .question-wrap { max-width: 640px; width: 100%; }
-    .question-number { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--cd-blue); margin-bottom: var(--sp-3); }
-    .question-text {
-      font-family: var(--font-display);
-      font-weight: var(--fw-bold);
-      font-size: var(--fs-xl);
-      letter-spacing: -0.02em;
-      line-height: var(--lh-tight);
-      margin-bottom: var(--sp-8);
-    }
+    .legend { font-size: var(--fs-xs); color: var(--ash-dim); margin-bottom: var(--sp-6); }
 
-    /* Rating: the numbers are the control, big enough to hit on a phone. */
-    .rating { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
-    .rating-option { display: flex; flex-direction: column; align-items: center; gap: var(--sp-2); cursor: pointer; }
-    .rating-circle {
-      width: 52px; height: 52px;
-      border: 1px solid var(--line);
-      border-radius: 50%;
-      display: flex; align-items: center; justify-content: center;
-      font-family: var(--font-display);
-      font-weight: var(--fw-semibold);
-      font-size: var(--fs-md);
-      color: var(--ash);
-      transition: all var(--duration-fast) var(--ease-out);
-    }
-    .rating-option:hover .rating-circle { border-color: var(--cd-blue-40); color: var(--white); }
-    .rating-option.selected .rating-circle { background: var(--cd-blue); border-color: var(--cd-blue); color: var(--white); }
-    .rating-label { font-size: 10px; color: var(--ash-dim); max-width: 60px; text-align: center; }
-
-    .choice-list { display: flex; flex-direction: column; gap: var(--sp-2); }
-    .choice-item {
-      display: flex; align-items: center; gap: var(--sp-3);
-      padding: var(--sp-4);
-      border: 1px solid var(--line);
-      border-radius: var(--r-md);
-      cursor: pointer;
-      font-size: var(--fs-base);
-      transition: all var(--duration-fast) var(--ease-out);
-    }
-    .choice-item:hover { border-color: var(--line-strong); }
-    .choice-item.selected { border-color: var(--cd-blue); background: var(--cd-blue-dim); }
-    .choice-radio { width: 16px; height: 16px; border: 1px solid var(--line-strong); border-radius: 50%; flex-shrink: 0; }
-    .choice-item.selected .choice-radio { border: 5px solid var(--cd-blue); }
-
-    .char-count { text-align: right; font-size: var(--fs-xs); color: var(--ash-dim); margin-top: var(--sp-2); }
+    /* All-at-once: every question on one page, separated enough to be read
+       one at a time anyway. */
+    .stack-q { padding-bottom: var(--sp-10); border-bottom: 1px solid var(--line-faint); margin-bottom: var(--sp-10); }
+    .stack-q:last-of-type { border-bottom: none; }
 
     .survey-foot {
       display: flex;
@@ -109,6 +114,22 @@
     .done-text { color: var(--ash); font-size: var(--fs-sm); line-height: var(--lh-loose); margin-bottom: var(--sp-2); }
     .done-meta { font-size: var(--fs-xs); color: var(--ash-dim); margin-bottom: var(--sp-6); }
 
+    .intro { max-width: 520px; }
+    .intro-logo { max-height: 44px; margin-bottom: var(--sp-6); }
+    /* A brand's own image at the top of the opening screen. Bounded rather
+       than full-bleed: it introduces the survey, it is not the survey. */
+    .intro-header {
+      width: 100%;
+      max-height: 200px;
+      object-fit: cover;
+      border-radius: var(--r-lg);
+      margin-bottom: var(--sp-6);
+      display: block;
+    }
+    .intro-title { font-family: var(--font-display); font-weight: var(--fw-bold); font-size: var(--fs-2xl); letter-spacing: -0.02em; margin-bottom: var(--sp-4); }
+    .intro-body { color: var(--ash); font-size: var(--fs-base); line-height: var(--lh-loose); margin-bottom: var(--sp-6); }
+    .intro-facts { display: flex; gap: var(--sp-5); font-size: var(--fs-xs); color: var(--ash-dim); margin-bottom: var(--sp-8); }
+
     .picker-item {
       display: block;
       padding: var(--sp-4);
@@ -123,15 +144,16 @@
 <body>
 
   <div class="survey-bar">
-    <span class="brand-mark">dev<span>.</span>circle</span>
+    <span class="brand-mark" id="brand">dev<span>.</span>circle</span>
     <span class="survey-name" id="surveyName"></span>
     <span class="spacer"></span>
+    <span class="text-xs dim hide" id="saveState"></span>
     <button class="icon-btn" data-theme-toggle onclick="Theme.toggle()"><span data-theme-icon></span></button>
     <button class="btn btn-sm btn-ghost" onclick="exitSurvey()">Save &amp; exit</button>
   </div>
 
   <div class="progress-strip hide" id="progressStrip">
-    <div class="progress"><div class="fill" id="progressFill" style="width:0"></div></div>
+    <div id="progressTrack"></div>
     <div class="progress-meta">
       <span id="progressText"></span>
       <span id="progressTime"></span>
@@ -143,42 +165,170 @@
   </main>
 
   <div class="survey-foot hide" id="foot">
-    <button class="btn btn-secondary" id="prevBtn" onclick="prevQuestion()">← Back</button>
-    <button class="btn btn-primary" id="nextBtn" onclick="nextQuestion()">Next →</button>
+    <button class="btn btn-secondary" id="prevBtn" onclick="goBack()">← Back</button>
+    <button class="btn btn-primary" id="nextBtn" onclick="goNext()">Next →</button>
   </div>
 
 <script src="/assets/js/api.js"></script>
 <script src="/assets/js/shell.js"></script>
+<script src="/assets/js/survey-schema.js"></script>
+<script src="/assets/js/survey-theme.js"></script>
+<script src="/assets/js/survey-render.js"></script>
 <script>
-  if (!Auth.requireAuth(false)) throw new Error('Redirecting');
+  // ─── Who is answering ─────────────────────────────────────
+  // The same runner serves two people: a signed-in member, and whoever opened
+  // a link at /s/<token> with no account at all. One page rather than two,
+  // because the second copy is where branching, required answers and theming
+  // would quietly stop matching.
+  //
+  // Everything that differs between them is gathered here — where the survey
+  // comes from, what identifies this submission, and what can be said at the
+  // end — so the rest of the page never asks which kind of respondent it has.
+
+  const linkToken = (location.pathname.match(/^\/s\/([A-Za-z0-9_-]+)$/) || [])[1] || null;
+  const overLink = !!linkToken;
+
+  // A member's session is their identity. Over a link there is no identity —
+  // only a key held in this browser that owns one half-finished submission.
+  const KEY_STORE = `devcircle_survey_key_${linkToken}`;
+  let responseKey = overLink ? sessionStorage.getItem(KEY_STORE) : null;
+
+  if (!overLink && !Auth.requireAuth(false)) throw new Error('Redirecting');
+
+  const api2 = {
+    start: () => overLink
+      ? api.post(`/public/surveys/${linkToken}/start`, { response_key: responseKey })
+      : api.post(`/users/surveys/${param('id')}/start`),
+    progress: body => overLink
+      ? api.patch(`/public/surveys/${linkToken}/progress`, { ...body, response_key: responseKey })
+      : api.patch(`/users/surveys/${survey.id}/progress`, body),
+    respond: body => overLink
+      ? api.post(`/public/surveys/${linkToken}/respond`, { ...body, response_key: responseKey })
+      : api.post(`/users/surveys/${survey.id}/respond`, body),
+    progressUrl: () => overLink
+      ? `${API_BASE}/public/surveys/${linkToken}/progress`
+      : `${API_BASE}/users/surveys/${survey.id}/progress`
+  };
 
   let survey = null;
   let questions = [];
   let answers = {};
-  let currentIndex = 0;
+  let theme = SurveyTheme.DEFAULTS;
+  let cursor = 0;              // index into the questions actually being asked
+  let errors = {};             // question id → what is wrong with its answer
+  let saveTimer = null;
+  let dirty = false;
+
+  // ─── What is being asked ──────────────────────────────────
+  // Never the raw list: a question whose condition does not hold is not part
+  // of this member's survey at all, so it is not counted, not numbered, and
+  // not navigated through.
+  const asked = () => SurveySchema.visible(questions, answers);
+  const answerable = () => asked().filter(SurveySchema.isAnswerable);
 
   async function init() {
-    const surveyId = param('id');
-    if (!surveyId) { showPicker(); return; }
+    if (!overLink && !param('id')) { showPicker(); return; }
 
     try {
-      const data = await api.post(`/users/surveys/${surveyId}/start`);
+      const data = await api2.start();
       survey = data.survey;
-      questions = survey.questions;
+      questions = survey.questions || [];
+      answers = data.answers || {};
+      theme = SurveyTheme.resolve(survey.theme);
+
+      // The key is kept for this tab only. It is the sole way back to this
+      // submission, and it is not written to localStorage on purpose: a shared
+      // or public machine should not leave the previous person's answers
+      // reachable by whoever opens the link next.
+      if (overLink && data.response_key) {
+        responseKey = data.response_key;
+        sessionStorage.setItem(KEY_STORE, responseKey);
+      }
+
+      applyTheme();
 
       document.getElementById('surveyName').textContent = survey.title;
       document.title = `Dev Circle — ${survey.title}`;
-      document.getElementById('progressStrip').classList.remove('hide');
-      document.getElementById('foot').classList.remove('hide');
 
-      renderQuestion();
+      if (theme.logo_url) {
+        const brand = document.getElementById('brand');
+        brand.outerHTML = `<img src="${escapeHtml(theme.logo_url)}" alt="" class="survey-logo">`;
+      }
+
+      // An intro is worth a screen only when there is something to say on it.
+      // Otherwise the first question is the opening, which is one tap less.
+      if (theme.intro && (theme.intro.headline || theme.intro.body)) showIntro();
+      else begin();
     } catch (err) {
+      // Someone who followed a link has no home here to be sent back to, so
+      // they get the reason and nothing that implies an account they do not have
       document.getElementById('stage').innerHTML = `
         <div class="done">
-          <p class="done-text" style="color:var(--rose)">${escapeHtml(err.message)}</p>
-          <a class="btn btn-primary" href="/member/dashboard.html">Back to home</a>
+          <p class="done-text" style="color:var(--rose-ink)">${escapeHtml(err.message)}</p>
+          ${overLink ? '' : '<a class="btn btn-primary" href="/member/dashboard.html">Back to home</a>'}
         </div>`;
     }
+  }
+
+  // The survey's colours, type and shape, written as custom properties on the
+  // document. Everything else in the page already reads from these, so this
+  // is the whole of theming at run time.
+  function applyTheme() {
+    const vars = SurveyTheme.toCSS(theme);
+    for (const [name, value] of Object.entries(vars)) {
+      document.documentElement.style.setProperty(name, value);
+    }
+    // A survey that names a light or dark look — or names its own canvas —
+    // overrides the member's setting for the duration, and the toggle steps
+    // out of the way rather than pretending to work. A brand's background does
+    // not have a light and a dark version to flip between.
+    const branded = !!theme.background_color;
+    if (theme.mode !== 'auto' || branded) {
+      const mode = branded
+        ? (SurveyTheme.luminance(SurveyTheme.normalizeHex(theme.background_color)) < 0.2 ? 'dark' : 'light')
+        : theme.mode;
+      document.documentElement.setAttribute('data-theme', mode);
+      document.querySelector('[data-theme-toggle]')?.classList.add('hide');
+    }
+  }
+
+  function showIntro() {
+    // What they will be asked if they answer nothing that opens a branch —
+    // so the count is prefixed rather than stated, the same way the progress
+    // strip does it. Promising four and asking six is how a survey loses
+    // people at question five.
+    const count = answerable().length;
+    const about = questions.some(q => q.visible_if) ? 'About ' : '';
+    document.getElementById('stage').innerHTML = `
+      <div class="intro">
+        ${theme.header_image ? `<img src="${escapeHtml(theme.header_image)}" alt="" class="intro-header">` : ''}
+        ${theme.logo_url ? `<img src="${escapeHtml(theme.logo_url)}" alt="" class="intro-logo">` : ''}
+        <h1 class="intro-title">${escapeHtml(theme.intro.headline || survey.title)}</h1>
+        ${theme.intro.body ? `<p class="intro-body">${escapeHtml(theme.intro.body)}</p>`
+          : survey.description ? `<p class="intro-body">${escapeHtml(survey.description)}</p>` : ''}
+        <div class="intro-facts">
+          <span>${about}${count} question${count === 1 && !about ? '' : 's'}</span>
+          <span>About ${survey.time_estimate_min} minute${survey.time_estimate_min === 1 ? '' : 's'}</span>
+          ${Object.keys(answers).length ? '<span>Your earlier answers are saved</span>' : ''}
+        </div>
+        <button class="btn btn-primary btn-lg" onclick="begin()">
+          ${escapeHtml(theme.intro.button || (Object.keys(answers).length ? 'Pick up where you left off' : 'Start'))}
+        </button>
+      </div>`;
+  }
+
+  function begin() {
+    document.getElementById('foot').classList.remove('hide');
+    if (theme.progress !== 'none') document.getElementById('progressStrip').classList.remove('hide');
+
+    // Coming back to a half-finished survey opens on the first thing not yet
+    // answered rather than making them walk through what they have done.
+    const list = asked();
+    const firstUnanswered = list.findIndex(q =>
+      SurveySchema.isAnswerable(q) && !SurveySchema.isAnswered(q, answers[q.id]));
+    cursor = firstUnanswered === -1 ? 0 : firstUnanswered;
+
+    render();
   }
 
   // Arriving without an id means "I want to answer something" — so offer
@@ -194,7 +344,10 @@
              ${available.map(s => `
                <a class="picker-item" href="/member/survey.html?id=${s.id}">
                  <div style="font-weight:var(--fw-medium);margin-bottom:2px">${escapeHtml(s.title)}</div>
-                 <div class="text-xs dim">~${s.time_estimate_min} min · ${s.questions.length} question${s.questions.length === 1 ? '' : 's'}</div>
+                 <div class="text-xs dim">
+                   ~${s.time_estimate_min} min · ${s.question_count} question${s.question_count === 1 ? '' : 's'}
+                   ${s.answered_so_far ? ` · ${s.answered_so_far} answered already` : ''}
+                 </div>
                </a>`).join('')}
            </div>`
         : `<div class="done">
@@ -204,149 +357,348 @@
            </div>`;
     } catch (err) {
       document.getElementById('stage').innerHTML =
-        `<p class="done-text" style="color:var(--rose)">${escapeHtml(err.message)}</p>`;
+        `<p class="done-text" style="color:var(--rose-ink)">${escapeHtml(err.message)}</p>`;
     }
   }
 
-  function renderQuestion() {
-    const q = questions[currentIndex];
-    const progress = ((currentIndex + 1) / questions.length) * 100;
-    const remaining = questions.slice(currentIndex).reduce((sum, x) => sum + (x.type === 'text' ? 1 : 0.5), 0);
+  // ─── Drawing ──────────────────────────────────────────────
 
-    document.getElementById('progressFill').style.width = progress + '%';
-    document.getElementById('progressText').textContent = `Question ${currentIndex + 1} of ${questions.length}`;
-    document.getElementById('progressTime').textContent = `~${Math.ceil(remaining)} min left`;
+  function render() {
+    if (theme.layout === 'all_at_once') return renderAll();
+    renderOne();
+  }
 
-    document.getElementById('prevBtn').disabled = currentIndex === 0;
-    document.getElementById('nextBtn').textContent =
-      currentIndex === questions.length - 1 ? 'Submit' : 'Next →';
+  function renderOne() {
+    const list = asked();
+    if (cursor >= list.length) cursor = Math.max(0, list.length - 1);
 
-    let control = '';
+    const question = list[cursor];
+    const stage = document.getElementById('stage');
+    stage.classList.remove('scrolling');
 
-    if (q.type === 'rating') {
-      const scale = q.scale || 5;
-      const labels = q.labels || [];
-      control = `
-        <div class="rating" role="radiogroup">
-          ${Array.from({ length: scale }, (_, i) => {
-            const val = i + 1;
-            const selected = answers[q.id] === val;
-            return `
-              <div class="rating-option${selected ? ' selected' : ''}" data-value="${val}"
-                   onclick="selectRating('${q.id}', ${val})" tabindex="0" role="radio" aria-checked="${selected}">
-                <div class="rating-circle">${val}</div>
-                <span class="rating-label">${escapeHtml(labels[i] || '')}</span>
-              </div>`;
-          }).join('')}
-        </div>`;
-    } else if (q.type === 'choice') {
-      control = `
-        <div class="choice-list">
-          ${q.options.map((opt, i) => `
-            <div class="choice-item${answers[q.id] === opt ? ' selected' : ''}"
-                 onclick="selectChoice('${q.id}', ${i})" tabindex="0">
-              <span class="choice-radio"></span>
-              <span>${escapeHtml(opt)}</span>
-            </div>`).join('')}
-        </div>`;
-    } else {
-      const current = answers[q.id] || '';
-      control = `
-        <textarea class="input" id="textAnswer" maxlength="500" style="min-height:160px"
-                  placeholder="Type your answer…" oninput="onText('${q.id}')">${escapeHtml(current)}</textarea>
-        <div class="char-count"><span id="charCount">${current.length}</span>/500</div>`;
-    }
+    const number = list.slice(0, cursor + 1).filter(SurveySchema.isAnswerable).length;
 
-    document.getElementById('stage').innerHTML = `
+    stage.innerHTML = `
       <div class="question-wrap">
-        <div class="question-number">Question ${currentIndex + 1}</div>
-        <h1 class="question-text">${escapeHtml(q.text)}${q.optional ? ' <span class="dim" style="font-size:var(--fs-sm);font-weight:400">(optional)</span>' : ''}</h1>
-        ${control}
+        ${SurveySchema.isAnswerable(question)
+          ? SurveyRender.heading(question, { number })
+          : `<div class="sv-section-mark">Section</div>
+             <h2 class="sv-ask">${escapeHtml(question.text)}</h2>
+             ${question.description ? `<p class="sv-note">${escapeHtml(question.description)}</p>` : ''}`}
+        <div class="sv-control" id="control"></div>
+        <div id="questionError"></div>
       </div>`;
 
-    if (q.type === 'text') setTimeout(() => document.getElementById('textAnswer')?.focus(), 60);
+    if (SurveySchema.isAnswerable(question)) {
+      SurveyRender.mount(document.getElementById('control'), question, {
+        value: answers[question.id],
+        seed: survey.id,
+        onChange: value => answer(question, value)
+      });
+    }
+
+    showError(question);
+    updateProgress();
+
+    document.getElementById('prevBtn').disabled = cursor === 0;
+    document.getElementById('nextBtn').textContent = isLast() ? 'Submit' : 'Next →';
+
+    if (question.type === 'text') setTimeout(() => stage.querySelector('.sv-input')?.focus(), 60);
   }
 
-  function selectRating(qId, value) {
-    answers[qId] = value;
-    document.querySelectorAll('.rating-option').forEach(opt => {
-      const on = Number(opt.dataset.value) === value;
-      opt.classList.toggle('selected', on);
-      opt.setAttribute('aria-checked', String(on));
-    });
+  function renderAll() {
+    const list = asked();
+    const stage = document.getElementById('stage');
+    stage.classList.add('scrolling');
+
+    let number = 0;
+    stage.innerHTML = `
+      <div class="question-wrap">
+        <h1 class="sv-ask" style="font-size:var(--fs-2xl)">${escapeHtml(survey.title)}</h1>
+        ${survey.description ? `<p class="sv-note">${escapeHtml(survey.description)}</p>` : ''}
+        ${list.some(q => q.required)
+          ? '<p class="legend"><span class="sv-required">*</span> Answering is required</p>' : ''}
+        ${list.map(question => {
+          const answerable = SurveySchema.isAnswerable(question);
+          if (answerable) number++;
+          return `
+            <div class="stack-q" data-question="${question.id}">
+              ${answerable
+                ? SurveyRender.heading(question, { number })
+                : `<div class="sv-section-mark">Section</div>
+                   <h2 class="sv-ask">${escapeHtml(question.text)}</h2>`}
+              ${answerable ? `<div class="sv-control" data-control="${question.id}"></div>` : ''}
+              <div data-error="${question.id}"></div>
+            </div>`;
+        }).join('')}
+      </div>`;
+
+    for (const question of list) {
+      const holder = stage.querySelector(`[data-control="${CSS.escape(question.id)}"]`);
+      if (!holder) continue;
+      SurveyRender.mount(holder, question, {
+        value: answers[question.id],
+        seed: survey.id,
+        onChange: value => answer(question, value)
+      });
+      showError(question);
+    }
+
+    updateProgress();
+    document.getElementById('prevBtn').classList.add('hide');
+    document.getElementById('nextBtn').textContent = 'Submit';
   }
 
-  // Index rather than text, so an option containing a quote cannot break out.
-  function selectChoice(qId, index) {
-    const value = questions[currentIndex].options[index];
-    answers[qId] = value;
-    document.querySelectorAll('.choice-item').forEach((item, i) => {
-      item.classList.toggle('selected', i === index);
-    });
+  // An answer changed. Branching is re-evaluated on the spot, because what
+  // was just answered may add or remove questions further down — and on a
+  // single-page survey the member has to see that happen.
+  function answer(question, value) {
+    const before = asked().map(q => q.id).join('|');
+    answers[question.id] = value;
+    delete errors[question.id];
+    dirty = true;
+
+    const after = asked().map(q => q.id).join('|');
+
+    if (after !== before) {
+      if (theme.layout === 'all_at_once') { renderAll(); return; }
+      updateProgress();
+    } else if (theme.layout !== 'all_at_once') {
+      updateProgress();
+      // Ranking redraws itself from its new order
+      if (question.type === 'ranking') renderOne();
+    }
+
+    showError(question);
+    scheduleSave();
   }
 
-  function onText(qId) {
-    const ta = document.getElementById('textAnswer');
-    answers[qId] = ta.value;
-    document.getElementById('charCount').textContent = ta.value.length;
+  function showError(question) {
+    const holder = theme.layout === 'all_at_once'
+      ? document.querySelector(`[data-error="${CSS.escape(question.id)}"]`)
+      : document.getElementById('questionError');
+    if (!holder) return;
+    holder.innerHTML = errors[question.id]
+      ? `<p class="sv-error" role="alert">⚠ ${escapeHtml(errors[question.id])}</p>` : '';
   }
 
-  function nextQuestion() {
-    if (currentIndex < questions.length - 1) { currentIndex++; renderQuestion(); }
-    else submitSurvey();
+  function updateProgress() {
+    if (theme.progress === 'none') return;
+
+    const list = answerable();
+    const done = list.filter(q => SurveySchema.isAnswered(q, answers[q.id])).length;
+    const position = Math.min(list.length, asked().slice(0, cursor + 1).filter(SurveySchema.isAnswerable).length);
+
+    const track = document.getElementById('progressTrack');
+
+    if (theme.progress === 'steps' && list.length <= 20) {
+      track.innerHTML = `<div class="steps">${list.map((q, i) => {
+        const answered = SurveySchema.isAnswered(q, answers[q.id]);
+        return `<span class="step${answered ? ' done' : i === position - 1 ? ' here' : ''}"></span>`;
+      }).join('')}</div>`;
+    } else if (theme.progress === 'count') {
+      track.innerHTML = '';
+    } else {
+      track.innerHTML = `<div class="progress"><div class="fill" style="width:${
+        list.length ? (done / list.length) * 100 : 0}%"></div></div>`;
+    }
+
+    // "of ~7" rather than "of 7": with branching, how many questions remain
+    // genuinely depends on answers not yet given, and a number that keeps
+    // changing without explanation is worse than an honest approximation.
+    const branching = questions.some(q => q.visible_if);
+    document.getElementById('progressText').textContent = theme.layout === 'all_at_once'
+      ? `${done} of ${branching ? '~' : ''}${list.length} answered`
+      : `Question ${position} of ${branching ? '~' : ''}${list.length}`;
+
+    const left = Math.max(1, Math.ceil((list.length - done) * (survey.time_estimate_min / Math.max(1, list.length))));
+    document.getElementById('progressTime').textContent = done >= list.length ? 'Ready to submit' : `~${left} min left`;
   }
 
-  function prevQuestion() {
-    if (currentIndex > 0) { currentIndex--; renderQuestion(); }
+  // ─── Moving through ───────────────────────────────────────
+
+  const isLast = () => cursor >= asked().length - 1;
+
+  function goNext() {
+    const list = asked();
+    const question = list[cursor];
+
+    // A required question is where the survey stops. Checked against the same
+    // definition the server will use, so "Next" never succeeds on something
+    // that submission would reject.
+    if (question && SurveySchema.isAnswerable(question)) {
+      const result = SurveySchema.validateAnswer(question, answers[question.id]);
+      if (!result.ok) {
+        errors[question.id] = result.error;
+        showError(question);
+        return;
+      }
+    }
+
+    if (isLast()) return submit();
+    cursor++;
+    render();
+    window.scrollTo({ top: 0 });
   }
 
-  async function submitSurvey() {
+  function goBack() {
+    if (cursor === 0) return;
+    cursor--;
+    render();
+  }
+
+  // ─── Keeping what has been typed ──────────────────────────
+  // Saved a moment after the member stops, not on every keystroke: a survey
+  // should not put a request behind each character typed.
+
+  function scheduleSave() {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(save, 1200);
+  }
+
+  async function save() {
+    if (!dirty || !survey) return;
+    if (overLink && !responseKey) return;   // nothing owns this submission yet
+    const badge = document.getElementById('saveState');
     try {
-      const result = await api.post(`/users/surveys/${survey.id}/respond`, { answers });
-      const user = Auth.getUser();
+      await api2.progress({ answers });
+      dirty = false;
+      badge.textContent = 'Saved';
+      badge.classList.remove('hide');
+      setTimeout(() => badge.classList.add('hide'), 2000);
+    } catch {
+      // Losing a progress save is not worth interrupting anyone over; the
+      // answers are still in the page and the next save will carry them.
+    }
+  }
+
+  async function submit() {
+    // Everything at once, so a member on the last question is not walked back
+    // through the survey one refusal at a time.
+    const checked = SurveySchema.checkResponse(questions, answers);
+    if (!checked.ok) {
+      errors = checked.errors;
+      const list = asked();
+      const first = list.findIndex(q => errors[q.id]);
+
+      if (theme.layout === 'all_at_once') {
+        renderAll();
+        document.querySelector(`[data-question="${CSS.escape(list[first].id)}"]`)
+          ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      } else {
+        cursor = first === -1 ? cursor : first;
+        render();
+      }
+      showToast(
+        checked.missing.length === 1 ? 'One question still needs an answer'
+          : checked.missing.length ? `${checked.missing.length} questions still need an answer`
+          : 'Some answers need another look',
+        'warning'
+      );
+      return;
+    }
+
+    const button = document.getElementById('nextBtn');
+    button.disabled = true;
+
+    try {
+      const result = await api2.respond({ answers });
+      // Over a link there is nobody to thank by name — and pretending
+      // otherwise would be the one moment the page implies it knows who
+      // answered, which is exactly what it promised not to.
+      const user = overLink ? null : Auth.getUser();
+      const closing = theme.thank_you || {};
+
+      clearTimeout(saveTimer);
+      dirty = false;
 
       document.getElementById('progressStrip').classList.add('hide');
       document.getElementById('foot').classList.add('hide');
+      if (overLink) sessionStorage.removeItem(KEY_STORE);
+
       document.getElementById('stage').innerHTML = `
         <div class="done">
           <div class="done-mark">✓</div>
-          <div class="done-title">Thank you, ${escapeHtml(user.name.split(' ')[0])}</div>
-          <p class="done-text">
-            Your answers go straight to the team building the APIs you integrate with.
-            That is the whole point of this — no ticket queue, no black hole.
+          <div class="done-title">${escapeHtml(closing.headline ||
+            (user ? `Thank you, ${user.name.split(' ')[0]}` : 'Thank you'))}</div>
+          <p class="done-text">${escapeHtml(closing.body ||
+            'Your answers go straight to the team building the APIs you integrate with. That is the whole point of this — no ticket queue, no black hole.')}</p>
+          <p class="done-meta">
+            ${result.answered} answer${result.answered === 1 ? '' : 's'} recorded${
+              result.streak ? ` · ${result.streak} session streak` : ''}
           </p>
-          <p class="done-meta">Response recorded · ${result.streak} session streak</p>
-          <a class="btn btn-primary" href="/member/dashboard.html">Back to home</a>
+          ${overLink
+            ? '<p class="done-meta">Answered without an account — nothing here identifies you.</p>'
+            : '<a class="btn btn-primary" href="/member/dashboard.html">Back to home</a>'}
         </div>`;
     } catch (err) {
+      button.disabled = false;
+      // The server checked the same definition, so a refusal here means the
+      // page and the survey disagreed. Show it against the questions rather
+      // than as a sentence with no home.
+      if (err.body && err.body.errors) {
+        errors = err.body.errors;
+        render();
+      }
       showToast(err.message, 'error');
     }
   }
 
   async function exitSurvey() {
-    if (Object.keys(answers).length) {
-      const ok = await Shell.confirm({
-        title: 'Leave this survey?',
-        text: 'Your answers so far are not submitted yet, and will not be kept.',
-        ok: 'Leave'
-      });
-      if (!ok) return;
+    if (dirty) await save();
+    // Over a link there is no home to go to. Saying the answers are kept for
+    // this tab is the honest version: the key lives in sessionStorage, so
+    // reopening the link here resumes and reopening it elsewhere does not.
+    if (overLink) {
+      document.getElementById('stage').innerHTML = `
+        <div class="done">
+          <div class="done-title">Saved for now</div>
+          <p class="done-text">Your answers are kept in this browser. Open the same link again
+          to pick up where you left off.</p>
+        </div>`;
+      document.getElementById('progressStrip').classList.add('hide');
+      document.getElementById('foot').classList.add('hide');
+      return;
     }
     window.location.href = '/member/dashboard.html';
   }
 
-  // Keyboard: arrows move, digits answer a rating.
-  document.addEventListener('keydown', e => {
-    if (e.target.tagName === 'TEXTAREA') return;
-    if (!questions.length) return;
+  // Closing the tab, switching apps, or locking a phone mid-question. keepalive
+  // is what lets the request outlive the page; sendBeacon cannot carry the
+  // authorization header, and a token in a query string is a token in a log.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'hidden' || !dirty || !survey) return;
+    if (overLink && !responseKey) return;
+    clearTimeout(saveTimer);
+    fetch(api2.progressUrl(), {
+      method: 'PATCH',
+      headers: overLink ? { 'Content-Type': 'application/json' } : Auth.headers(),
+      body: JSON.stringify(overLink ? { answers, response_key: responseKey } : { answers }),
+      keepalive: true
+    }).then(() => { dirty = false; }).catch(() => {});
+  });
 
-    if (e.key === 'ArrowRight' || e.key === 'Enter') nextQuestion();
-    if (e.key === 'ArrowLeft') prevQuestion();
+  // Keyboard: arrows move, digits answer a rating or an NPS score.
+  document.addEventListener('keydown', e => {
+    if (['TEXTAREA', 'INPUT', 'SELECT'].includes(e.target.tagName)) return;
+    if (!questions.length || theme.layout === 'all_at_once') return;
+
+    if (e.key === 'ArrowRight' || e.key === 'Enter') goNext();
+    if (e.key === 'ArrowLeft') goBack();
+
+    const question = asked()[cursor];
+    if (!question) return;
 
     const num = parseInt(e.key, 10);
-    const q = questions[currentIndex];
-    if (num >= 1 && num <= 9 && q && q.type === 'rating' && num <= (q.scale || 5)) {
-      selectRating(q.id, num);
+    if (Number.isNaN(num)) return;
+
+    if (question.type === 'rating' && num >= 1 && num <= (question.scale || 5)) {
+      answer(question, num);
+      renderOne();
+    }
+    if (question.type === 'nps' && num >= 0 && num <= 9) {
+      answer(question, num);
+      renderOne();
     }
   });
 

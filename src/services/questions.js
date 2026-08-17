@@ -17,6 +17,13 @@ const { uuid } = require('../utils/helpers');
 // Surveys still own their own arrangement — order, options, scale. What they
 // borrow is the identity of the question being asked.
 
+// How many distinct people said a thing. COUNT(DISTINCT user_id) skips NULLs
+// entirely, so once answers can arrive over a public link that count silently
+// stops including everyone without an account — the evidence is in the table
+// and simply absent from every total. Falling back to the response makes each
+// anonymous submission count once, which is what a respondent is.
+const RESPONDENTS = "COUNT(DISTINCT COALESCE(f.user_id, 'anon:' || COALESCE(f.response_id, f.id)))";
+
 // Case, spacing and trailing punctuation do not make two questions different.
 // This is used to *offer* a reuse, never to perform one.
 function normalize(text) {
@@ -51,7 +58,7 @@ function suggest(text, type = 'text', { limit = 5 } = {}) {
 
   return db.prepare(`
     SELECT q.id, q.text,
-           (SELECT COUNT(DISTINCT f.user_id) FROM feedback f
+           (SELECT ${RESPONDENTS} FROM feedback f
              WHERE f.canonical_question_id = q.id) as developer_count,
            (SELECT COUNT(DISTINCT f.survey_id) FROM feedback f
              WHERE f.canonical_question_id = q.id) as survey_count
@@ -65,7 +72,11 @@ function suggest(text, type = 'text', { limit = 5 } = {}) {
 // Give every question in a survey an identity. An explicit question_id means
 // the author chose to carry on an existing question; anything else starts a
 // new one, so authoring is never constrained by what has been asked before.
-function attachToSurvey(questions, { createdBy = null } = {}) {
+//
+// `identifies` decides what counts as a question at all. A section heading
+// carries wording but nobody answers it, and giving it an identity would file
+// "Part 2: Billing" in the catalogue of things we have asked developers.
+function attachToSurvey(questions, { createdBy = null, identifies = () => true } = {}) {
   return questions.map((question, index) => {
     const withSlot = {
       ...question,
@@ -73,7 +84,7 @@ function attachToSurvey(questions, { createdBy = null } = {}) {
       id: question.id || `q${index + 1}_${uuid().slice(0, 8)}`
     };
 
-    if (!question.text) return withSlot;
+    if (!question.text || !identifies(question)) return withSlot;
 
     const chosen = question.question_id
       ? db.prepare('SELECT * FROM questions WHERE id = ?').get(question.question_id)
@@ -133,7 +144,7 @@ function catalogue({ search = null, circleId = null } = {}) {
   return db.prepare(`
     SELECT q.id, q.text, q.type, q.external_source,
            COUNT(f.id) as answer_count,
-           COUNT(DISTINCT f.user_id) as developer_count,
+           ${RESPONDENTS} as developer_count,
            COUNT(DISTINCT COALESCE(f.survey_id, f.source_system)) as survey_count,
            MAX(f.created_at) as last_answered_at,
            MIN(f.created_at) as first_answered_at
@@ -145,14 +156,19 @@ function catalogue({ search = null, circleId = null } = {}) {
   `).all(...params);
 }
 
-// Everything said in answer to one question, whichever survey asked it
+// Everything said in answer to one question, whichever survey asked it.
+//
+// Left joined, because an answer given over a public link has no member behind
+// it. An inner join here would have quietly dropped every anonymous answer
+// from the one page built to read them — the evidence would be in the table
+// and nowhere on screen.
 function answers(questionId, { limit = 200 } = {}) {
   return db.prepare(`
     SELECT f.id, f.content, f.created_at, f.survey_id, f.source, f.source_system,
            u.id as user_id, u.name as user_name, u.company as user_company,
            u.api_status, s.title as survey_title
     FROM feedback f
-    JOIN users u ON u.id = f.user_id
+    LEFT JOIN users u ON u.id = f.user_id
     LEFT JOIN surveys s ON s.id = f.survey_id
     WHERE f.canonical_question_id = ?
     ORDER BY f.created_at DESC
@@ -164,7 +180,7 @@ function answers(questionId, { limit = 200 } = {}) {
 function askedIn(questionId) {
   return db.prepare(`
     SELECT s.id, s.title, s.status,
-           COUNT(DISTINCT f.user_id) as developer_count,
+           ${RESPONDENTS} as developer_count,
            MIN(f.created_at) as first_answered_at
     FROM feedback f
     JOIN surveys s ON s.id = f.survey_id
@@ -180,7 +196,7 @@ function askedIn(questionId) {
 function reusable({ type = 'text' } = {}) {
   return db.prepare(`
     SELECT q.id, q.text, q.type,
-           (SELECT COUNT(DISTINCT f.user_id) FROM feedback f
+           (SELECT ${RESPONDENTS} FROM feedback f
              WHERE f.canonical_question_id = q.id) as developer_count,
            (SELECT COUNT(DISTINCT f.survey_id) FROM feedback f
              WHERE f.canonical_question_id = q.id) as survey_count

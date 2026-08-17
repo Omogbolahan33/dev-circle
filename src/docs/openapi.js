@@ -194,6 +194,7 @@ const tags = [
   { name: 'Authentication', description: 'One sign-in field, three ways to hold a credential: a one-time code for developers, a password for Credit Direct staff, and Developer Hub SSO.' },
   { name: 'Member profile', description: 'The signed-in developer\'s own profile, memberships, consent and engagement history.' },
   { name: 'Member surveys', description: 'Surveys open to the signed-in developer, and how they answer them.' },
+  { name: 'Open surveys', description: 'Answering a survey over its link, with no account and no sign-in. The token in the path is the whole of the authorisation and opens exactly one survey; nothing here identifies the person answering.' },
   { name: 'Member rewards', description: 'The reward catalogue and claiming from it.' },
   { name: 'Member notifications', description: 'The portal inbox, notification categories and quiet hours.' },
   { name: 'Feedback', description: 'Feedback raised by the signed-in developer.' },
