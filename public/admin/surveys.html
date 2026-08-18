@@ -91,7 +91,7 @@
     if (!list.length) {
       tbody.innerHTML = `<tr><td colspan="6">${emptyState({
         title: statusFilter ? `No ${statusFilter} surveys` : 'No surveys yet',
-        text: 'A survey asks a cohort a short set of questions and records the answers against each member\'s engagement history.',
+        text: 'A survey asks a cohort a short set of questions and records the answers against each member\'s engagement history. A round already run elsewhere starts the same way — write its questions here, then bring the answers in from the spreadsheet.',
         action: '<a href="/admin/survey-new.html" class="btn btn-sm btn-primary">Write the first one</a>'
       })}</td></tr>`;
       return;
@@ -134,6 +134,7 @@
               <a class="btn btn-sm btn-ghost" href="/admin/survey-new.html?id=${s.id}">Edit</a>
               <button class="btn btn-sm btn-ghost" onclick="duplicate('${s.id}', this)">Duplicate</button>
               <a class="btn btn-sm btn-ghost" href="/admin/survey-responses.html?id=${s.id}">Responses</a>
+              <a class="btn btn-sm btn-ghost" href="/admin/survey-responses.html?id=${s.id}&import=1">Import</a>
             </div>
           </td>
         </tr>`;

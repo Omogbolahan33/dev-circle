@@ -204,6 +204,11 @@
         </div>
         <div class="page-actions">
           <a href="/admin/surveys.html" class="btn btn-sm btn-secondary">Cancel</a>
+          <!-- Only once the survey exists, since an import needs a definition to
+               line a sheet up against. Shown here because this is where a copy
+               of last quarter's survey lands, and bringing that quarter's
+               answers across is the next thing you want. -->
+          <a class="btn btn-sm btn-secondary" id="importLink" style="display:none">Import responses</a>
           <button class="btn btn-sm btn-secondary" onclick="saveSurvey('draft')" id="draftBtn">Save draft</button>
           <button class="btn btn-sm btn-gold" onclick="saveSurvey('active')" id="publishBtn">Publish</button>
         </div>
@@ -394,6 +399,9 @@
 
       document.getElementById('crumb').textContent = survey.title;
       document.getElementById('pageTitle').textContent = `Edit: ${survey.title}`;
+      const importLink = document.getElementById('importLink');
+      importLink.href = `/admin/survey-responses.html?id=${survey.id}&import=1`;
+      importLink.style.display = '';
       document.title = `Dev Circle — ${survey.title}`;
       document.getElementById('publishBtn').textContent =
         survey.status === 'active' ? 'Save changes' : 'Publish';

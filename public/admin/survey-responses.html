@@ -241,6 +241,11 @@
 
       renderAnalysis(survey.questions, completed);
       renderIndividual(survey.questions, completed);
+
+      // Arrived here to import rather than to read. Opened after the survey
+      // has loaded, because the drawer describes this survey's own columns and
+      // there is nothing to describe until it has.
+      if (param('import')) openImport();
     } catch (err) {
       document.querySelector('.app-body').innerHTML = emptyState({ title: 'Could not load responses', text: err.message });
     }
