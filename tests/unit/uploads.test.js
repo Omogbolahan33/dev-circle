@@ -98,3 +98,80 @@ test('an uploaded path is recognisable as one', () => {
   assert.ok(!uploads.isStored('https://cdn.example.ng/logo.png'));
   assert.ok(!uploads.isStored('/assets/logo.png'));
 });
+
+// ─── Sweeping up ────────────────────────────────────────────
+// Replacing a logo leaves the old one behind, and a file uploaded into a
+// survey that was never saved is referenced by nothing at all.
+
+// A stand-in for the database: the sweep only ever reads themes out of it
+function themeStore(themes) {
+  return {
+    prepare(sql) {
+      const column = /survey_theme/.test(sql) ? 'survey_theme' : 'theme';
+      return { all: () => themes.filter(t => t.column === column).map(t => ({ [column]: t.json })) };
+    }
+  };
+}
+
+const ancient = { now: Date.now() + 48 * 60 * 60 * 1000 };
+
+test('a file nothing points at is removed', () => {
+  const orphan = uploads.store(b64(PNG), { kind: 'image' });
+  const db = themeStore([]);
+
+  const result = uploads.sweep(db, ancient);
+  assert.ok(result.removed >= 1);
+  assert.equal(fs.existsSync(path.join(DIR, path.basename(orphan.path))), false);
+});
+
+test('a file a survey still uses is kept', () => {
+  const kept = uploads.store(b64(PNG), { kind: 'image' });
+  const db = themeStore([
+    { column: 'theme', json: JSON.stringify({ logo_url: kept.path, accent: '#107ebc' }) }
+  ]);
+
+  uploads.sweep(db, ancient);
+  assert.ok(fs.existsSync(path.join(DIR, path.basename(kept.path))), 'still referenced');
+});
+
+test('a file a circle default uses is kept', () => {
+  const kept = uploads.store(b64(PNG), { kind: 'image' });
+  const db = themeStore([
+    { column: 'survey_theme', json: JSON.stringify({ background_image: kept.path }) }
+  ]);
+
+  uploads.sweep(db, ancient);
+  assert.ok(fs.existsSync(path.join(DIR, path.basename(kept.path))));
+});
+
+test('a fresh upload is spared, because it may be on its way into a theme', () => {
+  // Someone uploads a logo, then spends twenty minutes writing the questions.
+  // A sweep in the middle of that must not delete what they are about to use.
+  const fresh = uploads.store(b64(PNG), { kind: 'image' });
+
+  const result = uploads.sweep(themeStore([]), { now: Date.now() });
+  assert.ok(fs.existsSync(path.join(DIR, path.basename(fresh.path))));
+  assert.ok(result.kept >= 1);
+});
+
+test('a brand font is found wherever in a theme it sits', () => {
+  // Read as text rather than by walking known fields, so a theme field added
+  // later is covered without this needing to be edited
+  const font = uploads.store(b64(WOFF2), { kind: 'font' });
+  const db = themeStore([
+    { column: 'theme', json: JSON.stringify({ font: 'brand', brand_font: font.path }) }
+  ]);
+
+  assert.ok(uploads.referenced(db).has(font.path));
+  uploads.sweep(db, ancient);
+  assert.ok(fs.existsSync(path.join(DIR, path.basename(font.path))));
+});
+
+test('a dry run reports without deleting', () => {
+  const orphan = uploads.store(b64(PNG), { kind: 'image' });
+  const result = uploads.sweep(themeStore([]), { ...ancient, dryRun: true });
+
+  assert.ok(result.removed >= 1);
+  assert.ok(result.bytes > 0);
+  assert.ok(fs.existsSync(path.join(DIR, path.basename(orphan.path))), 'nothing was actually removed');
+});

@@ -9,6 +9,7 @@
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/assets/css/tokens.css">
   <link rel="stylesheet" href="/assets/css/app.css">
+  <link rel="stylesheet" href="/assets/css/fonts.css">
   <script src="/assets/js/theme.js"></script>
   <style>
     /* Answering a survey is a focused mode: no nav, no sidebar, one question
@@ -80,7 +81,20 @@
     }
     main.scrolling { align-items: flex-start; }
 
-    .question-wrap { max-width: 640px; width: 100%; }
+    /* The survey's own text size. Applied to the question and its answers
+       only — the bar and the progress strip are furniture and stay put, so
+       "larger" makes the thing being read bigger rather than zooming the page. */
+    .question-wrap {
+      max-width: 640px;
+      width: 100%;
+      font-size: calc(1rem * var(--survey-scale, 1));
+    }
+    .question-wrap .sv-ask { font-size: calc(var(--fs-xl) * var(--survey-scale, 1)); }
+    .question-wrap .sv-option,
+    .question-wrap .sv-rank-text,
+    .question-wrap .sv-note { font-size: calc(var(--fs-base) * var(--survey-scale, 1)); }
+    .question-wrap .input { font-size: calc(var(--fs-sm) * var(--survey-scale, 1)); }
+
     .legend { font-size: var(--fs-xs); color: var(--ash-dim); margin-bottom: var(--sp-6); }
 
     /* All-at-once: every question on one page, separated enough to be read

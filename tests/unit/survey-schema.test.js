@@ -496,15 +496,78 @@ test('an image address that could break out of the CSS it lands in is refused', 
 
 // ─── A brand's own typeface ─────────────────────────────────
 
-test('type is offered as pairings, each with something to say for itself', () => {
+test('type is a library of real families, picked by name', () => {
+  // Not "pairings" with mood names mapped onto whatever the reader's device
+  // happens to have: an author told to use Montserrat has to be able to
+  // choose Montserrat, and two people picking the same option must get the
+  // same typeface.
   const fonts = Object.entries(themes.FONTS);
-  assert.ok(fonts.length >= 6, 'four options was not a choice');
+  assert.ok(fonts.length >= 12, 'a font picker is a library, not a handful of moods');
+
   for (const [key, font] of fonts) {
     assert.ok(font.label, `${key} needs a name`);
-    assert.ok(font.display && font.body, `${key} needs both halves of the pairing`);
-    assert.ok(/system-ui|serif|sans-serif|monospace/.test(font.body),
-      `${key} must end in something every device has`);
+    assert.ok(font.stack, `${key} needs a stack`);
+    assert.ok(['sans', 'serif', 'mono', 'device', 'custom'].includes(font.category), `${key} needs a category`);
+    assert.ok(/system-ui|serif|sans-serif|monospace/.test(font.stack),
+      `${key} must fall back to something every device has`);
   }
+
+  for (const named of ['Inter', 'Roboto', 'Montserrat', 'Playfair Display', 'Lora', 'IBM Plex Mono']) {
+    assert.ok(fonts.some(([, f]) => f.label === named), `${named} should be offered by name`);
+  }
+});
+
+test('every family the picker offers is actually served from here', () => {
+  // A list that names Montserrat and renders Helvetica is worse than not
+  // offering it: the author cannot tell, and the member never sees it
+  const fs = require('fs');
+  const css = fs.readFileSync(
+    path.join(__dirname, '..', '..', 'public', 'assets', 'css', 'fonts.css'), 'utf8'
+  );
+
+  for (const [key, font] of Object.entries(themes.FONTS)) {
+    // The app's own, an upload, or one that comes from the reader's device.
+    // Excluded by what they are rather than by name, so a family added later
+    // has to declare itself rather than quietly slipping past this.
+    if (key === 'default' || font.device || font.needsUpload) continue;
+
+    const family = font.stack.match(/^'([^']+)'/)[1];
+    assert.ok(css.includes(`font-family: '${family}'`), `${family} is offered but never declared`);
+
+    const file = (css.split(`font-family: '${family}'`)[1].match(/url\('([^']+)'\)/) || [])[1];
+    assert.ok(file, `${family} has no file`);
+    assert.ok(
+      fs.existsSync(path.join(__dirname, '..', '..', 'public', file.replace(/^\//, ''))),
+      `${family} points at ${file}, which is not there`
+    );
+  }
+});
+
+test('a family that comes from the reader\'s device says so, and falls back', () => {
+  // Corbel ships with Windows and Office and with nothing else. Offering it is
+  // fine; offering it as though every reader will see it is not.
+  const corbel = themes.FONTS.corbel;
+  assert.ok(corbel.device, 'it is not ours to serve');
+  assert.ok(corbel.note, 'and the author has to be told what that means');
+  assert.match(corbel.stack, /^Corbel,/);
+  assert.match(corbel.stack, /sans-serif$/, 'with somewhere to land for everyone else');
+
+  const css = themes.toCSS(themes.normalize({ font: 'corbel' }).theme);
+  assert.match(css['--font-body'], /^Corbel,/);
+});
+
+test('a survey is set in one family throughout', () => {
+  // A form is not a magazine: setting the question in one face and the options
+  // in another makes it harder to read, not more designed
+  const css = themes.toCSS(themes.normalize({ font: 'lora' }).theme);
+  assert.equal(css['--font-display'], css['--font-body']);
+  assert.match(css['--font-display'], /^'Lora'/);
+});
+
+test('text size is a setting, because a survey is read on a phone in the field', () => {
+  assert.equal(themes.toCSS(themes.normalize({ scale: 'larger' }).theme)['--survey-scale'], '1.25');
+  assert.equal(themes.toCSS(themes.normalize({}).theme)['--survey-scale'], '1');
+  assert.ok(themes.normalize({ scale: 'enormous' }).issues.some(i => i.field === 'scale'));
 });
 
 test('choosing your own font without uploading one is refused', () => {

@@ -107,6 +107,84 @@
   </div>
 </div>
 
+<!-- ─── Import drawer ──────────────────────────────────── -->
+<!-- A drawer rather than a page: what has already come in stays on screen
+     behind it, which is the number the operator is about to change. -->
+<aside class="drawer drawer-lg" id="importDrawer">
+  <div class="drawer-head">
+    <div>
+      <div class="drawer-title">Import responses</div>
+      <div class="drawer-sub">Answers already collected — on paper, in Google Forms, anywhere else</div>
+    </div>
+    <button class="icon-btn" onclick="Shell.closeDrawer('importDrawer')">×</button>
+  </div>
+  <div class="drawer-body">
+    <!-- Offered before the upload field, since starting from the template is
+         the path that avoids a failed import. It is built from this survey's
+         own questions, so the columns are already right. -->
+    <div class="field">
+      <label class="label">Start from this survey's sheet</label>
+      <div class="text-xs muted mb-2">
+        A column per question, with an example row showing the format each one expects.
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-secondary btn-sm" onclick="downloadTemplate('xlsx', this)">Excel (.xlsx)</button>
+        <button class="btn btn-secondary btn-sm" onclick="downloadTemplate('csv', this)">CSV</button>
+      </div>
+    </div>
+
+    <div class="field">
+      <label class="label">Upload the filled-in sheet</label>
+      <input type="file" id="importFile" accept=".csv,text/csv,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+             onchange="loadImportFile(this)" class="text-xs muted">
+    </div>
+
+    <div class="field">
+      <label class="label">Or paste CSV</label>
+      <textarea class="input mono text-xs" id="importData" style="min-height:150px"
+        placeholder="email,submitted_at,q1. …"></textarea>
+    </div>
+
+    <div class="field">
+      <label class="label">
+        <input type="checkbox" id="importCreate" checked>
+        Create members for addresses we do not know
+      </label>
+      <div class="hint">
+        A round run elsewhere brings its own people. Each new address becomes a member of
+        this circle, named from the sheet. Untick to refuse those rows instead.
+      </div>
+    </div>
+
+    <div class="field">
+      <label class="label">Where it was collected</label>
+      <input class="input" id="importSource" list="sourceSuggestions" placeholder="google_forms">
+      <datalist id="sourceSuggestions">
+        <option value="google_forms"><option value="microsoft_forms">
+        <option value="customer_io"><option value="typeform"><option value="paper">
+      </datalist>
+      <div class="hint">
+        Recorded against every response and every quote it files, so a finding can be traced
+        back to the round it came out of.
+      </div>
+    </div>
+
+    <!-- Rendered from the server's own column spec, so this can never describe
+         a sheet the parser would not read -->
+    <details class="field">
+      <summary class="label" style="cursor:pointer">What the columns are</summary>
+      <div id="importColumns" class="text-xs muted mt-2">…</div>
+    </details>
+
+    <div id="importSummary" class="text-xs muted mt-4"></div>
+  </div>
+  <div class="drawer-foot">
+    <button class="btn btn-secondary" onclick="Shell.closeDrawer('importDrawer')">Cancel</button>
+    <button class="btn btn-secondary" onclick="doImport(true)">Check first</button>
+    <button class="btn btn-primary" onclick="doImport(false)">Import</button>
+  </div>
+</aside>
+
 <script src="/assets/js/api.js"></script>
 <script src="/assets/js/shell.js"></script>
 <script src="/assets/js/survey-schema.js"></script>
@@ -134,6 +212,7 @@
         ${survey.public_path
           ? `<button class="btn btn-sm btn-secondary" onclick="copyLink()">Copy link</button>` : ''}
         <a class="btn btn-sm btn-secondary" href="/admin/survey-new.html?id=${survey.id}">Edit</a>
+        <button class="btn btn-sm btn-secondary" onclick="openImport()">Import responses</button>
         <button class="btn btn-sm btn-secondary" onclick="exportResponses()">Export CSV</button>`;
 
       window.copyLink = async () => {
@@ -173,7 +252,8 @@
     if (!completed.length) {
       el.innerHTML = emptyState({
         title: 'No completed responses yet',
-        text: 'Once members submit, each question is summarised here — distributions for ratings, counts for choices, and the raw words for open questions.'
+        text: 'Once members submit, each question is summarised here — distributions for ratings, counts for choices, and the raw words for open questions. If this round was run somewhere else, its answers can be brought in.',
+        action: '<button class="btn btn-sm btn-secondary" onclick="openImport()">Import responses</button>'
       });
       return;
     }
@@ -445,6 +525,130 @@
       a.click();
       showToast('Exported');
     } catch { showToast('Export failed', 'error'); }
+  }
+
+// ─── Importing responses collected elsewhere ────────────
+  // A workbook is binary, so it is held here rather than in the paste box
+  let pendingWorkbook = null;
+
+  function openImport() {
+    document.getElementById('importSummary').textContent = '';
+    Shell.openDrawer('importDrawer');
+    loadImportColumns();
+  }
+
+  async function downloadTemplate(format, button) {
+    const label = button.textContent;
+    button.disabled = true;
+    button.textContent = 'Preparing…';
+    try {
+      await api.download(`/admin/surveys/${surveyId}/responses/template?format=${format}`,
+        `survey-responses-template.${format}`);
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+    button.disabled = false;
+    button.textContent = label;
+  }
+
+  // Described from the server's spec rather than from a copy kept here, so
+  // this list cannot drift from what the parser actually accepts
+  async function loadImportColumns() {
+    const el = document.getElementById('importColumns');
+    try {
+      const spec = await api.get(`/admin/surveys/${surveyId}/responses/columns`);
+      el.innerHTML =
+        '<ul style="margin:0;padding-left:1.1em;line-height:1.7">' +
+        spec.columns.filter(c => c.in_template).map(c =>
+          `<li><code>${escapeHtml(c.key)}</code>${c.required ? ' <strong>required</strong>' : ''} — ${escapeHtml(c.accepts || '')}</li>`
+        ).join('') +
+        '</ul>' +
+        `<p class="mt-2">${spec.guidance.map(escapeHtml).join(' ')}</p>`;
+    } catch (err) {
+      el.textContent = err.message;
+    }
+  }
+
+  async function loadImportFile(input) {
+    const file = input.files && input.files[0];
+    if (!file) return;
+
+    const summary = document.getElementById('importSummary');
+    pendingWorkbook = null;
+
+    if (/\.xlsx$/i.test(file.name)) {
+      // Read the workbook as bytes and hand it over base64-encoded; putting
+      // binary through the paste box would corrupt it
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      let binary = '';
+      for (let i = 0; i < bytes.length; i += 0x8000) {
+        binary += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+      }
+      pendingWorkbook = btoa(binary);
+      document.getElementById('importData').value = '';
+      summary.textContent = `Loaded ${file.name}. Run "Check first" before importing.`;
+      return;
+    }
+
+    document.getElementById('importData').value = await file.text();
+    summary.textContent = `Loaded ${file.name}. Run "Check first" before importing.`;
+  }
+
+  async function doImport(dryRun) {
+    const raw = document.getElementById('importData').value.trim();
+
+    let body;
+    if (pendingWorkbook) body = { xlsx_base64: pendingWorkbook };
+    else if (raw) body = { csv: raw };
+    else { showToast('Download the sheet, fill it in, and upload it here', 'warning'); return; }
+
+    body.source_system = document.getElementById('importSource').value.trim() || null;
+    body.create_missing = document.getElementById('importCreate').checked;
+    body.dry_run = dryRun;
+
+    const summary = document.getElementById('importSummary');
+    summary.textContent = dryRun ? 'Checking…' : 'Importing…';
+
+    try {
+      const result = await api.post(`/admin/surveys/${surveyId}/responses/import`, body);
+
+      // A heading that matched nothing is the failure that otherwise passes
+      // silently: the import succeeds and the answers are simply not there.
+      const notes = [];
+      if (result.unmatched_columns.length) {
+        notes.push(`<div class="mt-2"><strong>Matched no question:</strong> ` +
+          result.unmatched_columns.map(c => `<code>${escapeHtml(c)}</code>`).join(', ') +
+          ' — check the headings against the sheet above.</div>');
+      }
+      if (result.flagged.length) {
+        notes.push('<div class="mt-2"><strong>Worth a look — imported anyway:</strong><br>' +
+          result.flagged.slice(0, 6).map(f => `· Row ${f.line}: ${escapeHtml(f.reason)}`).join('<br>') +
+          (result.flagged.length > 6 ? `<br>· and ${result.flagged.length - 6} more` : '') +
+          '</div>');
+      }
+      if (result.errors.length) {
+        notes.push('<div class="mt-2"><strong>Refused:</strong><br>' +
+          result.errors.slice(0, 6).map(e => `· Row ${e.line}: ${escapeHtml(e.error)}`).join('<br>') +
+          (result.errors.length > 6 ? `<br>· and ${result.errors.length - 6} more` : '') +
+          '</div>');
+      }
+
+      summary.innerHTML = `<strong>${escapeHtml(result.message)}</strong>` + notes.join('');
+
+      if (!dryRun) {
+        showToast(result.message);
+        if (result.imported) {
+          pendingWorkbook = null;
+          document.getElementById('importFile').value = '';
+          document.getElementById('importData').value = '';
+          if (!result.errors.length) Shell.closeDrawer('importDrawer');
+          load();
+        }
+      }
+    } catch (err) {
+      summary.textContent = '';
+      showToast(err.message, 'error');
+    }
   }
 
   document.querySelectorAll('.tab[data-panel]').forEach(tab => {

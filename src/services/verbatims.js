@@ -41,9 +41,10 @@ function otherText(question, answer) {
 // Prepared on use rather than at load: the handle may point at a sandbox
 const insert = () => db.prepare(`
   INSERT OR IGNORE INTO feedback (
-    id, user_id, type, content, category, status, source,
-    survey_id, question_id, canonical_question_id, prompt, circle_id, response_id, created_at
-  ) VALUES (?, ?, 'survey_response', ?, ?, 'open', 'survey', ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')))
+    id, user_id, type, content, category, status, source, source_system,
+    survey_id, question_id, canonical_question_id, prompt, circle_id, response_id,
+    external_response_id, created_at
+  ) VALUES (?, ?, 'survey_response', ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')))
 `);
 
 // Pull the free-text answers out of one completed response.
@@ -92,7 +93,15 @@ function extract(survey, answers) {
 // takes its place as the thing that makes the row unique. What a person
 // without an account wrote is evidence on the same terms as anyone else's —
 // the only difference is that there is no one to attribute it to.
-function record(userId, survey, answers, { at = null, responseId = null } = {}) {
+//
+// `sourceSystem` names the tool a response was collected in when it was not
+// this one. It changes nothing about how the words are stored — they are the
+// same evidence — only what the row says about where they came from, which is
+// the difference between "a developer told us this" and "a developer told us
+// this, in the Google Form we ran in March".
+function record(userId, survey, answers, {
+  at = null, responseId = null, sourceSystem = null, externalResponseId = null
+} = {}) {
   const verbatims = extract(survey, answers);
   if (!verbatims.length) return { filed: 0, verbatims: [] };
 
@@ -110,8 +119,19 @@ function record(userId, survey, answers, { at = null, responseId = null } = {}) 
       // us, and it is what makes a list of verbatims readable at a glance.
       const result = insert().run(
         uuid(), userId || null, row.content, survey.title || null,
+        // 'survey' has always meant "a survey run in Dev Circle". Answers
+        // collected elsewhere are the same kind of thing arriving another way,
+        // so they share the type and are told apart by the system they came
+        // out of.
+        sourceSystem ? 'external_survey' : 'survey', sourceSystem || 'dev_circle',
         survey.id, row.question_id, row.canonical_question_id, row.prompt,
-        circleId, responseId, at
+        circleId, responseId,
+        // Scoped to the answer rather than the submission, because a
+        // submission carries many. The same shape the integrations endpoint
+        // writes, so a response that arrives over the API and again in a
+        // spreadsheet is filed once rather than twice.
+        externalResponseId ? `${externalResponseId}:${row.question_id}` : null,
+        at
       );
       filed += result.changes;
     }

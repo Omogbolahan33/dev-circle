@@ -132,6 +132,7 @@
                 <button class="btn btn-sm btn-ghost" onclick="invite('${s.id}')">Invite</button>
                 <button class="btn btn-sm btn-ghost" onclick="remind('${s.id}')">Remind</button>` : ''}
               <a class="btn btn-sm btn-ghost" href="/admin/survey-new.html?id=${s.id}">Edit</a>
+              <button class="btn btn-sm btn-ghost" onclick="duplicate('${s.id}', this)">Duplicate</button>
               <a class="btn btn-sm btn-ghost" href="/admin/survey-responses.html?id=${s.id}">Responses</a>
             </div>
           </td>
@@ -166,6 +167,26 @@
       showToast(`${res.invited} invited${res.skipped ? ` · ${res.skipped} skipped` : ''}`);
       load();
     } catch (err) { showToast(err.message, 'error'); }
+  }
+
+  // Running the same round again means starting from the last one, not
+  // rewriting forty questions from memory — a retyped copy is never quite the
+  // original, and two rounds that differ are two rounds you cannot compare.
+  // The copy opens in the builder, because it is a draft that wants a name and
+  // a date before it goes anywhere.
+  async function duplicate(id, button) {
+    const label = button.textContent;
+    button.disabled = true;
+    button.textContent = 'Copying…';
+    try {
+      const res = await api.post(`/admin/surveys/${id}/duplicate`, {});
+      showToast(`Copied as a draft — ${res.questions} question${res.questions === 1 ? '' : 's'}`);
+      window.location.href = `/admin/survey-new.html?id=${res.survey.id}`;
+    } catch (err) {
+      showToast(err.message, 'error');
+      button.disabled = false;
+      button.textContent = label;
+    }
   }
 
   async function remind(id) {

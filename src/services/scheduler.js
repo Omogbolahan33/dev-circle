@@ -1,5 +1,6 @@
 const db = require('../db');
 const { uuid, parseJSON } = require('../utils/helpers');
+const { logger } = require('../utils/logger');
 const notifications = require('./notifications');
 const engagement = require('./engagement');
 
@@ -333,11 +334,34 @@ function closePastSessions() {
   `).run().changes;
 }
 
+// Brand assets nothing points at any more — a logo that was replaced, or one
+// uploaded into a survey that was never saved. Swept here rather than on a
+// timer of its own, because this is already the thing that runs periodically
+// and a second scheduler would be a second thing to reason about.
+//
+// Hourly rather than every tick: the work is a directory listing and a couple
+// of queries, which is cheap but not free, and nothing goes wrong if an
+// orphaned file survives another hour.
+let lastSweep = 0;
+function sweepUploads({ now = Date.now() } = {}) {
+  if (now - lastSweep < 60 * 60 * 1000) return null;
+  lastSweep = now;
+  const { removed, bytes } = require('./uploads').sweep(db, { now });
+  if (removed) {
+    logger.info('Swept unreferenced brand assets', { removed, bytes });
+  }
+  return removed;
+}
+
 async function tick() {
   const reminders = await runDueReminders();
   const surveyNudges = await runSurveyReminders();
   const closed = closePastSessions();
-  return { reminders, survey_reminders: surveyNudges, sessions_closed: closed };
+  const sweptAssets = sweepUploads();
+  return {
+    reminders, survey_reminders: surveyNudges, sessions_closed: closed,
+    ...(sweptAssets === null ? {} : { assets_swept: sweptAssets })
+  };
 }
 
 let timer = null;
@@ -356,6 +380,6 @@ function stop() {
 
 module.exports = {
   availability, audienceFor, preview, dispatch, tick,
-  runDueReminders, runSurveyReminders, closePastSessions,
+  runDueReminders, runSurveyReminders, closePastSessions, sweepUploads,
   start, stop, localParts, parseWhen, SessionError
 };

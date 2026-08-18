@@ -9,6 +9,7 @@
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/assets/css/tokens.css">
   <link rel="stylesheet" href="/assets/css/app.css">
+  <link rel="stylesheet" href="/assets/css/fonts.css">
   <script src="/assets/js/theme.js"></script>
   <style>
     /* Editor on the left, the member's view of it on the right. A survey is
@@ -29,6 +30,29 @@
     .q-card.invalid { border-color: var(--rose); }
     /* A question that has been answered is a record, not a draft */
     .q-card.locked .input { background: transparent; border-style: dashed; }
+
+    /* Closed: what it asks and what kind it is, one line each */
+    .q-card.closed { padding: var(--sp-3) var(--sp-4); cursor: pointer; }
+    .q-card.closed:hover { border-color: var(--line-strong); }
+    .q-card.closed .q-head { margin-bottom: 0; cursor: pointer; }
+    .q-summary {
+      display: block;
+      width: 100%;
+      text-align: left;
+      background: transparent;
+      color: var(--white);
+      font-size: var(--fs-sm);
+      padding: var(--sp-1) 0 0;
+      cursor: pointer;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .q-flag {
+      font-size: 10px; color: var(--ash-dim);
+      border: 1px solid var(--line); border-radius: var(--r-sm); padding: 1px var(--sp-2);
+    }
+
     .q-head { display: flex; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-4); flex-wrap: wrap; }
     .q-num { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--cd-blue); }
     .q-kind {
@@ -129,20 +153,15 @@
     .asset-name { font-size: var(--fs-xs); display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .asset label.btn { cursor: pointer; }
 
-    /* Type shown in the type it offers */
-    .font-list { display: grid; gap: var(--sp-2); }
-    .font-option {
-      text-align: left;
-      padding: var(--sp-3);
-      border: 1px solid var(--line);
-      border-radius: var(--r-md);
-      background: transparent;
-      cursor: pointer;
+    /* The picker is set in whatever is selected, and a line of real wording
+       under it shows the choice at the size a question is actually read. */
+    .font-select { font-size: var(--fs-base); }
+    .font-preview {
+      margin-top: var(--sp-3);
+      font-size: var(--fs-md);
+      line-height: var(--lh-tight);
+      color: var(--white);
     }
-    .font-option:hover { border-color: var(--line-strong); }
-    .font-option.on { border-color: var(--cd-blue); background: var(--cd-blue-dim); }
-    .font-sample { display: block; font-size: var(--fs-md); }
-    .font-note { display: block; font-size: var(--fs-xs); color: var(--ash-dim); margin-top: 2px; }
 
     .theme-more { margin-bottom: var(--sp-4); }
     .theme-more summary { font-size: var(--fs-xs); color: var(--ash); cursor: pointer; padding: var(--sp-2) 0; }
@@ -189,102 +208,109 @@
           <button class="btn btn-sm btn-gold" onclick="saveSurvey('active')" id="publishBtn">Publish</button>
         </div>
       </div>
+
+      <!-- Three decisions, three steps: what to ask, who to ask, how it looks.
+           They were one column, and a survey with ten questions buried the
+           audience under six screens of scrolling. -->
+      <nav class="tabs">
+        <button class="tab active" data-step="questions">Questions <span class="count" id="stepQCount">0</span></button>
+        <button class="tab" data-step="audience">Audience</button>
+        <button class="tab" data-step="look">Look</button>
+      </nav>
     </header>
 
     <div class="app-body">
       <div class="composer">
 
         <div class="stack">
-          <section class="card">
-            <div class="card-title mb-4">About this survey</div>
-            <div class="field">
-              <label class="label">Title</label>
-              <input type="text" class="input" id="sTitle" placeholder="e.g. Sandbox onboarding experience">
-            </div>
-            <div class="field">
-              <label class="label">Description</label>
-              <textarea class="input" id="sDesc" placeholder="One line on why you are asking."></textarea>
-            </div>
-            <div class="field-row">
-              <div class="field">
-                <label class="label">Audience</label>
-                <select class="input" id="sTarget" onchange="toggleCohortTarget()">
-                  <option value="all">All members</option>
-                  <option value="cohort">A cohort</option>
-                  <option value="anonymous">Anyone with the link</option>
-                </select>
-              </div>
-              <div class="field hide" id="cohortField">
-                <label class="label">Cohort</label>
-                <select class="input" id="sCohortId"></select>
-              </div>
-            </div>
-
-            <!-- The link audience has no invitations and no reminders, so the
-                 link itself is the whole of the distribution and belongs on
-                 screen the moment it exists. -->
-            <div class="hide" id="linkField">
-              <div class="share">
-                <div class="share-head">
-                  <span class="share-mark">🔗</span>
-                  <div>
-                    <div class="share-title">Answered over a link</div>
-                    <p class="share-note" id="shareNote">
-                      Nobody is invited and nobody is chased. Anyone holding the link can answer once,
-                      without signing in or having an account — and nothing recorded identifies them.
-                    </p>
-                  </div>
-                </div>
-                <div class="row" style="gap:var(--sp-2)" id="shareRow">
-                  <input type="text" class="input mono" id="shareUrl" readonly>
-                  <button class="btn btn-sm btn-secondary" onclick="copyShareLink()">Copy</button>
-                </div>
-              </div>
-            </div>
-            <div class="field-row" style="margin-bottom:0">
-              <div class="field" style="margin-bottom:0">
-                <label class="label">Engagement mode</label>
-                <select class="input" id="sChannel">
-                  <option value="in_portal">In-portal</option>
-                  <option value="email">Email</option>
-                  <option value="whatsapp">WhatsApp</option>
-                  <option value="1-on-1">1-on-1</option>
-                </select>
-              </div>
-              <div class="field" style="margin-bottom:0">
-                <label class="label">Time estimate (min)</label>
-                <input type="number" class="input" id="sTime" value="5" min="1" max="30">
-              </div>
-            </div>
-          </section>
-
-          <section>
-            <div class="section-head">
-              <h2 class="section-title">Questions</h2>
-              <span class="dim text-xs" id="qCount">No questions yet</span>
-            </div>
-
+          <section class="step" id="step-questions">
             <div class="hide" id="lockNotice"></div>
             <div id="questions"></div>
 
             <button class="btn btn-sm btn-secondary mt-3" id="addToggle" onclick="toggleTypeMenu()">+ Add a question</button>
             <div class="type-menu hide mt-3" id="typeMenu"></div>
           </section>
+
+          <section class="step hide" id="step-audience">
+            <div class="card">
+              <div class="card-title mb-4">About this survey</div>
+              <div class="field">
+                <label class="label">Title</label>
+                <input type="text" class="input" id="sTitle" placeholder="e.g. Sandbox onboarding experience">
+              </div>
+              <div class="field" style="margin-bottom:0">
+                <label class="label">Description</label>
+                <textarea class="input" id="sDesc" placeholder="One line on why you are asking."></textarea>
+              </div>
+            </div>
+
+            <div class="card mt-4">
+              <div class="card-title mb-4">Who answers it</div>
+              <div class="field-row">
+                <div class="field">
+                  <label class="label">Audience</label>
+                  <select class="input" id="sTarget" onchange="toggleCohortTarget()">
+                    <option value="all">All members</option>
+                    <option value="cohort">A cohort</option>
+                    <option value="anonymous">Anyone with the link</option>
+                  </select>
+                </div>
+                <div class="field hide" id="cohortField">
+                  <label class="label">Cohort</label>
+                  <select class="input" id="sCohortId"></select>
+                </div>
+              </div>
+
+              <!-- The link audience has no invitations and no reminders, so the
+                   link itself is the whole of the distribution and belongs on
+                   screen the moment it exists. -->
+              <div class="hide" id="linkField">
+                <div class="share">
+                  <div class="share-head">
+                    <span class="share-mark">🔗</span>
+                    <div>
+                      <div class="share-title">Answered over a link</div>
+                      <p class="share-note" id="shareNote">
+                        Nobody is invited and nobody is chased. Anyone holding the link can answer once,
+                        without signing in or having an account — and nothing recorded identifies them.
+                      </p>
+                    </div>
+                  </div>
+                  <div class="row" style="gap:var(--sp-2)" id="shareRow">
+                    <input type="text" class="input mono" id="shareUrl" readonly>
+                    <button class="btn btn-sm btn-secondary" onclick="copyShareLink()">Copy</button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="field-row" style="margin-bottom:0" id="deliveryFields">
+                <div class="field" style="margin-bottom:0">
+                  <label class="label">Engagement mode</label>
+                  <select class="input" id="sChannel">
+                    <option value="in_portal">In-portal</option>
+                    <option value="email">Email</option>
+                    <option value="whatsapp">WhatsApp</option>
+                    <option value="1-on-1">1-on-1</option>
+                  </select>
+                </div>
+                <div class="field" style="margin-bottom:0">
+                  <label class="label">Time estimate (min)</label>
+                  <input type="number" class="input" id="sTime" value="5" min="1" max="30">
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="step hide" id="step-look">
+            <div class="card" id="rail-theme"></div>
+          </section>
         </div>
 
         <aside class="rail">
           <section class="card">
-            <div class="tabs" style="margin-bottom:var(--sp-4)">
-              <button class="tab active" data-rail="preview">What the member sees</button>
-              <button class="tab" data-rail="theme">Look</button>
-            </div>
-
-            <div id="rail-preview">
-              <div class="preview-frame" id="preview"></div>
-              <p class="hint">This is the real control — try answering it to see where the branching goes.</p>
-            </div>
-
-            <div id="rail-theme" class="hide"></div>
+            <div class="card-title mb-4">What the member sees</div>
+            <div class="preview-frame" id="preview"></div>
+            <p class="hint">This is the real control — try answering it to see where the branching goes.</p>
           </section>
         </aside>
 
@@ -313,7 +339,8 @@
     circleTheme: null,
     locked: false,             // answers exist, so questions cannot change
     issues: [],
-    publicPath: null           // set once a link audience has been saved
+    publicPath: null,          // set once a link audience has been saved
+    openQuestion: 0            // only one question is expanded at a time
   };
 
   let schema = null;
@@ -481,6 +508,9 @@
 
   function addQuestion(type) {
     state.questions.push(blank(type));
+    // A new question is the one you are working on, so it opens and the last
+    // one closes
+    state.openQuestion = state.questions.length - 1;
     renderQuestions();
     renderPreview();
     const cards = document.querySelectorAll('.q-card');
@@ -493,37 +523,59 @@
     state.questions.forEach((q, i) => bindCard(holder.children[i], q, i));
 
     const answerable = state.questions.filter(q => SurveySchema.isAnswerable(q)).length;
-    document.getElementById('qCount').textContent = answerable
-      ? `${answerable} question${answerable === 1 ? '' : 's'} · ~${document.getElementById('sTime').value || 5} min`
-      : 'No questions yet';
+    document.getElementById('stepQCount').textContent = answerable;
   }
 
+  // One question is open at a time. Ten questions each showing their options,
+  // their limits and their branching is six screens of scrolling to reach the
+  // one being edited — so a closed card shows only what it asks and what kind
+  // of question it is, and opens on a click.
   function card(question, index) {
     const type = schema.types.find(t => t.type === question.type) || { label: question.type };
     const issues = state.issues.filter(i => i.index === index);
+    // A question with something wrong is opened regardless: an error nobody
+    // can see is worse than a crowded page
+    const open = state.openQuestion === index || issues.length > 0;
+
+    const head = `
+      <div class="q-head" data-open-toggle>
+        <span class="q-num">Q${index + 1}</span>
+        <span class="q-kind">${escapeHtml(type.label)}</span>
+        ${question.required ? '<span class="q-flag">required</span>' : ''}
+        ${question.visible_if ? '<span class="q-branching">conditional</span>' : ''}
+        <span class="spacer"></span>
+        <button class="icon-btn" data-move="up" ${index === 0 ? 'disabled' : ''} aria-label="Move up">↑</button>
+        <button class="icon-btn" data-move="down" ${index === state.questions.length - 1 ? 'disabled' : ''} aria-label="Move down">↓</button>
+        <button class="icon-btn" data-duplicate aria-label="Duplicate">⧉</button>
+        <button class="icon-btn" data-remove aria-label="Remove question">×</button>
+      </div>`;
+
+    if (!open) {
+      return `
+        <div class="q-card closed" data-index="${index}">
+          ${head}
+          <button class="q-summary" data-open-toggle>
+            ${question.text
+              ? escapeHtml(question.text)
+              : '<span class="dim">Untitled — click to write it</span>'}
+          </button>
+        </div>`;
+    }
 
     return `
-      <div class="q-card${issues.length ? ' invalid' : ''}" data-index="${index}">
-        <div class="q-head">
-          <span class="q-num">Q${index + 1}</span>
-          <span class="q-kind">${escapeHtml(type.label)}</span>
-          ${question.visible_if ? '<span class="q-branching">conditional</span>' : ''}
-          <span class="spacer"></span>
-          ${SurveySchema.isAnswerable(question) ? `
-            <label class="row-tight text-xs" style="cursor:pointer;gap:var(--sp-2)">
-              <span class="check${question.required ? ' on' : ''}" data-required>✓</span> Required
-            </label>` : ''}
-          <button class="icon-btn" data-move="up" ${index === 0 ? 'disabled' : ''} aria-label="Move up">↑</button>
-          <button class="icon-btn" data-move="down" ${index === state.questions.length - 1 ? 'disabled' : ''} aria-label="Move down">↓</button>
-          <button class="icon-btn" data-duplicate aria-label="Duplicate">⧉</button>
-          <button class="icon-btn" data-remove aria-label="Remove question">×</button>
-        </div>
+      <div class="q-card open${issues.length ? ' invalid' : ''}" data-index="${index}">
+        ${head}
 
         <div class="field">
           <label class="label">${question.type === 'section' ? 'Heading' : 'Question'}</label>
           <input type="text" class="input q-text" value="${escapeHtml(question.text || '')}"
                  placeholder="${escapeHtml(placeholderFor(question.type))}">
         </div>
+
+        ${SurveySchema.isAnswerable(question) ? `
+          <label class="row-tight text-sm" style="cursor:pointer;gap:var(--sp-2);margin-bottom:var(--sp-4)">
+            <span class="check${question.required ? ' on' : ''}" data-required>✓</span> An answer is required
+          </label>` : ''}
 
         ${editor(question, index)}
         ${logicEditor(question, index)}
@@ -869,8 +921,25 @@
     const redraw = () => { renderQuestions(); renderPreview(); };
     const touch = () => renderPreview();
 
+    // Clicking the card opens it; clicking a control inside the header does
+    // what that control says instead of collapsing the thing being used
+    el.querySelectorAll('[data-open-toggle]').forEach(target => {
+      target.addEventListener('click', e => {
+        if (e.target.closest('.icon-btn')) return;
+        state.openQuestion = state.openQuestion === index ? null : index;
+        renderQuestions();
+        if (state.openQuestion === index) {
+          document.querySelector(`.q-card[data-index="${index}"] .q-text`)?.focus();
+        }
+      });
+    });
+
     el.querySelector('.q-text')?.addEventListener('input', e => {
       question.text = e.target.value;
+      // The closed cards show their wording, so the list stays truthful as it
+      // is typed — without redrawing the card being typed into
+      const summary = el.querySelector('.q-summary');
+      if (summary) summary.textContent = e.target.value;
       touch();
     });
 
@@ -1237,6 +1306,8 @@
         ${hint ? `<p class="hint">${hint}</p>` : ''}
       </div>`;
 
+    const chosenFont = schema.theme.fonts.find(f => f.value === theme.font) || {};
+
     // What is on screen right now, so a warning is about the combination the
     // member will see rather than about one colour in isolation
     const readable = SurveyTheme.legibility(theme);
@@ -1295,17 +1366,40 @@
       </div>
 
       <div class="card-title mb-3 mt-4">Type</div>
-      <!-- Each option set in the type it offers: a font list you cannot see is
-           a list of words. -->
-      <div class="font-list">
-        ${schema.theme.fonts.map(f => `
-          <button class="font-option${theme.font === f.value ? ' on' : ''}" data-font="${f.value}">
-            <span class="font-sample" style="font-family:${f.display}">${escapeHtml(f.label)}</span>
-            <span class="font-note">${escapeHtml(f.note || '')}</span>
-          </button>`).join('')}
+      <!-- A font picker: real families, chosen by name, each set in itself.
+           Grouped, because fifteen names in a flat list is a wall. -->
+      <div class="field">
+        <label class="label">Font</label>
+        <select class="input font-select" id="fontSelect"
+                style="font-family:${(schema.theme.fonts.find(f => f.value === theme.font) || {}).stack || 'inherit'}">
+          ${['sans', 'serif', 'mono', 'device', 'custom'].map(group => {
+            const inGroup = schema.theme.fonts.filter(f => f.category === group);
+            if (!inGroup.length) return '';
+            const names = {
+              sans: 'Sans serif', serif: 'Serif', mono: 'Monospace',
+              device: 'From the reader’s device', custom: 'Your own'
+            };
+            return `<optgroup label="${names[group]}">
+              ${inGroup.map(f => `
+                <option value="${f.value}"${theme.font === f.value ? ' selected' : ''}
+                        style="font-family:${f.stack}">${escapeHtml(f.label)}</option>`).join('')}
+            </optgroup>`;
+          }).join('')}
+        </select>
+        <p class="font-preview" style="font-family:${
+          (schema.theme.fonts.find(f => f.value === theme.font) || {}).stack || 'inherit'}">
+          How clear is our API documentation?
+        </p>
+        ${chosenFont.note ? `<p class="hint">${escapeHtml(chosenFont.note)}</p>` : ''}
+        ${chosenFont.device ? `
+          <p class="hint" style="color:var(--gold-ink)">
+            This one is not sent with the survey — it renders only for readers who already have it.
+            To be certain everyone sees it, upload the font file and it will be served from here.
+          </p>` : ''}
       </div>
+
       ${theme.font === 'brand' || theme.brand_font ? `
-        <div class="field mt-3">
+        <div class="field">
           <label class="label">Font file</label>
           ${assetRow('brand_font', theme.brand_font, 'font')}
           <input type="text" class="input mt-2" data-theme="brand_font_name" placeholder="What to call it, e.g. Acme Grotesk"
@@ -1313,9 +1407,16 @@
           <p class="hint">A .woff2 loads fastest. Whatever you upload is served from here, so nothing about the member reaches its foundry.</p>
         </div>` : ''}
 
-      <div class="field mt-4">
-        <label class="label">Light or dark</label>
-        ${choose('mode', schema.theme.modes, { auto: 'Follow the member', light: 'Always light', dark: 'Always dark' })}
+      <div class="field-row">
+        <div class="field">
+          <label class="label">Text size</label>
+          ${choose('scale', Object.keys(schema.theme.scales),
+            { small: 'Small', regular: 'Regular', large: 'Large', larger: 'Larger' })}
+        </div>
+        <div class="field">
+          <label class="label">Light or dark</label>
+          ${choose('mode', schema.theme.modes, { auto: 'Follow the member', light: 'Always light', dark: 'Always dark' })}
+        </div>
       </div>
 
       <div class="field-row">
@@ -1434,12 +1535,10 @@
       });
     });
 
-    panel.querySelectorAll('[data-font]').forEach(button => {
-      button.addEventListener('click', () => {
-        state.theme.font = button.dataset.font;
-        renderThemePanel();
-        renderPreview();
-      });
+    panel.querySelector('#fontSelect')?.addEventListener('change', e => {
+      state.theme.font = e.target.value;
+      renderThemePanel();
+      renderPreview();
     });
 
     panel.querySelectorAll('[data-upload]').forEach(input => {
@@ -1523,12 +1622,13 @@
     }
   }
 
-  document.querySelectorAll('[data-rail]').forEach(tab => {
+  document.querySelectorAll('[data-step]').forEach(tab => {
     tab.addEventListener('click', () => {
-      document.querySelectorAll('[data-rail]').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('[data-step]').forEach(t => t.classList.remove('active'));
       tab.classList.add('active');
-      document.getElementById('rail-preview').classList.toggle('hide', tab.dataset.rail !== 'preview');
-      document.getElementById('rail-theme').classList.toggle('hide', tab.dataset.rail !== 'theme');
+      document.querySelectorAll('.step').forEach(section => {
+        section.classList.toggle('hide', section.id !== `step-${tab.dataset.step}`);
+      });
     });
   });
 

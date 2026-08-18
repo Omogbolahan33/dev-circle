@@ -151,4 +151,67 @@ function read(name) {
 // from an address someone typed, which are held to different rules.
 const isStored = value => /^\/uploads\/[a-f0-9]{32}\.[a-z0-9]+$/.test(String(value || ''));
 
-module.exports = { store, read, identify, isStored, UploadError, SIGNATURES };
+// ─── Sweeping up ────────────────────────────────────────────
+// Replacing a logo leaves the old one on disk, and a file uploaded in a
+// builder session that was then abandoned is never referenced at all. Neither
+// is harmful, but both accumulate, and an upload directory that only ever
+// grows is a disk that eventually fills.
+//
+// Two rules make this safe to run unattended. Only files nothing points at are
+// removed — the reference set is read from the database at the moment of the
+// sweep, not cached. And a file is spared until it has had time to be
+// referenced: someone uploads a logo, then spends twenty minutes writing the
+// questions before saving, and a sweep in the middle of that must not delete
+// the thing they are about to use.
+const GRACE_MS = 24 * 60 * 60 * 1000;
+
+// Every asset path any theme mentions. Themes are JSON, so this reads them as
+// text rather than parsing every shape — a path is a path wherever in the
+// theme it sits, and a field added later is covered without being listed here.
+function referenced(db) {
+  const paths = new Set();
+  const collect = row => {
+    for (const value of Object.values(row)) {
+      if (typeof value !== 'string') continue;
+      for (const match of value.matchAll(/\/uploads\/[a-f0-9]{32}\.[a-z0-9]+/g)) {
+        paths.add(match[0]);
+      }
+    }
+  };
+
+  for (const row of db.prepare('SELECT theme FROM surveys WHERE theme IS NOT NULL').all()) collect(row);
+  for (const row of db.prepare('SELECT survey_theme FROM circles WHERE survey_theme IS NOT NULL').all()) collect(row);
+
+  return paths;
+}
+
+function sweep(db, { graceMs = GRACE_MS, now = Date.now(), dryRun = false } = {}) {
+  let files;
+  try { files = fs.readdirSync(config.uploadDir); } catch { return { removed: 0, kept: 0, bytes: 0 }; }
+
+  const inUse = referenced(db);
+  const result = { removed: 0, kept: 0, bytes: 0, files: [] };
+
+  for (const name of files) {
+    if (!STORED_NAME.test(name)) { result.kept++; continue; }
+
+    const full = path.join(config.uploadDir, name);
+    let stat;
+    try { stat = fs.statSync(full); } catch { continue; }
+
+    if (inUse.has(`/uploads/${name}`)) { result.kept++; continue; }
+    // Young enough that it may still be on its way into a theme
+    if (now - stat.mtimeMs < graceMs) { result.kept++; continue; }
+
+    result.bytes += stat.size;
+    result.files.push(name);
+    if (!dryRun) {
+      try { fs.unlinkSync(full); } catch { continue; }
+    }
+    result.removed++;
+  }
+
+  return result;
+}
+
+module.exports = { store, read, identify, isStored, sweep, referenced, UploadError, SIGNATURES, GRACE_MS };

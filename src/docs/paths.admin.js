@@ -1752,6 +1752,231 @@ const paths = {
     })
   },
 
+  '/admin/surveys/{id}/duplicate': {
+    post: op({
+      tag: 'Admin · Surveys',
+      permission: 'surveys.write',
+      operationId: 'duplicateSurvey',
+      summary: 'Copy a survey as a new draft',
+      description: [
+        'The same questions, theme, targeting and settings again, opened as a draft. Nothing',
+        'that belongs to the *run* of the original comes with it: no responses, no',
+        'completions, and never its status — a copy that published itself to the original\'s',
+        'audience would be an expensive accident.',
+        '',
+        'Every question is given a fresh slot id and the branching rules are rewritten to',
+        'point at them, because answers are keyed by slot id and two surveys sharing one',
+        'would be indexed alike. What *is* carried over is `question_id`, the canonical',
+        'question each slot is an instance of — a repeated round asks the same question, so',
+        'both rounds\' answers read together.',
+        '',
+        'A survey answered over a link gets its own new link. An expiry already in the past',
+        'is dropped rather than handed to a copy that would be closed before it is published.'
+      ].join('\n'),
+      parameters: [path('id', 'Survey to copy')],
+      requestBody: jsonBody(object({
+        title: str('Title for the copy. Defaults to the original with "(copy)" appended'),
+        circle_id: str('Circle to put the copy in. Defaults to the original\'s', { format: 'uuid' })
+      }, { description: 'Optional.' }), { title: 'Sandbox onboarding — Q3' }, { required: false }),
+      responses: {
+        201: json('The new draft.', object({
+          survey: ref('Survey'),
+          copied_from: str('Id of the survey it was copied from'),
+          questions: int('How many questions came across')
+        }), {
+          survey: {
+            id: 's9', title: 'Sandbox onboarding — Q3', status: 'draft',
+            questions: [{ id: 'q1_4b81ce02', type: 'rating', text: 'How clear is our API documentation?' }],
+            target_type: 'cohort', target_ids: ['c2'], engagement_mode: 'email'
+          },
+          copied_from: 's1',
+          questions: 1
+        }),
+        400: json('The copy could not be normalised, or the circle is unknown.', ref('Error'),
+          { error: 'Unknown circle_id' }),
+        404: json('No such survey.', ref('Error'), { error: 'Survey not found' })
+      }
+    })
+  },
+
+  '/admin/surveys/{id}/responses/template': {
+    get: op({
+      tag: 'Admin · Surveys',
+      permission: 'surveys.read',
+      operationId: 'surveyResponseTemplate',
+      summary: 'Download a sheet to collect responses in',
+      description: [
+        'The blank sheet for importing responses collected somewhere else. Generated from',
+        'this survey\'s own questions rather than from a fixed column list, so a survey that',
+        'gains a question gains a column with nobody having to remember.',
+        '',
+        'One column per answerable question, headed `q1. <the wording>`; a grid gets a column',
+        'per row in the `q1. Rate these [Docs]` form that Google Forms and Microsoft Forms',
+        'both export. Sections hold no answer, so they hold no column. The workbook carries a',
+        'second sheet spelling out what each column accepts, and the example row demonstrates',
+        'every non-obvious format — the semicolons in a multiple choice, the numbering of a',
+        'ranking — so it imports without a single edit.'
+      ].join('\n'),
+      parameters: [
+        path('id', 'Survey id'),
+        query('format', 'File format', { type: 'string', enum: ['xlsx', 'csv'], default: 'xlsx' })
+      ],
+      responses: {
+        200: fileResponse('A spreadsheet with a column per question.', 'text/csv',
+          'email,submitted_at,response_id,q1. How clear are the docs?,q2. What tripped you up?\n' +
+          ',2026-03-14 09:20,gf-00417,4,The sandbox keys worked first time.'),
+        400: json('Unknown format.', ref('Error'), { error: 'format must be csv or xlsx' }),
+        404: json('No such survey.', ref('Error'), { error: 'Survey not found' })
+      }
+    })
+  },
+
+  '/admin/surveys/{id}/responses/columns': {
+    get: op({
+      tag: 'Admin · Surveys',
+      permission: 'surveys.read',
+      operationId: 'surveyResponseColumns',
+      summary: 'The column spec behind the template',
+      description:
+        'What the importer reads, so a screen can describe the upload without keeping a ' +
+        'second copy of the column list that drifts from the parser\'s. `also_accepted` is ' +
+        'the other headings each column answers to — the wording alone, the position, or the ' +
+        'question\'s slot id — which is why an export from another tool usually lines up unedited.',
+      parameters: [path('id', 'Survey id')],
+      responses: {
+        200: json('The columns, in sheet order.', object({
+          survey: object({ id: str('Survey id'), title: str('Survey title') }),
+          guidance: arrayOf({ type: 'string' }, 'Notes shown with the template'),
+          columns: arrayOf(object({
+            key: str('The heading written in the template'),
+            kind: str('`respondent` or `question`', { enum: ['respondent', 'question'] }),
+            label: str('Human name for the column'),
+            required: bool('Whether the survey requires an answer here'),
+            question_id: str('Slot id of the question, for question columns'),
+            type: str('Question type, for question columns'),
+            row: str('Grid row, when the column is one row of a grid'),
+            in_template: bool('False for a heading that is read but not offered — a grid packed into one cell'),
+            accepts: str('What a cell may contain'),
+            also_accepted: arrayOf({ type: 'string' }, 'Other headings that address this column')
+          }), 'Columns')
+        }), {
+          survey: { id: 's1', title: 'Sandbox onboarding experience' },
+          guidance: ['One row per respondent who answered "Sandbox onboarding experience". Delete the example row before importing.'],
+          columns: [{
+            key: 'q1. How clear are the docs?', kind: 'question',
+            label: 'q1. How clear are the docs?', required: true,
+            question_id: 'q1_8c3d21ff', type: 'rating', row: null, in_template: true,
+            accepts: 'A whole number from 1 to 5. "4/5" is read as 4.',
+            also_accepted: ['q1', 'q1_8c3d21ff', 'How clear are the docs?']
+          }]
+        }),
+        404: json('No such survey.', ref('Error'), { error: 'Survey not found' })
+      }
+    })
+  },
+
+  '/admin/surveys/{id}/responses/import': {
+    post: op({
+      tag: 'Admin · Surveys',
+      permission: 'surveys.write',
+      operationId: 'importSurveyResponses',
+      summary: 'Import responses collected elsewhere',
+      description: [
+        'Lands a sheet of already-collected answers as real responses, so a round run on',
+        'paper, in Google Forms or inside a partner\'s tool is reported and analysed like any',
+        'other. Send `xlsx_base64`, a `csv` string, or a `rows` array of objects keyed by',
+        'heading.',
+        '',
+        'Every row goes through the same check a member\'s submission gets, from the same',
+        'definition — a rating outside its scale or a missing required answer is refused here',
+        'exactly as it would be on the member\'s own page. Errors name the question by its',
+        'wording and the row by its line in the sheet, and `dry_run` reports all of them',
+        'without writing anything.',
+        '',
+        'A row\'s `email` attaches it to a member. An address nobody holds yet **creates the',
+        'member** from the `name` and `company` beside it — a round run elsewhere brings its',
+        'respondents with it, and refusing those rows would lose the answers from the',
+        'developers least likely to already be here. An address that exists in another',
+        'workspace joins this survey\'s circle rather than being duplicated. An existing',
+        'member\'s profile is never rewritten by a sheet. Send `create_missing: false` to',
+        'refuse both instead. Credit Direct addresses are always refused: staff hold a',
+        'password and a role, and are made under Roles.',
+        '',
+        'A row with **no** email is read against what the survey is. On a link survey that is',
+        'what anonymity looks like, and it is stored as `anonymous`. On a survey put to named',
+        'people it is far more often a column that did not line up, so it is imported and',
+        '`flagged` — reported without being refused, since the answers are real either way and',
+        'a dropped row would have to come back in a later run.',
+        '',
+        'A member who has already answered is skipped; a',
+        'member with an invitation still open has *that* response completed rather than a',
+        'second one created. A `response_id` makes re-importing the same file land nothing.',
+        '',
+        'Free-text answers are filed as feedback as well, stamped with `source_system`, so',
+        'they read alongside everything else that developer has told us. The engagement',
+        'history gains the completion but the streak does not move: a form filled in last',
+        'March is not something the member did today.'
+      ].join('\n'),
+      parameters: [path('id', 'Survey the responses belong to')],
+      requestBody: jsonBody(object({
+        xlsx_base64: str('A base64-encoded .xlsx. The first worksheet is read'),
+        csv: str('Raw CSV, headings on the first line'),
+        rows: arrayOf({ type: 'object', additionalProperties: true }, 'Rows as objects keyed by heading'),
+        source_system: str('Which tool collected them, e.g. `google_forms`, `paper`'),
+        create_missing: bool('Create a member for an address nobody holds yet, and admit an existing one to the circle', { default: true }),
+        dry_run: bool('Check everything and write nothing', { default: false })
+      }, { description: 'Provide exactly one of xlsx_base64, csv or rows.' }), {
+        csv: 'email,submitted_at,q1. How clear are the docs?\nada.obi@zilla.ng,2026-03-14 09:20,4',
+        source_system: 'google_forms',
+        dry_run: true
+      }),
+      responses: {
+        200: json('What landed, and what did not.', object({
+          message: str('Human summary'),
+          dry_run: bool('Whether anything was written'),
+          imported: int('Responses stored, or that would be'),
+          skipped: int('Already here — an answered member, or a reference seen before'),
+          matched_members: int('Responses attached to a member'),
+          created_members: int('Members brought into existence by this import'),
+          added_to_circle: int('Existing members admitted to this survey\'s circle'),
+          anonymous: int('Responses stored with nobody behind them'),
+          flagged: arrayOf(object({
+            line: int('Line in the sheet'),
+            reason: str('Why it is worth a second look')
+          }), 'Rows that were imported and still deserve attention'),
+          verbatims: int('Free-text answers also filed as feedback'),
+          discarded: int('Answers to questions the row\'s branch never reached'),
+          unmatched_columns: arrayOf({ type: 'string' }, 'Headings that addressed no question — reported once for the sheet'),
+          errors: arrayOf(object({
+            line: int('Line in the sheet, counting the headings as line 1'),
+            error: str('Why the row was refused')
+          }), 'Rows that were refused'),
+          preview: arrayOf(object({
+            line: int('Line in the sheet'),
+            member: str('Who it matched, if anyone'),
+            email: str('Their address'),
+            new_member: bool('Whether accepting the sheet would also create this person'),
+            answered: int('Questions answered'),
+            submitted_at: str('When they answered')
+          }), 'First ten rows of a dry run')
+        }), {
+          message: 'Checked: 41 response(s) would be imported, 6 new members, 2 already here, 1 refused',
+          dry_run: true, imported: 41, skipped: 2,
+          matched_members: 38, created_members: 6, added_to_circle: 1,
+          anonymous: 3, verbatims: 0, discarded: 0,
+          unmatched_columns: ['how_did_you_hear_about_us'],
+          flagged: [{ line: 23, reason: 'No email, on a survey that was put to named people — check the column lined up before accepting this as an anonymous reply' }],
+          errors: [{ line: 17, error: '"new.hire@creditdirect.ng" is a Credit Direct address — staff are added under Roles, not created by an import' }],
+          preview: [{ line: 2, member: 'Ada Obi', email: 'ada.obi@zilla.ng', new_member: true, answered: 6, submitted_at: '2026-03-14 09:20:00' }]
+        }),
+        400: json('The sheet could not be read, or the survey has no questions.', ref('Error'), {
+          error: 'No data rows found. The first row must be the headings, with a row per respondent under it.'
+        }),
+        404: json('No such survey.', ref('Error'), { error: 'Survey not found' })
+      }
+    })
+  },
+
   '/admin/surveys/{id}/export': {
     get: op({
       tag: 'Admin · Surveys',

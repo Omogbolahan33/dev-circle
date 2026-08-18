@@ -64,6 +64,43 @@ function normalizeDefinition(body, { createdBy = null, allowEmpty = false } = {}
   return { questions: identified, theme, issues: [], warnings };
 }
 
+// ─── Copying a survey ───────────────────────────────────────
+// The questions of an existing survey, ready to be saved as a new one.
+//
+// Every slot gets a fresh id, and that is the whole point rather than a
+// detail. Answers are keyed by slot id, so a copy that kept them would have
+// two surveys whose responses are indexed by the same keys — and the first
+// time somebody exported one against the other's definition, the columns
+// would line up and mean nothing. Branching rules point at slot ids too, so
+// they are rewritten in the same pass; a rule left pointing at the original's
+// id would silently never fire, which is the worst way for logic to break
+// because the survey still saves and still runs.
+//
+// What is deliberately carried over is question_id — the canonical question
+// each slot is an instance of. A copy asks the same question, so its answers
+// belong in the same body of evidence; that is what the canonical identity is
+// for.
+function copyQuestions(questions) {
+  const list = Array.isArray(questions) ? questions : [];
+  const renamed = new Map(list.map((question, index) => [question.id, slotId(index)]));
+
+  return list.map((question, index) => {
+    const copy = { ...question, id: renamed.get(question.id) || slotId(index) };
+
+    if (copy.visible_if && Array.isArray(copy.visible_if.rules)) {
+      copy.visible_if = {
+        ...copy.visible_if,
+        rules: copy.visible_if.rules.map(rule => ({
+          ...rule,
+          question: renamed.get(rule.question) || rule.question
+        }))
+      };
+    }
+
+    return copy;
+  });
+}
+
 // A stored survey with its JSON columns opened up, ready to be answered or
 // rendered. Everything that reads a survey goes through here so a missing
 // theme or a malformed questions column degrades the same way everywhere.
@@ -118,6 +155,7 @@ module.exports = {
   ...schema,
   themes,
   slotId,
+  copyQuestions,
   normalizeDefinition,
   hydrate,
   forPublic,

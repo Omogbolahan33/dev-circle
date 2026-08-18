@@ -298,8 +298,22 @@ const schemas = {
   SurveyTheme: object({
     accent: str('Brand colour, as hex. Text drawn on it is worked out from its luminance', { example: '#107EBC' }),
     background: str('Canvas treatment', { enum: ['plain', 'tinted', 'gradient'] }),
-    font: str('Type pairing. "brand" uses an uploaded typeface and requires brand_font', {
-      enum: ['default', 'neutral', 'editorial', 'classic', 'geometric', 'technical', 'brand']
+    font: str([
+      'The family the survey is set in. Most are served from this origin;',
+      '"corbel" and "system" come from the reader\'s device and fall back where absent;',
+      '"brand" uses an uploaded typeface and requires brand_font.',
+      'GET /admin/surveys/schema returns the current list with its stacks.'
+    ].join(' '), {
+      enum: [
+        'default', 'inter', 'roboto', 'opensans', 'lato', 'sourcesans', 'worksans',
+        'montserrat', 'poppins', 'nunito', 'spacegrotesk',
+        'playfair', 'merriweather', 'lora', 'baskerville', 'plexmono',
+        'corbel', 'system', 'brand'
+      ],
+      example: 'inter'
+    }),
+    scale: str('How large the survey is set for the reader', {
+      enum: ['small', 'regular', 'large', 'larger'], default: 'regular'
     }),
     corner: str('Corner radius', { enum: ['sharp', 'soft', 'round'] }),
     layout: str('One question per screen, or the whole survey on one page', { enum: ['one_per_page', 'all_at_once'] }),

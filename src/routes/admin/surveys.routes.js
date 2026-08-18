@@ -1,12 +1,16 @@
 const express = require('express');
 const db = require('../../db');
-const { uuid, parseJSON, toCSV } = require('../../utils/helpers');
+const { uuid, now, parseJSON, toCSV, parseCSV } = require('../../utils/helpers');
 const { requirePermission } = require('../../middleware/auth');
 const { resolveAudience } = require('../../services/audience');
 const engagement = require('../../services/engagement');
 const notifications = require('../../services/notifications');
 const circles = require('../../services/circles');
 const surveyForm = require('../../services/surveyForm');
+const responseImport = require('../../services/responseImport');
+const verbatims = require('../../services/verbatims');
+const { parseXLSX } = require('../../utils/xlsx');
+const identity = require('../../utils/identity');
 
 const router = express.Router();
 
@@ -45,9 +49,12 @@ router.get('/surveys/schema', requirePermission('surveys.read'), (req, res) => {
       // Sent with the stacks themselves, so the builder can set each option in
       // its own type — a font list you cannot see is a list of words
       fonts: Object.entries(surveyForm.themes.FONTS).map(([value, f]) => ({
-        value, label: f.label, note: f.note, display: f.display, body: f.body,
+        value, label: f.label, category: f.category, stack: f.stack, note: f.note,
+        // Not served from here: it renders for readers who already have it
+        device: !!f.device,
         needs_upload: !!f.needsUpload
       })),
+      scales: surveyForm.themes.SCALES,
       backgrounds: surveyForm.themes.BACKGROUNDS,
       corners: surveyForm.themes.CORNERS,
       layouts: surveyForm.themes.LAYOUTS,
@@ -314,6 +321,77 @@ router.put('/surveys/:id', requirePermission('surveys.write'), (req, res) => {
   });
 });
 
+// POST /api/admin/surveys/:id/duplicate
+// The same survey again, as a draft. Written because the alternative people
+// actually reach for is rewriting forty questions by hand, and the copy they
+// end up with is never quite the original — which quietly makes the two rounds
+// incomparable, the one thing a repeated survey exists to be.
+//
+// What is copied is the survey; what is not is anything that belongs to the
+// run of it. No responses, no completions, no status — the copy opens as a
+// draft, because a duplicate that published itself to the original's audience
+// would be the most expensive kind of accident this screen can produce.
+router.post('/surveys/:id/duplicate', requirePermission('surveys.write'), (req, res) => {
+  const survey = db.prepare('SELECT * FROM surveys WHERE id = ?').get(req.params.id);
+  if (!survey) return res.status(404).json({ error: 'Survey not found' });
+
+  const hydrated = surveyForm.hydrate(survey);
+
+  // A copy can be lifted into another workspace, which is how a round that
+  // worked for one circle gets run by another
+  const circle = req.body.circle_id ? circles.byId(req.body.circle_id) : circles.byId(survey.circle_id);
+  if (!circle) return res.status(400).json({ error: 'Unknown circle_id' });
+
+  const title = String(req.body.title || `${survey.title} (copy)`).trim().slice(0, 200);
+  if (!title) return res.status(400).json({ error: 'A survey needs a title' });
+
+  // Run through the same normalisation a hand-written survey gets. The
+  // original was valid when it was saved, but the schema is where a question
+  // acquires its identity, and a copy has to acquire its own.
+  const definition = surveyForm.normalizeDefinition({
+    questions: surveyForm.copyQuestions(hydrated.questions),
+    theme: hydrated.theme
+  }, { createdBy: req.admin.id, allowEmpty: true });
+
+  if (definition.issues.length) {
+    return res.status(400).json({
+      error: surveyForm.issueSummary(definition.issues),
+      issues: definition.issues
+    });
+  }
+
+  // An expiry is a date, not a duration, so carrying a past one over would
+  // hand back a copy that is closed before it is published
+  const expiry = survey.expires_at &&
+    new Date(String(survey.expires_at).replace(' ', 'T')) > new Date() ? survey.expires_at : null;
+
+  const id = uuid();
+  db.prepare(`
+    INSERT INTO surveys (id, title, description, questions, theme, target_type, target_ids,
+                         engagement_mode, time_estimate_min, expires_at, trigger_event,
+                         reminder_after_days, circle_id, created_by, status, public_token)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?)
+  `).run(
+    id, title, survey.description,
+    JSON.stringify(definition.questions),
+    definition.theme ? JSON.stringify(definition.theme) : null,
+    survey.target_type, survey.target_ids,
+    survey.engagement_mode, survey.time_estimate_min, expiry, survey.trigger_event,
+    survey.reminder_after_days, circle.id, req.admin.id,
+    // A fresh link, never the original's. Two surveys cannot share an address
+    // — and someone already holding the first one's link must keep reaching
+    // the survey they were given, not its successor.
+    survey.target_type === surveyForm.ANONYMOUS ? surveyForm.publicToken() : null
+  );
+
+  res.status(201).json({
+    survey: surveyForm.hydrate(db.prepare('SELECT * FROM surveys WHERE id = ?').get(id)),
+    copied_from: survey.id,
+    questions: definition.questions.length,
+    ...(definition.warnings?.length ? { warnings: definition.warnings } : {})
+  });
+});
+
 // POST /api/admin/surveys/:id/invite
 // Sends the invitation over the survey's engagement mode. Previously the mode
 // was stored and no invitation was ever sent.
@@ -455,6 +533,453 @@ router.get('/surveys/:id/responses', requirePermission('surveys.read'), (req, re
         asked: r.completed_at ? surveyForm.visible(hydrated.questions, answers).map(q => q.id) : null
       };
     })
+  });
+});
+
+// ─── Responses collected elsewhere ──────────────────────────
+// A survey that was run on paper at a meetup, through Google Forms, or inside
+// a partner's own tool comes back as a spreadsheet. Those answers are the same
+// evidence as the ones typed in here, and the only thing standing between them
+// and the summary screen is a way of landing a sheet against a definition.
+//
+// All three endpoints are gated on surveys.write rather than a permission of
+// their own: an import writes answers into one survey, and being able to
+// change what a survey asks already implies being able to say what it
+// collected.
+
+// GET /api/admin/surveys/:id/responses/template?format=csv|xlsx
+// The blank sheet to fill in, generated from this survey's own questions. Not
+// a fixed template like the member import's — the columns *are* the questions,
+// so a survey that gains a question gains a column without anybody
+// remembering to update a file.
+router.get('/surveys/:id/responses/template', requirePermission('surveys.read'), (req, res) => {
+  const survey = db.prepare('SELECT * FROM surveys WHERE id = ?').get(req.params.id);
+  if (!survey) return res.status(404).json({ error: 'Survey not found' });
+
+  const format = String(req.query.format || 'xlsx').toLowerCase();
+
+  if (format === 'csv') {
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition',
+      `attachment; filename="${responseImport.filename(survey, 'csv')}"`);
+    // A BOM so Excel opens it as UTF-8 rather than mangling the wording of a
+    // question that carries an accent
+    return res.send('﻿' + responseImport.toCsvTemplate(survey));
+  }
+
+  if (format === 'xlsx') {
+    res.setHeader('Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition',
+      `attachment; filename="${responseImport.filename(survey, 'xlsx')}"`);
+    return res.send(responseImport.toWorkbook(survey));
+  }
+
+  res.status(400).json({ error: 'format must be csv or xlsx' });
+});
+
+// GET /api/admin/surveys/:id/responses/columns
+// The spec behind the template, so a screen can describe the upload without
+// keeping a second copy of the column list that drifts from the parser's.
+router.get('/surveys/:id/responses/columns', requirePermission('surveys.read'), (req, res) => {
+  const survey = db.prepare('SELECT * FROM surveys WHERE id = ?').get(req.params.id);
+  if (!survey) return res.status(404).json({ error: 'Survey not found' });
+
+  res.json({
+    survey: { id: survey.id, title: survey.title },
+    guidance: responseImport.guidance(survey),
+    columns: responseImport.columns(survey).map(column => ({
+      key: column.key,
+      kind: column.kind,
+      label: column.kind === 'respondent' ? column.label : column.key,
+      required: column.kind === 'question' && !!column.question.required,
+      question_id: column.kind === 'question' ? column.question.id : null,
+      type: column.kind === 'question' ? column.question.type : null,
+      row: column.row || null,
+      // A grid packed into one cell is read but not offered — see the note in
+      // responseImport.columns
+      in_template: column.template !== false,
+      accepts: column.kind === 'question'
+        ? responseImport.accepts(column.question)
+        : column.notes,
+      // Every other heading this column answers to, so the screen can say why
+      // a Google Forms export lines up without being edited
+      also_accepted: column.match
+    }))
+  });
+});
+
+// POST /api/admin/surveys/:id/responses/import
+// A sheet of already-collected answers, landed as real responses.
+//
+// Every row goes through surveyForm.checkResponse — the same check a member's
+// submission gets, from the same definition. That is deliberate and it is
+// occasionally inconvenient: a form run elsewhere that let people skip a
+// question this survey requires will have rows refused. The alternative is a
+// survey whose stored responses do not satisfy the rules it states about
+// itself, and then every count drawn from it means something slightly
+// different depending on which door the answer came in by.
+router.post('/surveys/:id/responses/import', requirePermission('surveys.write'), (req, res) => {
+  const survey = db.prepare('SELECT * FROM surveys WHERE id = ?').get(req.params.id);
+  if (!survey) return res.status(404).json({ error: 'Survey not found' });
+
+  const { csv, xlsx_base64, rows: given, dry_run = false, create_missing = true } = req.body;
+
+  // Which tool the sheet came out of. Free text on purpose — a new form
+  // builder should never need a migration — but held to a length, because it
+  // is written to every response and every verbatim the import files.
+  const sourceSystem = req.body.source_system
+    ? String(req.body.source_system).trim().slice(0, 40) || null
+    : null;
+
+  const hydrated = surveyForm.hydrate(survey);
+  if (!surveyForm.canGoOut(hydrated.questions)) {
+    return res.status(400).json({
+      error: 'This survey has no questions yet, so there is nothing for a sheet to line up against'
+    });
+  }
+
+  let rows;
+  try {
+    if (xlsx_base64) rows = parseXLSX(xlsx_base64);
+    else if (csv) rows = parseCSV(csv);
+    else if (Array.isArray(given)) rows = given;
+    else return res.status(400).json({ error: 'Provide a rows array, a csv string, or xlsx_base64' });
+  } catch (err) {
+    return res.status(400).json({ error: `Could not read the workbook: ${err.message}` });
+  }
+
+  if (!rows.length) {
+    return res.status(400).json({
+      error: 'No data rows found. The first row must be the headings, with a row per respondent under it.'
+    });
+  }
+
+  const questions = hydrated.questions;
+  const headings = responseImport.index(responseImport.columns(survey));
+
+  const results = {
+    imported: 0, skipped: 0, errors: [], preview: [],
+    // Reported once for the sheet rather than once per row: a heading that
+    // matched nothing is a fact about the file, and repeating it two hundred
+    // times would bury everything else
+    unmatched_columns: [],
+    // Rows that went in and still deserve a look. Kept apart from errors,
+    // which are the rows that did not.
+    flagged: [],
+    matched_members: 0, created_members: 0, added_to_circle: 0,
+    anonymous: 0, verbatims: 0, discarded: 0
+  };
+
+  const unmatchedColumns = new Set();
+  // Addresses this run brought into existence, so a dry run can say which rows
+  // would create somebody rather than only how many
+  const created = new Set();
+
+  // Ids already spoken for, so a sheet that repeats a reference is caught here
+  // with a sentence rather than by a unique index with a constraint error
+  const seenExternal = new Set(
+    db.prepare(`
+      SELECT external_response_id FROM survey_responses
+      WHERE survey_id = ? AND external_response_id IS NOT NULL
+    `).all(survey.id).map(r => r.external_response_id)
+  );
+
+  const completedBy = new Set(
+    db.prepare(`
+      SELECT user_id FROM survey_responses
+      WHERE survey_id = ? AND user_id IS NOT NULL AND completed_at IS NOT NULL
+    `).all(survey.id).map(r => r.user_id)
+  );
+
+  // Scoped to the workspace that owns the survey, exactly as its audience is.
+  // A member of another circle could never have been asked this, so a row
+  // claiming they answered it is wrong however plausible the address looks.
+  // An older survey belonging to no circle is unrestricted, which is what
+  // circleScope does with the same absence.
+  const findMember = survey.circle_id
+    ? db.prepare(`
+        SELECT u.id, u.name, u.email FROM users u
+        WHERE u.email = ?
+          AND u.id IN (SELECT user_id FROM circle_members WHERE circle_id = ?)
+      `)
+    : db.prepare('SELECT id, name, email FROM users WHERE email = ?');
+  const lookup = email => (survey.circle_id
+    ? findMember.get(email, survey.circle_id)
+    : findMember.get(email));
+
+  // Only consulted to tell two failures apart. "We have never heard of them"
+  // and "they are in another workspace" need different things done about them,
+  // and one message covering both would send an operator to the wrong screen.
+  const findAnywhere = db.prepare('SELECT * FROM users WHERE email = ?');
+
+  // ── Respondents this workspace has not met
+  // A round run elsewhere brings its own people. Refusing those rows would
+  // mean the answers from developers who are not yet members — often the ones
+  // worth hearing from most — are exactly the answers that cannot be imported.
+  // So the respondent is created, on the same terms the member import creates
+  // one: no password, because members sign in with a one-time code.
+  const insertMember = db.prepare(`
+    INSERT INTO users (id, email, name, company, password_hash) VALUES (?, ?, ?, ?, ?)
+  `);
+  const joinCircle = db.prepare(
+    'INSERT OR IGNORE INTO circle_members (circle_id, user_id) VALUES (?, ?)'
+  );
+  const joinCohort = db.prepare(
+    'INSERT OR IGNORE INTO user_cohorts (user_id, cohort_id) VALUES (?, ?)'
+  );
+  const allMembers = db.prepare("SELECT id FROM cohorts WHERE name = 'All Members'").get();
+
+  // Bring one respondent into this workspace: either somebody new, or somebody
+  // who exists elsewhere and is being recorded as part of this survey's
+  // audience. Returns the member, or the reason there is not one.
+  function admit(meta) {
+    if (!identity.EMAIL_RE.test(meta.email)) {
+      return { ok: false, error: `"${meta.email}" is not a valid email address` };
+    }
+    // Staff hold a password and a role, which is a different account made on a
+    // different screen. Creating one here would make a profile that can never
+    // be signed in to — the member import refuses these for the same reason.
+    if (identity.isStaffEmail(meta.email)) {
+      return {
+        ok: false,
+        error: `"${meta.email}" is a Credit Direct address — staff are added under Roles, ` +
+               'not created by an import'
+      };
+    }
+
+    const existing = findAnywhere.get(meta.email);
+
+    if (existing) {
+      // Known here, but not in this workspace. Importing a response is an
+      // assertion that they were part of this survey's audience, so this is
+      // the membership catching up with what already happened rather than a
+      // new fact about them.
+      if (!create_missing) {
+        return {
+          ok: false,
+          error: `"${meta.email}" belongs to another workspace, so this survey was never ` +
+                 'put to them'
+        };
+      }
+      if (survey.circle_id) joinCircle.run(survey.circle_id, existing.id);
+      results.added_to_circle++;
+      return { ok: true, member: existing };
+    }
+
+    if (!create_missing) {
+      return {
+        ok: false,
+        error: `"${meta.email}" is not a member here — import them under Members first, ` +
+               'or clear the email to file these answers with nobody attached'
+      };
+    }
+
+    const id = uuid();
+    insertMember.run(id, meta.email, meta.name || meta.email.split('@')[0],
+      meta.company || null, identity.NO_PASSWORD);
+
+    if (survey.circle_id) joinCircle.run(survey.circle_id, id);
+    if (allMembers) joinCohort.run(id, allMembers.id);
+
+    engagement.log(id, 'account_created', {
+      metadata: { via: 'survey_response_import', survey_id: survey.id, source_system: sourceSystem },
+      source: 'manual'
+    });
+
+    results.created_members++;
+    created.add(meta.email);
+    return { ok: true, member: { id, name: meta.name || meta.email, email: meta.email } };
+  }
+
+  // A survey addressed to whoever holds its link expects respondents with no
+  // name on them; one put to a named audience does not. That is the difference
+  // between a blank email being the point of the round and a blank email being
+  // a column that did not line up.
+  const anonymousExpected = survey.target_type === surveyForm.ANONYMOUS;
+
+  // A member who was invited already has a response waiting on them. Filling
+  // that one in is the truthful record — inserting a second would leave the
+  // survey reporting one more invitation than it ever sent.
+  const findPending = db.prepare(`
+    SELECT id FROM survey_responses
+    WHERE survey_id = ? AND user_id = ? AND completed_at IS NULL
+  `);
+
+  const insertResponse = db.prepare(`
+    INSERT INTO survey_responses (id, survey_id, user_id, answers, completed_at, triggered_by,
+                                  respondent_kind, source_system, external_response_id)
+    VALUES (?, ?, ?, ?, ?, 'import', ?, ?, ?)
+  `);
+  const completeResponse = db.prepare(`
+    UPDATE survey_responses
+    SET answers = ?, completed_at = ?, triggered_by = 'import',
+        source_system = ?, external_response_id = ?
+    WHERE id = ?
+  `);
+
+  // Thrown to roll the transaction back once a dry run has counted everything
+  class DryRun extends Error {}
+
+  const run = db.transaction(() => {
+    rows.forEach((raw, index) => {
+      const line = index + 2;                 // the heading row is line 1 in the sheet
+      const fail = error => results.errors.push({ line, error });
+
+      const { meta, answers, unmatched } = responseImport.readRow(headings, raw);
+      for (const heading of unmatched) unmatchedColumns.add(heading);
+
+      if (!Object.keys(answers).length) {
+        fail('No column in this row matched a question in the survey');
+        return;
+      }
+
+      // An email that names nobody here is refused rather than quietly
+      // detached. Filing the answers with no member attached would look
+      // identical to a deliberate anonymous row, and the operator would never
+      // learn that the person they meant to credit was not credited.
+      let member = null;
+
+      if (meta.email) {
+        member = lookup(meta.email);
+
+        if (!member) {
+          const admitted = admit(meta);
+          if (!admitted.ok) { fail(admitted.error); return; }
+          member = admitted.member;
+        }
+
+        if (completedBy.has(member.id)) {
+          results.skipped++;
+          return;
+        }
+      } else if (!anonymousExpected) {
+        // Flagged, not refused: the answers are real either way, and a row
+        // dropped here would have to come back in a later run, which without a
+        // reference means importing the whole sheet again. Said out loud
+        // instead, where a dry run puts it in front of the operator before
+        // anything is written.
+        results.flagged.push({
+          line,
+          reason: 'No email, on a survey that was put to named people — check the column ' +
+                  'lined up before accepting this as an anonymous reply'
+        });
+      }
+
+      if (meta.externalId) {
+        if (seenExternal.has(meta.externalId)) {
+          results.skipped++;
+          return;
+        }
+      }
+
+      const checked = surveyForm.checkResponse(questions, answers);
+      if (!checked.ok) {
+        // Named by their wording rather than their slot id: the operator is
+        // looking at a spreadsheet column, not at a question id they have
+        // never seen
+        const named = Object.entries(checked.errors).map(([id, message]) => {
+          const question = questions.find(q => q.id === id);
+          return `${question ? question.text : id} — ${message}`;
+        });
+        fail(named.join('; '));
+        return;
+      }
+
+      results.discarded += checked.dropped.length;
+
+      if (member) { results.matched_members++; completedBy.add(member.id); }
+      else results.anonymous++;
+      if (meta.externalId) seenExternal.add(meta.externalId);
+
+      if (dry_run) {
+        results.imported++;
+        if (results.preview.length < 10) {
+          results.preview.push({
+            line,
+            member: member ? member.name : null,
+            email: member ? member.email : null,
+            // Whether accepting this sheet would also create the person
+            new_member: created.has(meta.email),
+            answered: checked.asked.filter(id => checked.answers[id] !== undefined).length,
+            submitted_at: meta.submittedAt
+          });
+        }
+        return;
+      }
+
+      const at = meta.submittedAt || now();
+      const serialized = JSON.stringify(checked.answers);
+
+      const pending = member ? findPending.get(survey.id, member.id) : null;
+      const responseId = pending ? pending.id : uuid();
+
+      if (pending) {
+        completeResponse.run(serialized, at, sourceSystem, meta.externalId || null, responseId);
+      } else {
+        insertResponse.run(
+          responseId, survey.id, member ? member.id : null, serialized, at,
+          // Not 'anonymous': nobody answered this under a promise of
+          // anonymity. It is a response with no account behind it, which is a
+          // different thing and is worth being able to tell apart later.
+          // A response with no account behind it on a link survey is anonymous
+          // in the sense the word promises whoever answered. On a survey put
+          // to named people it is simply one we could not attach, which is a
+          // different thing and worth being able to tell apart later.
+          member ? 'member' : (anonymousExpected ? 'anonymous' : 'external'),
+          sourceSystem, meta.externalId || null
+        );
+      }
+
+      // What was written in a sheet is what a developer told us, on the same
+      // terms as anything typed in here
+      const { filed } = verbatims.record(member ? member.id : null, survey, checked.answers, {
+        at, responseId, sourceSystem, externalResponseId: meta.externalId || null
+      });
+      results.verbatims += filed;
+
+      if (member) {
+        // log() rather than record(): a streak measures what someone has done
+        // lately, and a response transcribed today from a form they filled in
+        // last March is not activity today. The history gains the event; the
+        // counter is left alone.
+        engagement.log(member.id, 'survey_completed', {
+          referenceId: survey.id,
+          metadata: { survey_title: survey.title, via: 'import', source_system: sourceSystem },
+          source: 'manual'
+        });
+      }
+
+      results.imported++;
+    });
+
+    if (dry_run) throw new DryRun();
+  });
+
+  try {
+    run();
+  } catch (err) {
+    if (!(err instanceof DryRun)) throw err;
+  }
+
+  results.unmatched_columns = [...unmatchedColumns];
+
+  // Creating people is the part of this an operator most needs told, so it is
+  // in the sentence rather than only in a counter further down
+  const people = results.created_members
+    ? `, ${results.created_members} new member${results.created_members === 1 ? '' : 's'}`
+    : '';
+
+  res.json({
+    message: dry_run
+      ? `Checked: ${results.imported} response(s) would be imported${people}` +
+        (results.skipped ? `, ${results.skipped} already here` : '') +
+        (results.errors.length ? `, ${results.errors.length} refused` : '')
+      : `Imported ${results.imported} response(s)${people}` +
+        (results.skipped ? `, ${results.skipped} already here` : '') +
+        (results.errors.length ? `, ${results.errors.length} refused` : ''),
+    dry_run,
+    ...results
   });
 });
 

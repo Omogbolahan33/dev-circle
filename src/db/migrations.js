@@ -1080,6 +1080,77 @@ function define(db) {
             WHERE external_response_id IS NOT NULL;
         `);
       }
+    },
+    {
+      id: 26,
+      name: 'imported_survey_responses',
+      up() {
+        // A survey does not always run here. A discovery round goes out on
+        // paper at a meetup, through Google Forms, or inside a partner's own
+        // tool, and comes back as a spreadsheet — and those answers are the
+        // same evidence as the ones typed into this platform. Until now the
+        // only way in was one verbatim at a time over the integrations API,
+        // which files what somebody wrote but produces no response: the
+        // ratings are lost, the summary screen stays empty, and the survey
+        // reads as though nobody answered it.
+        //
+        // So a response can now arrive as an import. Three things have to be
+        // recordable about one: that it was imported rather than submitted,
+        // where it came from, and which submission it was over there.
+
+        db.pragma('defer_foreign_keys = ON');
+
+        // Starting from the table's own definition rather than a copy written
+        // out here — the same reasoning as migration 25, and now with one more
+        // migration's worth of columns that a hand-written list would drop.
+        function rebuild(table, edit) {
+          const original = db.prepare(
+            'SELECT sql FROM sqlite_master WHERE type = ? AND name = ?'
+          ).get('table', table).sql;
+
+          const columns = db.prepare(`PRAGMA table_info(${table})`).all().map(c => c.name).join(', ');
+          const ddl = edit(original.replace(
+            new RegExp(`CREATE TABLE\\s+"?${table}"?`, 'i'),
+            `CREATE TABLE ${table}_new`
+          ));
+
+          db.exec(`
+            ${ddl};
+            INSERT INTO ${table}_new (${columns}) SELECT ${columns} FROM ${table};
+            DROP TABLE ${table};
+            ALTER TABLE ${table}_new RENAME TO ${table};
+          `);
+        }
+
+        // triggered_by is a CHECK constraint, so admitting a value means
+        // rebuilding the table. Finding the change already made is not a
+        // failure; finding the constraint absent is.
+        rebuild('survey_responses', ddl => {
+          if (/triggered_by[^)]*import/i.test(ddl)) return ddl;
+          const widened = ddl.replace(
+            /triggered_by\s+TEXT\s+DEFAULT\s+'manual'\s+CHECK\s*\(\s*triggered_by\s+IN\s*\([^)]*\)\s*\)/i,
+            "triggered_by TEXT DEFAULT 'manual' CHECK(triggered_by IN ('manual','system','customer_io','link','import'))"
+          );
+          if (widened === ddl) throw new Error('survey_responses.triggered_by constraint not found');
+          return widened;
+        });
+
+        // Which tool it was collected in: 'google_forms', 'paper', … Recorded
+        // separately from the fact of the import, so a new tool never needs
+        // another migration — the same split migration 22 made for feedback.
+        addColumn('survey_responses', 'source_system', 'TEXT');
+        // The other system's own id for the submission. What makes importing
+        // the same export twice land nothing the second time, which matters
+        // more here than anywhere else: an operator who is not sure whether
+        // the first run went through will run it again.
+        addColumn('survey_responses', 'external_response_id', 'TEXT');
+
+        db.exec(`
+          CREATE UNIQUE INDEX IF NOT EXISTS idx_survey_responses_external
+            ON survey_responses(survey_id, external_response_id)
+            WHERE external_response_id IS NOT NULL;
+        `);
+      }
     }
   ];
   return migrations;

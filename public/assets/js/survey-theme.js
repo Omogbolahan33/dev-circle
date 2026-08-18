@@ -57,6 +57,8 @@ const SurveyTheme = (() => {
     background_overlay: null,   // how hard to dim an image so text survives it
     header_image: null,         // shown above the opening screen
 
+    scale: 'regular',
+
     // An uploaded typeface, used when font is 'brand'
     brand_font: null,
     brand_font_name: null
@@ -69,64 +71,75 @@ const SurveyTheme = (() => {
   const PROGRESS = ['bar', 'steps', 'count', 'none'];
   const MODES = ['auto', 'light', 'dark'];
 
-  // Type as pairings rather than as a list of families, because that is the
-  // decision being made: what the questions are set in, and what the wording
-  // above them is set in. Each is named for the impression it gives, since
-  // "Georgia" tells an author nothing about whether it suits their brand.
+  // The families a survey can be set in — one list of real typefaces, picked
+  // by name, the way this decision is made everywhere else. An earlier version
+  // offered "pairings" with mood names (Editorial, Geometric) and mapped them
+  // onto whatever the reader's device happened to have. That is not a font
+  // picker: an author who has been told to use Montserrat cannot choose
+  // Montserrat, and two people picking "Geometric" on different machines get
+  // different typefaces.
   //
-  // Nothing here is fetched from a third party. The three families the app
-  // already serves are used where they fit, and the rest are system stacks
-  // that need no network at all — a theme that pulled a font from someone
-  // else's CDN would put every member who opens a survey in front of them.
-  // A brand that needs its own face uploads it; see `brand` below.
+  // Every family here is served from this origin — see assets/css/fonts.css
+  // for why — with a system stack behind it for the moment before it loads.
+  // Sizes are the Latin subset, since that is what a survey is written in.
   const FONTS = {
-    default: {
-      label: 'Dev Circle',
-      note: 'The product’s own voice',
-      display: "'Plus Jakarta Sans', 'Inter', system-ui, sans-serif",
-      body: "'DM Sans', 'Inter', system-ui, sans-serif"
+    // Kept as the default so a survey that was never themed still looks like
+    // the product it came from
+    default: { label: 'Dev Circle', category: 'sans', stack: "'Plus Jakarta Sans', 'Inter', system-ui, sans-serif" },
+
+    inter:        { label: 'Inter',             category: 'sans',  stack: "'Inter', system-ui, sans-serif" },
+    roboto:       { label: 'Roboto',            category: 'sans',  stack: "'Roboto', system-ui, sans-serif" },
+    opensans:     { label: 'Open Sans',         category: 'sans',  stack: "'Open Sans', system-ui, sans-serif" },
+    lato:         { label: 'Lato',              category: 'sans',  stack: "'Lato', system-ui, sans-serif" },
+    sourcesans:   { label: 'Source Sans 3',     category: 'sans',  stack: "'Source Sans 3', system-ui, sans-serif" },
+    worksans:     { label: 'Work Sans',         category: 'sans',  stack: "'Work Sans', system-ui, sans-serif" },
+    montserrat:   { label: 'Montserrat',        category: 'sans',  stack: "'Montserrat', system-ui, sans-serif" },
+    poppins:      { label: 'Poppins',           category: 'sans',  stack: "'Poppins', system-ui, sans-serif" },
+    nunito:       { label: 'Nunito',            category: 'sans',  stack: "'Nunito', system-ui, sans-serif" },
+    spacegrotesk: { label: 'Space Grotesk',     category: 'sans',  stack: "'Space Grotesk', system-ui, sans-serif" },
+
+    playfair:     { label: 'Playfair Display',  category: 'serif', stack: "'Playfair Display', Georgia, serif" },
+    merriweather: { label: 'Merriweather',      category: 'serif', stack: "'Merriweather', Georgia, serif" },
+    lora:         { label: 'Lora',              category: 'serif', stack: "'Lora', Georgia, serif" },
+    baskerville:  { label: 'Libre Baskerville', category: 'serif', stack: "'Libre Baskerville', Georgia, serif" },
+
+    plexmono:     { label: 'IBM Plex Mono',     category: 'mono',  stack: "'IBM Plex Mono', ui-monospace, monospace" },
+
+    // ── Families that come from the reader's device, not from us ──
+    // These are not served here, because they are not ours to redistribute.
+    // They render for whoever already has them and fall back for everyone
+    // else, which is a real trade rather than a bug: Corbel ships with Windows
+    // and Office, so it will show for most desktop readers in a corporate
+    // setting and for almost no one on a phone.
+    //
+    // `device: true` is what keeps the "every family we offer is actually
+    // served" check honest — it excludes these deliberately rather than by
+    // forgetting them.
+    corbel: {
+      label: 'Corbel', category: 'device', device: true,
+      note: 'Windows and Office ship it; other devices fall back',
+      stack: "Corbel, 'Segoe UI', Candara, Optima, system-ui, sans-serif"
     },
-    neutral: {
-      label: 'Neutral',
-      note: 'Whatever the reader’s device uses — invisible, fast',
-      display: "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif",
-      body: "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
+    system: {
+      label: 'System default', category: 'device', device: true,
+      note: 'Whatever the reader’s device uses — nothing to download',
+      stack: "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
     },
-    editorial: {
-      label: 'Editorial',
-      note: 'Serif headings over a plain body — considered, unhurried',
-      display: "'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, serif",
-      body: "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
-    },
-    classic: {
-      label: 'Classic',
-      note: 'Serif throughout — formal, and easy on long questions',
-      display: "Georgia, 'Times New Roman', Times, serif",
-      body: "Georgia, 'Times New Roman', Times, serif"
-    },
-    geometric: {
-      label: 'Geometric',
-      note: 'Round and open — friendly without being soft',
-      display: "'Avenir Next', Avenir, 'Century Gothic', 'Futura', system-ui, sans-serif",
-      body: "'Avenir Next', Avenir, system-ui, -apple-system, sans-serif"
-    },
-    technical: {
-      label: 'Technical',
-      note: 'Monospaced headings — for questions about the API itself',
-      display: "'JetBrains Mono', 'Fira Code', ui-monospace, monospace",
-      body: "'DM Sans', 'Inter', system-ui, sans-serif"
-    },
+
     brand: {
-      label: 'Your own font',
-      note: 'Upload a .woff2, .woff, .ttf or .otf',
-      // Filled in from the uploaded file at render time. The fallbacks are
-      // what a member sees for the moment before it loads, and forever if it
-      // fails to — so they are a real stack rather than a bare sans-serif.
-      display: "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif",
-      body: "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif",
-      needsUpload: true
+      label: 'Custom font',
+      category: 'custom',
+      needsUpload: true,
+      // Filled in from the uploaded file at render time. The fallback is what
+      // a member sees before it loads, and forever if it fails to.
+      stack: "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
     }
   };
+
+  // How large the survey is set. A question people read on a phone in the
+  // field is a different size from one read at a desk, and it is the single
+  // most requested thing after colour.
+  const SCALES = { small: 0.92, regular: 1, large: 1.12, larger: 1.25 };
 
   // The family name a brand font is registered under. Sanitised hard: it is
   // written into a CSS @font-face declaration, so anything that could close
@@ -389,6 +402,9 @@ const SurveyTheme = (() => {
     const mode = pick(input.mode, MODES, DEFAULTS.mode, 'mode', push);
     if (mode !== DEFAULTS.mode) theme.mode = mode;
 
+    const scale = pick(input.scale, Object.keys(SCALES), DEFAULTS.scale, 'scale', push);
+    if (scale !== DEFAULTS.scale) theme.scale = scale;
+
     for (const [key, field] of [['logo_url', 'logo_url'], ['background_image', 'background_image'],
                                 ['header_image', 'header_image']]) {
       const asset = normalizeAsset(input[key], field, push);
@@ -450,12 +466,13 @@ const SurveyTheme = (() => {
     // whatever the member's own preference says.
     const dark = canvas ? luminance(canvas) < 0.2 : theme.mode === 'dark';
 
-    // An uploaded face leads its own stack, with the pairing's fallbacks
-    // behind it — so the survey is readable in the moment before it loads and
-    // stays readable if it never does.
-    const pairing = FONTS[theme.font] || FONTS.default;
+    // An uploaded face leads its own stack, with a system fallback behind it —
+    // so the survey is readable in the moment before it loads and stays
+    // readable if it never does.
+    const family = FONTS[theme.font] || FONTS.default;
     const brand = theme.font === 'brand' && theme.brand_font
       ? `'${familyName(theme.brand_font_name)}', ` : '';
+    const stack = brand + family.stack;
 
     const vars = {
       '--cd-blue': accent,
@@ -463,8 +480,12 @@ const SurveyTheme = (() => {
       '--cd-blue-40': withAlpha(accent, 0.4),
       '--cd-blue-dim': withAlpha(accent, dark ? 0.16 : 0.08),
       '--on-accent': onAccent(accent),
-      '--font-display': brand + pairing.display,
-      '--font-body': brand + pairing.body,
+      // One family throughout. A survey is a form, not a magazine: setting the
+      // question in one face and the options in another makes it harder to
+      // read, not more designed.
+      '--font-display': stack,
+      '--font-body': stack,
+      '--survey-scale': String(SCALES[theme.scale] || 1),
       '--r-md': CORNER_RADII[theme.corner] || CORNER_RADII.soft,
       '--r-lg': CORNER_RADII[theme.corner] || CORNER_RADII.soft
     };
@@ -556,7 +577,7 @@ const SurveyTheme = (() => {
   }
 
   return {
-    DEFAULTS, FONTS, BACKGROUNDS, CORNERS, LAYOUTS, PROGRESS, MODES, FITS, CORNER_RADII,
+    DEFAULTS, FONTS, SCALES, BACKGROUNDS, CORNERS, LAYOUTS, PROGRESS, MODES, FITS, CORNER_RADII,
     AA, FLOOR,
     normalize, resolve, toCSS, toCSSText, fontFace, legibility,
     normalizeHex, onAccent, contrast, luminance, shade, mix, withAlpha, familyName

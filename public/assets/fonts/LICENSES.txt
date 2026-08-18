@@ -1,0 +1,31 @@
+Survey type library — licences
+==============================
+
+These are Latin subsets of open-source families, redistributed here rather
+than loaded from a font CDN so that a member answering a survey never has to
+make a request to a third party to read a question.
+
+SIL Open Font License 1.1 — https://scripts.sil.org/OFL
+  Inter                Rasmus Andersson
+  Lato                 Łukasz Dziedzic
+  Montserrat           Julieta Ulanovsky and contributors
+  Poppins              Indian Type Foundry, Jonny Pinhorn
+  Work Sans            Wei Huang
+  Nunito               Vernon Adams, Cyreal, Jacques Le Bailly
+  Source Sans 3        Adobe
+  Playfair Display     Claus Eggers Sørensen
+  Merriweather         Sorkin Type
+  Lora                 Cyreal
+  Libre Baskerville    Impallari Type
+  Space Grotesk        Florian Karsten
+  IBM Plex Mono        IBM
+
+Apache License 2.0 — https://www.apache.org/licenses/LICENSE-2.0
+  Roboto               Christian Robertson
+  Open Sans            Steve Matteson
+
+Each licence permits redistribution, including bundled with an application,
+provided the licence travels with the font. That is what this file is.
+
+The subsets were produced by Google Fonts and fetched from their CDN; the
+files themselves are unmodified.
