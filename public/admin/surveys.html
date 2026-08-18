@@ -23,6 +23,7 @@
           <p class="page-subtitle">Questions put to developers, and what came back.</p>
         </div>
         <div class="page-actions">
+          <button class="btn btn-sm btn-secondary" onclick="openImportPicker()">Import responses</button>
           <a href="/admin/survey-new.html" class="btn btn-sm btn-primary">New survey</a>
         </div>
       </div>
@@ -55,6 +56,26 @@
     </div>
   </div>
 </div>
+
+<!-- ─── Which survey to import into ────────────────────── -->
+<!-- Answers are imported against a definition — the questions are what a
+     sheet's columns line up with — so the survey is chosen before anything
+     else. A picker rather than a second copy of the import form: it hands over
+     to that survey's own drawer, which is built from that survey's questions. -->
+<aside class="drawer" id="pickDrawer">
+  <div class="drawer-head">
+    <div>
+      <div class="drawer-title">Import responses</div>
+      <div class="drawer-sub">Answers already collected — on paper, in Google Forms, anywhere else</div>
+    </div>
+    <button class="icon-btn" onclick="Shell.closeDrawer('pickDrawer')">×</button>
+  </div>
+  <div class="drawer-body" id="pickBody"></div>
+  <div class="drawer-foot">
+    <button class="btn btn-secondary" onclick="Shell.closeDrawer('pickDrawer')">Cancel</button>
+    <button class="btn btn-primary" id="pickGo" onclick="goToImport()">Continue</button>
+  </div>
+</aside>
 
 <script src="/assets/js/api.js"></script>
 <script src="/assets/js/shell.js"></script>
@@ -195,6 +216,54 @@
       const res = await api.post(`/admin/surveys/${id}/remind`, {});
       showToast(`${res.reminded} reminded${res.skipped ? ` · ${res.skipped} skipped` : ''}`);
     } catch (err) { showToast(err.message, 'error'); }
+  }
+
+  // ─── Importing a round run elsewhere ────────────────────
+  // The sheet is landed against a survey, so this asks which one and then
+  // hands over. Offered here rather than only as a row action because a row
+  // action is revealed by hovering the row, which is right for acting on a
+  // survey you are already looking at and useless for the thing you came to
+  // this page to start.
+  function openImportPicker() {
+    const body = document.getElementById('pickBody');
+    const go = document.getElementById('pickGo');
+
+    // Nothing to import against. The questions have to exist for a column to
+    // mean anything, and saying so beats an empty dropdown.
+    if (!surveys.length) {
+      go.style.display = 'none';
+      body.innerHTML = emptyState({
+        title: 'Write the questions first',
+        text: 'A sheet is imported against a survey — its questions are what the columns line up with. Recreate the questions the round asked, save it as a draft, then come back and bring the answers in.',
+        action: '<a href="/admin/survey-new.html" class="btn btn-sm btn-primary">Write it</a>'
+      });
+      Shell.openDrawer('pickDrawer');
+      return;
+    }
+
+    go.style.display = '';
+    body.innerHTML = `
+      <div class="field">
+        <label class="label" for="pickSurvey">Which survey did they answer?</label>
+        <select class="input" id="pickSurvey">
+          ${surveys.map(s => `<option value="${s.id}">${escapeHtml(s.title)} · ${s.status}</option>`).join('')}
+        </select>
+        <div class="hint">
+          The next screen carries the blank sheet to fill in, built from this survey's own
+          questions — a column per question, with an example row showing the format each expects.
+        </div>
+      </div>
+      <div class="hint mt-4">
+        Run this round before? Duplicate last time's survey from the list and import into the
+        copy — the questions match, so last round's export imports straight into it.
+      </div>`;
+
+    Shell.openDrawer('pickDrawer');
+  }
+
+  function goToImport() {
+    window.location.href =
+      `/admin/survey-responses.html?id=${document.getElementById('pickSurvey').value}&import=1`;
   }
 
   document.querySelectorAll('.tab[data-status]').forEach(tab => {
