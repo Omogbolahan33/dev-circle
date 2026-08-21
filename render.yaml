@@ -7,7 +7,6 @@ services:
     buildCommand: npm ci
     startCommand: npm start
     healthCheckPath: /api/health
-    maxShutdownDelaySeconds: 30
     disk:
       name: dev-circle-data
       mountPath: /var/data
