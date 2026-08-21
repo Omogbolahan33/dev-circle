@@ -1,0 +1,58 @@
+services:
+  - type: web
+    name: dev-circle
+    runtime: node
+    plan: starter
+    region: oregon
+    buildCommand: npm ci
+    preDeployCommand: npm run migrate
+    startCommand: npm start
+    healthCheckPath: /api/health
+    maxShutdownDelaySeconds: 30
+    disk:
+      name: dev-circle-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: 20
+      - key: DEVCIRCLE_DB_PATH
+        value: /var/data/devcircle.db
+      - key: DEVCIRCLE_SANDBOX_DB_PATH
+        value: /var/data/devcircle-sandbox.db
+      - key: DEVCIRCLE_UPLOAD_DIR
+        value: /var/data/uploads
+      - key: SANDBOX_ENABLED
+        value: "true"
+      - key: DEV_HUB_AUTO_PROVISION
+        value: "true"
+      - key: DEV_HUB_TOKEN_MAX_AGE_SEC
+        value: "300"
+      - key: SESSION_TTL_HOURS
+        value: "24"
+      - key: LOGIN_CODE_TTL_SEC
+        value: "600"
+      - key: LOGIN_CODE_MAX_ATTEMPTS
+        value: "5"
+      - key: LOGIN_CODE_MAX_PER_WINDOW
+        value: "4"
+      - key: LOGIN_CODE_WINDOW_SEC
+        value: "900"
+      - key: APP_URL
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: DEV_HUB_SSO_SECRET
+        generateValue: true
+      - key: BOOTSTRAP_API_KEY
+        generateValue: true
+      - key: CUSTOMERIO_SITE_ID
+        sync: false
+      - key: CUSTOMERIO_API_KEY
+        sync: false
+      - key: WHATSAPP_API_TOKEN
+        sync: false
+      - key: SMS_API_KEY
+        sync: false
