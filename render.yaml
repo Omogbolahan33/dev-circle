@@ -5,7 +5,6 @@ services:
     plan: starter
     region: oregon
     buildCommand: npm ci
-    preDeployCommand: npm run migrate
     startCommand: npm start
     healthCheckPath: /api/health
     maxShutdownDelaySeconds: 30
@@ -17,7 +16,7 @@ services:
       - key: NODE_ENV
         value: production
       - key: NODE_VERSION
-        value: 20
+        value: 24.18.0
       - key: DEVCIRCLE_DB_PATH
         value: /var/data/devcircle.db
       - key: DEVCIRCLE_SANDBOX_DB_PATH

@@ -37,9 +37,13 @@ Render will run:
 
 ```sh
 npm ci
-npm run migrate
 npm start
 ```
+
+The database schema and pending migrations are applied during app startup.
+Do not run `npm run migrate` as a Render pre-deploy command for this setup:
+Render persistent disks are only available at runtime, not during build or
+pre-deploy commands.
 
 ## Production Environment
 
