@@ -1,0 +1,30 @@
+# Supabase local config — used by `supabase` CLI if you run Supabase locally
+# See https://supabase.com/docs/guides/local-development
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "storage", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+shadow_port = 54320
+major_version = 15
+
+[studio]
+enabled = true
+port = 54323
+
+[storage]
+enabled = true
+port = 54325
+file_size_limit = "50MiB"
+# The uploads bucket for Dev Circle brand assets
+[[storage.buckets]]
+id = "uploads"
+name = "uploads"
+public = true
+file_size_limit = "3MiB"
+allowed_mime_types = ["image/png", "image/jpeg", "image/gif", "image/webp", "font/woff2", "font/woff", "font/ttf", "font/otf"]

@@ -7,8 +7,11 @@
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
     "seed": "node src/db/seed.js",
+    "seed:postgres": "node scripts/seed-postgres.js",
     "migrate": "node scripts/migrate.js up",
     "migrate:status": "node scripts/migrate.js status",
+    "db:setup": "node scripts/db-setup.js",
+    "db:ping": "node -e \"require('dotenv').config(); require('./src/db/pg').ping().then(ok=>console.log(ok?'✓ Postgres reachable':'✗ Postgres unreachable')).catch(e=>console.error('✗',e.message))\"",
     "test": "node --test \"tests/**/*.test.js\"",
     "test:unit": "node --test \"tests/unit/*.test.js\"",
     "test:integration": "node --test \"tests/integration/*.test.js\"",
@@ -24,14 +27,17 @@
   "author": "",
   "license": "UNLICENSED",
   "dependencies": {
+    "@supabase/supabase-js": "^2.45.0",
     "bcryptjs": "^3.0.3",
     "better-sqlite3": "^13.0.3",
     "cors": "^2.8.6",
+    "dotenv": "^16.6.0",
     "express": "^5.2.1",
+    "pg": "^8.13.0",
     "swagger-ui-dist": "^5.32.13"
   },
   "private": true,
   "engines": {
-    "node": "24.x"
+    "node": ">=20"
   }
 }
