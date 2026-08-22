@@ -121,6 +121,30 @@ BOOTSTRAP_API_KEY=<strong random value>
 
 `GET /api/health` returns `{ status: "ok", version, uptime, database }` where `database` is `postgres` or `sqlite` and, in Postgres mode, verifies the pool is reachable.
 
+## Troubleshooting: `connect ENETUNREACH <ipv6-address>:5432` on boot
+
+Seen on Render and other hosts without an IPv6 route: DNS resolves the database
+hostname to an IPv6 (AAAA) record first, Node dials that address, and the OS
+reports `ENETUNREACH`. The app **prefers IPv4 DNS answers by default**
+(`PG_DNS_RESULT_ORDER=ipv4first`, set in `src/db/pg.js`), which fixes this
+automatically on recent deploys.
+
+If it still happens:
+
+- The hostname may have **no IPv4 record at all**. For Supabase, switch
+  `DATABASE_URL` to the pooled connection string
+  (`postgres://postgres.<ref>:PASSWORD@aws-0-<region>.pooler.supabase.com:6543/postgres`),
+  which resolves over IPv4.
+- Check that `PG_DNS_RESULT_ORDER` isn't set to `verbatim`/`ipv6first` in the
+  service's environment.
+- Related but distinct failures (logged with a `Postgres connection diagnosis`
+  line): `ENOTFOUND` = hostname typo or DNS not ready; `ETIMEDOUT`/`ECONNREFUSED`
+  = wrong port, firewall, or the database is paused — Supabase free-tier
+  projects pause when idle and Render free Postgres expires after 30 days.
+
+Boot always survives these errors — the pool retries on the next request — but
+every query fails until the underlying cause is fixed.
+
 ## Switching Between Databases
 
 | Env | Result |

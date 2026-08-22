@@ -75,6 +75,10 @@ const pgPool = {
   max: parseInt(process.env.PG_POOL_MAX, 10) || 10,
   idleTimeoutMillis: parseInt(process.env.PG_IDLE_TIMEOUT_MS, 10) || 30000,
   connectionTimeoutMillis: parseInt(process.env.PG_CONNECTION_TIMEOUT_MS, 10) || 10000,
+  // Hosts without an IPv6 route (Render et al) fail with
+  // `connect ENETUNREACH <ipv6>:5432` when DNS lists AAAA records first,
+  // so prefer IPv4 answers unless PG_DNS_RESULT_ORDER overrides.
+  dnsResultOrder: process.env.PG_DNS_RESULT_ORDER || 'ipv4first',
   // Supabase requires SSL; local Postgres does not
   ssl: process.env.PGSSLMODE === 'disable' || process.env.PG_SSL === 'false'
     ? false

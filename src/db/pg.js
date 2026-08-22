@@ -1,4 +1,5 @@
 const { Pool } = require('pg');
+const dns = require('dns');
 const config = require('../config');
 const { logger } = require('../utils/logger');
 
@@ -6,6 +7,80 @@ const { logger } = require('../utils/logger');
 // Used when DATABASE_URL is set (e.g. Supabase Postgres). The pool is
 // lazy — only created when actually needed — so `require('./pg')` never
 // throws in SQLite mode and tests keep running without a real DB.
+
+// Node ≥17 returns dns.lookup results "verbatim" (resolver order, which
+// commonly lists AAAA/IPv6 records first) and net.Socket.connect dials only
+// the first address. On hosts with no IPv6 route — Render web services, many
+// corporate networks — that kills every pool connection with
+// `connect ENETUNREACH <ipv6-address>:5432`. The pg driver offers no escape
+// hatch here: it calls stream.connect(port, host) on a plain socket and
+// ignores any `family` pool option, so the fix has to happen in DNS order.
+// Preferring A records keeps IPv6-only hostnames working (empty IPv4 list
+// falls through to the AAAA records).
+const DNS_RESULT_ORDERS = new Set(['ipv4first', 'ipv6first', 'verbatim']);
+
+function parseDnsResultOrder(raw) {
+  const value = String(raw ?? '').trim().toLowerCase();
+  if (!value || value === 'default' || value === 'auto') return 'ipv4first';
+  if (value === 'none' || value === 'off') return null; // keep Node's default
+  if (DNS_RESULT_ORDERS.has(value)) return value;
+  logger.warn('Ignoring unknown PG_DNS_RESULT_ORDER — using ipv4first', { value: raw });
+  return 'ipv4first';
+}
+
+function applyDnsResultOrder(raw) {
+  const order = parseDnsResultOrder(raw);
+  if (!order || typeof dns.setDefaultResultOrder !== 'function') return null;
+  try {
+    dns.setDefaultResultOrder(order);
+  } catch (err) {
+    logger.warn('Could not set DNS result order', { order, message: err.message });
+    return null;
+  }
+  return order;
+}
+
+const dnsResultOrder = applyDnsResultOrder(config.database.pgPool.dnsResultOrder);
+
+// Turn a low-level connection failure into something actionable for the
+// deploy logs. Boot already survives these (the pool retries on demand);
+// the hint is what tells the operator *what to change*.
+function diagnoseConnectionError(err) {
+  const message = String(err?.message || '');
+  const code = String(err?.code || '');
+  // Full IPv6 literal, e.g. 2a05:d018:…:8274 (not the "::" wildcard form)
+  const ipv6 = message.match(/\b(?:[0-9a-f]{1,4}:){4,7}[0-9a-f:]*[0-9a-f]\b/i)?.[0];
+
+  if (ipv6 && /ENETUNREACH|EAFNOSUPPORT|EADDRNOTAVAIL/.test(code + ' ' + message)) {
+    return {
+      reason: `Host resolved to the IPv6 address ${ipv6} but this machine has no IPv6 route`,
+      fix: dnsResultOrder === 'ipv4first'
+        ? 'The hostname appears to have no IPv4 (A) record. Point DATABASE_URL at an ' +
+          'IPv4-reachable endpoint — for Supabase use the pooler string ' +
+          '(aws-0-<region>.pooler.supabase.com:6543) instead of db.<ref>.supabase.co.'
+        : `An IPv4 address was never tried. Set PG_DNS_RESULT_ORDER=ipv4first ` +
+          `(currently: ${dnsResultOrder ?? 'node default'}).`
+    };
+  }
+  if (/ENOTFOUND|EAI_AGAIN/.test(code + ' ' + message)) {
+    return {
+      reason: 'DNS could not resolve the database hostname',
+      fix: 'Check the host in DATABASE_URL for typos; on a fresh deploy DNS may just need a minute.'
+    };
+  }
+  if (/ETIMEDOUT|ECONNREFUSED/.test(code + ' ' + message)) {
+    return {
+      reason: 'The database address refused or timed out on the connection',
+      fix: 'Check the port and any firewall/IP allowlist. Supabase free-tier projects pause when ' +
+        'idle (restore from the dashboard) and Render free Postgres expires after 30 days — ' +
+        'both look exactly like this.'
+    };
+  }
+  if (code === '28P01' || /password authentication failed/i.test(message)) {
+    return { reason: 'Postgres rejected the credentials', fix: 'Re-copy the password from DATABASE_URL in the provider dashboard.' };
+  }
+  return null;
+}
 
 let pool = null;
 
@@ -189,5 +264,8 @@ module.exports = {
   ping,
   close,
   translatePlaceholders,
-  translateSqliteToPostgres
+  translateSqliteToPostgres,
+  parseDnsResultOrder,
+  applyDnsResultOrder,
+  diagnoseConnectionError
 };
