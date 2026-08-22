@@ -23,6 +23,10 @@ async function boot() {
       }
     } catch (err) {
       logger.error('Postgres boot failed — will retry on demand', { message: err.message });
+      const diagnosis = require('./db/pg').diagnoseConnectionError(err);
+      if (diagnosis) {
+        logger.warn('Postgres connection diagnosis', { reason: diagnosis.reason, fix: diagnosis.fix });
+      }
       if (config.isProduction) {
         logger.warn('Continuing despite Postgres boot error — check DATABASE_URL and network');
       }
