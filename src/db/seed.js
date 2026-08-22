@@ -10,6 +10,15 @@ const surveyForm = require('../services/surveyForm');
 
 function uuid() { return crypto.randomUUID(); }
 
+// Postgres / Supabase: use async seed
+if (config.isPostgres) {
+  console.log('Postgres detected — delegating to async seed for Supabase/Postgres...');
+  // Load async seeder and exit; it handles the same data via pg pool
+  require('../../scripts/seed-postgres');
+  // seed-postgres is async and will process.exit when done; prevent fall-through
+  return;
+}
+
 // This script wipes every table it owns and installs weak demo credentials.
 // Running it against production would delete the member base and open two
 // admin accounts with published passwords.

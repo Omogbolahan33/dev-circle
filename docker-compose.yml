@@ -1,0 +1,33 @@
+# Local Postgres for Dev Circle — optional
+# Use when you want to test the Postgres adapter without Supabase Cloud.
+# SQLite remains the default; this is only for `DATABASE_URL=postgres://...` testing.
+#
+# Start:   docker compose up -d
+# Env:     DATABASE_URL=postgres://devcircle:devcircle@localhost:5432/devcircle
+# Migrate: DATABASE_URL=postgres://devcircle:devcircle@localhost:5432/devcircle npm run migrate
+# Seed:    DATABASE_URL=postgres://devcircle:devcircle@localhost:5432/devcircle npm run seed:postgres
+# Stop:    docker compose down
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: devcircle
+      POSTGRES_PASSWORD: devcircle
+      POSTGRES_DB: devcircle
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U devcircle"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Optional: Supabase local stack — uncomment if you use `supabase` CLI
+  # Or run `npx supabase init` and `npx supabase start` instead.
+
+volumes:
+  pgdata:

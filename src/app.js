@@ -46,8 +46,19 @@ app.use(express.static(PUBLIC_DIR, { extensions: ['html'] }));
 // origin. Unauthenticated on purpose — a survey answered over a public link
 // has to be able to load its own logo — and the name is unguessable, which is
 // the only thing standing in front of it.
-app.get('/uploads/:name', (req, res) => {
-  const asset = require('./services/uploads').read(req.params.name);
+// When Supabase Storage is configured, tries Supabase first (async), then
+// falls back to local disk.
+app.get('/uploads/:name', async (req, res) => {
+  const uploads = require('./services/uploads');
+  let asset = null;
+
+  // Try Supabase async read when configured
+  if (config.uploads.backend === 'supabase' && config.supabase.hasServiceRole) {
+    try { asset = await uploads.readAsync(req.params.name); } catch {}
+  }
+  // Fallback to sync disk read
+  if (!asset) asset = uploads.read(req.params.name);
+
   if (!asset) return res.status(404).type('text/plain').send('Not found');
 
   res.setHeader('Content-Type', asset.mime);

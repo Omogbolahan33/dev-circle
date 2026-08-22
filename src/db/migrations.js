@@ -9,14 +9,32 @@ const crypto = require('crypto');
 // Each runs inside a transaction, so a failure leaves nothing half-applied.
 
 function makeHelpers(db) {
+  const isPostgres = Boolean(db._isPostgres || db._pool);
   return {
     // ALTER TABLE ADD COLUMN has no IF NOT EXISTS, so check first
     addColumn(table, column, definition) {
+      // Postgres path: check information_schema; sqlite path uses PRAGMA
+      if (isPostgres) {
+        // Postgres supports IF NOT EXISTS since PG 9.6; use it directly
+        // Strip any default wrapping that sqlite expects
+        try {
+          db.exec(`ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS ${column} ${definition}`);
+        } catch (e) {
+          // Fallback: check via information_schema synchronously would be async;
+          // for now ignore if column exists error
+          if (!String(e.message).includes('already exists')) throw e;
+        }
+        return;
+      }
       const cols = db.prepare(`PRAGMA table_info(${table})`).all();
       if (cols.some(c => c.name === column)) return;
       db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
     }
   };
+}
+
+function isPostgresDb(db) {
+  return Boolean(db._isPostgres || db._pool);
 }
 
 function define(db) {
@@ -1191,19 +1209,25 @@ function run(db, { log = () => {} } = {}) {
   const done = new Set(applied(db).map(r => r.id));
   const ran = [];
 
-  // SQLite cannot drop a NOT NULL or widen a CHECK in place, so those changes
-  // are made by building the table again and renaming it into position. That
-  // means dropping a table other tables point at, which foreign key
-  // enforcement refuses outright — and deferring the check does not help,
-  // because a dropped parent counts as a violation that reappearing under the
-  // same name never clears. Turning enforcement off for the duration is the
-  // procedure SQLite documents for exactly this.
-  //
-  // It is only safe because of the check afterwards: every migration is
-  // followed by a full integrity scan, so a rebuild that stranded a row fails
-  // here rather than months later at whatever query first noticed.
-  const enforcing = db.pragma('foreign_keys', { simple: true });
-  if (enforcing) db.pragma('foreign_keys = OFF');
+  const isPG = isPostgresDb(db);
+
+  // Postgres does not use SQLite pragmas; skip foreign_keys juggling there
+  let enforcing = null;
+  if (!isPG) {
+    // SQLite cannot drop a NOT NULL or widen a CHECK in place, so those changes
+    // are made by building the table again and renaming it into position. That
+    // means dropping a table other tables point at, which foreign key
+    // enforcement refuses outright — and deferring the check does not help,
+    // because a dropped parent counts as a violation that reappearing under the
+    // same name never clears. Turning enforcement off for the duration is the
+    // procedure SQLite documents for exactly this.
+    //
+    // It is only safe because of the check afterwards: every migration is
+    // followed by a full integrity scan, so a rebuild that stranded a row fails
+    // here rather than months later at whatever query first noticed.
+    enforcing = db.pragma('foreign_keys', { simple: true });
+    if (enforcing) db.pragma('foreign_keys = OFF');
+  }
 
   try {
   for (const migration of all) {
@@ -1216,12 +1240,14 @@ function run(db, { log = () => {} } = {}) {
         .run(migration.id, migration.name);
     })();
 
-    const stranded = db.pragma('foreign_key_check');
-    if (stranded.length) {
-      throw new Error(
-        `migration ${migration.id} (${migration.name}) left ${stranded.length} row(s) ` +
-        `pointing at nothing: ${JSON.stringify(stranded.slice(0, 3))}`
-      );
+    if (!isPG) {
+      const stranded = db.pragma('foreign_key_check');
+      if (stranded.length) {
+        throw new Error(
+          `migration ${migration.id} (${migration.name}) left ${stranded.length} row(s) ` +
+          `pointing at nothing: ${JSON.stringify(stranded.slice(0, 3))}`
+        );
+      }
     }
 
     ran.push(migration);
@@ -1230,10 +1256,58 @@ function run(db, { log = () => {} } = {}) {
   } finally {
     // Restored whatever happened above, so a failed migration cannot leave the
     // connection running without referential integrity
-    if (enforcing) db.pragma('foreign_keys = ON');
+    if (!isPG && enforcing) db.pragma('foreign_keys = ON');
   }
 
   return ran;
 }
 
-module.exports = { run, status, applied, define };
+// Async variant for Postgres (pg) where prepare/exec are async. SQLite callers
+// keep using the sync `run`; Postgres startup uses this.
+async function runAsync(db, { log = () => {} } = {}) {
+  // Ensure table exists (async)
+  if (db.exec.constructor.name === 'AsyncFunction') {
+    await db.exec(`
+      CREATE TABLE IF NOT EXISTS schema_migrations (
+        id INTEGER PRIMARY KEY,
+        name TEXT NOT NULL,
+        applied_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+  } else {
+    ensureTable(db);
+  }
+
+  const all = define(db);
+
+  // For async pg, we need to await applied rows
+  let rows;
+  if (db.prepare('SELECT 1').get.constructor.name === 'AsyncFunction') {
+    rows = await db.prepare('SELECT id, name, applied_at FROM schema_migrations ORDER BY id').all();
+  } else {
+    rows = applied(db);
+  }
+
+  const done = new Set(rows.map(r => r.id));
+  const ran = [];
+
+  for (const migration of all) {
+    if (done.has(migration.id)) continue;
+
+    // Postgres transactions via BEGIN/COMMIT are handled inside the dbLike
+    // transaction wrapper if needed; here we just run up() and record.
+    // If up() contains async calls, we need to await them — migrations are
+    // written sync, but for Postgres we await prepare/exec where needed.
+    const maybePromise = migration.up();
+    if (maybePromise && typeof maybePromise.then === 'function') await maybePromise;
+
+    await db.prepare('INSERT INTO schema_migrations (id, name) VALUES ($1, $2)').run(migration.id, migration.name);
+
+    ran.push(migration);
+    log(`migration ${migration.id}: ${migration.name}`);
+  }
+
+  return ran;
+}
+
+module.exports = { run, runAsync, status, applied, define };

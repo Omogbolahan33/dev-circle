@@ -1,6 +1,7 @@
 const express = require('express');
 const { requirePermission } = require('../../middleware/auth');
 const uploads = require('../../services/uploads');
+const config = require('../../config');
 
 const router = express.Router();
 
@@ -11,7 +12,7 @@ const router = express.Router();
 // ability.
 
 // POST /api/admin/uploads
-router.post('/uploads', requirePermission('surveys.write'), (req, res) => {
+router.post('/uploads', requirePermission('surveys.write'), async (req, res) => {
   const { file, kind = 'image' } = req.body;
 
   if (!['image', 'font'].includes(kind)) {
@@ -19,7 +20,10 @@ router.post('/uploads', requirePermission('surveys.write'), (req, res) => {
   }
 
   try {
-    const stored = uploads.store(file, { kind, by: req.admin.id });
+    // Prefer async path (handles Supabase); fall back to sync for local disk
+    const stored = config.uploads.backend === 'supabase' && config.supabase.hasServiceRole
+      ? await uploads.storeAsync(file, { kind, by: req.admin.id })
+      : uploads.store(file, { kind, by: req.admin.id });
     res.status(201).json({ asset: stored });
   } catch (err) {
     if (err instanceof uploads.UploadError) {

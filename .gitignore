@@ -6,6 +6,7 @@ node_modules/
 .env.*
 !.env.example
 !.env.render.example
+!.env.supabase.example
 
 # The SQLite database is local state, rebuilt with `npm run seed`.
 # Committing it would publish member records and password hashes.
