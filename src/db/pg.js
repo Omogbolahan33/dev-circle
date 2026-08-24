@@ -117,6 +117,20 @@ function translatePlaceholders(sql) {
   return sql.replace(/\?/g, () => `$${++idx}`);
 }
 
+// The same statement is prepared on every request. Translating it once is
+// what stops the dialect shim from running on the hot path.
+const translatedCache = new Map();
+const TRANSLATE_CACHE_MAX = 400;
+
+function translateSql(sql) {
+  const hit = translatedCache.get(sql);
+  if (hit) return hit;
+  const translated = translateSqliteToPostgres(translatePlaceholders(sql));
+  if (translatedCache.size >= TRANSLATE_CACHE_MAX) translatedCache.clear();
+  translatedCache.set(sql, translated);
+  return translated;
+}
+
 // Replace name(...) even when the argument list nests parentheses
 // (julianday(COALESCE(a, b)) is the case the naive [^)]+ regex drops).
 function replaceFnCall(sql, name, replacer) {
@@ -200,6 +214,13 @@ function translateSqliteToPostgres(sql) {
   // SQLite PRAGMA handling — will be caught elsewhere, but strip to avoid pg errors
   if (/^\s*PRAGMA/i.test(out)) return '-- PRAGMA ignored on Postgres';
 
+  // Member export concatenates related names. Postgres has no GROUP_CONCAT.
+  out = out.replace(
+    /GROUP_CONCAT\s*\(\s*([^,()]+)\s*,\s*('(?:[^']|'')*')\s*\)/gi,
+    'string_agg($1, $2)'
+  );
+  out = out.replace(/GROUP_CONCAT\s*\(\s*([^()]+)\s*\)/gi, "string_agg($1, ',')");
+
   return out;
 }
 
@@ -214,10 +235,7 @@ function prepare(sql) {
 
   async function execWith(params = []) {
     const p = getPool();
-    const translated = translatePlaceholders(sql);
-    // Basic datetime translation
-    const finalSql = translateSqliteToPostgres(translated);
-    const result = await p.query(finalSql, params);
+    const result = await p.query(translateSql(sql), params);
     return result;
   }
 
@@ -254,14 +272,13 @@ async function exec(sql) {
     .filter(Boolean);
   for (const stmt of statements) {
     const final = translateSqliteToPostgres(stmt);
-    if (final) await p.query(final);
+    if (final && !/^--/.test(final)) await p.query(final);
   }
 }
 
 async function query(sql, params = []) {
   const p = getPool();
-  const final = translateSqliteToPostgres(translatePlaceholders(sql));
-  const res = await p.query(final, params);
+  const res = await p.query(translateSql(sql), params);
   return res;
 }
 
@@ -278,8 +295,7 @@ function transaction(fn) {
       await client.query('BEGIN');
       // Provide a client-bound query helper inside the transaction
       const txQuery = async (sql, params = []) => {
-        const final = translateSqliteToPostgres(translatePlaceholders(sql));
-        return client.query(final, params);
+        return client.query(translateSql(sql), params);
       };
       const result = await fn(txQuery, ...args);
       await client.query('COMMIT');
@@ -317,6 +333,7 @@ module.exports = {
   close,
   translatePlaceholders,
   translateSqliteToPostgres,
+  translateSql,
   replaceFnCall,
   parseDnsResultOrder,
   applyDnsResultOrder,

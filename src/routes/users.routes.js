@@ -19,33 +19,39 @@ router.get('/profile', requireAuth, async (req, res) => {
   // Roll back a streak the member has let lapse before reporting it
   await engagement.decayStale(req.user.id);
 
-  const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
-  const cohorts = await db.prepare(`
-    SELECT c.* FROM cohorts c
-    JOIN user_cohorts uc ON uc.cohort_id = c.id
-    WHERE uc.user_id = ?
-  `).all(req.user.id);
-
-  const consent = await db.prepare('SELECT * FROM consent WHERE user_id = ?').all(req.user.id);
-  const count = async sql => Number((await db.prepare(sql).get(req.user.id))?.c || 0);
-
-  const stats = {
-    surveys_completed: await count("SELECT COUNT(*) as c FROM survey_responses WHERE user_id = ? AND completed_at IS NOT NULL"),
-    surveys_invited: await count('SELECT COUNT(*) as c FROM survey_responses WHERE user_id = ?'),
-    gifts_claimed: await count('SELECT COUNT(*) as c FROM user_gifts WHERE user_id = ?'),
-    feedback_submitted: await count('SELECT COUNT(*) as c FROM feedback WHERE user_id = ?'),
-    streak: user.engagement_streak,
-    best_streak: user.best_streak
-  };
-
-  const inbox = await notifications.inbox(req.user.id, { limit: 1 });
+  const id = req.user.id;
+  const [user, cohorts, consent, memberCircles, counts, inbox] = await Promise.all([
+    db.prepare('SELECT * FROM users WHERE id = ?').get(id),
+    db.prepare(`
+      SELECT c.* FROM cohorts c
+      JOIN user_cohorts uc ON uc.cohort_id = c.id
+      WHERE uc.user_id = ?
+    `).all(id),
+    db.prepare('SELECT * FROM consent WHERE user_id = ?').all(id),
+    circles.forUser(id),
+    db.prepare(`
+      SELECT
+        (SELECT COUNT(*) FROM survey_responses WHERE user_id = ? AND completed_at IS NOT NULL) as surveys_completed,
+        (SELECT COUNT(*) FROM survey_responses WHERE user_id = ?) as surveys_invited,
+        (SELECT COUNT(*) FROM user_gifts WHERE user_id = ?) as gifts_claimed,
+        (SELECT COUNT(*) FROM feedback WHERE user_id = ?) as feedback_submitted
+    `).get(id, id, id, id),
+    notifications.inbox(id, { limit: 1 })
+  ]);
 
   res.json({
     user: sanitizeUser(user),
     cohorts,
-    circles: await circles.forUser(req.user.id),
+    circles: memberCircles,
     consent,
-    stats,
+    stats: {
+      surveys_completed: Number(counts?.surveys_completed || 0),
+      surveys_invited: Number(counts?.surveys_invited || 0),
+      gifts_claimed: Number(counts?.gifts_claimed || 0),
+      feedback_submitted: Number(counts?.feedback_submitted || 0),
+      streak: user.engagement_streak,
+      best_streak: user.best_streak
+    },
     unread_notifications: inbox.unread_count
   });
 });
@@ -392,7 +398,11 @@ router.get('/gifts', requireAuth, async (req, res) => {
 
   const claimedIds = new Set(claimed.map(g => g.id));
 
-  const catalogue = await db.prepare("SELECT * FROM gifts WHERE COALESCE(active, 1) = 1").all();
+  const [catalogue, claimCounts] = await Promise.all([
+    db.prepare("SELECT * FROM gifts WHERE COALESCE(active, 1) = 1").all(),
+    db.prepare('SELECT gift_id, COUNT(*) as c FROM user_gifts GROUP BY gift_id').all()
+  ]);
+  const claimedByGift = new Map((claimCounts || []).map(r => [r.gift_id, Number(r.c)]));
 
   const available = [];
   const locked = [];
@@ -404,7 +414,7 @@ router.get('/gifts', requireAuth, async (req, res) => {
     // An empty target list means the gift is open to every member
     if (targets.length && !targets.some(id => cohortIds.includes(id))) continue;
 
-    const claimedCount = Number((await db.prepare('SELECT COUNT(*) as c FROM user_gifts WHERE gift_id = ?').get(gift.id))?.c || 0);
+    const claimedCount = claimedByGift.get(gift.id) || 0;
     const outOfStock = gift.stock !== null && gift.stock !== undefined && claimedCount >= gift.stock;
 
     const requirements = [];

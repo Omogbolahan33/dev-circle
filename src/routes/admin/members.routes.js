@@ -23,41 +23,64 @@ router.get('/members', requirePermission('members.read'), async (req, res) => {
   // "filtered out" here — they are not part of this one.
   const { where, params } = memberFilters({ ...req.query, circle_id: req.circleId });
 
-  const total = Number((await db.prepare(`SELECT COUNT(*) as c FROM users u WHERE ${where}`).get(...params))?.c || 0);
+  const [totalRow, members] = await Promise.all([
+    db.prepare(`SELECT COUNT(*) as c FROM users u WHERE ${where}`).get(...params),
+    db.prepare(`
+      SELECT u.id, u.email, u.name, u.phone, u.company, u.work_sector,
+             u.status, u.api_status, u.kyb_completed, u.engagement_streak,
+             u.preferred_channels, u.preferred_days, u.api_products,
+             u.gender, u.location_state, u.date_of_birth,
+             u.last_active_at, u.created_at
+      FROM users u
+      WHERE ${where}
+      ORDER BY u.created_at DESC
+      LIMIT ? OFFSET ?
+    `).all(...params, l, offset)
+  ]);
+  const total = Number(totalRow?.c || 0);
 
-  // Counts come from correlated subqueries rather than a query per member,
-  // which was N+1 across the whole page.
-  const members = await db.prepare(`
-    SELECT u.id, u.email, u.name, u.phone, u.company, u.work_sector,
-           u.status, u.api_status, u.kyb_completed, u.engagement_streak,
-           u.preferred_channels, u.preferred_days, u.api_products,
-           u.gender, u.location_state, u.date_of_birth,
-           u.last_active_at, u.created_at,
-           (SELECT COUNT(*) FROM survey_responses sr
-             WHERE sr.user_id = u.id AND sr.completed_at IS NOT NULL) as surveys_completed,
-           (SELECT COUNT(*) FROM survey_responses sr WHERE sr.user_id = u.id) as surveys_invited
-    FROM users u
-    WHERE ${where}
-    ORDER BY u.created_at DESC
-    LIMIT ? OFFSET ?
-  `).all(...params, l, offset);
-
-  const cohortStmt = db.prepare(`
-    SELECT c.id, c.name, c.color FROM cohorts c
-    JOIN user_cohorts uc ON uc.cohort_id = c.id
-    WHERE uc.user_id = ?
-  `);
-
-  const result = [];
-  for (const m of members || []) {
-    result.push({
-      ...m,
-      preferred_channels: parseJSON(m.preferred_channels, []),
-      preferred_days: parseJSON(m.preferred_days, []),
-      api_products: parseJSON(m.api_products, []),
-      cohorts: await cohortStmt.all(m.id)
-    });
+  const ids = (members || []).map(m => m.id);
+  const cohortsByUser = new Map();
+  const surveysByUser = new Map();
+  if (ids.length) {
+    const placeholders = ids.map(() => '?').join(',');
+    const [surveyRows, cohortRows] = await Promise.all([
+      db.prepare(`
+        SELECT user_id,
+               COUNT(*) as invited,
+               SUM(CASE WHEN completed_at IS NOT NULL THEN 1 ELSE 0 END) as completed
+        FROM survey_responses
+        WHERE user_id IN (${placeholders})
+        GROUP BY user_id
+      `).all(...ids),
+      db.prepare(`
+        SELECT uc.user_id, c.id, c.name, c.color
+        FROM user_cohorts uc
+        JOIN cohorts c ON c.id = uc.cohort_id
+        WHERE uc.user_id IN (${placeholders})
+      `).all(...ids)
+    ]);
+    for (const row of surveyRows || []) {
+      surveysByUser.set(row.user_id, {
+        surveys_completed: Number(row.completed || 0),
+        surveys_invited: Number(row.invited || 0)
+      });
+    }
+    for (const row of cohortRows || []) {
+      const list = cohortsByUser.get(row.user_id) || [];
+      list.push({ id: row.id, name: row.name, color: row.color });
+      cohortsByUser.set(row.user_id, list);
+    }
   }
+
+  const result = (members || []).map(m => ({
+    ...m,
+    preferred_channels: parseJSON(m.preferred_channels, []),
+    preferred_days: parseJSON(m.preferred_days, []),
+    api_products: parseJSON(m.api_products, []),
+    ...(surveysByUser.get(m.id) || { surveys_completed: 0, surveys_invited: 0 }),
+    cohorts: cohortsByUser.get(m.id) || []
+  }));
 
   res.json({
     members: result,
@@ -75,35 +98,44 @@ router.get('/members/:id', requirePermission('members.read'), async (req, res) =
     return res.status(404).json({ error: 'Member not found in this circle' });
   }
 
-  const cohorts = await db.prepare(`
-    SELECT c.* FROM cohorts c JOIN user_cohorts uc ON uc.cohort_id = c.id
-    WHERE uc.user_id = ? AND c.circle_id = ?
-  `).all(user.id, req.circleId);
+  const [cohorts, consent, engagementRows, feedback, survey_responses, gifts, deliveries] =
+    await Promise.all([
+      db.prepare(`
+        SELECT c.* FROM cohorts c JOIN user_cohorts uc ON uc.cohort_id = c.id
+        WHERE uc.user_id = ? AND c.circle_id = ?
+      `).all(user.id, req.circleId),
+      db.prepare('SELECT * FROM consent WHERE user_id = ?').all(user.id),
+      db.prepare(
+        'SELECT * FROM engagement_history WHERE user_id = ? ORDER BY created_at DESC LIMIT 50'
+      ).all(user.id),
+      verbatims.forUser(user.id, { limit: 50 }),
+      db.prepare(`
+        SELECT sr.*, s.title as survey_title
+        FROM survey_responses sr JOIN surveys s ON s.id = sr.survey_id
+        WHERE sr.user_id = ? ORDER BY sr.created_at DESC
+      `).all(user.id),
+      db.prepare(`
+        SELECT g.name, g.value, g.currency, ug.claimed_at, ug.delivered_at
+        FROM user_gifts ug JOIN gifts g ON g.id = ug.gift_id
+        WHERE ug.user_id = ? ORDER BY ug.claimed_at DESC
+      `).all(user.id),
+      db.prepare(`
+        SELECT source_type, channel, status, reason, created_at
+        FROM message_deliveries WHERE user_id = ? ORDER BY created_at DESC LIMIT 25
+      `).all(user.id)
+    ]);
 
   res.json({
     user: sanitizeUser(user),
     cohorts,
-    consent: await db.prepare('SELECT * FROM consent WHERE user_id = ?').all(user.id),
-    engagement: await db.prepare(
-      'SELECT * FROM engagement_history WHERE user_id = ? ORDER BY created_at DESC LIMIT 50'
-    ).all(user.id),
+    consent,
+    engagement: engagementRows,
     // Everything this member has told us, whatever the source and whichever
     // question drew it out — the single list this change exists to make possible
-    feedback: await verbatims.forUser(user.id, { limit: 50 }),
-    survey_responses: await db.prepare(`
-      SELECT sr.*, s.title as survey_title
-      FROM survey_responses sr JOIN surveys s ON s.id = sr.survey_id
-      WHERE sr.user_id = ? ORDER BY sr.created_at DESC
-    `).all(user.id),
-    gifts: await db.prepare(`
-      SELECT g.name, g.value, g.currency, ug.claimed_at, ug.delivered_at
-      FROM user_gifts ug JOIN gifts g ON g.id = ug.gift_id
-      WHERE ug.user_id = ? ORDER BY ug.claimed_at DESC
-    `).all(user.id),
-    deliveries: await db.prepare(`
-      SELECT source_type, channel, status, reason, created_at
-      FROM message_deliveries WHERE user_id = ? ORDER BY created_at DESC LIMIT 25
-    `).all(user.id)
+    feedback,
+    survey_responses,
+    gifts,
+    deliveries
   });
 });
 

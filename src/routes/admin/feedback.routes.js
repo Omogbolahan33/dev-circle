@@ -30,22 +30,21 @@ router.get('/feedback', requirePermission('feedback.read'), async (req, res) => 
   if (prompted === 'false') where.push('f.canonical_question_id IS NULL');
   if (prompted === 'true') where.push('f.canonical_question_id IS NOT NULL');
 
-  const feedback = await db.prepare(`
-    SELECT f.*, u.name as user_name, u.email as user_email, u.company as user_company,
-           s.title as survey_title
-    FROM feedback f
-    LEFT JOIN users u ON u.id = f.user_id
-    LEFT JOIN surveys s ON s.id = f.survey_id
-    WHERE ${where.join(' AND ')}
-    ORDER BY f.created_at DESC
-    LIMIT ?
-  `).all(...params, Math.min(200, parseInt(limit, 10) || 50));
-
-  // What the sources add up to, so the filter chips can carry counts and an
-  // empty result is distinguishable from a source that has never had anything
-  const bySource = await db.prepare(
-    'SELECT source, COUNT(*) as count FROM feedback GROUP BY source'
-  ).all();
+  const [feedback, bySource] = await Promise.all([
+    db.prepare(`
+      SELECT f.*, u.name as user_name, u.email as user_email, u.company as user_company,
+             s.title as survey_title
+      FROM feedback f
+      LEFT JOIN users u ON u.id = f.user_id
+      LEFT JOIN surveys s ON s.id = f.survey_id
+      WHERE ${where.join(' AND ')}
+      ORDER BY f.created_at DESC
+      LIMIT ?
+    `).all(...params, Math.min(200, parseInt(limit, 10) || 50)),
+    // What the sources add up to, so the filter chips can carry counts and an
+    // empty result is distinguishable from a source that has never had anything
+    db.prepare('SELECT source, COUNT(*) as count FROM feedback GROUP BY source').all()
+  ]);
 
   res.json({ feedback: feedback || [], sources: bySource || [] });
 });
@@ -62,7 +61,11 @@ router.get('/feedback/axes', requirePermission('feedback.read'), async (req, res
 // "what did the Lending cohort say about onboarding, by developer" is one call.
 router.get('/feedback/grouped', requirePermission('feedback.read'), async (req, res) => {
   const axis = req.query.group_by || 'question';
-  const groups = await views.group(axis, scoped(req));
+  const query = scoped(req);
+  const [groups, totals] = await Promise.all([
+    views.group(axis, query),
+    views.summarise(query)
+  ]);
 
   if (!groups) {
     return res.status(400).json({
@@ -75,16 +78,18 @@ router.get('/feedback/grouped', requirePermission('feedback.read'), async (req, 
     group_by: axis,
     axis: views.axes().find(a => a.key === axis),
     groups,
-    totals: await views.summarise(scoped(req))
+    totals
   });
 });
 
 // GET /api/admin/feedback/items — the verbatims themselves, however filtered
 router.get('/feedback/items', requirePermission('feedback.read'), async (req, res) => {
-  res.json({
-    items: await views.items(scoped(req), { limit: Math.min(500, parseInt(scoped(req).limit, 10) || 200) }),
-    totals: await views.summarise(scoped(req))
-  });
+  const query = scoped(req);
+  const [items, totals] = await Promise.all([
+    views.items(query, { limit: Math.min(500, parseInt(query.limit, 10) || 200) }),
+    views.summarise(query)
+  ]);
+  res.json({ items, totals });
 });
 
 // ─── Export ─────────────────────────────────────────────────

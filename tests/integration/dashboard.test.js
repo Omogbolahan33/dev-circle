@@ -42,4 +42,15 @@ test('the dashboard headlines load', async () => {
   assert.equal(res.status, 200, res.body?.error || JSON.stringify(res.body));
   assert.equal(res.body.stats.total_members, 1);
   assert.ok(Number.isInteger(res.body.stats.new_this_week));
+  assert.ok(Array.isArray(res.body.cohort_breakdown));
+});
+
+test('the member list loads cohorts in one pass', async () => {
+  const user = h.makeUser({ name: 'Ada Obi' });
+  const listed = await h.get('/api/admin/members', { token });
+  assert.equal(listed.status, 200, listed.body?.error || JSON.stringify(listed.body));
+  const row = listed.body.members.find(m => m.id === user.id);
+  assert.ok(row);
+  assert.ok(Array.isArray(row.cohorts));
+  assert.equal(Number(row.surveys_completed), 0);
 });

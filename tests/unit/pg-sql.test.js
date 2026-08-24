@@ -60,4 +60,17 @@ describe('SQLite → Postgres SQL', () => {
     assert.match(sql, /FROM LATERAL jsonb_array_elements_text/);
     assert.match(sql, /json_each\.value = \$1/);
   });
+
+  test('GROUP_CONCAT becomes string_agg', () => {
+    const sql = pgSql(
+      "SELECT GROUP_CONCAT(c.name, '; ') as cohorts FROM cohorts c WHERE c.id = ?"
+    );
+    assert.match(sql, /string_agg\(c\.name, '; '\)/);
+    assert.match(sql, /\$1/);
+  });
+
+  test('translateSql caches the same statement', () => {
+    const sql = "SELECT * FROM users WHERE created_at > datetime('now', '-7 days')";
+    assert.equal(pg.translateSql(sql), pg.translateSql(sql));
+  });
 });

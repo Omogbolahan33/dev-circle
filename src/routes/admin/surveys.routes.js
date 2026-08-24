@@ -21,11 +21,20 @@ router.get('/surveys', requirePermission('surveys.read'), async (req, res) => {
   // A survey belongs to the circle that ran it
   const surveys = await db.prepare(`
     SELECT s.*,
-      (SELECT COUNT(*) FROM survey_responses sr WHERE sr.survey_id = s.id) as response_count,
-      (SELECT COUNT(*) FROM survey_responses sr
-        WHERE sr.survey_id = s.id AND sr.completed_at IS NOT NULL) as completed_count
-    FROM surveys s WHERE s.circle_id = ? ORDER BY s.created_at DESC
-  `).all(req.circleId);
+      COALESCE(sr.response_count, 0) as response_count,
+      COALESCE(sr.completed_count, 0) as completed_count
+    FROM surveys s
+    LEFT JOIN (
+      SELECT survey_id,
+             COUNT(*) as response_count,
+             SUM(CASE WHEN completed_at IS NOT NULL THEN 1 ELSE 0 END) as completed_count
+      FROM survey_responses
+      WHERE survey_id IN (SELECT id FROM surveys WHERE circle_id = ?)
+      GROUP BY survey_id
+    ) sr ON sr.survey_id = s.id
+    WHERE s.circle_id = ?
+    ORDER BY s.created_at DESC
+  `).all(req.circleId, req.circleId);
 
   res.json({ surveys: (surveys || []).map(surveyForm.hydrate) });
 });

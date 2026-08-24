@@ -432,6 +432,14 @@ const SCHEMA_POSTGRES = `
   CREATE INDEX IF NOT EXISTS idx_integration_events_processed ON integration_events(processed);
   CREATE INDEX IF NOT EXISTS idx_user_gifts_user ON user_gifts(user_id);
   CREATE UNIQUE INDEX IF NOT EXISTS idx_user_gifts_unique ON user_gifts(user_id, gift_id);
+  CREATE INDEX IF NOT EXISTS idx_user_gifts_gift ON user_gifts(gift_id);
+  CREATE INDEX IF NOT EXISTS idx_users_created_at ON users(created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_survey_responses_user_completed ON survey_responses(user_id, completed_at);
+  CREATE INDEX IF NOT EXISTS idx_survey_responses_survey_completed ON survey_responses(survey_id, completed_at);
+  CREATE INDEX IF NOT EXISTS idx_feedback_created ON feedback(created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_feedback_circle_created ON feedback(circle_id, created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_surveys_circle_created ON surveys(circle_id, created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_cohorts_circle ON cohorts(circle_id);
   CREATE UNIQUE INDEX IF NOT EXISTS idx_feedback_verbatim ON feedback(user_id, survey_id, question_id) WHERE question_id IS NOT NULL AND survey_id IS NOT NULL AND user_id IS NOT NULL;
   CREATE UNIQUE INDEX IF NOT EXISTS idx_feedback_verbatim_anon ON feedback(response_id, question_id) WHERE response_id IS NOT NULL AND question_id IS NOT NULL;
   CREATE UNIQUE INDEX IF NOT EXISTS idx_feedback_external_response ON feedback(source_system, external_response_id) WHERE external_response_id IS NOT NULL;
