@@ -63,11 +63,11 @@ router.get('/questions-reusable', requirePermission('surveys.write'), async (req
 // "You have asked something like this before" — a prompt to join the evidence
 // up, shown while typing. Two initiatives can ask the same words about
 // different things, so this only ever suggests.
-router.post('/questions/suggest', requirePermission('surveys.write'), (req, res) => {
+router.post('/questions/suggest', requirePermission('surveys.write'), async (req, res) => {
   const { text, type = 'text' } = req.body;
   if (!text) return res.json({ matches: [] });
 
-  res.json({ matches: questions.suggest(text, type) });
+  res.json({ matches: await questions.suggest(text, type) });
 });
 
 module.exports = router;

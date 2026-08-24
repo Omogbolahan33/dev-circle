@@ -60,17 +60,17 @@ router.get('/dashboard', requirePermission('members.read'), async (req, res) => 
 router.get('/demography', requirePermission('members.read'), async (req, res) => {
   const bySector = await db.prepare(`
     SELECT COALESCE(NULLIF(work_sector, ''), 'Unspecified') as label, COUNT(*) as count
-    FROM users GROUP BY label ORDER BY count DESC
+    FROM users GROUP BY 1 ORDER BY count DESC
   `).all();
 
   const byState = await db.prepare(`
     SELECT COALESCE(NULLIF(location_state, ''), 'Unspecified') as label, COUNT(*) as count
-    FROM users GROUP BY label ORDER BY count DESC LIMIT 15
+    FROM users GROUP BY 1 ORDER BY count DESC LIMIT 15
   `).all();
 
   const byGender = await db.prepare(`
     SELECT COALESCE(NULLIF(gender, ''), 'Unspecified') as label, COUNT(*) as count
-    FROM users GROUP BY label ORDER BY count DESC
+    FROM users GROUP BY 1 ORDER BY count DESC
   `).all();
 
   const byAge = await db.prepare(`
@@ -81,22 +81,22 @@ router.get('/demography', requirePermission('members.read'), async (req, res) =>
       WHEN (julianday('now') - julianday(date_of_birth)) / 365.25 < 45 THEN '35–44'
       ELSE '45+'
     END as label, COUNT(*) as count
-    FROM users GROUP BY label ORDER BY count DESC
+    FROM users GROUP BY 1 ORDER BY count DESC
   `).all();
 
   // api_products is a JSON array, so each member counts once per product
   const byProduct = await db.prepare(`
     SELECT json_each.value as label, COUNT(*) as count
     FROM users, json_each(users.api_products)
-    GROUP BY label ORDER BY count DESC
+    GROUP BY 1 ORDER BY count DESC
   `).all();
 
-  const byApiStatus = await db.prepare('SELECT api_status as label, COUNT(*) as count FROM users GROUP BY label').all();
+  const byApiStatus = await db.prepare('SELECT api_status as label, COUNT(*) as count FROM users GROUP BY 1').all();
 
   const kyb = await db.prepare(`
     SELECT CASE COALESCE(kyb_completed, 0) WHEN 1 THEN 'Completed' ELSE 'Pending' END as label,
            COUNT(*) as count
-    FROM users GROUP BY label
+    FROM users GROUP BY 1
   `).all();
 
   const engagementDepth = await db.prepare(`
@@ -110,7 +110,7 @@ router.get('/demography', requirePermission('members.read'), async (req, res) =>
       SELECT u.id, (SELECT COUNT(*) FROM survey_responses sr
                     WHERE sr.user_id = u.id AND sr.completed_at IS NOT NULL) as completed
       FROM users u
-    ) GROUP BY label
+    ) GROUP BY 1
   `).all();
 
   const missing = await db.prepare(`

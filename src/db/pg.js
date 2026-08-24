@@ -117,6 +117,32 @@ function translatePlaceholders(sql) {
   return sql.replace(/\?/g, () => `$${++idx}`);
 }
 
+// Replace name(...) even when the argument list nests parentheses
+// (julianday(COALESCE(a, b)) is the case the naive [^)]+ regex drops).
+function replaceFnCall(sql, name, replacer) {
+  const re = new RegExp(`\\b${name}\\s*\\(`, 'gi');
+  let out = '';
+  let last = 0;
+  let match;
+  while ((match = re.exec(sql))) {
+    const open = match.index + match[0].length - 1;
+    let depth = 0;
+    let close = -1;
+    for (let i = open; i < sql.length; i++) {
+      if (sql[i] === '(') depth++;
+      else if (sql[i] === ')') {
+        depth--;
+        if (depth === 0) { close = i; break; }
+      }
+    }
+    if (close < 0) break;
+    out += sql.slice(last, match.index) + replacer(sql.slice(open + 1, close).trim());
+    last = close + 1;
+    re.lastIndex = last;
+  }
+  return out + sql.slice(last);
+}
+
 function translateSqliteToPostgres(sql) {
   let out = sql;
   // SQLite → Postgres shims
@@ -138,9 +164,35 @@ function translateSqliteToPostgres(sql) {
   // INSERT OR REPLACE → INSERT ... ON CONFLICT DO UPDATE
   out = out.replace(/INSERT\s+OR\s+REPLACE\s+INTO/gi, 'INSERT INTO');
 
-  // datetime('now') variations
-  out = out.replace(/datetime\s*\(\s*'now'\s*,\s*'[^']*'\s*\)/gi, 'NOW()');
+  // datetime('now', '-7 days') must keep the offset — replacing the whole
+  // call with NOW() made "new this week" count every member.
+  out = out.replace(
+    /datetime\s*\(\s*'now'\s*,\s*'([^']+)'\s*\)/gi,
+    (_, mod) => `(NOW() + INTERVAL '${mod.replace(/'/g, "''")}')`
+  );
+  out = out.replace(
+    /datetime\s*\(\s*'now'\s*,\s*(\$\d+)\s*\)/gi,
+    (_, p) => `(NOW() + (${p})::interval)`
+  );
   out = out.replace(/datetime\s*\(\s*'now'\s*\)/gi, 'NOW()');
+
+  out = out.replace(
+    /date\s*\(\s*'now'\s*,\s*'([^']+)'\s*\)/gi,
+    (_, mod) => `(CURRENT_DATE + INTERVAL '${mod.replace(/'/g, "''")}')`
+  );
+  out = out.replace(/date\s*\(\s*'now'\s*\)/gi, 'CURRENT_DATE');
+
+  out = replaceFnCall(out, 'julianday', args => {
+    if (/^'now'$/i.test(args)) return '(EXTRACT(EPOCH FROM NOW()) / 86400.0)';
+    return `(EXTRACT(EPOCH FROM (${args})::timestamptz) / 86400.0)`;
+  });
+
+  // json_each(col) → a set of text values aliased json_each, so `.value`
+  // in the original SQL still resolves.
+  out = replaceFnCall(out, 'json_each', args => {
+    const expr = args.split(',')[0].trim();
+    return `LATERAL jsonb_array_elements_text(COALESCE(NULLIF(TRIM(${expr}::text), ''), '[]')::jsonb) AS json_each`;
+  });
 
   // SQLite uses `AUTOINCREMENT` not needed in Postgres
   out = out.replace(/\bAUTOINCREMENT\b/gi, '');
@@ -265,6 +317,7 @@ module.exports = {
   close,
   translatePlaceholders,
   translateSqliteToPostgres,
+  replaceFnCall,
   parseDnsResultOrder,
   applyDnsResultOrder,
   diagnoseConnectionError

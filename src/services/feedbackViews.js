@@ -91,8 +91,8 @@ const GROUPINGS = {
   month: {
     label: 'Month',
     describe: 'How what we hear changes over time',
-    key: 'substr(f.created_at, 1, 7)',
-    name: 'substr(f.created_at, 1, 7)',
+    key: 'substr(CAST(f.created_at AS TEXT), 1, 7)',
+    name: 'substr(CAST(f.created_at AS TEXT), 1, 7)',
     filter: 'month'
   },
   status: {
@@ -150,7 +150,7 @@ function conditions(query = {}) {
     where.push('COALESCE(f.survey_id, f.source_system) = ?');
     params.push(query.survey_id);
   }
-  if (query.month) { where.push('substr(f.created_at, 1, 7) = ?'); params.push(query.month); }
+  if (query.month) { where.push('substr(CAST(f.created_at AS TEXT), 1, 7) = ?'); params.push(query.month); }
   if (query.since) { where.push('f.created_at >= ?'); params.push(query.since); }
   if (query.prompted === 'false') where.push('f.canonical_question_id IS NULL');
   if (query.prompted === 'true') where.push('f.canonical_question_id IS NOT NULL');
@@ -184,13 +184,15 @@ async function group(axis, query = {}) {
       JOIN ${g.table} m ON m.user_id = f.user_id
       JOIN ${g.names} n ON n.id = m.${g.column}
       WHERE ${where}
-      GROUP BY m.${g.column}
+      GROUP BY m.${g.column}, n.name
       ORDER BY developer_count DESC, last_at DESC
     `).all(...params);
   }
 
   const g = GROUPINGS[axis];
   if (!g) return null;
+
+  const groupBy = [g.key, g.name, g.context].filter(Boolean).join(', ');
 
   return await db.prepare(`
     SELECT ${g.key} as key, ${g.name} as label, ${g.context || 'NULL'} as context,
@@ -199,7 +201,7 @@ async function group(axis, query = {}) {
            MAX(f.created_at) as last_at
     ${FROM}
     WHERE ${where} ${g.having ? `AND ${g.having}` : ''} AND ${g.key} IS NOT NULL
-    GROUP BY ${g.key}
+    GROUP BY ${groupBy}
     ORDER BY developer_count DESC, last_at DESC
   `).all(...params);
 }
