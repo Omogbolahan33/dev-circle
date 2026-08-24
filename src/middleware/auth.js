@@ -68,8 +68,8 @@ async function destroyAllSessionsFor(subjectId) {
 }
 
 // Sweep expired rows hourly so the table does not grow without bound
-const sweeper = setInterval(() => {
-  db.prepare("DELETE FROM sessions WHERE expires_at <= datetime('now')").run();
+const sweeper = setInterval(async () => {
+  await db.prepare("DELETE FROM sessions WHERE expires_at <= datetime('now')").run();
 }, 60 * 60 * 1000);
 sweeper.unref();
 
@@ -198,7 +198,7 @@ function requirePermission(...required) {
     }
   }
 
-  return (req, res, next) => {
+  return async (req, res, next) => {
     if (!req.isAdmin) {
       return res.status(403).json({ error: 'Admin access required' });
     }

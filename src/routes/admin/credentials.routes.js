@@ -121,8 +121,8 @@ const KEY_COLUMNS = `
   id, name, prefix, permissions, last_used_at, expires_at, revoked_at, created_at, created_by
 `;
 
-function findKey(id) {
-  return db.prepare(`SELECT ${KEY_COLUMNS} FROM api_keys WHERE id = ?`).get(id);
+async function findKey(id) {
+  return await db.prepare(`SELECT ${KEY_COLUMNS} FROM api_keys WHERE id = ?`).get(id);
 }
 
 // Accepts a list of scopes and says what is wrong with it, or nothing.
@@ -156,8 +156,8 @@ function normaliseExpiry(value) {
 // ─── The whole picture ──────────────────────────────────────
 
 // GET /api/admin/credentials
-router.get('/credentials', requirePermission('credentials.read'), (req, res) => {
-  const keys = db.prepare(`SELECT ${KEY_COLUMNS} FROM api_keys`).all().map(shape);
+router.get('/credentials', requirePermission('credentials.read'), async (req, res) => {
+  const keys = (await db.prepare(`SELECT ${KEY_COLUMNS} FROM api_keys`).all() || []).map(shape);
 
   res.json({
     providers: providers(),
@@ -185,23 +185,23 @@ router.get('/credentials', requirePermission('credentials.read'), (req, res) => 
 // 'integrations.write' is accepted alongside the newer permission: it is what
 // gated key management before credentials.* existed, and a role that could do
 // this yesterday should not have stopped overnight.
-router.get('/api-keys', requirePermission('credentials.read', 'integrations.write'), (req, res) => {
+router.get('/api-keys', requirePermission('credentials.read', 'integrations.write'), async (req, res) => {
   const { status } = req.query;
 
-  const keys = db.prepare(`SELECT ${KEY_COLUMNS} FROM api_keys ORDER BY created_at DESC`)
-    .all().map(shape)
+  const keys = ((await db.prepare(`SELECT ${KEY_COLUMNS} FROM api_keys ORDER BY created_at DESC`)
+    .all()) || []).map(shape)
     .filter(key => !status || key.status === status);
 
   res.json({ keys, scopes: SCOPES });
 });
 
 // GET /api/admin/api-keys/:id
-router.get('/api-keys/:id', requirePermission('credentials.read'), (req, res) => {
-  const key = findKey(req.params.id);
+router.get('/api-keys/:id', requirePermission('credentials.read'), async (req, res) => {
+  const key = await findKey(req.params.id);
   if (!key) return res.status(404).json({ error: 'Key not found' });
 
   const issuedBy = key.created_by
-    ? db.prepare('SELECT name, email FROM admin_users WHERE id = ?').get(key.created_by)
+    ? await db.prepare('SELECT name, email FROM admin_users WHERE id = ?').get(key.created_by)
     : null;
 
   res.json({
@@ -212,7 +212,7 @@ router.get('/api-keys/:id', requirePermission('credentials.read'), (req, res) =>
 });
 
 // POST /api/admin/api-keys
-router.post('/api-keys', requirePermission('credentials.write', 'integrations.write'), (req, res) => {
+router.post('/api-keys', requirePermission('credentials.write', 'integrations.write'), async (req, res) => {
   const { name, scopes, expires_at } = req.body;
   if (!name || !String(name).trim()) return res.status(400).json({ error: 'name required' });
 
@@ -226,7 +226,7 @@ router.post('/api-keys', requirePermission('credentials.write', 'integrations.wr
   const { key, prefix } = generateApiKey();
   const id = uuid();
 
-  db.prepare(`
+  await db.prepare(`
     INSERT INTO api_keys (id, key_hash, name, prefix, permissions, expires_at, created_by)
     VALUES (?, ?, ?, ?, ?, ?, ?)
   `).run(id, hashApiKey(key), String(name).trim(), prefix, JSON.stringify(granted), expiry.value, req.admin.id);
@@ -236,14 +236,14 @@ router.post('/api-keys', requirePermission('credentials.write', 'integrations.wr
     key,
     prefix,
     scopes: granted,
-    record: shape(findKey(id)),
+    record: shape(await findKey(id)),
     warning: 'Copy this key now. It cannot be retrieved again.'
   });
 });
 
 // PUT /api/admin/api-keys/:id — rename, re-scope, or change when it expires
-router.put('/api-keys/:id', requirePermission('credentials.write'), (req, res) => {
-  const key = findKey(req.params.id);
+router.put('/api-keys/:id', requirePermission('credentials.write'), async (req, res) => {
+  const key = await findKey(req.params.id);
   if (!key) return res.status(404).json({ error: 'Key not found' });
   if (key.revoked_at) {
     return res.status(409).json({ error: 'This key is revoked. Issue a new one instead.' });
@@ -273,9 +273,9 @@ router.put('/api-keys/:id', requirePermission('credentials.write'), (req, res) =
   if (!updates.length) return res.status(400).json({ error: 'No fields to update' });
 
   params.push(key.id);
-  db.prepare(`UPDATE api_keys SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+  await db.prepare(`UPDATE api_keys SET ${updates.join(', ')} WHERE id = ?`).run(...params);
 
-  res.json({ key: shape(findKey(key.id)) });
+  res.json({ key: shape(await findKey(key.id)) });
 });
 
 // POST /api/admin/api-keys/:id/rotate
@@ -284,8 +284,8 @@ router.put('/api-keys/:id', requirePermission('credentials.write'), (req, res) =
 // the integration can be moved over and the old key lapses on its own.
 const MAX_GRACE_HOURS = 720;
 
-router.post('/api-keys/:id/rotate', requirePermission('credentials.write'), (req, res) => {
-  const previous = findKey(req.params.id);
+router.post('/api-keys/:id/rotate', requirePermission('credentials.write'), async (req, res) => {
+  const previous = await findKey(req.params.id);
   if (!previous) return res.status(404).json({ error: 'Key not found' });
   if (previous.revoked_at) {
     return res.status(409).json({ error: 'This key is already revoked. Issue a new one instead.' });
@@ -300,28 +300,26 @@ router.post('/api-keys/:id/rotate', requirePermission('credentials.write'), (req
   const { key, prefix } = generateApiKey();
   const id = uuid();
 
-  db.transaction(() => {
-    db.prepare(`
-      INSERT INTO api_keys (id, key_hash, name, prefix, permissions, expires_at, created_by)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(id, hashApiKey(key), previous.name, prefix, JSON.stringify(scopes), previous.expires_at, req.admin.id);
+  await db.prepare(`
+    INSERT INTO api_keys (id, key_hash, name, prefix, permissions, expires_at, created_by)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(id, hashApiKey(key), previous.name, prefix, JSON.stringify(scopes), previous.expires_at, req.admin.id);
 
-    if (grace > 0) {
-      // Left live, but with a deadline it cannot outlive
-      db.prepare("UPDATE api_keys SET expires_at = datetime('now', ?) WHERE id = ?")
-        .run(`+${grace} hours`, previous.id);
-    } else {
-      db.prepare("UPDATE api_keys SET revoked_at = datetime('now') WHERE id = ?").run(previous.id);
-    }
-  })();
+  if (grace > 0) {
+    // Left live, but with a deadline it cannot outlive
+    await db.prepare("UPDATE api_keys SET expires_at = datetime('now', ?) WHERE id = ?")
+      .run(`+${grace} hours`, previous.id);
+  } else {
+    await db.prepare("UPDATE api_keys SET revoked_at = datetime('now') WHERE id = ?").run(previous.id);
+  }
 
-  const old = shape(findKey(previous.id));
+  const old = shape(await findKey(previous.id));
 
   res.status(201).json({
     key,
     prefix,
     scopes,
-    record: shape(findKey(id)),
+    record: shape(await findKey(id)),
     replaced: { id: old.id, prefix: old.prefix, status: old.status, expires_at: old.expires_at },
     warning: grace > 0
       ? `Copy this key now — it cannot be retrieved again. The previous key keeps working for ${grace} hour(s), then stops.`
@@ -330,13 +328,13 @@ router.post('/api-keys/:id/rotate', requirePermission('credentials.write'), (req
 });
 
 // DELETE /api/admin/api-keys/:id
-router.delete('/api-keys/:id', requirePermission('credentials.write', 'integrations.write'), (req, res) => {
-  const result = db.prepare("UPDATE api_keys SET revoked_at = datetime('now') WHERE id = ? AND revoked_at IS NULL")
+router.delete('/api-keys/:id', requirePermission('credentials.write', 'integrations.write'), async (req, res) => {
+  const result = await db.prepare("UPDATE api_keys SET revoked_at = datetime('now') WHERE id = ? AND revoked_at IS NULL")
     .run(req.params.id);
   if (!result.changes) return res.status(404).json({ error: 'Key not found or already revoked' });
 
   // The row survives revocation so the event log still explains what the key was
-  res.json({ message: 'Key revoked', key: shape(findKey(req.params.id)) });
+  res.json({ message: 'Key revoked', key: shape(await findKey(req.params.id)) });
 });
 
 module.exports = router;

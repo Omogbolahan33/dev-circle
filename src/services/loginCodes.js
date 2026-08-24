@@ -155,8 +155,8 @@ async function verify(identity, submitted) {
 }
 
 // Old rows are kept briefly so the request throttle can see them, then swept
-const sweeper = setInterval(() => {
-  db.prepare("DELETE FROM login_codes WHERE created_at <= datetime('now', '-1 day')").run();
+const sweeper = setInterval(async () => {
+  await db.prepare("DELETE FROM login_codes WHERE created_at <= datetime('now', '-1 day')").run();
 }, 60 * 60 * 1000);
 sweeper.unref();
 

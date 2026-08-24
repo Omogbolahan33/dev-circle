@@ -41,7 +41,7 @@ const ANONYMOUS = 'anonymous';
 // Take what was posted and return the survey as it will be stored. Questions
 // come back normalized, themed and identified; issues come back as the reasons
 // it cannot be saved, phrased for the person who wrote it.
-function normalizeDefinition(body, { createdBy = null, allowEmpty = false } = {}) {
+async function normalizeDefinition(body, { createdBy = null, allowEmpty = false } = {}) {
   const { questions: normalized, issues } = schema.normalizeQuestions(body.questions, {
     makeId: slotId, allowEmpty
   });
@@ -56,7 +56,7 @@ function normalizeDefinition(body, { createdBy = null, allowEmpty = false } = {}
   // Only what someone answers becomes a question in its own right — a section
   // heading is furniture. attachToSurvey may adopt the wording of a question
   // being continued, so what it returns is what gets stored.
-  const identified = questions.attachToSurvey(normalized, {
+  const identified = await questions.attachToSurvey(normalized, {
     createdBy,
     identifies: schema.isAnswerable
   });

@@ -85,7 +85,7 @@ function memberFilters(query) {
 }
 
 // Resolve a survey's audience to member rows
-function resolveAudience(survey) {
+async function resolveAudience(survey) {
   const targets = parseJSON(survey.target_ids, []) || [];
   const scope = circleScope(survey.circle_id);
 
@@ -96,7 +96,7 @@ function resolveAudience(survey) {
   if (survey.target_type === 'anonymous') return [];
 
   if (survey.target_type === 'all') {
-    return db.prepare(`SELECT * FROM users u WHERE u.status = 'active' ${scope.clause}`)
+    return await db.prepare(`SELECT * FROM users u WHERE u.status = 'active' ${scope.clause}`)
       .all(...scope.params);
   }
 
@@ -104,7 +104,7 @@ function resolveAudience(survey) {
   const placeholders = targets.map(() => '?').join(',');
 
   if (survey.target_type === 'cohort') {
-    return db.prepare(`
+    return await db.prepare(`
       SELECT DISTINCT u.* FROM users u
       JOIN user_cohorts uc ON uc.user_id = u.id
       WHERE uc.cohort_id IN (${placeholders}) AND u.status = 'active' ${scope.clause}
@@ -112,7 +112,7 @@ function resolveAudience(survey) {
   }
 
   if (survey.target_type === 'specific') {
-    return db.prepare(`
+    return await db.prepare(`
       SELECT * FROM users u WHERE u.id IN (${placeholders}) AND u.status = 'active' ${scope.clause}
     `).all(...targets, ...scope.params);
   }
@@ -121,12 +121,12 @@ function resolveAudience(survey) {
 }
 
 // Resolve a blast's recipients to member rows
-function blastRecipients(blast) {
+async function blastRecipients(blast) {
   const targetIds = parseJSON(blast.target_ids, []) || [];
   const scope = circleScope(blast.circle_id);
 
   if (blast.target_type === 'all') {
-    return db.prepare(`SELECT * FROM users u WHERE u.status = 'active' ${scope.clause}`)
+    return await db.prepare(`SELECT * FROM users u WHERE u.status = 'active' ${scope.clause}`)
       .all(...scope.params);
   }
 
@@ -134,14 +134,14 @@ function blastRecipients(blast) {
   const placeholders = targetIds.map(() => '?').join(',');
 
   if (blast.target_type === 'cohort') {
-    return db.prepare(`
+    return await db.prepare(`
       SELECT DISTINCT u.* FROM users u
       JOIN user_cohorts uc ON uc.user_id = u.id
       WHERE uc.cohort_id IN (${placeholders}) AND u.status = 'active' ${scope.clause}
     `).all(...targetIds, ...scope.params);
   }
 
-  return db.prepare(`
+  return await db.prepare(`
     SELECT * FROM users u WHERE u.id IN (${placeholders}) AND u.status = 'active' ${scope.clause}
   `).all(...targetIds, ...scope.params);
 }

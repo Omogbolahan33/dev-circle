@@ -8,9 +8,9 @@ const { uuid } = require('../utils/helpers');
 // Prepared per call rather than once at module load: the handle resolves to
 // whichever database the current request belongs to, and a statement held from
 // load would write to the live one even from inside the sandbox.
-function log(userId, type, { referenceId = null, metadata = {}, source = 'dev_circle' } = {}) {
+async function log(userId, type, { referenceId = null, metadata = {}, source = 'dev_circle' } = {}) {
   const id = uuid();
-  db.prepare(`
+  await db.prepare(`
     INSERT INTO engagement_history (id, user_id, type, reference_id, metadata, source)
     VALUES (?, ?, ?, ?, ?, ?)
   `).run(id, userId, type, referenceId, JSON.stringify(metadata), source);
@@ -40,12 +40,12 @@ function parseSqliteDate(value) {
 
 // Recompute the streak on a qualifying action. Previously the counter only
 // ever went up, which made both engagement_streak and best_streak meaningless.
-function recordActivity(userId, type) {
-  db.prepare("UPDATE users SET last_active_at = datetime('now') WHERE id = ?").run(userId);
+async function recordActivity(userId, type) {
+  await db.prepare("UPDATE users SET last_active_at = datetime('now') WHERE id = ?").run(userId);
 
   if (!STREAK_EVENTS.has(type)) return null;
 
-  const user = db.prepare('SELECT engagement_streak, best_streak, last_engagement_at FROM users WHERE id = ?').get(userId);
+  const user = await db.prepare('SELECT engagement_streak, best_streak, last_engagement_at FROM users WHERE id = ?').get(userId);
   if (!user) return null;
 
   const now = new Date();
@@ -63,7 +63,7 @@ function recordActivity(userId, type) {
 
   const best = Math.max(streak, user.best_streak || 0);
 
-  db.prepare(`
+  await db.prepare(`
     UPDATE users SET engagement_streak = ?, best_streak = ?, last_engagement_at = datetime('now')
     WHERE id = ?
   `).run(streak, best, userId);
@@ -72,9 +72,9 @@ function recordActivity(userId, type) {
 }
 
 // Log an event and update the streak in one call
-function record(userId, type, options = {}) {
-  const id = log(userId, type, options);
-  const streak = recordActivity(userId, type);
+async function record(userId, type, options = {}) {
+  const id = await log(userId, type, options);
+  const streak = await recordActivity(userId, type);
   return { id, streak };
 }
 

@@ -71,7 +71,7 @@ const BAD_IDENTIFIER = 'Enter the email address or phone number you registered w
 // POST /api/auth/identify
 // Decides what to ask for next. The answer comes from the identifier alone —
 // no database lookup — so this cannot be used to discover who holds an account.
-router.post('/identify', (req, res) => {
+router.post('/identify', async (req, res) => {
   const who = identity.classify(req.body.identifier || req.body.email);
   if (!who) {
     return res.status(400).json({ error: BAD_IDENTIFIER });
@@ -377,7 +377,7 @@ router.post('/sso/exchange', async (req, res) => {
 // POST /api/auth/sso/mint  (development helper)
 // Mints a handoff token the way the Developer Hub would, so the integration
 // can be exercised locally. Disabled in production.
-router.post('/sso/mint', (req, res) => {
+router.post('/sso/mint', async (req, res) => {
   if (config.isProduction) {
     return res.status(404).json({ error: 'Endpoint not found' });
   }
@@ -394,14 +394,14 @@ router.post('/sso/mint', (req, res) => {
 
 // POST /api/auth/sso/link
 // Links a Dev Circle account to a Developer Hub account
-router.post('/sso/link', requireAuth, (req, res) => {
+router.post('/sso/link', requireAuth, async (req, res) => {
   const { dev_hub_user_id } = req.body;
 
   if (!dev_hub_user_id) {
     return res.status(400).json({ error: 'dev_hub_user_id is required' });
   }
 
-  db.prepare('UPDATE users SET dev_hub_user_id = ? WHERE id = ?').run(dev_hub_user_id, req.user.id);
+  await db.prepare('UPDATE users SET dev_hub_user_id = ? WHERE id = ?').run(dev_hub_user_id, req.user.id);
 
   res.json({ message: 'Account linked to Developer Hub' });
 });

@@ -66,16 +66,16 @@ router.get('/members', requirePermission('members.read'), async (req, res) => {
 });
 
 // GET /api/admin/members/:id
-router.get('/members/:id', requirePermission('members.read'), (req, res) => {
-  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
+router.get('/members/:id', requirePermission('members.read'), async (req, res) => {
+  const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
   if (!user) return res.status(404).json({ error: 'Member not found' });
 
   // Reachable only from a circle they are actually in
-  if (!circles.isMember(req.circleId, user.id)) {
+  if (!await circles.isMember(req.circleId, user.id)) {
     return res.status(404).json({ error: 'Member not found in this circle' });
   }
 
-  const cohorts = db.prepare(`
+  const cohorts = await db.prepare(`
     SELECT c.* FROM cohorts c JOIN user_cohorts uc ON uc.cohort_id = c.id
     WHERE uc.user_id = ? AND c.circle_id = ?
   `).all(user.id, req.circleId);
@@ -83,24 +83,24 @@ router.get('/members/:id', requirePermission('members.read'), (req, res) => {
   res.json({
     user: sanitizeUser(user),
     cohorts,
-    consent: db.prepare('SELECT * FROM consent WHERE user_id = ?').all(user.id),
-    engagement: db.prepare(
+    consent: await db.prepare('SELECT * FROM consent WHERE user_id = ?').all(user.id),
+    engagement: await db.prepare(
       'SELECT * FROM engagement_history WHERE user_id = ? ORDER BY created_at DESC LIMIT 50'
     ).all(user.id),
     // Everything this member has told us, whatever the source and whichever
     // question drew it out — the single list this change exists to make possible
-    feedback: verbatims.forUser(user.id, { limit: 50 }),
-    survey_responses: db.prepare(`
+    feedback: await verbatims.forUser(user.id, { limit: 50 }),
+    survey_responses: await db.prepare(`
       SELECT sr.*, s.title as survey_title
       FROM survey_responses sr JOIN surveys s ON s.id = sr.survey_id
       WHERE sr.user_id = ? ORDER BY sr.created_at DESC
     `).all(user.id),
-    gifts: db.prepare(`
+    gifts: await db.prepare(`
       SELECT g.name, g.value, g.currency, ug.claimed_at, ug.delivered_at
       FROM user_gifts ug JOIN gifts g ON g.id = ug.gift_id
       WHERE ug.user_id = ? ORDER BY ug.claimed_at DESC
     `).all(user.id),
-    deliveries: db.prepare(`
+    deliveries: await db.prepare(`
       SELECT source_type, channel, status, reason, created_at
       FROM message_deliveries WHERE user_id = ? ORDER BY created_at DESC LIMIT 25
     `).all(user.id)
@@ -112,14 +112,14 @@ router.get('/members/:id', requirePermission('members.read'), (req, res) => {
 // said, and what we sent them — from every source, in the order it happened.
 // Reading three tabs and stitching the order together in your head was the
 // thing that made a developer hard to see whole.
-router.get('/members/:id/timeline', requirePermission('members.read'), (req, res) => {
-  const user = db.prepare('SELECT id, name FROM users WHERE id = ?').get(req.params.id);
+router.get('/members/:id/timeline', requirePermission('members.read'), async (req, res) => {
+  const user = await db.prepare('SELECT id, name FROM users WHERE id = ?').get(req.params.id);
   if (!user) return res.status(404).json({ error: 'Member not found' });
 
   const limit = Math.min(300, parseInt(req.query.limit, 10) || 150);
 
   // What they did — the events the system recorded about them
-  const events = db.prepare(`
+  const events = ((await db.prepare(`
     SELECT eh.id, eh.type, eh.created_at, eh.metadata, eh.source, eh.reference_id,
            s.title as survey_title, g.name as gift_name
     FROM engagement_history eh
@@ -128,7 +128,7 @@ router.get('/members/:id/timeline', requirePermission('members.read'), (req, res
     WHERE eh.user_id = ?
     ORDER BY eh.created_at DESC
     LIMIT ?
-  `).all(user.id, limit).map(e => ({
+  `).all(user.id, limit) || []) || []).map(e => ({
     kind: 'did',
     at: e.created_at,
     id: e.id,
@@ -140,7 +140,7 @@ router.get('/members/:id/timeline', requirePermission('members.read'), (req, res
   }));
 
   // What they said — every verbatim, whichever door it came through
-  const said = db.prepare(`
+  const said = (await db.prepare(`
     SELECT f.id, f.content, f.prompt, f.source, f.source_system, f.category,
            f.created_at, f.external_ticket_id, f.canonical_question_id,
            s.title as survey_title
@@ -149,7 +149,7 @@ router.get('/members/:id/timeline', requirePermission('members.read'), (req, res
     WHERE f.user_id = ?
     ORDER BY f.created_at DESC
     LIMIT ?
-  `).all(user.id, limit).map(f => ({
+  `).all(user.id, limit) || []).map(f => ({
     kind: 'said',
     at: f.created_at,
     id: f.id,
@@ -165,13 +165,13 @@ router.get('/members/:id/timeline', requirePermission('members.read'), (req, res
   // What we sent them, and whether it actually went. A member who has been
   // messaged eight times and answered nothing reads very differently from one
   // nobody has contacted.
-  const sent = db.prepare(`
+  const sent = (await db.prepare(`
     SELECT id, source_type, channel, status, reason, created_at
     FROM message_deliveries
     WHERE user_id = ? AND status IN ('sent', 'simulated')
     ORDER BY created_at DESC
     LIMIT ?
-  `).all(user.id, limit).map(d => ({
+  `).all(user.id, limit) || []).map(d => ({
     kind: 'sent',
     at: d.created_at,
     id: d.id,
@@ -237,7 +237,7 @@ router.put('/members/:id', requirePermission('members.write'), async (req, res) 
   }
 
   // Membership of rule-based cohorts may have changed with these fields
-  cohortRules.syncAll();
+  await cohortRules.syncAll();
 
   const updated = await db.prepare('SELECT * FROM users WHERE id = ?').get(user.id);
   res.json({ user: sanitizeUser(updated) });
@@ -262,7 +262,7 @@ router.post('/members/:id/sign-out', requirePermission('members.write'), async (
 // The blank workbook to fill in. Generated from the same column spec the
 // importer reads rows through, so it is always current — nobody has to
 // remember to update a file checked in beside the code.
-router.get('/import/template', requirePermission('members.import'), (req, res) => {
+router.get('/import/template', requirePermission('members.import'), async (req, res) => {
   const format = (req.query.format || 'xlsx').toLowerCase();
   const key = req.query.type || 'members';
 
@@ -294,7 +294,7 @@ router.get('/import/template', requirePermission('members.import'), (req, res) =
 
 // GET /api/admin/import/columns — the spec behind the template, for the UI to
 // describe the upload without hardcoding a second copy of the column list
-router.get('/import/columns', requirePermission('members.import'), (req, res) => {
+router.get('/import/columns', requirePermission('members.import'), async (req, res) => {
   const key = req.query.type || 'members';
 
   try {
@@ -322,7 +322,7 @@ router.get('/import/columns', requirePermission('members.import'), (req, res) =>
 
 // POST /api/admin/import
 // Accepts either a JSON array or raw CSV pasted from an Excel export.
-router.post('/import', requirePermission('members.import'), (req, res) => {
+router.post('/import', requirePermission('members.import'), async (req, res) => {
   const { users: importUsers, csv, xlsx_base64, cohort_id, circle_id, dry_run = false } = req.body;
 
   let rows;
@@ -356,13 +356,13 @@ router.post('/import', requirePermission('members.import'), (req, res) => {
                        date_of_birth, gender, location_state, api_products)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
-  const allCohort = db.prepare("SELECT id FROM cohorts WHERE name = 'All Members'").get();
+  const allCohort = await db.prepare("SELECT id FROM cohorts WHERE name = 'All Members'").get();
   const cohortStmt = db.prepare('INSERT OR IGNORE INTO user_cohorts (user_id, cohort_id) VALUES (?, ?)');
   const circleStmt = db.prepare('INSERT OR IGNORE INTO circle_members (circle_id, user_id) VALUES (?, ?)');
 
   // Everyone joins the root circle; a sub-circle can be named to seed it too
   const workingCircle = req.circle;
-  const targetCircle = circle_id ? db.prepare('SELECT * FROM circles WHERE id = ?').get(circle_id) : null;
+  const targetCircle = circle_id ? await db.prepare('SELECT * FROM circles WHERE id = ?').get(circle_id) : null;
   if (circle_id && !targetCircle) {
     return res.status(400).json({ error: 'Unknown circle_id' });
   }
@@ -431,7 +431,7 @@ router.post('/import', requirePermission('members.import'), (req, res) => {
     if (!(err instanceof DryRun)) throw err;
   }
 
-  if (!dry_run) cohortRules.syncAll();
+  if (!dry_run) await cohortRules.syncAll();
 
   res.json({
     message: dry_run
@@ -453,10 +453,10 @@ const EXPORT_COLUMNS = [
   'last_active_at', 'created_at'
 ];
 
-function selectMembers(query) {
+async function selectMembers(query) {
   const { where, params } = memberFilters(query);
 
-  const rows = db.prepare(`
+  const rows = await db.prepare(`
     SELECT u.id, u.email, u.name, u.phone, u.company, u.work_sector,
            u.gender, u.location_state, u.date_of_birth, u.api_products,
            u.status, u.api_status, u.kyb_completed, u.engagement_streak,
@@ -500,19 +500,19 @@ function chosenColumns(requested) {
 // What an export can be filtered and sliced by. Each criterion carries the
 // values to choose between, resolved from the domain or from the member base,
 // so the filter builder never has to hold its own copy of a value list.
-router.get('/export/fields', requirePermission('export.read'), (req, res) => {
+router.get('/export/fields', requirePermission('export.read'), async (req, res) => {
   res.json({
-    criteria: cohortRules.catalogue(),
+    criteria: await cohortRules.catalogue(),
     columns: EXPORT_COLUMNS
   });
 });
 
 // GET /api/admin/export/count — how many the criteria match, before committing
 // to a download. Cheap enough to run on every edit of the filter builder.
-router.get('/export/count', requirePermission('export.read'), (req, res) => {
+router.get('/export/count', requirePermission('export.read'), async (req, res) => {
   try {
     const { where, params } = memberFilters({ ...req.query, circle_id: req.circleId });
-    const total = db.prepare(`SELECT COUNT(*) as c FROM users u WHERE ${where}`).get(...params).c;
+    const total = Number((await db.prepare(`SELECT COUNT(*) as c FROM users u WHERE ${where}`).get(...params))?.c || 0);
     res.json({ total });
   } catch (err) {
     if (err instanceof cohortRules.RuleError) return res.status(400).json({ error: err.message });
@@ -523,12 +523,12 @@ router.get('/export/count', requirePermission('export.read'), (req, res) => {
 // GET /api/admin/export
 // Filter with any criterion a cohort can be built from — cohort, circle, age,
 // sector, consent, engagement, activity — alone or combined.
-router.get('/export', requirePermission('export.read'), (req, res) => {
+router.get('/export', requirePermission('export.read'), async (req, res) => {
   const format = (req.query.format || 'json').toLowerCase();
 
   let result;
   try {
-    result = selectMembers({ ...req.query, circle_id: req.circleId });
+    result = await selectMembers({ ...req.query, circle_id: req.circleId });
   } catch (err) {
     if (err instanceof cohortRules.RuleError) return res.status(400).json({ error: err.message });
     throw err;

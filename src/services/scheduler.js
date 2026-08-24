@@ -124,7 +124,7 @@ async function preview(session) {
 
   for (const user of audience) {
     const slot = availability(user, when);
-    const { allowed, skipped } = notifications.resolveChannels(user, channels, 'survey_invites');
+    const { allowed, skipped } = await notifications.resolveChannels(user, channels, 'survey_invites');
 
     const entry = {
       id: user.id, name: user.name, email: user.email,
@@ -348,10 +348,10 @@ async function closePastSessions() {
 // of queries, which is cheap but not free, and nothing goes wrong if an
 // orphaned file survives another hour.
 let lastSweep = 0;
-function sweepUploads({ now = Date.now() } = {}) {
+async function sweepUploads({ now = Date.now() } = {}) {
   if (now - lastSweep < 60 * 60 * 1000) return null;
   lastSweep = now;
-  const { removed, bytes } = require('./uploads').sweep(db, { now });
+  const { removed, bytes } = await require('./uploads').sweep(db, { now });
   if (removed) {
     logger.info('Swept unreferenced brand assets', { removed, bytes });
   }
@@ -362,7 +362,7 @@ async function tick() {
   const reminders = await runDueReminders();
   const surveyNudges = await runSurveyReminders();
   const closed = await closePastSessions();
-  const sweptAssets = sweepUploads();
+  const sweptAssets = await sweepUploads();
   return {
     reminders, survey_reminders: surveyNudges, sessions_closed: closed,
     ...(sweptAssets === null ? {} : { assets_swept: sweptAssets })

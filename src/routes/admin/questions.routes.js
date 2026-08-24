@@ -12,8 +12,8 @@ const router = express.Router();
 // different developers said to the same prompt.
 
 // GET /api/admin/questions
-router.get('/questions', requirePermission('feedback.read'), (req, res) => {
-  const catalogue = questions.catalogue({ search: req.query.search || null, circleId: req.circleId });
+router.get('/questions', requirePermission('feedback.read'), async (req, res) => {
+  const catalogue = await questions.catalogue({ search: req.query.search || null, circleId: req.circleId });
 
   res.json({
     questions: catalogue,
@@ -26,28 +26,28 @@ router.get('/questions', requirePermission('feedback.read'), (req, res) => {
       // answered over a public link has no user_id, and COUNT(DISTINCT) skips
       // nulls, so a plain count would quietly leave every one of them out of
       // the headline while listing their answers underneath it.
-      developers: db.prepare(`
+      developers: Number((await db.prepare(`
         SELECT COUNT(DISTINCT COALESCE(f.user_id, 'anon:' || COALESCE(f.response_id, f.id))) as c
         FROM feedback f
         WHERE f.source IN ('survey', 'external_survey') AND f.circle_id = ?
-      `).get(req.circleId).c,
+      `).get(req.circleId))?.c || 0),
       answers: catalogue.reduce((sum, q) => sum + q.answer_count, 0)
     }
   });
 });
 
 // GET /api/admin/questions/:id
-router.get('/questions/:id', requirePermission('feedback.read'), (req, res) => {
-  const question = db.prepare('SELECT * FROM questions WHERE id = ?').get(req.params.id);
+router.get('/questions/:id', requirePermission('feedback.read'), async (req, res) => {
+  const question = await db.prepare('SELECT * FROM questions WHERE id = ?').get(req.params.id);
   if (!question) return res.status(404).json({ error: 'Question not found' });
 
-  const answers = questions.answers(question.id);
+  const answers = await questions.answers(question.id);
 
   res.json({
     question,
     // Where it has been asked, so a question carried by more than one survey
     // reads as one body of evidence with several occasions behind it
-    asked_in: questions.askedIn(question.id),
+    asked_in: await questions.askedIn(question.id),
     developer_count: new Set(answers.map(a => a.user_id)).size,
     answers
   });
@@ -55,8 +55,8 @@ router.get('/questions/:id', requirePermission('feedback.read'), (req, res) => {
 
 // GET /api/admin/questions/reusable
 // Offered while writing a survey. Never applied on the author's behalf.
-router.get('/questions-reusable', requirePermission('surveys.write'), (req, res) => {
-  res.json({ questions: questions.reusable({ type: req.query.type || 'text' }) });
+router.get('/questions-reusable', requirePermission('surveys.write'), async (req, res) => {
+  res.json({ questions: await questions.reusable({ type: req.query.type || 'text' }) });
 });
 
 // POST /api/admin/questions/suggest

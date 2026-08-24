@@ -45,15 +45,15 @@ router.get('/', requirePermission('sessions.read'), async (req, res) => {
 });
 
 // GET /api/admin/sessions/:id
-router.get('/:id', requirePermission('sessions.read'), (req, res) => {
-  const session = db.prepare('SELECT * FROM scheduled_sessions WHERE id = ?').get(req.params.id);
+router.get('/:id', requirePermission('sessions.read'), async (req, res) => {
+  const session = await db.prepare('SELECT * FROM scheduled_sessions WHERE id = ?').get(req.params.id);
   if (!session) return res.status(404).json({ error: 'Session not found' });
 
   res.json({
     session: hydrate(session),
-    dispatches: db.prepare('SELECT * FROM session_dispatches WHERE session_id = ? ORDER BY offset_minutes DESC')
+    dispatches: await db.prepare('SELECT * FROM session_dispatches WHERE session_id = ? ORDER BY offset_minutes DESC')
       .all(session.id),
-    deliveries: db.prepare(`
+    deliveries: await db.prepare(`
       SELECT d.channel, d.status, d.reason, COUNT(*) as count
       FROM message_deliveries d
       WHERE d.source_id = ? AND d.source_type IN ('session_invite','session_reminder')
@@ -100,7 +100,7 @@ router.post('/', requirePermission('sessions.write'), async (req, res) => {
     return res.status(400).json({ error: 'Unknown survey_id' });
   }
 
-  const circle = circle_id ? circles.byId(circle_id) : req.circle;
+  const circle = circle_id ? await circles.byId(circle_id) : req.circle;
   if (!circle) return res.status(400).json({ error: 'Unknown circle_id' });
 
   const id = uuid();
@@ -158,8 +158,8 @@ router.post('/preview', requirePermission('sessions.read'), async (req, res) => 
 });
 
 // PUT /api/admin/sessions/:id
-router.put('/:id', requirePermission('sessions.write'), (req, res) => {
-  const session = db.prepare('SELECT * FROM scheduled_sessions WHERE id = ?').get(req.params.id);
+router.put('/:id', requirePermission('sessions.write'), async (req, res) => {
+  const session = await db.prepare('SELECT * FROM scheduled_sessions WHERE id = ?').get(req.params.id);
   if (!session) return res.status(404).json({ error: 'Session not found' });
 
   const invalid = validate({ ...hydrate(session), ...req.body });
@@ -188,15 +188,15 @@ router.put('/:id', requirePermission('sessions.write'), (req, res) => {
   if (!updates.length) return res.status(400).json({ error: 'No fields to update' });
 
   params.push(session.id);
-  db.prepare(`UPDATE scheduled_sessions SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+  await db.prepare(`UPDATE scheduled_sessions SET ${updates.join(', ')} WHERE id = ?`).run(...params);
 
   // Moving a session invalidates reminders that were already sent for the old
   // time, so clear the dispatch log and let them fire again against the new one.
   if (req.body.scheduled_for && req.body.scheduled_for !== session.scheduled_for) {
-    db.prepare('DELETE FROM session_dispatches WHERE session_id = ? AND offset_minutes >= 0').run(session.id);
+    await db.prepare('DELETE FROM session_dispatches WHERE session_id = ? AND offset_minutes >= 0').run(session.id);
   }
 
-  res.json({ session: hydrate(db.prepare('SELECT * FROM scheduled_sessions WHERE id = ?').get(session.id)) });
+  res.json({ session: hydrate(await db.prepare('SELECT * FROM scheduled_sessions WHERE id = ?').get(session.id)) });
 });
 
 // POST /api/admin/sessions/:id/announce — send the invitation now
@@ -213,7 +213,7 @@ router.post('/:id/announce', requirePermission('sessions.write'), async (req, re
 
 // POST /api/admin/sessions/:id/remind — send an ad-hoc reminder now
 router.post('/:id/remind', requirePermission('sessions.write'), async (req, res) => {
-  const session = db.prepare('SELECT * FROM scheduled_sessions WHERE id = ?').get(req.params.id);
+  const session = await db.prepare('SELECT * FROM scheduled_sessions WHERE id = ?').get(req.params.id);
   if (!session) return res.status(404).json({ error: 'Session not found' });
 
   const when = scheduler.parseWhen(session.scheduled_for);
@@ -231,12 +231,12 @@ router.post('/:id/remind', requirePermission('sessions.write'), async (req, res)
 
 // DELETE /api/admin/sessions/:id — cancel and tell everyone
 router.delete('/:id', requirePermission('sessions.write'), async (req, res) => {
-  const session = db.prepare('SELECT * FROM scheduled_sessions WHERE id = ?').get(req.params.id);
+  const session = await db.prepare('SELECT * FROM scheduled_sessions WHERE id = ?').get(req.params.id);
   if (!session) return res.status(404).json({ error: 'Session not found' });
   if (session.status === 'cancelled') return res.status(409).json({ error: 'Already cancelled' });
 
   const wasAnnounced = session.status === 'announced';
-  db.prepare("UPDATE scheduled_sessions SET status = 'cancelled' WHERE id = ?").run(session.id);
+  await db.prepare("UPDATE scheduled_sessions SET status = 'cancelled' WHERE id = ?").run(session.id);
 
   // Members who were told it was happening deserve to be told it is not
   let notified = 0;

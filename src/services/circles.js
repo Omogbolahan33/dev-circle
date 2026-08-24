@@ -17,8 +17,8 @@ const { uuid } = require('../utils/helpers');
 
 class CircleError extends Error {}
 
-function all({ includeArchived = false } = {}) {
-  return db.prepare(`
+async function all({ includeArchived = false } = {}) {
+  return await db.prepare(`
     SELECT c.*,
       (SELECT COUNT(*) FROM circle_members m WHERE m.circle_id = c.id) as member_count,
       (SELECT COUNT(*) FROM cohorts x WHERE x.circle_id = c.id) as cohort_count,
@@ -29,50 +29,50 @@ function all({ includeArchived = false } = {}) {
   `).all();
 }
 
-function byId(id) {
-  return db.prepare('SELECT * FROM circles WHERE id = ?').get(id);
+async function byId(id) {
+  return await db.prepare('SELECT * FROM circles WHERE id = ?').get(id);
 }
 
-function bySlug(slug) {
-  return db.prepare('SELECT * FROM circles WHERE slug = ?').get(slug);
+async function bySlug(slug) {
+  return await db.prepare('SELECT * FROM circles WHERE slug = ?').get(slug);
 }
 
 // The circle a request falls back to when none was named. Not a "root" — just
 // the first one, which in a single-workspace install is the only one.
-function fallback() {
-  return db.prepare("SELECT * FROM circles WHERE status = 'active' ORDER BY created_at LIMIT 1").get();
+async function fallback() {
+  return await db.prepare("SELECT * FROM circles WHERE status = 'active' ORDER BY created_at LIMIT 1").get();
 }
 
 function slugify(name) {
   return String(name).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60);
 }
 
-function uniqueSlug(name) {
+async function uniqueSlug(name) {
   const base = slugify(name) || 'circle';
   let candidate = base;
   let n = 2;
-  while (db.prepare('SELECT 1 FROM circles WHERE slug = ?').get(candidate)) {
+  while (await db.prepare('SELECT 1 FROM circles WHERE slug = ?').get(candidate)) {
     candidate = `${base}-${n++}`;
   }
   return candidate;
 }
 
-function create({ name, description, color, createdBy }) {
+async function create({ name, description, color, createdBy }) {
   if (!name || !String(name).trim()) throw new CircleError('name is required');
 
   const id = uuid();
-  db.prepare(`
+  await db.prepare(`
     INSERT INTO circles (id, name, slug, description, color, created_by)
     VALUES (?, ?, ?, ?, ?, ?)
-  `).run(id, String(name).trim(), uniqueSlug(name), description || null, color || '#107EBC', createdBy || null);
+  `).run(id, String(name).trim(), await uniqueSlug(name), description || null, color || '#107EBC', createdBy || null);
 
   return byId(id);
 }
 
 // ─── Membership ─────────────────────────────────────────────
 
-function members(circleId, { limit = 100, offset = 0 } = {}) {
-  return db.prepare(`
+async function members(circleId, { limit = 100, offset = 0 } = {}) {
+  return await db.prepare(`
     SELECT u.id, u.name, u.email, u.company, u.work_sector, u.api_status,
            u.engagement_streak, m.role, m.added_at
     FROM circle_members m
@@ -85,8 +85,8 @@ function members(circleId, { limit = 100, offset = 0 } = {}) {
 
 // A workspace's membership is its own. There is no parent to draw from — that
 // rule existed only because circles were modelled as a tree.
-function addMembers(circleId, userIds, role = 'member') {
-  const circle = byId(circleId);
+async function addMembers(circleId, userIds, role = 'member') {
+  const circle = await byId(circleId);
   if (!circle) throw new CircleError('Circle not found');
 
   const insert = db.prepare(`
@@ -98,38 +98,36 @@ function addMembers(circleId, userIds, role = 'member') {
   const added = [];
   const rejected = [];
 
-  db.transaction(() => {
-    for (const userId of userIds) {
-      if (!exists.get(userId)) {
-        rejected.push({ user_id: userId, reason: 'No such member' });
-        continue;
-      }
-      insert.run(circleId, userId, role);
-      added.push(userId);
+  for (const userId of userIds) {
+    if (!await exists.get(userId)) {
+      rejected.push({ user_id: userId, reason: 'No such member' });
+      continue;
     }
-  })();
+    await insert.run(circleId, userId, role);
+    added.push(userId);
+  }
 
   return { added: added.length, rejected };
 }
 
-function removeMember(circleId, userId) {
-  return db.prepare('DELETE FROM circle_members WHERE circle_id = ? AND user_id = ?')
-    .run(circleId, userId).changes;
+async function removeMember(circleId, userId) {
+  return Number((await db.prepare('DELETE FROM circle_members WHERE circle_id = ? AND user_id = ?')
+    .run(circleId, userId))?.changes || 0);
 }
 
 // Whichever circle a member arrives through, they join it. Registration and
 // SSO both land in the circle the request was made against.
-function join(userId, circleId) {
-  const circle = circleId ? byId(circleId) : fallback();
+async function join(userId, circleId) {
+  const circle = circleId ? await byId(circleId) : await fallback();
   if (!circle) return null;
 
-  db.prepare('INSERT OR IGNORE INTO circle_members (circle_id, user_id) VALUES (?, ?)')
+  await db.prepare('INSERT OR IGNORE INTO circle_members (circle_id, user_id) VALUES (?, ?)')
     .run(circle.id, userId);
   return circle.id;
 }
 
-function forUser(userId) {
-  return db.prepare(`
+async function forUser(userId) {
+  return await db.prepare(`
     SELECT c.id, c.name, c.slug, c.description, c.color, m.role, m.added_at
     FROM circle_members m
     JOIN circles c ON c.id = m.circle_id
@@ -138,13 +136,13 @@ function forUser(userId) {
   `).all(userId);
 }
 
-function circleIdsForUser(userId) {
-  return db.prepare('SELECT circle_id FROM circle_members WHERE user_id = ?')
-    .all(userId).map(r => r.circle_id);
+async function circleIdsForUser(userId) {
+  return ((await db.prepare('SELECT circle_id FROM circle_members WHERE user_id = ?')
+    .all(userId)) || []).map(r => r.circle_id);
 }
 
-function isMember(circleId, userId) {
-  return Boolean(db.prepare('SELECT 1 FROM circle_members WHERE circle_id = ? AND user_id = ?')
+async function isMember(circleId, userId) {
+  return Boolean(await db.prepare('SELECT 1 FROM circle_members WHERE circle_id = ? AND user_id = ?')
     .get(circleId, userId));
 }
 
@@ -161,7 +159,7 @@ async function forAdmin(admin) {
       WHERE c.status = 'active'
       ORDER BY c.created_at
     `).all();
-    return rows.map(c => ({ ...c, role_id: admin.role_id, global: true }));
+    return (rows || []).map(c => ({ ...c, role_id: admin.role_id, global: true }));
   }
 
   return await db.prepare(`
@@ -189,29 +187,29 @@ async function canAdminister(admin, circleId) {
   return Boolean(await roleFor(admin, circleId));
 }
 
-function grantAdmin(circleId, adminId, roleId) {
-  if (!byId(circleId)) throw new CircleError('Circle not found');
-  db.prepare(`
+async function grantAdmin(circleId, adminId, roleId) {
+  if (!await byId(circleId)) throw new CircleError('Circle not found');
+  await db.prepare(`
     INSERT INTO circle_admins (circle_id, admin_id, role_id) VALUES (?, ?, ?)
     ON CONFLICT(circle_id, admin_id) DO UPDATE SET role_id = excluded.role_id
   `).run(circleId, adminId, roleId);
 }
 
-function revokeAdmin(circleId, adminId) {
-  return db.prepare('DELETE FROM circle_admins WHERE circle_id = ? AND admin_id = ?')
-    .run(circleId, adminId).changes;
+async function revokeAdmin(circleId, adminId) {
+  return Number((await db.prepare('DELETE FROM circle_admins WHERE circle_id = ? AND admin_id = ?')
+    .run(circleId, adminId))?.changes || 0);
 }
 
-function archive(circleId) {
-  const circle = byId(circleId);
+async function archive(circleId) {
+  const circle = await byId(circleId);
   if (!circle) throw new CircleError('Circle not found');
 
-  const remaining = db.prepare("SELECT COUNT(*) as c FROM circles WHERE status = 'active'").get().c;
+  const remaining = Number((await db.prepare("SELECT COUNT(*) as c FROM circles WHERE status = 'active'").get())?.c || 0);
   if (remaining <= 1) {
     throw new CircleError('This is the only active circle — archiving it would leave nowhere to work');
   }
 
-  db.prepare("UPDATE circles SET status = 'archived' WHERE id = ?").run(circleId);
+  await db.prepare("UPDATE circles SET status = 'archived' WHERE id = ?").run(circleId);
   return circle;
 }
 

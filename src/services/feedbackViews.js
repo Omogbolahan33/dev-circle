@@ -170,12 +170,12 @@ function conditions(query = {}) {
 // The groups themselves. Developers rather than answers is the headline number
 // throughout: five people saying a thing once is not one person saying it five
 // times, and a single total renders them identically.
-function group(axis, query = {}) {
+async function group(axis, query = {}) {
   const { where, params } = conditions(query);
 
   if (MEMBERSHIP_GROUPINGS[axis]) {
     const g = MEMBERSHIP_GROUPINGS[axis];
-    return db.prepare(`
+    return await db.prepare(`
       SELECT m.${g.column} as key, n.name as label, NULL as context,
              COUNT(f.id) as answer_count,
              COUNT(DISTINCT COALESCE(f.user_id, 'anon:' || COALESCE(f.response_id, f.id))) as developer_count,
@@ -192,7 +192,7 @@ function group(axis, query = {}) {
   const g = GROUPINGS[axis];
   if (!g) return null;
 
-  return db.prepare(`
+  return await db.prepare(`
     SELECT ${g.key} as key, ${g.name} as label, ${g.context || 'NULL'} as context,
            COUNT(f.id) as answer_count,
            COUNT(DISTINCT COALESCE(f.user_id, 'anon:' || COALESCE(f.response_id, f.id))) as developer_count,
@@ -205,10 +205,10 @@ function group(axis, query = {}) {
 }
 
 // The verbatims themselves, in whatever the filters leave
-function items(query = {}, { limit = 500 } = {}) {
+async function items(query = {}, { limit = 500 } = {}) {
   const { where, params } = conditions(query);
 
-  return db.prepare(`
+  return await db.prepare(`
     SELECT f.id, f.content, f.created_at, f.source, f.source_system, f.status,
            f.category, f.external_ticket_id, f.canonical_question_id,
            COALESCE(q.text, f.prompt) as question,
@@ -222,9 +222,9 @@ function items(query = {}, { limit = 500 } = {}) {
   `).all(...params, limit);
 }
 
-function summarise(query = {}) {
+async function summarise(query = {}) {
   const { where, params } = conditions(query);
-  return db.prepare(`
+  return await db.prepare(`
     SELECT COUNT(f.id) as answers,
            COUNT(DISTINCT COALESCE(f.user_id, 'anon:' || COALESCE(f.response_id, f.id))) as developers,
            COUNT(DISTINCT f.canonical_question_id) as questions

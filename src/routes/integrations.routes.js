@@ -18,38 +18,38 @@ const router = express.Router();
 
 // ─── Helpers ────────────────────────────────────────────────
 
-function logIntegrationEvent(source, eventType, payload, { processed = 0, error = null } = {}) {
+async function logIntegrationEvent(source, eventType, payload, { processed = 0, error = null } = {}) {
   const id = uuid();
-  db.prepare(`
+  await db.prepare(`
     INSERT INTO integration_events (id, source, event_type, payload, processed, error)
     VALUES (?, ?, ?, ?, ?, ?)
   `).run(id, source, eventType, JSON.stringify(payload), processed, error);
   return id;
 }
 
-function markProcessed(eventId, error = null) {
-  db.prepare('UPDATE integration_events SET processed = ?, error = ? WHERE id = ?')
+async function markProcessed(eventId, error = null) {
+  await db.prepare('UPDATE integration_events SET processed = ?, error = ? WHERE id = ?')
     .run(error ? 0 : 1, error, eventId);
 }
 
-function findUser({ dev_hub_user_id, email, user_id }) {
+async function findUser({ dev_hub_user_id, email, user_id }) {
   if (dev_hub_user_id) {
-    const byHub = db.prepare('SELECT * FROM users WHERE dev_hub_user_id = ?').get(dev_hub_user_id);
+    const byHub = await db.prepare('SELECT * FROM users WHERE dev_hub_user_id = ?').get(dev_hub_user_id);
     if (byHub) return byHub;
   }
   if (email) {
-    const byEmail = db.prepare('SELECT * FROM users WHERE email = ?').get(email);
+    const byEmail = await db.prepare('SELECT * FROM users WHERE email = ?').get(email);
     if (byEmail) return byEmail;
   }
   if (user_id) {
-    return db.prepare('SELECT * FROM users WHERE id = ?').get(user_id) || null;
+    return await db.prepare('SELECT * FROM users WHERE id = ?').get(user_id) || null;
   }
   return null;
 }
 
 // Invite a member to any survey wired to this event, exactly once
 async function triggerSurveysFor(user, eventType, metadata = {}) {
-  const surveys = db.prepare(`
+  const surveys = await db.prepare(`
     SELECT * FROM surveys
     WHERE trigger_event = ? AND status = 'active'
       AND (expires_at IS NULL OR expires_at > datetime('now'))
@@ -58,11 +58,11 @@ async function triggerSurveysFor(user, eventType, metadata = {}) {
   const triggered = [];
 
   for (const survey of surveys) {
-    const existing = db.prepare('SELECT id FROM survey_responses WHERE survey_id = ? AND user_id = ?')
+    const existing = await db.prepare('SELECT id FROM survey_responses WHERE survey_id = ? AND user_id = ?')
       .get(survey.id, user.id);
     if (existing) continue;
 
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO survey_responses (id, survey_id, user_id, triggered_by)
       VALUES (?, ?, ?, 'customer_io')
     `).run(uuid(), survey.id, user.id);
@@ -91,7 +91,7 @@ async function triggerSurveysFor(user, eventType, metadata = {}) {
 
 // ─── Landing Page Integration ───────────────────────────────
 // POST /api/integrations/landing-page/ingest
-router.post('/landing-page/ingest', requireApiKey('landing_page'), (req, res) => {
+router.post('/landing-page/ingest', requireApiKey('landing_page'), async (req, res) => {
   const {
     name, phone, company, work_sector,
     date_of_birth, gender, location_state, api_products, dev_hub_user_id
@@ -103,25 +103,25 @@ router.post('/landing-page/ingest', requireApiKey('landing_page'), (req, res) =>
     return res.status(400).json({ error: 'A valid email and a name are required' });
   }
 
-  const eventId = logIntegrationEvent('landing_page', 'user_registration', { email, name });
+  const eventId = await logIntegrationEvent('landing_page', 'user_registration', { email, name });
 
   // A Credit Direct address belongs to a staff account, which is created by an
   // administrator and signs in with a password. Letting one in here would make
   // a participant profile nobody could ever sign in to.
   if (identity.isStaffEmail(email)) {
-    markProcessed(eventId, 'Credit Direct domain');
+    await markProcessed(eventId, 'Credit Direct domain');
     return res.status(400).json({ error: 'Credit Direct staff accounts are created by an administrator' });
   }
 
-  const existing = db.prepare('SELECT id FROM users WHERE lower(email) = ?').get(email);
+  const existing = await db.prepare('SELECT id FROM users WHERE lower(email) = ?').get(email);
   if (existing) {
-    markProcessed(eventId, 'Duplicate registration');
+    await markProcessed(eventId, 'Duplicate registration');
     return res.status(409).json({ error: 'User already exists', user_id: existing.id });
   }
 
   const id = uuid();
 
-  db.prepare(`
+  await db.prepare(`
     INSERT INTO users (id, email, name, phone, phone_normalized, company, work_sector, password_hash,
                        date_of_birth, gender, location_state, api_products, dev_hub_user_id)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -133,11 +133,11 @@ router.post('/landing-page/ingest', requireApiKey('landing_page'), (req, res) =>
     dev_hub_user_id || null
   );
 
-  const allCohort = db.prepare("SELECT id FROM cohorts WHERE name = 'All Members'").get();
+  const allCohort = await db.prepare("SELECT id FROM cohorts WHERE name = 'All Members'").get();
   if (allCohort) {
-    db.prepare('INSERT OR IGNORE INTO user_cohorts (user_id, cohort_id) VALUES (?, ?)').run(id, allCohort.id);
+    await db.prepare('INSERT OR IGNORE INTO user_cohorts (user_id, cohort_id) VALUES (?, ?)').run(id, allCohort.id);
   }
-  circles.join(id, req.circleId);
+  await circles.join(id, req.circleId);
 
   // Registration on the landing page includes the consent form, so record the
   // channels the member agreed to rather than leaving consent empty.
@@ -154,8 +154,8 @@ router.post('/landing-page/ingest', requireApiKey('landing_page'), (req, res) =>
   }
 
   engagement.log(id, 'account_created', { metadata: { source: 'landing_page' }, source: 'landing_page' });
-  cohortRules.syncAll();
-  markProcessed(eventId);
+  await cohortRules.syncAll();
+  await markProcessed(eventId);
 
   // No credential to hand back: the member signs in with a one-time code sent
   // to the address or number they just registered.
@@ -175,9 +175,9 @@ router.post('/customerio/webhook', requireApiKey('customer_io'), async (req, res
     return res.status(400).json({ error: 'event_type and user_id required' });
   }
 
-  const eventId = logIntegrationEvent('customer_io', event_type, req.body);
+  const eventId = await logIntegrationEvent('customer_io', event_type, req.body);
 
-  const user = findUser({ dev_hub_user_id: user_id, email: data.email });
+  const user = await findUser({ dev_hub_user_id: user_id, email: data.email });
   if (!user) {
     // Left unprocessed so it can be replayed once the member exists
     return res.status(404).json({ error: 'User not found in Dev Circle', queued: true, event_id: eventId });
@@ -195,18 +195,18 @@ router.post('/customerio/webhook', requireApiKey('customer_io'), async (req, res
 
   const engagementType = eventMap[event_type];
   if (engagementType) {
-    engagement.record(user.id, engagementType, { metadata: data, source: 'customer_io' });
+    await engagement.record(user.id, engagementType, { metadata: data, source: 'customer_io' });
 
     if (event_type === 'first_production_call') {
-      db.prepare("UPDATE users SET api_status = 'production' WHERE id = ? AND api_status = 'sandbox'").run(user.id);
+      await db.prepare("UPDATE users SET api_status = 'production' WHERE id = ? AND api_status = 'sandbox'").run(user.id);
     }
     if (event_type === 'kyb_completed') {
-      db.prepare('UPDATE users SET kyb_completed = 1 WHERE id = ?').run(user.id);
+      await db.prepare('UPDATE users SET kyb_completed = 1 WHERE id = ?').run(user.id);
     }
     if (event_type === 'product_requested' && data.product) {
       const current = parseJSON(user.api_products, []) || [];
       if (!current.includes(data.product)) {
-        db.prepare('UPDATE users SET api_products = ? WHERE id = ?')
+        await db.prepare('UPDATE users SET api_products = ? WHERE id = ?')
           .run(JSON.stringify([...current, data.product]), user.id);
       }
     }
@@ -214,12 +214,12 @@ router.post('/customerio/webhook', requireApiKey('customer_io'), async (req, res
 
   // These events change cohort membership inputs, so reconcile rule-based
   // cohorts instead of letting them drift until someone edits them by hand.
-  cohortRules.syncAll();
+  await cohortRules.syncAll();
 
-  const fresh = db.prepare('SELECT * FROM users WHERE id = ?').get(user.id);
+  const fresh = await db.prepare('SELECT * FROM users WHERE id = ?').get(user.id);
   const triggered = await triggerSurveysFor(fresh, event_type, { via: 'customer_io' });
 
-  markProcessed(eventId);
+  await markProcessed(eventId);
 
   res.json({
     message: 'Event processed',
@@ -235,26 +235,26 @@ router.post('/customerio/webhook', requireApiKey('customer_io'), async (req, res
 // end, including all comms with the developer. Dev Circle only mirrors the
 // ticket so a complaint shows up as an engagement signal against the member —
 // it never writes back to Feex and never resolves anything itself.
-router.post('/feex/webhook', requireApiKey('feex'), (req, res) => {
+router.post('/feex/webhook', requireApiKey('feex'), async (req, res) => {
   const { ticket_id, user_email, subject, description, status, priority, ticket_url } = req.body;
 
   if (!ticket_id || !user_email) {
     return res.status(400).json({ error: 'ticket_id and user_email required' });
   }
 
-  const eventId = logIntegrationEvent('feex', 'complaint_received', req.body);
+  const eventId = await logIntegrationEvent('feex', 'complaint_received', req.body);
 
-  const user = findUser({ email: user_email });
+  const user = await findUser({ email: user_email });
   if (!user) {
     return res.status(404).json({ error: 'User not found', queued: true, event_id: eventId });
   }
 
   // Feex sends both new complaints and status changes on existing tickets.
   // Every callback used to create a duplicate feedback row.
-  const existing = db.prepare('SELECT * FROM feedback WHERE external_ticket_id = ?').get(ticket_id);
+  const existing = await db.prepare('SELECT * FROM feedback WHERE external_ticket_id = ?').get(ticket_id);
 
   if (existing) {
-    db.prepare(`
+    await db.prepare(`
       UPDATE feedback
       SET feex_status = ?, feex_priority = COALESCE(?, feex_priority),
           feex_url = COALESCE(?, feex_url), feex_updated_at = datetime('now')
@@ -269,12 +269,12 @@ router.post('/feex/webhook', requireApiKey('feex'), (req, res) => {
       });
     }
 
-    markProcessed(eventId);
+    await markProcessed(eventId);
     return res.json({ message: 'Ticket state mirrored', feedback_id: existing.id, feex_status: status });
   }
 
   const feedbackId = uuid();
-  db.prepare(`
+  await db.prepare(`
     INSERT INTO feedback (id, user_id, type, content, category, status, source,
                           external_ticket_id, feex_status, feex_priority, feex_url, feex_updated_at)
     VALUES (?, ?, 'feex_complaint', ?, ?, 'open', 'feex', ?, ?, ?, ?, datetime('now'))
@@ -289,7 +289,7 @@ router.post('/feex/webhook', requireApiKey('feex'), (req, res) => {
     source: 'feex'
   });
 
-  markProcessed(eventId);
+  await markProcessed(eventId);
   res.status(201).json({ message: 'Complaint ingested', feedback_id: feedbackId, user_id: user.id });
 });
 
@@ -299,7 +299,7 @@ router.post('/feex/webhook', requireApiKey('feex'), (req, res) => {
 // Forms or anything else the team already uses. Those answers are the same
 // evidence as one collected here, so they arrive through this and are filed
 // against the developer who wrote them, under the question they answered.
-router.post('/survey-responses', requireApiKey('events', 'customer_io'), (req, res) => {
+router.post('/survey-responses', requireApiKey('events', 'customer_io'), async (req, res) => {
   const {
     source_system, external_survey_id, survey_name,
     respondent = {}, answers, submitted_at, response_id
@@ -312,15 +312,15 @@ router.post('/survey-responses', requireApiKey('events', 'customer_io'), (req, r
     return res.status(400).json({ error: 'answers must be a non-empty array of { question, answer }' });
   }
 
-  const eventId = logIntegrationEvent(source_system, 'survey_response', req.body);
+  const eventId = await logIntegrationEvent(source_system, 'survey_response', req.body);
 
   // Whoever they are here, matched the same way every other integration does
-  const user = findUser({
+  const user = await findUser({
     email: respondent.email,
     dev_hub_user_id: respondent.dev_hub_user_id,
     user_id: respondent.user_id
   }) || (respondent.phone
-    ? db.prepare('SELECT * FROM users WHERE phone_normalized = ?')
+    ? await db.prepare('SELECT * FROM users WHERE phone_normalized = ?')
         .get(identity.normalizePhone(respondent.phone))
     : null);
 
@@ -343,54 +343,50 @@ router.post('/survey-responses', requireApiKey('events', 'customer_io'), (req, r
   `);
 
   // Filed in the circle the respondent belongs to
-  const respondentCircle = db.prepare(
+  const respondentCircle = (await db.prepare(
     'SELECT circle_id FROM circle_members WHERE user_id = ? ORDER BY added_at LIMIT 1'
-  ).get(user.id)?.circle_id || null;
+  ).get(user.id))?.circle_id || null;
 
   const filed = [];
   const skipped = [];
 
-  const write = db.transaction(() => {
-    for (const [index, entry] of answers.entries()) {
-      const questionText = entry.question || entry.prompt;
-      const answer = entry.answer ?? entry.value;
+  for (const [index, entry] of answers.entries()) {
+    const questionText = entry.question || entry.prompt;
+    const answer = entry.answer ?? entry.value;
 
-      // Only written answers. A rating or a picked option from a Google Form
-      // is a measurement, the same as one collected here.
-      if (!questionText || typeof answer !== 'string' || !answer.trim()) {
-        skipped.push({ question: questionText || `#${index + 1}`, reason: 'Not a written answer' });
-        continue;
-      }
-
-      const question = questionsService.forExternalSurvey(questionText, {
-        source: source_system,
-        ref: external_survey_id
-      });
-
-      // One row per answer, so re-delivering the same submission is not a
-      // second copy of what the developer said
-      const result = insert.run(
-        uuid(), user.id, answer.trim(), survey_name || null,
-        source_system, question ? question.id : null, questionText,
-        response_id ? `${response_id}:${question ? question.id : index}` : null,
-        respondentCircle, submitted_at || null
-      );
-
-      if (result.changes) filed.push({ question: questionText, question_id: question?.id });
-      else skipped.push({ question: questionText, reason: 'Already filed' });
+    // Only written answers. A rating or a picked option from a Google Form
+    // is a measurement, the same as one collected here.
+    if (!questionText || typeof answer !== 'string' || !answer.trim()) {
+      skipped.push({ question: questionText || `#${index + 1}`, reason: 'Not a written answer' });
+      continue;
     }
-  });
 
-  write();
+    const question = await questionsService.forExternalSurvey(questionText, {
+      source: source_system,
+      ref: external_survey_id
+    });
+
+    // One row per answer, so re-delivering the same submission is not a
+    // second copy of what the developer said
+    const result = await insert.run(
+      uuid(), user.id, answer.trim(), survey_name || null,
+      source_system, question ? question.id : null, questionText,
+      response_id ? `${response_id}:${question ? question.id : index}` : null,
+      respondentCircle, submitted_at || null
+    );
+
+    if (result?.changes) filed.push({ question: questionText, question_id: question?.id });
+    else skipped.push({ question: questionText, reason: 'Already filed' });
+  }
 
   if (filed.length) {
-    engagement.record(user.id, 'survey_completed', {
+    await engagement.record(user.id, 'survey_completed', {
       metadata: { source_system, survey_name, external_survey_id, answers: filed.length },
       source: source_system === 'customer_io' ? 'customer_io' : 'system'
     });
   }
 
-  markProcessed(eventId);
+  await markProcessed(eventId);
 
   res.status(filed.length ? 201 : 200).json({
     message: `${filed.length} answer(s) filed for ${user.name}`,
@@ -410,7 +406,7 @@ router.post('/events', requireApiKey('events'), async (req, res) => {
     return res.status(400).json({ error: 'event_type and user_identifier required' });
   }
 
-  const eventId = logIntegrationEvent('external', event_type, req.body);
+  const eventId = await logIntegrationEvent('external', event_type, req.body);
 
   const lookup = {
     email: { email: user_identifier },
@@ -422,7 +418,7 @@ router.post('/events', requireApiKey('events'), async (req, res) => {
     return res.status(400).json({ error: 'user_identifier_type must be email, dev_hub_id, or id' });
   }
 
-  const user = findUser(lookup);
+  const user = await findUser(lookup);
   if (!user) {
     return res.status(404).json({ error: 'User not found', queued: true, event_id: eventId });
   }
@@ -433,27 +429,27 @@ router.post('/events', requireApiKey('events'), async (req, res) => {
   ]);
 
   if (KNOWN_TYPES.has(event_type)) {
-    engagement.record(user.id, event_type, { metadata: data, source: 'system' });
+    await engagement.record(user.id, event_type, { metadata: data, source: 'system' });
     if (event_type === 'first_production_call') {
-      db.prepare("UPDATE users SET api_status = 'production' WHERE id = ? AND api_status = 'sandbox'").run(user.id);
+      await db.prepare("UPDATE users SET api_status = 'production' WHERE id = ? AND api_status = 'sandbox'").run(user.id);
     }
     if (event_type === 'kyb_completed') {
-      db.prepare('UPDATE users SET kyb_completed = 1 WHERE id = ?').run(user.id);
+      await db.prepare('UPDATE users SET kyb_completed = 1 WHERE id = ?').run(user.id);
     }
-    cohortRules.syncAll();
+    await cohortRules.syncAll();
   }
 
-  const fresh = db.prepare('SELECT * FROM users WHERE id = ?').get(user.id);
+  const fresh = await db.prepare('SELECT * FROM users WHERE id = ?').get(user.id);
   const triggered = await triggerSurveysFor(fresh, event_type, data);
 
-  markProcessed(eventId);
+  await markProcessed(eventId);
   res.json({ message: 'Event processed', user_id: user.id, surveys_triggered: triggered });
 });
 
 // ─── Replay ─────────────────────────────────────────────────
 // GET /api/integrations/events/pending — what failed to land, and why
-router.get('/events/pending', requireApiKey('events', 'customer_io', 'feex'), (req, res) => {
-  const events = db.prepare(`
+router.get('/events/pending', requireApiKey('events', 'customer_io', 'feex'), async (req, res) => {
+  const events = await db.prepare(`
     SELECT id, source, event_type, error, created_at FROM integration_events
     WHERE processed = 0 ORDER BY created_at DESC LIMIT 100
   `).all();

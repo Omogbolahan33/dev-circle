@@ -21,43 +21,43 @@ const b64 = buffer => buffer.toString('base64');
 // ─── What a file is ─────────────────────────────────────────
 // Everything here follows from one rule: the bytes decide, never the name.
 
-test('an image is stored under a name we generate, not the one it arrived with', () => {
+test('an image is stored under a name we generate, not the one it arrived with', async () => {
   const stored = uploads.store(b64(PNG), { kind: 'image' });
   assert.match(stored.path, /^\/uploads\/[a-f0-9]{32}\.png$/);
   assert.equal(stored.mime, 'image/png');
   assert.ok(fs.existsSync(path.join(DIR, path.basename(stored.path))));
 });
 
-test('a data URL from a browser is accepted, and its declared type ignored', () => {
+test('a data URL from a browser is accepted, and its declared type ignored', async () => {
   // The prefix is the uploader's claim; the bytes behind it are the fact
   const stored = uploads.store(`data:image/svg+xml;base64,${b64(PNG)}`, { kind: 'image' });
   assert.equal(stored.mime, 'image/png');
 });
 
-test('HTML dressed up as an image is refused', () => {
+test('HTML dressed up as an image is refused', async () => {
   // Served from our own origin under a .png name, this would be stored XSS
   const html = Buffer.from('<html><script>alert(1)</script></html>');
   assert.throws(() => uploads.store(b64(html), { kind: 'image' }), /not an image/i);
 });
 
-test('an SVG is refused however it is labelled', () => {
+test('an SVG is refused however it is labelled', async () => {
   // It is a document format that can carry script; there is no version of an
   // uploaded SVG that is only a picture
   const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>');
   assert.throws(() => uploads.store(b64(svg), { kind: 'image' }), /not an image|scripts/i);
 });
 
-test('a font field will not take an image, and an image field will not take a font', () => {
+test('a font field will not take an image, and an image field will not take a font', async () => {
   assert.throws(() => uploads.store(b64(PNG), { kind: 'font' }), /image, not a font/i);
   assert.throws(() => uploads.store(b64(WOFF2), { kind: 'image' }), /font, not an image/i);
 });
 
-test('every accepted image and font format round-trips', () => {
+test('every accepted image and font format round-trips', async () => {
   assert.equal(uploads.store(b64(JPEG), { kind: 'image' }).mime, 'image/jpeg');
   assert.equal(uploads.store(b64(WOFF2), { kind: 'font' }).mime, 'font/woff2');
 });
 
-test('an empty or oversized file is refused', () => {
+test('an empty or oversized file is refused', async () => {
   assert.throws(() => uploads.store('', { kind: 'image' }), /No file/i);
   const huge = Buffer.concat([PNG, Buffer.alloc(4 * 1024 * 1024)]);
   assert.throws(() => uploads.store(b64(huge), { kind: 'image' }), /limited to/i);
@@ -65,14 +65,14 @@ test('an empty or oversized file is refused', () => {
 
 // ─── Reading one back ───────────────────────────────────────
 
-test('a stored file is served as what its bytes are', () => {
+test('a stored file is served as what its bytes are', async () => {
   const stored = uploads.store(b64(JPEG), { kind: 'image' });
   const read = uploads.read(path.basename(stored.path));
   assert.equal(read.mime, 'image/jpeg');
   assert.ok(read.buffer.equals(JPEG));
 });
 
-test('a name that is not one of ours reaches nothing', () => {
+test('a name that is not one of ours reaches nothing', async () => {
   // The pattern is what stops a path being traversed out of the directory
   for (const name of [
     '../../../etc/passwd',
@@ -85,7 +85,7 @@ test('a name that is not one of ours reaches nothing', () => {
   }
 });
 
-test('a file that was tampered with on disk is not served', () => {
+test('a file that was tampered with on disk is not served', async () => {
   // Belt and braces: the signature is checked on the way out as well as in
   const stored = uploads.store(b64(PNG), { kind: 'image' });
   const file = path.join(DIR, path.basename(stored.path));
@@ -93,7 +93,7 @@ test('a file that was tampered with on disk is not served', () => {
   assert.equal(uploads.read(path.basename(stored.path)), null);
 });
 
-test('an uploaded path is recognisable as one', () => {
+test('an uploaded path is recognisable as one', async () => {
   assert.ok(uploads.isStored('/uploads/0123456789abcdef0123456789abcdef.png'));
   assert.ok(!uploads.isStored('https://cdn.example.ng/logo.png'));
   assert.ok(!uploads.isStored('/assets/logo.png'));
@@ -115,46 +115,46 @@ function themeStore(themes) {
 
 const ancient = { now: Date.now() + 48 * 60 * 60 * 1000 };
 
-test('a file nothing points at is removed', () => {
+test('a file nothing points at is removed', async () => {
   const orphan = uploads.store(b64(PNG), { kind: 'image' });
   const db = themeStore([]);
 
-  const result = uploads.sweep(db, ancient);
+  const result = await uploads.sweep(db, ancient);
   assert.ok(result.removed >= 1);
   assert.equal(fs.existsSync(path.join(DIR, path.basename(orphan.path))), false);
 });
 
-test('a file a survey still uses is kept', () => {
+test('a file a survey still uses is kept', async () => {
   const kept = uploads.store(b64(PNG), { kind: 'image' });
   const db = themeStore([
     { column: 'theme', json: JSON.stringify({ logo_url: kept.path, accent: '#107ebc' }) }
   ]);
 
-  uploads.sweep(db, ancient);
+  await uploads.sweep(db, ancient);
   assert.ok(fs.existsSync(path.join(DIR, path.basename(kept.path))), 'still referenced');
 });
 
-test('a file a circle default uses is kept', () => {
+test('a file a circle default uses is kept', async () => {
   const kept = uploads.store(b64(PNG), { kind: 'image' });
   const db = themeStore([
     { column: 'survey_theme', json: JSON.stringify({ background_image: kept.path }) }
   ]);
 
-  uploads.sweep(db, ancient);
+  await uploads.sweep(db, ancient);
   assert.ok(fs.existsSync(path.join(DIR, path.basename(kept.path))));
 });
 
-test('a fresh upload is spared, because it may be on its way into a theme', () => {
+test('a fresh upload is spared, because it may be on its way into a theme', async () => {
   // Someone uploads a logo, then spends twenty minutes writing the questions.
   // A sweep in the middle of that must not delete what they are about to use.
   const fresh = uploads.store(b64(PNG), { kind: 'image' });
 
-  const result = uploads.sweep(themeStore([]), { now: Date.now() });
+  const result = await uploads.sweep(themeStore([]), { now: Date.now() });
   assert.ok(fs.existsSync(path.join(DIR, path.basename(fresh.path))));
   assert.ok(result.kept >= 1);
 });
 
-test('a brand font is found wherever in a theme it sits', () => {
+test('a brand font is found wherever in a theme it sits', async () => {
   // Read as text rather than by walking known fields, so a theme field added
   // later is covered without this needing to be edited
   const font = uploads.store(b64(WOFF2), { kind: 'font' });
@@ -162,14 +162,14 @@ test('a brand font is found wherever in a theme it sits', () => {
     { column: 'theme', json: JSON.stringify({ font: 'brand', brand_font: font.path }) }
   ]);
 
-  assert.ok(uploads.referenced(db).has(font.path));
-  uploads.sweep(db, ancient);
+  assert.ok((await uploads.referenced(db)).has(font.path));
+  await uploads.sweep(db, ancient);
   assert.ok(fs.existsSync(path.join(DIR, path.basename(font.path))));
 });
 
-test('a dry run reports without deleting', () => {
+test('a dry run reports without deleting', async () => {
   const orphan = uploads.store(b64(PNG), { kind: 'image' });
-  const result = uploads.sweep(themeStore([]), { ...ancient, dryRun: true });
+  const result = await uploads.sweep(themeStore([]), { ...ancient, dryRun: true });
 
   assert.ok(result.removed >= 1);
   assert.ok(result.bytes > 0);

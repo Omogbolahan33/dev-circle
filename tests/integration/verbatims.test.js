@@ -111,26 +111,26 @@ test('answers are stored as written, not interpreted', async () => {
   assert.equal(filed.content, written.trim(), 'only surrounding whitespace is touched');
 });
 
-test('filing the same response twice does not duplicate the verbatim', () => {
+test('filing the same response twice does not duplicate the verbatim', async () => {
   const user = h.makeUser();
   const survey = makeSurvey();
   const answers = { q3: 'Said once.' };
 
-  const first = verbatims.record(user.id, survey, answers);
-  const second = verbatims.record(user.id, survey, answers);
+  const first = await verbatims.record(user.id, survey, answers);
+  const second = await verbatims.record(user.id, survey, answers);
 
   assert.equal(first.filed, 1);
   assert.equal(second.filed, 0, 'a replayed submission must not file the sentence again');
   assert.equal(h.db.prepare("SELECT COUNT(*) c FROM feedback WHERE source = 'survey'").get().c, 1);
 });
 
-test('two members answering the same question are filed separately', () => {
+test('two members answering the same question are filed separately', async () => {
   const first = h.makeUser();
   const second = h.makeUser();
   const survey = makeSurvey();
 
-  verbatims.record(first.id, survey, { q3: 'Docs are unclear.' });
-  verbatims.record(second.id, survey, { q3: 'Docs are unclear.' });
+  await verbatims.record(first.id, survey, { q3: 'Docs are unclear.' });
+  await verbatims.record(second.id, survey, { q3: 'Docs are unclear.' });
 
   assert.equal(h.db.prepare("SELECT COUNT(*) c FROM feedback WHERE source = 'survey'").get().c, 2);
 });
@@ -152,7 +152,7 @@ test('one query returns everything a member has told us, from every source', asy
     VALUES (?, ?, 'feex_complaint', 'KYB took eight days.', 'feex', 'FEEX-1', 'open')
   `).run(h.uuid(), user.id);
 
-  const all = verbatims.forUser(user.id);
+  const all = await verbatims.forUser(user.id);
 
   assert.equal(all.length, 3);
   assert.deepEqual([...new Set(all.map(f => f.source))].sort(), ['dev_circle', 'feex', 'survey']);
@@ -249,7 +249,7 @@ test('survey responses still export with their verbatims', async () => {
 
 // ─── Backfill ───────────────────────────────────────────────
 
-test('answers collected before this existed are filed retrospectively', () => {
+test('answers collected before this existed are filed retrospectively', async () => {
   const user = h.makeUser();
   const survey = makeSurvey();
 
@@ -262,7 +262,7 @@ test('answers collected before this existed are filed retrospectively', () => {
   assert.equal(h.db.prepare("SELECT COUNT(*) c FROM feedback WHERE source = 'survey'").get().c, 0);
 
   // The migration's backfill, applied to this response
-  const { filed } = verbatims.record(user.id, survey,
+  const { filed } = await verbatims.record(user.id, survey,
     JSON.parse(h.db.prepare('SELECT answers FROM survey_responses WHERE user_id = ?').get(user.id).answers));
 
   assert.equal(filed, 1);
@@ -272,7 +272,7 @@ test('answers collected before this existed are filed retrospectively', () => {
   );
 });
 
-test('the migration backfills a database that predates it', () => {
+test('the migration backfills a database that predates it', async () => {
   const Database = require('better-sqlite3');
   const fs = require('fs');
   const os = require('os');
@@ -324,15 +324,15 @@ test('the migration backfills a database that predates it', () => {
   }
 });
 
-test('a survey with no written questions files nothing', () => {
+test('a survey with no written questions files nothing', async () => {
   const user = h.makeUser();
   const survey = makeSurvey({ questions: [{ id: 'q1', type: 'rating', text: 'Score?', scale: 5 }] });
 
-  const { filed } = verbatims.record(user.id, survey, { q1: 5 });
+  const { filed } = await verbatims.record(user.id, survey, { q1: 5 });
   assert.equal(filed, 0);
 });
 
-test('a malformed questions blob does not throw', () => {
+test('a malformed questions blob does not throw', async () => {
   const user = h.makeUser();
-  assert.doesNotThrow(() => verbatims.record(user.id, { id: h.uuid(), questions: 'not json' }, { q3: 'x' }));
+  await verbatims.record(user.id, { id: h.uuid(), questions: 'not json' }, { q3: 'x' });
 });

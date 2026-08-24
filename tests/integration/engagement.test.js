@@ -123,7 +123,7 @@ test('turning a category off stops those messages', async () => {
     { categories: { survey_invites: false } }, { token: userToken });
 
   const fresh = h.db.prepare('SELECT * FROM users WHERE id = ?').get(user.id);
-  const { allowed } = notifications.resolveChannels(fresh, ['in_portal', 'email'], 'survey_invites');
+  const { allowed } = await notifications.resolveChannels(fresh, ['in_portal', 'email'], 'survey_invites');
   assert.deepEqual(allowed, []);
 });
 
@@ -148,7 +148,7 @@ test('an unknown category is rejected', async () => {
   assert.equal(res.status, 400);
 });
 
-test('quiet hours defer a send rather than dropping it', () => {
+test('quiet hours defer a send rather than dropping it', async () => {
   // A window covering the whole day, so the assertion does not depend on
   // what time the suite happens to run
   const user = h.makeUser({ preferred_channels: [] });
@@ -160,7 +160,7 @@ test('quiet hours defer a send rather than dropping it', () => {
 
   assert.equal(notifications.inQuietHours(fresh), true);
 
-  const { allowed, skipped } = notifications.resolveChannels(fresh, ['in_portal', 'email'], 'platform_updates');
+  const { allowed, skipped } = await notifications.resolveChannels(fresh, ['in_portal', 'email'], 'platform_updates');
   assert.deepEqual(allowed, ['in_portal'], 'the inbox is never held back');
   assert.equal(skipped.find(s => s.channel === 'email').deferred, true);
 });
@@ -184,35 +184,35 @@ test('a blast is recorded as a message, not as a survey invitation', async () =>
 
 // ─── Streaks ────────────────────────────────────────────────
 
-test('a streak counts a day once, however many actions it holds', () => {
+test('a streak counts a day once, however many actions it holds', async () => {
   const user = h.makeUser();
 
-  engagement.record(user.id, 'survey_completed');
-  engagement.record(user.id, 'feedback_submitted');
-  engagement.record(user.id, 'gift_claimed');
+  await engagement.record(user.id, 'survey_completed');
+  await engagement.record(user.id, 'feedback_submitted');
+  await engagement.record(user.id, 'gift_claimed');
 
   const row = h.db.prepare('SELECT engagement_streak FROM users WHERE id = ?').get(user.id);
   assert.equal(row.engagement_streak, 1);
 });
 
-test('a streak advances on a later day', () => {
+test('a streak advances on a later day', async () => {
   const user = h.makeUser();
 
-  engagement.record(user.id, 'survey_completed');
+  await engagement.record(user.id, 'survey_completed');
   h.db.prepare("UPDATE users SET last_engagement_at = datetime('now', '-2 days') WHERE id = ?").run(user.id);
-  engagement.record(user.id, 'survey_completed');
+  await engagement.record(user.id, 'survey_completed');
 
   const row = h.db.prepare('SELECT engagement_streak, best_streak FROM users WHERE id = ?').get(user.id);
   assert.equal(row.engagement_streak, 2);
   assert.equal(row.best_streak, 2);
 });
 
-test('a lapsed streak resets instead of climbing forever', () => {
+test('a lapsed streak resets instead of climbing forever', async () => {
   const user = h.makeUser({ engagement_streak: 9 });
   h.db.prepare("UPDATE users SET last_engagement_at = datetime('now', '-90 days'), best_streak = 9 WHERE id = ?")
     .run(user.id);
 
-  engagement.record(user.id, 'survey_completed');
+  await engagement.record(user.id, 'survey_completed');
 
   const row = h.db.prepare('SELECT engagement_streak, best_streak FROM users WHERE id = ?').get(user.id);
   assert.equal(row.engagement_streak, 1, 'the streak restarts after a long gap');

@@ -8,7 +8,7 @@ const router = express.Router();
 
 // GET /api/admin/dashboard
 router.get('/dashboard', requirePermission('members.read'), async (req, res) => {
-  const count = async sql => Number((await db.prepare(sql).get()).c || 0);
+  const count = async sql => Number((await db.prepare(sql).get())?.c || 0);
   const totalMembers = await count('SELECT COUNT(*) as c FROM users');
   const activeCohorts = await count('SELECT COUNT(*) as c FROM cohorts');
   const totalSurveysSent = await count('SELECT COUNT(*) as c FROM survey_responses');
@@ -57,23 +57,23 @@ router.get('/dashboard', requirePermission('members.read'), async (req, res) => 
 // GET /api/admin/demography
 // The blueprint asks for an at-a-glance view of demography, age, and products.
 // None of that data existed before; these are the real distributions.
-router.get('/demography', requirePermission('members.read'), (req, res) => {
-  const bySector = db.prepare(`
+router.get('/demography', requirePermission('members.read'), async (req, res) => {
+  const bySector = await db.prepare(`
     SELECT COALESCE(NULLIF(work_sector, ''), 'Unspecified') as label, COUNT(*) as count
     FROM users GROUP BY label ORDER BY count DESC
   `).all();
 
-  const byState = db.prepare(`
+  const byState = await db.prepare(`
     SELECT COALESCE(NULLIF(location_state, ''), 'Unspecified') as label, COUNT(*) as count
     FROM users GROUP BY label ORDER BY count DESC LIMIT 15
   `).all();
 
-  const byGender = db.prepare(`
+  const byGender = await db.prepare(`
     SELECT COALESCE(NULLIF(gender, ''), 'Unspecified') as label, COUNT(*) as count
     FROM users GROUP BY label ORDER BY count DESC
   `).all();
 
-  const byAge = db.prepare(`
+  const byAge = await db.prepare(`
     SELECT CASE
       WHEN date_of_birth IS NULL THEN 'Unspecified'
       WHEN (julianday('now') - julianday(date_of_birth)) / 365.25 < 25 THEN 'Under 25'
@@ -85,21 +85,21 @@ router.get('/demography', requirePermission('members.read'), (req, res) => {
   `).all();
 
   // api_products is a JSON array, so each member counts once per product
-  const byProduct = db.prepare(`
+  const byProduct = await db.prepare(`
     SELECT json_each.value as label, COUNT(*) as count
     FROM users, json_each(users.api_products)
     GROUP BY label ORDER BY count DESC
   `).all();
 
-  const byApiStatus = db.prepare('SELECT api_status as label, COUNT(*) as count FROM users GROUP BY label').all();
+  const byApiStatus = await db.prepare('SELECT api_status as label, COUNT(*) as count FROM users GROUP BY label').all();
 
-  const kyb = db.prepare(`
+  const kyb = await db.prepare(`
     SELECT CASE COALESCE(kyb_completed, 0) WHEN 1 THEN 'Completed' ELSE 'Pending' END as label,
            COUNT(*) as count
     FROM users GROUP BY label
   `).all();
 
-  const engagementDepth = db.prepare(`
+  const engagementDepth = await db.prepare(`
     SELECT CASE
       WHEN completed = 0 THEN 'Never responded'
       WHEN completed BETWEEN 1 AND 2 THEN '1–2 surveys'
@@ -113,7 +113,7 @@ router.get('/demography', requirePermission('members.read'), (req, res) => {
     ) GROUP BY label
   `).all();
 
-  const missing = db.prepare(`
+  const missing = await db.prepare(`
     SELECT
       SUM(CASE WHEN date_of_birth IS NULL THEN 1 ELSE 0 END) as no_date_of_birth,
       SUM(CASE WHEN gender IS NULL OR gender = '' THEN 1 ELSE 0 END) as no_gender,
@@ -123,7 +123,7 @@ router.get('/demography', requirePermission('members.read'), (req, res) => {
   `).get();
 
   res.json({
-    total: db.prepare('SELECT COUNT(*) as c FROM users').get().c,
+    total: Number((await db.prepare('SELECT COUNT(*) as c FROM users').get())?.c || 0),
     work_sector: bySector,
     location_state: byState,
     gender: byGender,

@@ -22,7 +22,7 @@ router.get('/gifts', requirePermission('gifts.read'), async (req, res) => {
 });
 
 // POST /api/admin/gifts
-router.post('/gifts', requirePermission('gifts.write'), (req, res) => {
+router.post('/gifts', requirePermission('gifts.write'), async (req, res) => {
   const {
     name, description, value, currency, target_cohort_ids,
     stock, min_surveys_completed, min_streak
@@ -30,7 +30,7 @@ router.post('/gifts', requirePermission('gifts.write'), (req, res) => {
   if (!name) return res.status(400).json({ error: 'name required' });
 
   const id = uuid();
-  db.prepare(`
+  await db.prepare(`
     INSERT INTO gifts (id, name, description, value, currency, target_cohort_ids,
                        stock, min_surveys_completed, min_streak, active)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
@@ -40,13 +40,13 @@ router.post('/gifts', requirePermission('gifts.write'), (req, res) => {
     stock ?? null, min_surveys_completed || 0, min_streak || 0
   );
 
-  const gift = db.prepare('SELECT * FROM gifts WHERE id = ?').get(id);
+  const gift = await db.prepare('SELECT * FROM gifts WHERE id = ?').get(id);
   res.status(201).json({ gift: { ...gift, target_cohort_ids: parseJSON(gift.target_cohort_ids, []) } });
 });
 
 // PUT /api/admin/gifts/:id
-router.put('/gifts/:id', requirePermission('gifts.write'), (req, res) => {
-  const gift = db.prepare('SELECT * FROM gifts WHERE id = ?').get(req.params.id);
+router.put('/gifts/:id', requirePermission('gifts.write'), async (req, res) => {
+  const gift = await db.prepare('SELECT * FROM gifts WHERE id = ?').get(req.params.id);
   if (!gift) return res.status(404).json({ error: 'Gift not found' });
 
   const fields = {
@@ -72,9 +72,9 @@ router.put('/gifts/:id', requirePermission('gifts.write'), (req, res) => {
   if (!updates.length) return res.status(400).json({ error: 'No fields to update' });
 
   params.push(gift.id);
-  db.prepare(`UPDATE gifts SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+  await db.prepare(`UPDATE gifts SET ${updates.join(', ')} WHERE id = ?`).run(...params);
 
-  const updated = db.prepare('SELECT * FROM gifts WHERE id = ?').get(gift.id);
+  const updated = await db.prepare('SELECT * FROM gifts WHERE id = ?').get(gift.id);
   res.json({ gift: { ...updated, target_cohort_ids: parseJSON(updated.target_cohort_ids, []) } });
 });
 
@@ -83,15 +83,15 @@ router.post('/gifts/:id/deliver', requirePermission('gifts.write'), async (req, 
   const { user_id } = req.body;
   if (!user_id) return res.status(400).json({ error: 'user_id required' });
 
-  const claim = db.prepare('SELECT * FROM user_gifts WHERE gift_id = ? AND user_id = ?')
+  const claim = await db.prepare('SELECT * FROM user_gifts WHERE gift_id = ? AND user_id = ?')
     .get(req.params.id, user_id);
   if (!claim) return res.status(404).json({ error: 'No claim found for this member' });
   if (claim.delivered_at) return res.status(409).json({ error: 'Already delivered' });
 
-  db.prepare("UPDATE user_gifts SET delivered_at = datetime('now') WHERE id = ?").run(claim.id);
+  await db.prepare("UPDATE user_gifts SET delivered_at = datetime('now') WHERE id = ?").run(claim.id);
 
-  const gift = db.prepare('SELECT * FROM gifts WHERE id = ?').get(req.params.id);
-  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(user_id);
+  const gift = await db.prepare('SELECT * FROM gifts WHERE id = ?').get(req.params.id);
+  const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(user_id);
 
   engagement.log(user_id, 'gift_delivered', { referenceId: gift.id, metadata: { gift_name: gift.name }, source: 'manual' });
 

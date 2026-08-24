@@ -12,8 +12,8 @@ const router = express.Router();
 // ─── Message Blasts ─────────────────────────────────────────
 
 // GET /api/admin/blasts
-router.get('/blasts', requirePermission('blasts.send', 'members.read'), (req, res) => {
-  const blasts = db.prepare(`
+router.get('/blasts', requirePermission('blasts.send', 'members.read'), async (req, res) => {
+  const blasts = await db.prepare(`
     SELECT b.*,
       (SELECT COUNT(*) FROM message_deliveries d
         WHERE d.source_type = 'blast' AND d.source_id = b.id
@@ -27,8 +27,8 @@ router.get('/blasts', requirePermission('blasts.send', 'members.read'), (req, re
 });
 
 // GET /api/admin/blasts/:id/deliveries — the audit trail for one blast
-router.get('/blasts/:id/deliveries', requirePermission('blasts.send'), (req, res) => {
-  const deliveries = db.prepare(`
+router.get('/blasts/:id/deliveries', requirePermission('blasts.send'), async (req, res) => {
+  const deliveries = await db.prepare(`
     SELECT d.*, u.name as user_name, u.email as user_email
     FROM message_deliveries d
     JOIN users u ON u.id = d.user_id
@@ -40,14 +40,14 @@ router.get('/blasts/:id/deliveries', requirePermission('blasts.send'), (req, res
 });
 
 // POST /api/admin/blasts
-router.post('/blasts', requirePermission('blasts.send'), (req, res) => {
+router.post('/blasts', requirePermission('blasts.send'), async (req, res) => {
   const { subject, content, channel, target_type, target_ids, scheduled_for, circle_id } = req.body;
 
   if (!content || !channel || !target_type) {
     return res.status(400).json({ error: 'content, channel, and target_type required' });
   }
 
-  const circle = circle_id ? circles.byId(circle_id) : req.circle;
+  const circle = circle_id ? await circles.byId(circle_id) : req.circle;
   if (!circle) return res.status(400).json({ error: 'Unknown circle_id' });
   if (!['email', 'whatsapp', 'sms', 'in_portal', 'all'].includes(channel)) {
     return res.status(400).json({ error: 'Invalid channel' });
@@ -60,30 +60,30 @@ router.post('/blasts', requirePermission('blasts.send'), (req, res) => {
   }
 
   const id = uuid();
-  db.prepare(`
+  await db.prepare(`
     INSERT INTO message_blasts (id, subject, content, channel, target_type, target_ids,
                                 status, sent_by, scheduled_for, circle_id)
     VALUES (?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?)
   `).run(id, subject || null, content, channel, target_type,
          JSON.stringify(target_ids || []), req.admin.id, scheduled_for || null, circle.id);
 
-  const blast = db.prepare('SELECT * FROM message_blasts WHERE id = ?').get(id);
+  const blast = await db.prepare('SELECT * FROM message_blasts WHERE id = ?').get(id);
   res.status(201).json({ blast: { ...blast, target_ids: parseJSON(blast.target_ids, []) } });
 });
 
 // POST /api/admin/blasts/:id/preview — who this reaches, before committing
-router.post('/blasts/:id/preview', requirePermission('blasts.send'), (req, res) => {
-  const blast = db.prepare('SELECT * FROM message_blasts WHERE id = ?').get(req.params.id);
+router.post('/blasts/:id/preview', requirePermission('blasts.send'), async (req, res) => {
+  const blast = await db.prepare('SELECT * FROM message_blasts WHERE id = ?').get(req.params.id);
   if (!blast) return res.status(404).json({ error: 'Blast not found' });
 
-  const recipients = blastRecipients(blast);
+  const recipients = await blastRecipients(blast);
   const channels = blast.channel === 'all' ? notifications.CHANNELS : ['in_portal', blast.channel];
 
   let reachable = 0;
   const blocked = [];
 
   for (const user of recipients) {
-    const { allowed, skipped } = notifications.resolveChannels(user, channels, 'platform_updates');
+    const { allowed, skipped } = await notifications.resolveChannels(user, channels, 'platform_updates');
     if (allowed.length) reachable++;
     else blocked.push({ name: user.name, email: user.email, reasons: skipped.map(s => s.reason) });
   }
@@ -93,15 +93,15 @@ router.post('/blasts/:id/preview', requirePermission('blasts.send'), (req, res) 
 
 // POST /api/admin/blasts/:id/send
 router.post('/blasts/:id/send', requirePermission('blasts.send'), async (req, res) => {
-  const blast = db.prepare('SELECT * FROM message_blasts WHERE id = ?').get(req.params.id);
+  const blast = await db.prepare('SELECT * FROM message_blasts WHERE id = ?').get(req.params.id);
   if (!blast) return res.status(404).json({ error: 'Blast not found' });
   if (blast.status === 'sent') return res.status(409).json({ error: 'Already sent' });
   if (blast.status === 'sending') return res.status(409).json({ error: 'Send already in progress' });
 
-  db.prepare("UPDATE message_blasts SET status = 'sending' WHERE id = ?").run(blast.id);
+  await db.prepare("UPDATE message_blasts SET status = 'sending' WHERE id = ?").run(blast.id);
 
   try {
-    const recipients = blastRecipients(blast);
+    const recipients = await blastRecipients(blast);
     const channels = blast.channel === 'all' ? notifications.CHANNELS : ['in_portal', blast.channel];
 
     // Consent, channel preference, and quiet hours are all applied inside the
@@ -127,7 +127,7 @@ router.post('/blasts/:id/send', requirePermission('blasts.send'), async (req, re
       }
     }
 
-    db.prepare(`
+    await db.prepare(`
       UPDATE message_blasts
       SET status = 'sent', sent_at = datetime('now'), recipient_count = ?, skipped_count = ?
       WHERE id = ?
@@ -142,7 +142,7 @@ router.post('/blasts/:id/send', requirePermission('blasts.send'), async (req, re
       failed: summary.failed
     });
   } catch (err) {
-    db.prepare("UPDATE message_blasts SET status = 'failed' WHERE id = ?").run(blast.id);
+    await db.prepare("UPDATE message_blasts SET status = 'failed' WHERE id = ?").run(blast.id);
     throw err;
   }
 });

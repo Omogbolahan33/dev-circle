@@ -12,7 +12,7 @@ const router = express.Router();
 // different permissions.
 
 // GET /api/admin/integration-events
-router.get('/integration-events', requirePermission('integrations.read'), (req, res) => {
+router.get('/integration-events', requirePermission('integrations.read'), async (req, res) => {
   const { source, processed, limit = 50 } = req.query;
   const where = ['1=1'];
   const params = [];
@@ -22,7 +22,7 @@ router.get('/integration-events', requirePermission('integrations.read'), (req, 
     where.push('processed = ?'); params.push(parseInt(processed, 10));
   }
 
-  const events = db.prepare(`
+  const events = await db.prepare(`
     SELECT * FROM integration_events
     WHERE ${where.join(' AND ')}
     ORDER BY created_at DESC LIMIT ?

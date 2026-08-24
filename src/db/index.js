@@ -50,7 +50,7 @@ if (config.isPostgres) {
         );
       `);
       const migrations = require('./migrations');
-      const defined = migrations.define({ _isPostgres: true, prepare: () => ({ all: () => [], get: () => null }), exec: () => {}, pragma: () => null });
+      const defined = migrations.define({ _isPostgres: true, prepare: async () => ({ all: async () => [], get: async () => null }), exec: () => {}, pragma: async () => null });
       for (const m of defined) {
         await pg.query(
           'INSERT INTO schema_migrations (id, name) VALUES ($1, $2) ON CONFLICT (id) DO NOTHING',

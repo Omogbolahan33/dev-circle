@@ -53,16 +53,16 @@ router.get('/feedback', requirePermission('feedback.read'), async (req, res) => 
 // ─── Views ──────────────────────────────────────────────────
 
 // GET /api/admin/feedback/axes — the ways this can be cut up
-router.get('/feedback/axes', requirePermission('feedback.read'), (req, res) => {
+router.get('/feedback/axes', requirePermission('feedback.read'), async (req, res) => {
   res.json({ axes: views.axes() });
 });
 
 // GET /api/admin/feedback/grouped?group_by=question|developer|survey|source|…
 // Groups first, verbatims on drill-in. Filters and grouping compose, so
 // "what did the Lending cohort say about onboarding, by developer" is one call.
-router.get('/feedback/grouped', requirePermission('feedback.read'), (req, res) => {
+router.get('/feedback/grouped', requirePermission('feedback.read'), async (req, res) => {
   const axis = req.query.group_by || 'question';
-  const groups = views.group(axis, scoped(req));
+  const groups = await views.group(axis, scoped(req));
 
   if (!groups) {
     return res.status(400).json({
@@ -75,15 +75,15 @@ router.get('/feedback/grouped', requirePermission('feedback.read'), (req, res) =
     group_by: axis,
     axis: views.axes().find(a => a.key === axis),
     groups,
-    totals: views.summarise(scoped(req))
+    totals: await views.summarise(scoped(req))
   });
 });
 
 // GET /api/admin/feedback/items — the verbatims themselves, however filtered
-router.get('/feedback/items', requirePermission('feedback.read'), (req, res) => {
+router.get('/feedback/items', requirePermission('feedback.read'), async (req, res) => {
   res.json({
-    items: views.items(scoped(req), { limit: Math.min(500, parseInt(scoped(req).limit, 10) || 200) }),
-    totals: views.summarise(scoped(req))
+    items: await views.items(scoped(req), { limit: Math.min(500, parseInt(scoped(req).limit, 10) || 200) }),
+    totals: await views.summarise(scoped(req))
   });
 });
 
@@ -99,8 +99,8 @@ const FEEDBACK_COLUMNS = [
 
 // The export reads through the same view service the screen does, so a file
 // can never contain a different set of rows than the screen that asked for it.
-function selectFeedback(query) {
-  return views.items(query, { limit: 10000 }).map(row => ({
+async function selectFeedback(query) {
+  return (await views.items(query, { limit: 10000 })).map(row => ({
     said_at: row.created_at,
     developer: row.developer,
     email: row.email,
@@ -118,9 +118,9 @@ function selectFeedback(query) {
 }
 
 // GET /api/admin/feedback/export?format=csv|xlsx|json
-router.get('/feedback/export', requirePermission('export.read'), (req, res) => {
+router.get('/feedback/export', requirePermission('export.read'), async (req, res) => {
   const format = (req.query.format || 'csv').toLowerCase();
-  const rows = selectFeedback(scoped(req));
+  const rows = await selectFeedback(scoped(req));
 
   const stamp = new Date().toISOString().slice(0, 10);
   const name = `devcircle-feedback-${stamp}`;
@@ -146,13 +146,16 @@ router.get('/feedback/export', requirePermission('export.read'), (req, res) => {
     // same reason to want them on their own tab.
     const axis = req.query.group_by;
     if (axis && views.axes().some(a => a.key === axis)) {
-      const groups = views.group(axis, scoped(req)) || [];
+      const groups = await views.group(axis, scoped(req)) || [];
       const filterKey = views.axes().find(a => a.key === axis).filter;
 
-      const sheets = groups.slice(0, 40).map(g => ({
-        name: String(g.label || 'Unlabelled').slice(0, 31),
-        rows: asRows(selectFeedback({ ...scoped(req), [filterKey]: g.key }))
-      }));
+      const sheets = [];
+      for (const g of groups.slice(0, 40)) {
+        sheets.push({
+          name: String(g.label || 'Unlabelled').slice(0, 31),
+          rows: asRows(await selectFeedback({ ...scoped(req), [filterKey]: g.key }))
+        });
+      }
 
       // A contents tab first, so a 20-sheet workbook is navigable
       sheets.unshift({
@@ -179,8 +182,8 @@ router.get('/feedback/export', requirePermission('export.read'), (req, res) => {
 });
 
 // GET /api/admin/feedback/export/count — size it before downloading
-router.get('/feedback/export/count', requirePermission('export.read'), (req, res) => {
-  const rows = selectFeedback(scoped(req));
+router.get('/feedback/export/count', requirePermission('export.read'), async (req, res) => {
+  const rows = await selectFeedback(scoped(req));
   res.json({
     total: rows.length,
     developers: new Set(rows.map(r => r.email)).size,
@@ -192,14 +195,14 @@ router.get('/feedback/export/count', requirePermission('export.read'), (req, res
 // This marks how far the engagement team has got through *reading* feedback.
 // It is triage state, not ticket resolution — Dev Circle collects information,
 // it does not resolve issues.
-router.put('/feedback/:id', requirePermission('feedback.write'), (req, res) => {
+router.put('/feedback/:id', requirePermission('feedback.write'), async (req, res) => {
   const { status, note } = req.body;
   if (!status) return res.status(400).json({ error: 'status required' });
   if (!['open', 'reviewed', 'resolved'].includes(status)) {
     return res.status(400).json({ error: 'Invalid status' });
   }
 
-  const fb = db.prepare('SELECT * FROM feedback WHERE id = ?').get(req.params.id);
+  const fb = await db.prepare('SELECT * FROM feedback WHERE id = ?').get(req.params.id);
   if (!fb) return res.status(404).json({ error: 'Feedback not found' });
 
   // A Feex complaint's state belongs to Feex. Dev Circle mirrors it through
@@ -225,7 +228,7 @@ router.put('/feedback/:id', requirePermission('feedback.write'), (req, res) => {
     });
   }
 
-  db.prepare(`
+  await db.prepare(`
     UPDATE feedback
     SET status = ?, resolved_at = CASE WHEN ? = 'resolved' THEN datetime('now') ELSE NULL END
     WHERE id = ?
@@ -239,7 +242,7 @@ router.put('/feedback/:id', requirePermission('feedback.write'), (req, res) => {
     });
   }
 
-  res.json({ feedback: db.prepare('SELECT * FROM feedback WHERE id = ?').get(fb.id) });
+  res.json({ feedback: await db.prepare('SELECT * FROM feedback WHERE id = ?').get(fb.id) });
 });
 
 module.exports = router;

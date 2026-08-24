@@ -230,7 +230,7 @@ const GRACE_MS = 24 * 60 * 60 * 1000;
 // Every asset path any theme mentions. Themes are JSON, so this reads them as
 // text rather than parsing every shape — a path is a path wherever in the
 // theme it sits, and a field added later is covered without being listed here.
-function referenced(db) {
+async function referenced(db) {
   const paths = new Set();
   const collect = row => {
     for (const value of Object.values(row)) {
@@ -241,17 +241,17 @@ function referenced(db) {
     }
   };
 
-  for (const row of db.prepare('SELECT theme FROM surveys WHERE theme IS NOT NULL').all()) collect(row);
-  for (const row of db.prepare('SELECT survey_theme FROM circles WHERE survey_theme IS NOT NULL').all()) collect(row);
+  for (const row of await db.prepare('SELECT theme FROM surveys WHERE theme IS NOT NULL').all()) collect(row);
+  for (const row of await db.prepare('SELECT survey_theme FROM circles WHERE survey_theme IS NOT NULL').all()) collect(row);
 
   return paths;
 }
 
-function sweep(db, { graceMs = GRACE_MS, now = Date.now(), dryRun = false } = {}) {
+async function sweep(db, { graceMs = GRACE_MS, now = Date.now(), dryRun = false } = {}) {
   let files;
   try { files = fs.readdirSync(config.uploadDir); } catch { return { removed: 0, kept: 0, bytes: 0 }; }
 
-  const inUse = referenced(db);
+  const inUse = await referenced(db);
   const result = { removed: 0, kept: 0, bytes: 0, files: [] };
 
   for (const name of files) {
