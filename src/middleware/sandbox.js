@@ -29,6 +29,9 @@ function bearer(req) {
 
 async function sandboxContext(req, res, next) {
   if (!requested(req)) return next();
+  // Liveness must not depend on mirroring a session into SQLite. The API
+  // docs send this header on every Try-it-out call, including GET /health.
+  if (req.path === '/health') return next();
 
   if (!config.sandbox.enabled) {
     return res.status(503).json({ error: 'The API sandbox is switched off in this environment' });
