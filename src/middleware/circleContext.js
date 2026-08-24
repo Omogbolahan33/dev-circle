@@ -1,4 +1,5 @@
 const circles = require('../services/circles');
+const context = require('../db/context');
 const { permissionsFor } = require('./auth');
 
 // ─── Working inside a circle ────────────────────────────────
@@ -24,9 +25,13 @@ async function circleContext(req, res, next) {
     });
   }
 
-  const circle = requested
+  let circle = requested
     ? available.find(c => c.id === requested || c.slug === requested)
     : available[0];
+
+  // Live workspace ids do not exist in the sandbox. Fall back to its only
+  // circle rather than refusing every sandboxed admin call.
+  if (!circle && context.inSandbox()) circle = available[0];
 
   if (!circle) {
     // Naming a circle they cannot reach is refused rather than quietly
