@@ -95,8 +95,46 @@ test('a file that was tampered with on disk is not served', async () => {
 
 test('an uploaded path is recognisable as one', async () => {
   assert.ok(uploads.isStored('/uploads/0123456789abcdef0123456789abcdef.png'));
+  assert.ok(uploads.isStored('/uploads/creditdirect-logo-0123456789ab.png'));
+  assert.ok(!uploads.isStored('/uploads/not-a-stored-name.png'));
   assert.ok(!uploads.isStored('https://cdn.example.ng/logo.png'));
   assert.ok(!uploads.isStored('/assets/logo.png'));
+});
+
+test('an original filename is kept in the stored name, sanitised', async () => {
+  const stored = uploads.store(b64(PNG), { kind: 'image', filename: 'Credit Direct Logo.PNG' });
+  assert.match(stored.path, /^\/uploads\/credit-direct-logo-[a-f0-9]{12}\.png$/);
+  assert.equal(stored.name, stored.path.split('/').pop());
+  assert.ok(uploads.isStored(stored.path));
+  const read = uploads.read(stored.name);
+  assert.ok(read);
+  assert.equal(read.mime, 'image/png');
+});
+
+test('a filename that is only punctuation falls back to a generated name', async () => {
+  const stored = uploads.store(b64(PNG), { kind: 'image', filename: '...png' });
+  assert.match(stored.path, /^\/uploads\/[a-f0-9]{32}\.png$/);
+});
+
+test('Storage reports the object key we keep, not the name we happened to send', () => {
+  const intended = 'creditdirect-logo-0123456789ab.png';
+  assert.equal(
+    uploads.objectKeyFromUpload({ path: intended }, 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png'),
+    intended
+  );
+  assert.equal(
+    uploads.objectKeyFromUpload({ path: 'brand/' + intended }, intended),
+    'brand/' + intended
+  );
+  assert.equal(
+    uploads.objectKeyFromUpload({ path: 'uploads/' + intended, fullPath: 'uploads/uploads/' + intended }, intended),
+    'uploads/' + intended,
+    'data.path is the key; fullPath (bucket + key) is ignored'
+  );
+  assert.equal(
+    uploads.objectKeyFromUpload({ path: '../etc/passwd' }, intended),
+    intended
+  );
 });
 
 // ─── Sweeping up ────────────────────────────────────────────
@@ -152,6 +190,16 @@ test('a fresh upload is spared, because it may be on its way into a theme', asyn
   const result = await uploads.sweep(themeStore([]), { now: Date.now() });
   assert.ok(fs.existsSync(path.join(DIR, path.basename(fresh.path))));
   assert.ok(result.kept >= 1);
+});
+
+test('a named upload a survey still uses is kept', async () => {
+  const kept = uploads.store(b64(PNG), { kind: 'image', filename: 'workspace-mark.png' });
+  const db = themeStore([
+    { column: 'theme', json: JSON.stringify({ logo_url: kept.path }) }
+  ]);
+
+  await uploads.sweep(db, ancient);
+  assert.ok(fs.existsSync(path.join(DIR, kept.name)), 'still referenced under its stored name');
 });
 
 test('a brand font is found wherever in a theme it sits', async () => {

@@ -1482,15 +1482,18 @@ const paths = {
         file: str('The file, base64-encoded. A data: URL prefix is accepted and its declared type ignored'),
         kind: str('What the caller expects, so a font field cannot be given an image', {
           enum: ['image', 'font'], default: 'image'
-        })
+        }),
+        filename: str('Original name, used only as a sanitised stem on the stored object')
       }, { required: ['file'] }), {
         file: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mP8Xw8AAoMBgDTD2qgAAAAASUVORK5CYII=',
-        kind: 'image'
+        kind: 'image',
+        filename: 'creditdirect-logo.png'
       }),
       responses: {
         201: json('Stored.', object({
           asset: object({
-            path: str('Put this in a theme field', { example: '/uploads/0123456789abcdef0123456789abcdef.png' }),
+            path: str('Put this in a theme field. Its basename is the object key in Storage', { example: '/uploads/creditdirect-logo-0123456789ab.png' }),
+            name: str('The object key, same name the bucket holds'),
             kind: str('image or font'),
             mime: str('What it will be served as, taken from the bytes'),
             bytes: int('Size on disk'),

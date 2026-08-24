@@ -61,6 +61,9 @@ async function uploadToSupabase(fileName, buffer, contentType) {
     });
 
   if (error) throw error;
+  // `data.path` is the object key inside the bucket. Callers must keep that
+  // key — not the name they sent, and never `fullPath` (which prefixes the
+  // bucket) — so a later download asks for the same object the dashboard shows.
   return data;
 }
 

@@ -1591,7 +1591,9 @@
         reader.readAsDataURL(file);
       });
 
-      const { asset } = await api.post('/admin/uploads', { file: base64, kind });
+      const { asset } = await api.post('/admin/uploads', {
+        file: base64, kind, filename: file.name
+      });
       state.theme[key] = asset.path;
 
       // Naming a brand font after the file it came from is right often enough

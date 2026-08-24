@@ -48,16 +48,17 @@ app.use(express.static(PUBLIC_DIR, { extensions: ['html'] }));
 // the only thing standing in front of it.
 // When Supabase Storage is configured, tries Supabase first (async), then
 // falls back to local disk.
-app.get('/uploads/:name', async (req, res) => {
+app.get('/uploads/{*name}', async (req, res) => {
   const uploads = require('./services/uploads');
+  const name = Array.isArray(req.params.name) ? req.params.name.join('/') : req.params.name;
   let asset = null;
 
   // Try Supabase async read when configured
   if (config.uploads.backend === 'supabase' && config.supabase.hasServiceRole) {
-    try { asset = await uploads.readAsync(req.params.name); } catch {}
+    try { asset = await uploads.readAsync(name); } catch {}
   }
   // Fallback to sync disk read
-  if (!asset) asset = uploads.read(req.params.name);
+  if (!asset) asset = uploads.read(name);
 
   if (!asset) return res.status(404).type('text/plain').send('Not found');
 
