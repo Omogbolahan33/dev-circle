@@ -10,20 +10,20 @@ const router = express.Router();
 // ─── Cohorts ────────────────────────────────────────────────
 
 // GET /api/admin/cohorts
-router.get('/cohorts', requirePermission('cohorts.read'), (req, res) => {
-  // Cohorts belong to the circle they were made in
-  const cohorts = db.prepare(`
-    SELECT c.*, ci.name as circle_name, COUNT(uc.user_id) as member_count
+router.get('/cohorts', requirePermission('cohorts.read'), async (req, res) => {
+  // Cohorts belong to the circle they were made in. Member counts are a
+  // subquery so Postgres does not demand every selected column in GROUP BY.
+  const cohorts = await db.prepare(`
+    SELECT c.*, ci.name as circle_name,
+      (SELECT COUNT(*) FROM user_cohorts uc WHERE uc.cohort_id = c.id) as member_count
     FROM cohorts c
-    LEFT JOIN user_cohorts uc ON uc.cohort_id = c.id
     LEFT JOIN circles ci ON ci.id = c.circle_id
     WHERE c.circle_id = ?
-    GROUP BY c.id
     ORDER BY member_count DESC
   `).all(req.circleId);
 
   res.json({
-    cohorts: cohorts.map(c => ({ ...c, filter_rules: parseJSON(c.filter_rules, null) }))
+    cohorts: (cohorts || []).map(c => ({ ...c, filter_rules: parseJSON(c.filter_rules, null) }))
   });
 });
 

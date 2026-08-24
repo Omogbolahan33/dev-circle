@@ -152,13 +152,21 @@ function isMember(circleId, userId) {
 
 // Which circles a staff member may work in, and with what role in each.
 // A global admin is not listed against circles — they reach all of them.
-function forAdmin(admin) {
+async function forAdmin(admin) {
   if (admin.is_global) {
-    return all().map(c => ({ ...c, role_id: admin.role_id, global: true }));
+    const rows = await db.prepare(`
+      SELECT c.*,
+        (SELECT COUNT(*) FROM circle_members m WHERE m.circle_id = c.id) as member_count
+      FROM circles c
+      WHERE c.status = 'active'
+      ORDER BY c.created_at
+    `).all();
+    return rows.map(c => ({ ...c, role_id: admin.role_id, global: true }));
   }
 
-  return db.prepare(`
-    SELECT c.*, ca.role_id, 0 as global
+  return await db.prepare(`
+    SELECT c.*, ca.role_id, 0 as global,
+      (SELECT COUNT(*) FROM circle_members m WHERE m.circle_id = c.id) as member_count
     FROM circle_admins ca
     JOIN circles c ON c.id = ca.circle_id
     WHERE ca.admin_id = ? AND c.status = 'active'
@@ -168,16 +176,17 @@ function forAdmin(admin) {
 
 // The role this staff member holds *in this circle*. Permissions are unchanged;
 // what is new is that they apply somewhere rather than everywhere.
-function roleFor(admin, circleId) {
+async function roleFor(admin, circleId) {
   if (admin.is_global) return admin.role_id;
 
-  const grant = db.prepare('SELECT role_id FROM circle_admins WHERE admin_id = ? AND circle_id = ?')
+  const grant = await db.prepare('SELECT role_id FROM circle_admins WHERE admin_id = ? AND circle_id = ?')
     .get(admin.id, circleId);
   return grant ? grant.role_id : null;
 }
 
-function canAdminister(admin, circleId) {
-  return Boolean(admin.is_global) || Boolean(roleFor(admin, circleId));
+async function canAdminister(admin, circleId) {
+  if (admin.is_global) return true;
+  return Boolean(await roleFor(admin, circleId));
 }
 
 function grantAdmin(circleId, adminId, roleId) {

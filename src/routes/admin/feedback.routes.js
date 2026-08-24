@@ -14,7 +14,7 @@ const router = express.Router();
 // ─── Feedback (Admin view) ──────────────────────────────────
 
 // GET /api/admin/feedback
-router.get('/feedback', requirePermission('feedback.read'), (req, res) => {
+router.get('/feedback', requirePermission('feedback.read'), async (req, res) => {
   const { status, source, type, prompted, limit = 50 } = req.query;
   const where = ['1=1'];
   const params = [];
@@ -30,7 +30,7 @@ router.get('/feedback', requirePermission('feedback.read'), (req, res) => {
   if (prompted === 'false') where.push('f.canonical_question_id IS NULL');
   if (prompted === 'true') where.push('f.canonical_question_id IS NOT NULL');
 
-  const feedback = db.prepare(`
+  const feedback = await db.prepare(`
     SELECT f.*, u.name as user_name, u.email as user_email, u.company as user_company,
            s.title as survey_title
     FROM feedback f
@@ -43,11 +43,11 @@ router.get('/feedback', requirePermission('feedback.read'), (req, res) => {
 
   // What the sources add up to, so the filter chips can carry counts and an
   // empty result is distinguishable from a source that has never had anything
-  const bySource = db.prepare(
+  const bySource = await db.prepare(
     'SELECT source, COUNT(*) as count FROM feedback GROUP BY source'
   ).all();
 
-  res.json({ feedback, sources: bySource });
+  res.json({ feedback: feedback || [], sources: bySource || [] });
 });
 
 // ─── Views ──────────────────────────────────────────────────

@@ -226,7 +226,11 @@ const config = {
   corsOrigins: (process.env.CORS_ORIGINS || '*').split(',').map(s => s.trim()).filter(Boolean),
 
   // Bootstrap key printed on first run so integrations can authenticate
-  bootstrapApiKey: process.env.BOOTSTRAP_API_KEY || null
+  bootstrapApiKey: process.env.BOOTSTRAP_API_KEY || null,
+
+  // Upsert the advertised demo logins on boot so a fresh deploy is usable.
+  // Tests skip this regardless. Set SEED_DEMO_ACCOUNTS=false to disable.
+  seedDemoAccounts: process.env.SEED_DEMO_ACCOUNTS !== 'false'
 };
 
 if (isProduction && config.corsOrigins.includes('*')) {

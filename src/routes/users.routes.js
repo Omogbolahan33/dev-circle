@@ -15,35 +15,38 @@ const router = express.Router();
 // ─── Profile ────────────────────────────────────────────────
 
 // GET /api/users/profile
-router.get('/profile', requireAuth, (req, res) => {
+router.get('/profile', requireAuth, async (req, res) => {
   // Roll back a streak the member has let lapse before reporting it
-  engagement.decayStale(req.user.id);
+  await engagement.decayStale(req.user.id);
 
-  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
-  const cohorts = db.prepare(`
+  const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
+  const cohorts = await db.prepare(`
     SELECT c.* FROM cohorts c
     JOIN user_cohorts uc ON uc.cohort_id = c.id
     WHERE uc.user_id = ?
   `).all(req.user.id);
 
-  const consent = db.prepare('SELECT * FROM consent WHERE user_id = ?').all(req.user.id);
+  const consent = await db.prepare('SELECT * FROM consent WHERE user_id = ?').all(req.user.id);
+  const count = async sql => Number((await db.prepare(sql).get(req.user.id)).c || 0);
 
   const stats = {
-    surveys_completed: db.prepare("SELECT COUNT(*) as c FROM survey_responses WHERE user_id = ? AND completed_at IS NOT NULL").get(req.user.id).c,
-    surveys_invited: db.prepare('SELECT COUNT(*) as c FROM survey_responses WHERE user_id = ?').get(req.user.id).c,
-    gifts_claimed: db.prepare('SELECT COUNT(*) as c FROM user_gifts WHERE user_id = ?').get(req.user.id).c,
-    feedback_submitted: db.prepare('SELECT COUNT(*) as c FROM feedback WHERE user_id = ?').get(req.user.id).c,
+    surveys_completed: await count("SELECT COUNT(*) as c FROM survey_responses WHERE user_id = ? AND completed_at IS NOT NULL"),
+    surveys_invited: await count('SELECT COUNT(*) as c FROM survey_responses WHERE user_id = ?'),
+    gifts_claimed: await count('SELECT COUNT(*) as c FROM user_gifts WHERE user_id = ?'),
+    feedback_submitted: await count('SELECT COUNT(*) as c FROM feedback WHERE user_id = ?'),
     streak: user.engagement_streak,
     best_streak: user.best_streak
   };
 
+  const inbox = await notifications.inbox(req.user.id, { limit: 1 });
+
   res.json({
     user: sanitizeUser(user),
     cohorts,
-    circles: circles.forUser(req.user.id),
+    circles: await circles.forUser(req.user.id),
     consent,
     stats,
-    unread_notifications: notifications.inbox(req.user.id, { limit: 1 }).unread_count
+    unread_notifications: inbox.unread_count
   });
 });
 

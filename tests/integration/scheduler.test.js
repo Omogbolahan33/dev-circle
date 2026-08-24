@@ -244,6 +244,6 @@ test('sessions that have finished are closed out', async () => {
     VALUES (?, 'Done', 'info', ?, 30, 'announced')
   `).run(h.uuid(), past);
 
-  assert.equal(scheduler.closePastSessions(), 1);
+  assert.equal(await scheduler.closePastSessions(), 1);
   assert.equal(h.db.prepare('SELECT status FROM scheduled_sessions').get().status, 'completed');
 });

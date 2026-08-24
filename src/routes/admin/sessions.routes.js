@@ -21,7 +21,7 @@ function hydrate(session) {
 }
 
 // GET /api/admin/sessions
-router.get('/', requirePermission('sessions.read'), (req, res) => {
+router.get('/', requirePermission('sessions.read'), async (req, res) => {
   const { status, upcoming } = req.query;
   const where = ['1=1'];
   const params = [];
@@ -31,7 +31,7 @@ router.get('/', requirePermission('sessions.read'), (req, res) => {
   if (status) { where.push('s.status = ?'); params.push(status); }
   if (upcoming === 'true') { where.push("s.scheduled_for > datetime('now')"); }
 
-  const sessions = db.prepare(`
+  const sessions = await db.prepare(`
     SELECT s.*, c.name as circle_name, sv.title as survey_title,
       (SELECT COUNT(*) FROM session_dispatches d WHERE d.session_id = s.id) as dispatches_sent
     FROM scheduled_sessions s
@@ -41,7 +41,7 @@ router.get('/', requirePermission('sessions.read'), (req, res) => {
     ORDER BY s.scheduled_for ASC
   `).all(...params);
 
-  res.json({ sessions: sessions.map(hydrate) });
+  res.json({ sessions: (sessions || []).map(hydrate) });
 });
 
 // GET /api/admin/sessions/:id
@@ -83,7 +83,7 @@ function validate(body) {
 }
 
 // POST /api/admin/sessions
-router.post('/', requirePermission('sessions.write'), (req, res) => {
+router.post('/', requirePermission('sessions.write'), async (req, res) => {
   const invalid = validate(req.body);
   if (invalid) return res.status(400).json({ error: invalid });
 
@@ -96,7 +96,7 @@ router.post('/', requirePermission('sessions.write'), (req, res) => {
   if (type === 'survey' && !survey_id) {
     return res.status(400).json({ error: 'A survey session needs a survey_id' });
   }
-  if (survey_id && !db.prepare('SELECT 1 FROM surveys WHERE id = ?').get(survey_id)) {
+  if (survey_id && !(await db.prepare('SELECT 1 FROM surveys WHERE id = ?').get(survey_id))) {
     return res.status(400).json({ error: 'Unknown survey_id' });
   }
 
@@ -104,7 +104,7 @@ router.post('/', requirePermission('sessions.write'), (req, res) => {
   if (!circle) return res.status(400).json({ error: 'Unknown circle_id' });
 
   const id = uuid();
-  db.prepare(`
+  await db.prepare(`
     INSERT INTO scheduled_sessions (
       id, title, description, type, survey_id, circle_id, target_type, target_ids,
       scheduled_for, duration_min, location, channels, reminder_offsets, status, created_by
@@ -117,20 +117,20 @@ router.post('/', requirePermission('sessions.write'), (req, res) => {
     req.admin.id
   );
 
-  const session = db.prepare('SELECT * FROM scheduled_sessions WHERE id = ?').get(id);
+  const session = await db.prepare('SELECT * FROM scheduled_sessions WHERE id = ?').get(id);
 
   // Return the availability picture with the session, so a clash is visible
   // at the moment of scheduling rather than after the invites go out.
-  res.status(201).json({ session: hydrate(session), preview: scheduler.preview(session) });
+  res.status(201).json({ session: hydrate(session), preview: await scheduler.preview(session) });
 });
 
 // GET /api/admin/sessions/:id/preview — who can attend, who is unavailable
-router.get('/:id/preview', requirePermission('sessions.read'), (req, res) => {
-  const session = db.prepare('SELECT * FROM scheduled_sessions WHERE id = ?').get(req.params.id);
+router.get('/:id/preview', requirePermission('sessions.read'), async (req, res) => {
+  const session = await db.prepare('SELECT * FROM scheduled_sessions WHERE id = ?').get(req.params.id);
   if (!session) return res.status(404).json({ error: 'Session not found' });
 
   try {
-    res.json(scheduler.preview(session));
+    res.json(await scheduler.preview(session));
   } catch (err) {
     if (err instanceof scheduler.SessionError) return res.status(400).json({ error: err.message });
     throw err;
@@ -138,12 +138,12 @@ router.get('/:id/preview', requirePermission('sessions.read'), (req, res) => {
 });
 
 // POST /api/admin/sessions/preview — check a slot before creating anything
-router.post('/preview', requirePermission('sessions.read'), (req, res) => {
+router.post('/preview', requirePermission('sessions.read'), async (req, res) => {
   const invalid = validate({ ...req.body, title: req.body.title || 'draft' });
   if (invalid) return res.status(400).json({ error: invalid });
 
   try {
-    res.json(scheduler.preview({
+    res.json(await scheduler.preview({
       title: req.body.title || 'Draft session',
       scheduled_for: req.body.scheduled_for,
       circle_id: req.body.circle_id || req.circleId,
@@ -241,7 +241,7 @@ router.delete('/:id', requirePermission('sessions.write'), async (req, res) => {
   // Members who were told it was happening deserve to be told it is not
   let notified = 0;
   if (wasAnnounced) {
-    for (const user of scheduler.audienceFor(session)) {
+    for (const user of await scheduler.audienceFor(session)) {
       const result = await notifications.notify(user, {
         category: 'platform_updates',
         title: `Cancelled: ${session.title}`,

@@ -60,6 +60,30 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
     PRIMARY KEY (circle_id, user_id)
   );
 
+  -- Roles & admin users must exist before circle_admins can reference them
+  CREATE TABLE IF NOT EXISTS roles (
+    id TEXT PRIMARY KEY,
+    name TEXT UNIQUE NOT NULL,
+    description TEXT,
+    permissions TEXT NOT NULL DEFAULT '[]',
+    is_system INTEGER DEFAULT 0,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+  );
+
+  CREATE TABLE IF NOT EXISTS admin_users (
+    id TEXT PRIMARY KEY,
+    email TEXT UNIQUE NOT NULL,
+    name TEXT NOT NULL,
+    password_hash TEXT NOT NULL,
+    role_id TEXT REFERENCES roles(id) ON DELETE SET NULL,
+    status TEXT DEFAULT 'active' CHECK(status IN ('active','inactive')),
+    is_global INTEGER DEFAULT 0,
+    must_change_password INTEGER DEFAULT 0,
+    invited_by TEXT,
+    invited_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+  );
+
   CREATE TABLE IF NOT EXISTS circle_admins (
     circle_id TEXT NOT NULL REFERENCES circles(id) ON DELETE CASCADE,
     admin_id TEXT NOT NULL REFERENCES admin_users(id) ON DELETE CASCADE,
@@ -294,31 +318,6 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
     recipient_count INTEGER DEFAULT 0,
     dispatched_at TIMESTAMPTZ DEFAULT NOW(),
     UNIQUE (session_id, offset_minutes)
-  );
-
-  -- Roles & Permissions
-  CREATE TABLE IF NOT EXISTS roles (
-    id TEXT PRIMARY KEY,
-    name TEXT UNIQUE NOT NULL,
-    description TEXT,
-    permissions TEXT NOT NULL DEFAULT '[]',
-    is_system INTEGER DEFAULT 0,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-  );
-
-  -- Admin Users
-  CREATE TABLE IF NOT EXISTS admin_users (
-    id TEXT PRIMARY KEY,
-    email TEXT UNIQUE NOT NULL,
-    name TEXT NOT NULL,
-    password_hash TEXT NOT NULL,
-    role_id TEXT REFERENCES roles(id) ON DELETE SET NULL,
-    status TEXT DEFAULT 'active' CHECK(status IN ('active','inactive')),
-    is_global INTEGER DEFAULT 0,
-    must_change_password INTEGER DEFAULT 0,
-    invited_by TEXT,
-    invited_at TIMESTAMPTZ,
-    created_at TIMESTAMPTZ DEFAULT NOW()
   );
 
   -- Sessions (auth)

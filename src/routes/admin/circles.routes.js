@@ -43,11 +43,11 @@ router.get('/all', requireGlobalAdmin, (req, res) => {
 });
 
 // GET /api/admin/circles/:id
-router.get('/:id', requirePermission('circles.read'), (req, res) => {
+router.get('/:id', requirePermission('circles.read'), async (req, res) => {
   const circle = circles.byId(req.params.id);
   if (!circle) return res.status(404).json({ error: 'Circle not found' });
 
-  if (!circles.canAdminister(req.admin, circle.id)) {
+  if (!await circles.canAdminister(req.admin, circle.id)) {
     return res.status(403).json({ error: 'You do not have access to that circle.' });
   }
 
@@ -100,10 +100,10 @@ router.post('/', requireGlobalAdmin, (req, res) => {
 });
 
 // PUT /api/admin/circles/:id
-router.put('/:id', requirePermission('circles.write'), (req, res) => {
+router.put('/:id', requirePermission('circles.write'), async (req, res) => {
   const circle = circles.byId(req.params.id);
   if (!circle) return res.status(404).json({ error: 'Circle not found' });
-  if (!circles.canAdminister(req.admin, circle.id)) {
+  if (!await circles.canAdminister(req.admin, circle.id)) {
     return res.status(403).json({ error: 'You do not have access to that circle.' });
   }
 

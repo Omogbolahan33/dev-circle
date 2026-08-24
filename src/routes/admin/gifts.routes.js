@@ -10,15 +10,15 @@ const router = express.Router();
 // ─── Gifts ──────────────────────────────────────────────────
 
 // GET /api/admin/gifts
-router.get('/gifts', requirePermission('gifts.read'), (req, res) => {
-  const gifts = db.prepare(`
+router.get('/gifts', requirePermission('gifts.read'), async (req, res) => {
+  const gifts = await db.prepare(`
     SELECT g.*,
       (SELECT COUNT(*) FROM user_gifts ug WHERE ug.gift_id = g.id) as claimed_count,
       (SELECT COUNT(*) FROM user_gifts ug WHERE ug.gift_id = g.id AND ug.delivered_at IS NOT NULL) as delivered_count
     FROM gifts g WHERE g.circle_id = ? ORDER BY g.created_at DESC
   `).all(req.circleId);
 
-  res.json({ gifts: gifts.map(g => ({ ...g, target_cohort_ids: parseJSON(g.target_cohort_ids, []) })) });
+  res.json({ gifts: (gifts || []).map(g => ({ ...g, target_cohort_ids: parseJSON(g.target_cohort_ids, []) })) });
 });
 
 // POST /api/admin/gifts

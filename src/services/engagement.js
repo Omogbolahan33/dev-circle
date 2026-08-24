@@ -80,14 +80,14 @@ function record(userId, type, options = {}) {
 
 // Roll a lapsed streak back to zero. Called on read so a member who walked
 // away does not keep showing a stale number.
-function decayStale(userId) {
-  const user = db.prepare('SELECT engagement_streak, last_engagement_at FROM users WHERE id = ?').get(userId);
+async function decayStale(userId) {
+  const user = await db.prepare('SELECT engagement_streak, last_engagement_at FROM users WHERE id = ?').get(userId);
   if (!user || !user.engagement_streak) return;
 
   const last = parseSqliteDate(user.last_engagement_at);
   if (last && daysBetween(new Date(), last) <= STREAK_WINDOW_DAYS) return;
 
-  db.prepare('UPDATE users SET engagement_streak = 0 WHERE id = ?').run(userId);
+  await db.prepare('UPDATE users SET engagement_streak = 0 WHERE id = ?').run(userId);
 }
 
 module.exports = { log, record, recordActivity, decayStale, STREAK_EVENTS, STREAK_WINDOW_DAYS };

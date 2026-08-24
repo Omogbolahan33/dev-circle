@@ -7,14 +7,15 @@ const router = express.Router();
 // ─── Dashboard ──────────────────────────────────────────────
 
 // GET /api/admin/dashboard
-router.get('/dashboard', requirePermission('members.read'), (req, res) => {
-  const totalMembers = db.prepare('SELECT COUNT(*) as c FROM users').get().c;
-  const activeCohorts = db.prepare('SELECT COUNT(*) as c FROM cohorts').get().c;
-  const totalSurveysSent = db.prepare('SELECT COUNT(*) as c FROM survey_responses').get().c;
-  const completedSurveys = db.prepare("SELECT COUNT(*) as c FROM survey_responses WHERE completed_at IS NOT NULL").get().c;
+router.get('/dashboard', requirePermission('members.read'), async (req, res) => {
+  const count = async sql => Number((await db.prepare(sql).get()).c || 0);
+  const totalMembers = await count('SELECT COUNT(*) as c FROM users');
+  const activeCohorts = await count('SELECT COUNT(*) as c FROM cohorts');
+  const totalSurveysSent = await count('SELECT COUNT(*) as c FROM survey_responses');
+  const completedSurveys = await count("SELECT COUNT(*) as c FROM survey_responses WHERE completed_at IS NOT NULL");
   const engagementRate = totalSurveysSent > 0 ? Math.round((completedSurveys / totalSurveysSent) * 100) : 0;
 
-  const recentActivity = db.prepare(`
+  const recentActivity = await db.prepare(`
     SELECT eh.*, u.name as user_name, u.email as user_email
     FROM engagement_history eh
     LEFT JOIN users u ON u.id = eh.user_id
@@ -22,22 +23,21 @@ router.get('/dashboard', requirePermission('members.read'), (req, res) => {
     LIMIT 20
   `).all();
 
-  const cohortBreakdown = db.prepare(`
-    SELECT c.id, c.name, c.color, COUNT(uc.user_id) as member_count
+  const cohortBreakdown = await db.prepare(`
+    SELECT c.id, c.name, c.color,
+      (SELECT COUNT(*) FROM user_cohorts uc WHERE uc.cohort_id = c.id) as member_count
     FROM cohorts c
-    LEFT JOIN user_cohorts uc ON uc.cohort_id = c.id
-    GROUP BY c.id
     ORDER BY member_count DESC
     LIMIT 10
   `).all();
 
-  const statusBreakdown = db.prepare(`
+  const statusBreakdown = await db.prepare(`
     SELECT api_status, COUNT(*) as count FROM users GROUP BY api_status
   `).all();
 
-  const newThisWeek = db.prepare(
+  const newThisWeek = await count(
     "SELECT COUNT(*) as c FROM users WHERE created_at > datetime('now', '-7 days')"
-  ).get().c;
+  );
 
   res.json({
     stats: {

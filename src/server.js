@@ -11,11 +11,11 @@ const scheduler = require('./services/scheduler');
 // so the first request doesn't hit an uninitialized DB.
 
 async function boot() {
-  if (config.isPostgres) {
+  const db = require('./db');
+  if (db.ready && typeof db.ready.then === 'function') {
     try {
-      const db = require('./db');
-      if (db.ready && typeof db.ready.then === 'function') {
-        await db.ready;
+      await db.ready;
+      if (config.isPostgres) {
         logger.info('Postgres connected', { database: 'postgres' });
         if (config.supabase.configured) {
           logger.info('Supabase configured', { url: config.supabase.url, bucket: config.supabase.storageBucket });
@@ -31,7 +31,9 @@ async function boot() {
         logger.warn('Continuing despite Postgres boot error — check DATABASE_URL and network');
       }
     }
-  } else {
+  }
+
+  if (!config.isPostgres) {
     logger.info('Using SQLite', { path: config.dbPath });
     if (config.supabase.configured) {
       logger.info('Supabase Storage configured with SQLite — uploads will use Supabase bucket', { bucket: config.supabase.storageBucket });

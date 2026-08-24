@@ -17,9 +17,9 @@ const router = express.Router();
 // ─── Surveys ────────────────────────────────────────────────
 
 // GET /api/admin/surveys
-router.get('/surveys', requirePermission('surveys.read'), (req, res) => {
+router.get('/surveys', requirePermission('surveys.read'), async (req, res) => {
   // A survey belongs to the circle that ran it
-  const surveys = db.prepare(`
+  const surveys = await db.prepare(`
     SELECT s.*,
       (SELECT COUNT(*) FROM survey_responses sr WHERE sr.survey_id = s.id) as response_count,
       (SELECT COUNT(*) FROM survey_responses sr
@@ -27,7 +27,7 @@ router.get('/surveys', requirePermission('surveys.read'), (req, res) => {
     FROM surveys s WHERE s.circle_id = ? ORDER BY s.created_at DESC
   `).all(req.circleId);
 
-  res.json({ surveys: surveys.map(surveyForm.hydrate) });
+  res.json({ surveys: (surveys || []).map(surveyForm.hydrate) });
 });
 
 // GET /api/admin/surveys/schema
@@ -72,15 +72,15 @@ router.get('/surveys/schema', requirePermission('surveys.read'), (req, res) => {
 });
 
 // GET /api/admin/surveys/:id — one survey, for editing or reviewing
-router.get('/surveys/:id', requirePermission('surveys.read'), (req, res) => {
-  const survey = db.prepare('SELECT * FROM surveys WHERE id = ?').get(req.params.id);
+router.get('/surveys/:id', requirePermission('surveys.read'), async (req, res) => {
+  const survey = await db.prepare('SELECT * FROM surveys WHERE id = ?').get(req.params.id);
   if (!survey) return res.status(404).json({ error: 'Survey not found' });
 
   // Questions can only be rewritten while no answers depend on them, and the
   // builder needs to know that before it lets someone start editing.
-  const completed = db.prepare(
+  const completed = Number((await db.prepare(
     'SELECT COUNT(*) as c FROM survey_responses WHERE survey_id = ? AND completed_at IS NOT NULL'
-  ).get(survey.id).c;
+  ).get(survey.id))?.c || 0);
 
   res.json({
     survey: surveyForm.hydrate(survey),
@@ -143,7 +143,7 @@ router.get('/surveys/:id/audience', requirePermission('surveys.read'), (req, res
 });
 
 // POST /api/admin/surveys
-router.post('/surveys', requirePermission('surveys.write'), (req, res) => {
+router.post('/surveys', requirePermission('surveys.write'), async (req, res) => {
   const {
     title, description, questions, target_type, target_ids,
     engagement_mode, time_estimate_min, expires_at, trigger_event, reminder_after_days,
@@ -182,7 +182,7 @@ router.post('/surveys', requirePermission('surveys.write'), (req, res) => {
   }
 
   const id = uuid();
-  db.prepare(`
+  await db.prepare(`
     INSERT INTO surveys (id, title, description, questions, theme, target_type, target_ids,
                          engagement_mode, time_estimate_min, expires_at, trigger_event,
                          reminder_after_days, circle_id, created_by, status, public_token)
@@ -201,7 +201,7 @@ router.post('/surveys', requirePermission('surveys.write'), (req, res) => {
   );
 
   res.status(201).json({
-    survey: surveyForm.hydrate(db.prepare('SELECT * FROM surveys WHERE id = ?').get(id)),
+    survey: surveyForm.hydrate(await db.prepare('SELECT * FROM surveys WHERE id = ?').get(id)),
     // Saved, but worth a second look — a brand combination that is legible
     // rather than comfortable
     ...(definition.warnings?.length ? { warnings: definition.warnings } : {})

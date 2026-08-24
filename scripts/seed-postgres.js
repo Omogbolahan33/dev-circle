@@ -64,7 +64,10 @@ async function seed() {
     { id: uuid(), email: 'engagement@creditdirect.ng', name: 'Tunde Bakare', password: 'engagement123', role_id: roles[2].id }
   ];
   for (const a of admins) {
-    await pg.query('INSERT INTO admin_users (id, email, name, password_hash, role_id) VALUES ($1,$2,$3,$4,$5)', [a.id, a.email, a.name, bcrypt.hashSync(a.password, 10), a.role_id]);
+    await pg.query(
+      'INSERT INTO admin_users (id, email, name, password_hash, role_id, is_global) VALUES ($1,$2,$3,$4,$5,$6)',
+      [a.id, a.email, a.name, bcrypt.hashSync(a.password, 10), a.role_id, a.email === 'admin@creditdirect.ng' ? 1 : 0]
+    );
   }
   console.log(`✓ ${admins.length} admin users created`);
 

@@ -109,7 +109,7 @@ router.post('/code/request', async (req, res) => {
     });
   }
 
-  if (loginCodes.throttled(who.value)) {
+  if (await loginCodes.throttled(who.value)) {
     return res.status(429).json({
       error: 'Too many codes requested. Wait a few minutes before trying again.'
     });
@@ -123,10 +123,10 @@ router.post('/code/request', async (req, res) => {
     code_length: loginCodes.CODE_LENGTH
   };
 
-  const user = loginCodes.findParticipant(who);
+  const user = await loginCodes.findParticipant(who);
 
   if (user && user.status === 'active') {
-    const { code } = loginCodes.issue(user, who);
+    const { code } = await loginCodes.issue(user, who);
 
     try {
       await loginCodes.deliver(user, who, code);
@@ -134,17 +134,16 @@ router.post('/code/request', async (req, res) => {
       logger.error('Sign-in code delivery failed', { error: err.message });
     }
 
-    // Message delivery is simulated without provider credentials, which would
-    // leave local and demo environments with no way in. Outside production the
-    // code comes back in the response, the way /sso/mint stands in for the Hub.
-    if (!config.isProduction) answer.dev_code = code;
+    // When nothing is actually delivered the code would otherwise be a dead
+    // end. Hand it back so the advertised demo developers can still sign in.
+    if (!config.delivery.enabled) answer.dev_code = code;
   }
 
   res.json(answer);
 });
 
 // POST /api/auth/code/verify
-router.post('/code/verify', (req, res) => {
+router.post('/code/verify', async (req, res) => {
   const who = identity.classify(req.body.identifier || req.body.email);
   if (!who || who.audience !== 'participant') {
     return res.status(400).json({ error: BAD_IDENTIFIER });
@@ -155,7 +154,7 @@ router.post('/code/verify', (req, res) => {
     return res.status(429).json({ error: 'Too many attempts. Try again in 15 minutes.' });
   }
 
-  const result = loginCodes.verify(who, req.body.code);
+  const result = await loginCodes.verify(who, req.body.code);
   if (!result.ok) {
     recordFailure(key);
     return res.status(401).json({ error: result.error });
@@ -168,9 +167,9 @@ router.post('/code/verify', (req, res) => {
   }
 
   clearFailures(key);
-  db.prepare("UPDATE users SET last_active_at = datetime('now') WHERE id = ?").run(result.user.id);
+  await db.prepare("UPDATE users SET last_active_at = datetime('now') WHERE id = ?").run(result.user.id);
 
-  const token = createSession(result.user.id, false, {
+  const token = await createSession(result.user.id, false, {
     issuedVia: `login_code_${who.channel}`,
     userAgent: req.headers['user-agent']
   });
@@ -182,7 +181,7 @@ router.post('/code/verify', (req, res) => {
 
 // POST /api/auth/login          (and /api/auth/admin/login, kept for callers
 // written against the old split) — the password half of the single form.
-function staffLogin(req, res) {
+async function staffLogin(req, res) {
   const { password } = req.body;
   const who = identity.classify(req.body.identifier || req.body.email);
 
@@ -203,7 +202,7 @@ function staffLogin(req, res) {
     return res.status(429).json({ error: 'Too many failed attempts. Try again in 15 minutes.' });
   }
 
-  const admin = db.prepare('SELECT * FROM admin_users WHERE lower(email) = ?').get(who.value);
+  const admin = await db.prepare('SELECT * FROM admin_users WHERE lower(email) = ?').get(who.value);
   if (!admin || !bcrypt.compareSync(password, admin.password_hash)) {
     recordFailure(key);
     return res.status(401).json({ error: 'Invalid credentials' });
@@ -217,11 +216,11 @@ function staffLogin(req, res) {
 
   clearFailures(key);
 
-  const token = createSession(admin.id, true, { userAgent: req.headers['user-agent'] });
+  const token = await createSession(admin.id, true, { userAgent: req.headers['user-agent'] });
   const safe = safeUser(admin);
 
   // The client needs the permission list to hide actions the role cannot perform
-  res.json({ token, admin: safe, user: safe, isAdmin: true, permissions: permissionsFor(admin) });
+  res.json({ token, admin: safe, user: safe, isAdmin: true, permissions: await permissionsFor(admin) });
 }
 
 router.post('/login', staffLogin);
@@ -233,7 +232,7 @@ router.post('/admin/login', staffLogin);
 // Creates a participant profile. No password is set — the account is claimed
 // by signing in with a one-time code, which is also what proves the address
 // belongs to whoever registered it.
-router.post('/register', (req, res) => {
+router.post('/register', async (req, res) => {
   const { name, phone, company, work_sector } = req.body;
   const email = identity.normalizeEmail(req.body.email);
 
@@ -247,14 +246,14 @@ router.post('/register', (req, res) => {
     });
   }
 
-  const existing = db.prepare('SELECT id FROM users WHERE lower(email) = ?').get(email);
+  const existing = await db.prepare('SELECT id FROM users WHERE lower(email) = ?').get(email);
   if (existing) {
     return res.status(409).json({ error: 'Email already registered' });
   }
 
   const id = uuid();
 
-  db.prepare(`
+  await db.prepare(`
     INSERT INTO users (id, email, name, password_hash, phone, phone_normalized, company, work_sector)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
@@ -263,20 +262,20 @@ router.post('/register', (req, res) => {
   );
 
   // Auto-assign to "All Members" cohort
-  const allCohort = db.prepare("SELECT id FROM cohorts WHERE name = 'All Members'").get();
+  const allCohort = await db.prepare("SELECT id FROM cohorts WHERE name = 'All Members'").get();
   if (allCohort) {
-    db.prepare('INSERT OR IGNORE INTO user_cohorts (user_id, cohort_id) VALUES (?, ?)').run(id, allCohort.id);
+    await db.prepare('INSERT OR IGNORE INTO user_cohorts (user_id, cohort_id) VALUES (?, ?)').run(id, allCohort.id);
   }
 
-  circles.join(id, req.circleId);
+  await circles.join(id, req.circleId);
 
   // Log engagement event
-  db.prepare(`
+  await db.prepare(`
     INSERT INTO engagement_history (id, user_id, type, source, metadata)
     VALUES (?, ?, 'account_created', 'dev_circle', '{}')
   `).run(uuid(), id);
 
-  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(id);
+  const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(id);
 
   // No session yet: the code sent to this address is what proves it is theirs.
   res.status(201).json({
@@ -288,16 +287,16 @@ router.post('/register', (req, res) => {
 // ─── Session ────────────────────────────────────────────────
 
 // POST /api/auth/logout
-router.post('/logout', requireAuth, (req, res) => {
+router.post('/logout', requireAuth, async (req, res) => {
   const token = req.headers.authorization.slice(7);
-  destroySession(token);
+  await destroySession(token);
   res.json({ message: 'Logged out' });
 });
 
 // GET /api/auth/me
-router.get('/me', requireAuth, (req, res) => {
+router.get('/me', requireAuth, async (req, res) => {
   if (req.isAdmin) {
-    const role = db.prepare('SELECT * FROM roles WHERE id = ?').get(req.admin.role_id);
+    const role = await db.prepare('SELECT * FROM roles WHERE id = ?').get(req.admin.role_id);
     return res.json({ user: safeUser(req.admin), role, permissions: req.permissions, isAdmin: true });
   }
   res.json({ user: safeUser(req.user), isAdmin: false });
@@ -309,7 +308,7 @@ router.get('/me', requireAuth, (req, res) => {
 // Trades an HMAC-signed Developer Hub handoff token for a Dev Circle session.
 // The subject comes from the *verified* token payload — never from the request
 // body — so knowing a dev_hub_user_id is not enough to obtain a session.
-router.post('/sso/exchange', (req, res) => {
+router.post('/sso/exchange', async (req, res) => {
   const { hub_token } = req.body;
 
   if (!hub_token) {
@@ -324,13 +323,13 @@ router.post('/sso/exchange', (req, res) => {
   const { sub: devHubUserId, email: rawEmail, name, company, work_sector } = result.payload;
   const email = identity.normalizeEmail(rawEmail);
 
-  let user = db.prepare('SELECT * FROM users WHERE dev_hub_user_id = ?').get(devHubUserId);
+  let user = await db.prepare('SELECT * FROM users WHERE dev_hub_user_id = ?').get(devHubUserId);
 
   // Fall back to matching on the verified email, then link the accounts
   if (!user && email) {
-    user = db.prepare('SELECT * FROM users WHERE lower(email) = ?').get(email);
+    user = await db.prepare('SELECT * FROM users WHERE lower(email) = ?').get(email);
     if (user) {
-      db.prepare('UPDATE users SET dev_hub_user_id = ? WHERE id = ?').run(devHubUserId, user.id);
+      await db.prepare('UPDATE users SET dev_hub_user_id = ? WHERE id = ?').run(devHubUserId, user.id);
     }
   }
 
@@ -341,24 +340,24 @@ router.post('/sso/exchange', (req, res) => {
   if (!user && config.devHub.autoProvision && email && !identity.isStaffEmail(email)) {
     const id = uuid();
 
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO users (id, email, name, password_hash, company, work_sector, dev_hub_user_id)
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `).run(id, email, name || email.split('@')[0], NO_PASSWORD, company || null, work_sector || null, devHubUserId);
 
-    const allCohort = db.prepare("SELECT id FROM cohorts WHERE name = 'All Members'").get();
+    const allCohort = await db.prepare("SELECT id FROM cohorts WHERE name = 'All Members'").get();
     if (allCohort) {
-      db.prepare('INSERT OR IGNORE INTO user_cohorts (user_id, cohort_id) VALUES (?, ?)').run(id, allCohort.id);
+      await db.prepare('INSERT OR IGNORE INTO user_cohorts (user_id, cohort_id) VALUES (?, ?)').run(id, allCohort.id);
     }
 
-    circles.join(id, req.circleId);
+    await circles.join(id, req.circleId);
 
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO engagement_history (id, user_id, type, source, metadata)
       VALUES (?, ?, 'account_created', 'system', ?)
     `).run(uuid(), id, JSON.stringify({ via: 'dev_hub_sso' }));
 
-    user = db.prepare('SELECT * FROM users WHERE id = ?').get(id);
+    user = await db.prepare('SELECT * FROM users WHERE id = ?').get(id);
   }
 
   if (!user) {
@@ -369,8 +368,8 @@ router.post('/sso/exchange', (req, res) => {
     return res.status(403).json({ error: 'Account is ' + user.status });
   }
 
-  db.prepare("UPDATE users SET last_active_at = datetime('now') WHERE id = ?").run(user.id);
-  const token = createSession(user.id, false, { issuedVia: 'dev_hub_sso', userAgent: req.headers['user-agent'] });
+  await db.prepare("UPDATE users SET last_active_at = datetime('now') WHERE id = ?").run(user.id);
+  const token = await createSession(user.id, false, { issuedVia: 'dev_hub_sso', userAgent: req.headers['user-agent'] });
 
   res.json({ token, user: safeUser(user), isAdmin: false });
 });

@@ -58,6 +58,14 @@ if (config.isPostgres) {
         );
       }
       logger.info('Postgres schema and migrations applied');
+      const bootstrap = require('./bootstrap');
+      const seeded = await bootstrap.ensureDemoAccounts(live);
+      if (!seeded.skipped) {
+        logger.info('Demo accounts ready', {
+          admin: 'admin@creditdirect.ng',
+          created: seeded.created
+        });
+      }
     } catch (err) {
       readyError = err;
       logger.error('Failed to init Postgres', { message: err.message, stack: err.stack });
@@ -161,6 +169,20 @@ if (config.isPostgres) {
   const { logger } = require('../utils/logger');
   require('./migrations').run(sqliteLive, { log: msg => logger.info(msg) });
 
+  const bootstrap = require('./bootstrap');
+  const demoReady = bootstrap.ensureDemoAccounts(sqliteLive).then(seeded => {
+    if (!seeded.skipped) {
+      logger.info('Demo accounts ready', {
+        admin: 'admin@creditdirect.ng',
+        created: seeded.created
+      });
+    }
+    return seeded;
+  }).catch(err => {
+    logger.error('Demo account bootstrap failed', { message: err.message, stack: err.stack });
+    throw err;
+  });
+
   context.useLive(sqliteLive);
 
   live = sqliteLive;
@@ -183,6 +205,7 @@ if (config.isPostgres) {
   });
   module.exports.isPostgres = false;
   module.exports.isSQLite = true;
+  module.exports.ready = demoReady;
 }
 
 // Shared helpers

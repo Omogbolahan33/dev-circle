@@ -17,17 +17,17 @@ const router = express.Router();
 
 
 // GET /api/admin/members
-router.get('/members', requirePermission('members.read'), (req, res) => {
+router.get('/members', requirePermission('members.read'), async (req, res) => {
   const { offset, limit: l, page: p } = paginate(req.query.page, req.query.limit);
   // Scoped to the circle being worked in. A member of another workspace is not
   // "filtered out" here — they are not part of this one.
   const { where, params } = memberFilters({ ...req.query, circle_id: req.circleId });
 
-  const total = db.prepare(`SELECT COUNT(*) as c FROM users u WHERE ${where}`).get(...params).c;
+  const total = Number((await db.prepare(`SELECT COUNT(*) as c FROM users u WHERE ${where}`).get(...params))?.c || 0);
 
   // Counts come from correlated subqueries rather than a query per member,
   // which was N+1 across the whole page.
-  const members = db.prepare(`
+  const members = await db.prepare(`
     SELECT u.id, u.email, u.name, u.phone, u.company, u.work_sector,
            u.status, u.api_status, u.kyb_completed, u.engagement_streak,
            u.preferred_channels, u.preferred_days, u.api_products,
@@ -48,13 +48,16 @@ router.get('/members', requirePermission('members.read'), (req, res) => {
     WHERE uc.user_id = ?
   `);
 
-  const result = members.map(m => ({
-    ...m,
-    preferred_channels: parseJSON(m.preferred_channels, []),
-    preferred_days: parseJSON(m.preferred_days, []),
-    api_products: parseJSON(m.api_products, []),
-    cohorts: cohortStmt.all(m.id)
-  }));
+  const result = [];
+  for (const m of members || []) {
+    result.push({
+      ...m,
+      preferred_channels: parseJSON(m.preferred_channels, []),
+      preferred_days: parseJSON(m.preferred_days, []),
+      api_products: parseJSON(m.api_products, []),
+      cohorts: await cohortStmt.all(m.id)
+    });
+  }
 
   res.json({
     members: result,
@@ -196,9 +199,9 @@ router.get('/members/:id/timeline', requirePermission('members.read'), (req, res
 });
 
 // PUT /api/admin/members/:id
-router.put('/members/:id', requirePermission('members.write'), (req, res) => {
+router.put('/members/:id', requirePermission('members.write'), async (req, res) => {
   const { status, api_status, kyb_completed, work_sector, api_products, location_state, gender } = req.body;
-  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
+  const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
   if (!user) return res.status(404).json({ error: 'Member not found' });
 
   const updates = [];
@@ -225,18 +228,18 @@ router.put('/members/:id', requirePermission('members.write'), (req, res) => {
   updates.push("updated_at = datetime('now')");
   params.push(user.id);
 
-  db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+  await db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).run(...params);
 
   // Deactivating a member must also end their live sessions, otherwise the
   // account stays usable until the token happens to expire.
   if (status && status !== 'active') {
-    destroyAllSessionsFor(user.id);
+    await destroyAllSessionsFor(user.id);
   }
 
   // Membership of rule-based cohorts may have changed with these fields
   cohortRules.syncAll();
 
-  const updated = db.prepare('SELECT * FROM users WHERE id = ?').get(user.id);
+  const updated = await db.prepare('SELECT * FROM users WHERE id = ?').get(user.id);
   res.json({ user: sanitizeUser(updated) });
 });
 
@@ -245,11 +248,11 @@ router.put('/members/:id', requirePermission('members.write'), (req, res) => {
 // what an operator actually needs after a report of a lost or shared device is
 // to end that member's live sessions. The next code they request is their way
 // back in.
-router.post('/members/:id/sign-out', requirePermission('members.write'), (req, res) => {
-  const user = db.prepare('SELECT id FROM users WHERE id = ?').get(req.params.id);
+router.post('/members/:id/sign-out', requirePermission('members.write'), async (req, res) => {
+  const user = await db.prepare('SELECT id FROM users WHERE id = ?').get(req.params.id);
   if (!user) return res.status(404).json({ error: 'Member not found' });
 
-  destroyAllSessionsFor(user.id);
+  await destroyAllSessionsFor(user.id);
   res.json({ message: 'Signed out of every device. They can sign back in with a new code.' });
 });
 

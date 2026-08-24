@@ -99,13 +99,13 @@ router.delete('/roles/:id', requirePermission('roles.write'), (req, res) => {
 });
 
 // GET /api/admin/admins
-router.get('/admins', requirePermission('roles.read'), (req, res) => {
-  const admins = db.prepare(`
+router.get('/admins', requirePermission('roles.read'), async (req, res) => {
+  const admins = await db.prepare(`
     SELECT a.id, a.email, a.name, a.status, a.created_at, a.role_id, r.name as role_name
     FROM admin_users a LEFT JOIN roles r ON r.id = a.role_id
     ORDER BY a.created_at DESC
   `).all();
-  res.json({ admins });
+  res.json({ admins: admins || [] });
 });
 
 // POST /api/admin/admins — create an internal user and assign a role
@@ -145,7 +145,7 @@ router.post('/admins', requirePermission('roles.write'), (req, res) => {
 });
 
 // PUT /api/admin/admins/:id — change role or status
-router.put('/admins/:id', requirePermission('roles.write'), (req, res) => {
+router.put('/admins/:id', requirePermission('roles.write'), async (req, res) => {
   const target = db.prepare('SELECT * FROM admin_users WHERE id = ?').get(req.params.id);
   if (!target) return res.status(404).json({ error: 'Admin not found' });
 
@@ -176,7 +176,7 @@ router.put('/admins/:id', requirePermission('roles.write'), (req, res) => {
   db.prepare(`UPDATE admin_users SET ${updates.join(', ')} WHERE id = ?`).run(...params);
 
   // A role or status change must take effect immediately, not at token expiry
-  destroyAllSessionsFor(target.id);
+  await destroyAllSessionsFor(target.id);
 
   const updated = db.prepare('SELECT id, email, name, status, role_id FROM admin_users WHERE id = ?').get(target.id);
   res.json({ admin: updated, message: 'Updated. The admin will need to sign in again.' });
@@ -186,7 +186,7 @@ router.put('/admins/:id', requirePermission('roles.write'), (req, res) => {
 // Staff are the only people who hold a password, so they are the only people
 // who can be locked out of one. Members never need this — they sign in with a
 // one-time code.
-router.post('/admins/:id/reset-password', requirePermission('roles.write'), (req, res) => {
+router.post('/admins/:id/reset-password', requirePermission('roles.write'), async (req, res) => {
   const target = db.prepare('SELECT * FROM admin_users WHERE id = ?').get(req.params.id);
   if (!target) return res.status(404).json({ error: 'Admin not found' });
 
@@ -199,7 +199,7 @@ router.post('/admins/:id/reset-password', requirePermission('roles.write'), (req
     .run(bcrypt.hashSync(new_password, 10), target.id);
 
   // Whoever held the old password loses their sessions with it
-  destroyAllSessionsFor(target.id);
+  await destroyAllSessionsFor(target.id);
 
   res.json({ message: 'Password reset. Their existing sessions were signed out.' });
 });
