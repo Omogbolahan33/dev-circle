@@ -199,6 +199,20 @@ if (config.isPostgres) {
   module.exports = new Proxy(sqliteLive, {
     get(target, property) {
       const database = context.active() || target;
+      if (property === 'prepare') {
+        return sql => {
+          const stmt = database.prepare(sql);
+          const cache = require('../middleware/cache');
+          if (!cache.isMutatingSql(sql)) return stmt;
+          const run = stmt.run.bind(stmt);
+          stmt.run = (...args) => {
+            const result = run(...args);
+            if (result && Number(result.changes) > 0) cache.noteWrite(sql);
+            return result;
+          };
+          return stmt;
+        };
+      }
       const value = database[property];
       return typeof value === 'function' ? value.bind(database) : value;
     }

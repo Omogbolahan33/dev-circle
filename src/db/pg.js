@@ -263,6 +263,9 @@ function prepare(sql) {
     },
     run: async (...params) => {
       const res = await execWith(params);
+      if (isMutating && res.rowCount > 0) {
+        require('../middleware/cache').noteWrite(sql);
+      }
       // Mimic better-sqlite3 RunResult
       return {
         changes: res.rowCount,

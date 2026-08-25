@@ -73,6 +73,7 @@ function reset() {
   // Rate-limit windows are process-wide, so a test that made many requests
   // would otherwise spend the next test's budget
   require('../../src/middleware/rateLimit').store.resetAll();
+  require('../../src/middleware/cache').clearAll();
 
   const tables = [
     'login_codes',

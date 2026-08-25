@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const db = require('../db');
 const config = require('../config');
+const cache = require('./cache');
 
 // ─── Sessions ───────────────────────────────────────────────
 // Tokens are random 32-byte values handed to the client; only their SHA-256
@@ -201,6 +202,14 @@ function circlesFromAccessRows(rows, admin) {
 }
 
 async function resolvePrincipal(hash) {
+  const cached = cache.principals.get(cache.authKey(hash));
+  if (cached !== undefined) return cached;
+  const principal = await loadPrincipal(hash);
+  cache.principals.set(cache.authKey(hash), principal);
+  return principal;
+}
+
+async function loadPrincipal(hash) {
   // Session, staff, role and the circles they may work in — one plan. A
   // second query in circleContext was another RTT on every admin page.
   const rows = await db.prepare(`

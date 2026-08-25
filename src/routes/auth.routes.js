@@ -11,6 +11,7 @@ const {
   createSession, destroySession, requireAuth,
   signSSOToken, verifySSOToken, permissionsFor, flagOn
 } = require('../middleware/auth');
+const { rememberGet } = require('../middleware/cache');
 
 const router = express.Router();
 

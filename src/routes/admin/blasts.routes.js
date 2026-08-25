@@ -11,8 +11,7 @@ const router = express.Router();
 
 // ─── Message Blasts ─────────────────────────────────────────
 
-// GET /api/admin/blasts
-router.get('/blasts', requirePermission('blasts.send', 'members.read'), async (req, res) => {
+async function loadBlastList(circleId) {
   const blasts = await db.prepare(`
     SELECT b.*,
       COALESCE(d.delivered_count, 0) as delivered_count,
@@ -29,9 +28,15 @@ router.get('/blasts', requirePermission('blasts.send', 'members.read'), async (r
     ) d ON d.source_id = b.id
     WHERE b.circle_id = ?
     ORDER BY b.created_at DESC
-  `).all(req.circleId, req.circleId);
+  `).all(circleId, circleId);
 
-  res.json({ blasts: blasts.map(b => ({ ...b, target_ids: parseJSON(b.target_ids, []) })) });
+  return { blasts: (blasts || []).map(b => ({ ...b, target_ids: parseJSON(b.target_ids, []) })) };
+}
+
+// GET /api/admin/blasts
+router.get('/blasts', requirePermission('blasts.send', 'members.read'), async (req, res) => {
+  const { takePreload } = require('../../middleware/preload');
+  res.json(await takePreload(req, () => loadBlastList(req.circleId)));
 });
 
 // GET /api/admin/blasts/:id/deliveries — the audit trail for one blast
@@ -156,3 +161,4 @@ router.post('/blasts/:id/send', requirePermission('blasts.send'), async (req, re
 });
 
 module.exports = router;
+module.exports.loadBlastList = loadBlastList;

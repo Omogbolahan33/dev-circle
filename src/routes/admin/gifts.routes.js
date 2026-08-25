@@ -9,8 +9,7 @@ const router = express.Router();
 
 // ─── Gifts ──────────────────────────────────────────────────
 
-// GET /api/admin/gifts
-router.get('/gifts', requirePermission('gifts.read'), async (req, res) => {
+async function loadGiftList(circleId) {
   const gifts = await db.prepare(`
     SELECT g.*,
       COALESCE(ug.claimed_count, 0) as claimed_count,
@@ -26,9 +25,15 @@ router.get('/gifts', requirePermission('gifts.read'), async (req, res) => {
     ) ug ON ug.gift_id = g.id
     WHERE g.circle_id = ?
     ORDER BY g.created_at DESC
-  `).all(req.circleId, req.circleId);
+  `).all(circleId, circleId);
 
-  res.json({ gifts: (gifts || []).map(g => ({ ...g, target_cohort_ids: parseJSON(g.target_cohort_ids, []) })) });
+  return { gifts: (gifts || []).map(g => ({ ...g, target_cohort_ids: parseJSON(g.target_cohort_ids, []) })) };
+}
+
+// GET /api/admin/gifts
+router.get('/gifts', requirePermission('gifts.read'), async (req, res) => {
+  const { takePreload } = require('../../middleware/preload');
+  res.json(await takePreload(req, () => loadGiftList(req.circleId)));
 });
 
 // POST /api/admin/gifts
@@ -119,3 +124,4 @@ router.post('/gifts/:id/deliver', requirePermission('gifts.write'), async (req, 
 });
 
 module.exports = router;
+module.exports.loadGiftList = loadGiftList;

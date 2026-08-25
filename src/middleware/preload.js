@@ -12,6 +12,11 @@ function circleHint(req) {
 
 function preload(fn) {
   return (req, res, next) => {
+    const cache = require('./cache');
+    if (cache.peekPage(req) !== undefined) {
+      req._preload = Promise.resolve(null);
+      return next();
+    }
     req._preload = Promise.resolve().then(() => fn(req));
     next();
   };

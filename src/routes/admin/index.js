@@ -2,6 +2,7 @@ const express = require('express');
 const { beginAuth, requireAuth, requireAdmin } = require('../../middleware/auth');
 const { circleContext } = require('../../middleware/circleContext');
 const { preload, circleHint } = require('../../middleware/preload');
+const { rememberGet } = require('../../middleware/cache');
 
 const dashboard = require('./dashboard.routes');
 const members = require('./members.routes');
@@ -11,6 +12,8 @@ const roles = require('./roles.routes');
 const feedback = require('./feedback.routes');
 const credentials = require('./credentials.routes');
 const views = require('../../services/feedbackViews');
+const gifts = require('./gifts.routes');
+const blasts = require('./blasts.routes');
 const db = require('../../db');
 
 // ─── Admin API ──────────────────────────────────────────────
@@ -36,6 +39,8 @@ router.get('/demography', withCircle((_req, id) => dashboard.loadDemography(id))
 router.get('/members', withCircle((req, id) => members.loadMemberPage(req.query, id)));
 router.get('/cohorts', withCircle((_req, id) => cohorts.loadCohortList(id)));
 router.get('/surveys', withCircle((_req, id) => surveys.loadSurveyList(id)));
+router.get('/gifts', withCircle((_req, id) => gifts.loadGiftList(id)));
+router.get('/blasts', withCircle((_req, id) => blasts.loadBlastList(id)));
 router.get('/feedback/grouped', withCircle((req, id) => {
   const query = { ...req.query, circle_id: id };
   const axis = req.query.group_by || 'question';
@@ -80,7 +85,7 @@ router.get('/integration-events', preload(req => {
 
 // Authentication, admin status, then the circle being worked in — which is
 // what decides both the data in scope and the permissions that apply.
-router.use(requireAuth, requireAdmin, circleContext);
+router.use(requireAuth, requireAdmin, circleContext, rememberGet);
 
 // Circles, sessions and the API reference mount first: their paths would
 // otherwise be caught by the parameterised routes in the resource routers below.
@@ -90,16 +95,16 @@ router.use('/docs', require('./docs.routes'));
 router.use('/', require('./questions.routes'));
 router.use('/sandbox', require('./sandbox.routes'));
 
-router.use('/', dashboard);
-router.use('/', members);
-router.use('/', cohorts);
-router.use('/', surveys);
+router.use('/', require('./dashboard.routes'));
+router.use('/', require('./members.routes'));
+router.use('/', require('./cohorts.routes'));
+router.use('/', require('./surveys.routes'));
 router.use('/', require('./uploads.routes'));
 router.use('/', require('./blasts.routes'));
 router.use('/', require('./gifts.routes'));
-router.use('/', roles);
-router.use('/', feedback);
+router.use('/', require('./roles.routes'));
+router.use('/', require('./feedback.routes'));
 router.use('/', require('./integrations.routes'));
-router.use('/', credentials);
+router.use('/', require('./credentials.routes'));
 
 module.exports = router;
