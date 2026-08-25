@@ -239,7 +239,7 @@ function buildQuery(definition, { activeOnly = true, circleId = null } = {}) {
   // A cohort belonging to a sub-circle can only ever contain that circle's
   // members, however broad its rules are.
   if (circleId) {
-    conditions.push('u.id IN (SELECT user_id FROM circle_members WHERE circle_id = ?)');
+    conditions.push('EXISTS (SELECT 1 FROM circle_members cmr WHERE cmr.user_id = u.id AND cmr.circle_id = ?)');
     params.push(circleId);
   }
 

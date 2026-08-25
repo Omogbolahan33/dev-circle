@@ -215,12 +215,13 @@
 
   async function load() {
     try {
-      const [sessions, circleData] = await Promise.all([
+      const [sessions, me] = await Promise.all([
         api.get('/admin/sessions'),
-        api.get('/admin/circles')
+        api.get('/auth/me')
       ]);
 
-      const circles = circleData.circles.filter(c => c.status === 'active');
+      // Auth already joined active workspaces. Do not recount members here.
+      const circles = (me.circles || []).filter(c => !c.status || c.status === 'active');
       document.getElementById('sCircle').innerHTML = circles
         .map(c => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('');
 

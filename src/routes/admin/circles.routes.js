@@ -1,7 +1,7 @@
 const express = require('express');
 const db = require('../../db');
 const { paginate } = require('../../utils/helpers');
-const { requirePermission } = require('../../middleware/auth');
+const { requirePermission, flagOn } = require('../../middleware/auth');
 const { requireGlobalAdmin } = require('../../middleware/circleContext');
 const circles = require('../../services/circles');
 const cohortRules = require('../../services/cohortRules');
@@ -42,10 +42,11 @@ router.get('/', async (req, res) => {
   res.json({
     circles: req.availableCircles.map(c => ({
       id: c.id, name: c.name, slug: c.slug, description: c.description,
-      color: c.color, member_count: counts.has(c.id) ? counts.get(c.id) : 0
+      color: c.color, status: c.status,
+      member_count: counts.has(c.id) ? counts.get(c.id) : 0
     })),
     current: { id: req.circle.id, name: req.circle.name, slug: req.circle.slug },
-    can_create: Boolean(req.admin.is_global)
+    can_create: flagOn(req.admin.is_global)
   });
 });
 
