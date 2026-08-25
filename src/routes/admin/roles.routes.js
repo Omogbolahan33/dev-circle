@@ -22,8 +22,11 @@ router.get('/permissions', requirePermission('roles.read'), async (req, res) => 
 // GET /api/admin/roles
 router.get('/roles', requirePermission('roles.read'), async (req, res) => {
   const roles = await db.prepare(`
-    SELECT r.*, (SELECT COUNT(*) FROM admin_users a WHERE a.role_id = r.id) as admin_count
-    FROM roles r ORDER BY r.is_system DESC, r.created_at DESC
+    SELECT r.*, COALESCE(a.n, 0) as admin_count
+    FROM roles r
+    LEFT JOIN (SELECT role_id, COUNT(*) as n FROM admin_users GROUP BY role_id) a
+      ON a.role_id = r.id
+    ORDER BY r.is_system DESC, r.created_at DESC
   `).all();
   res.json({ roles: roles.map(r => ({ ...r, permissions: parseJSON(r.permissions, []) })) });
 });

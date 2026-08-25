@@ -188,11 +188,13 @@ router.get('/feedback/export', requirePermission('export.read'), async (req, res
 
 // GET /api/admin/feedback/export/count — size it before downloading
 router.get('/feedback/export/count', requirePermission('export.read'), async (req, res) => {
-  const rows = await selectFeedback(scoped(req));
+  // The screen already has summarise(); pulling every verbatim just to count
+  // it is the plan that gets worse as the evidence base grows.
+  const totals = await views.summarise(scoped(req));
   res.json({
-    total: rows.length,
-    developers: new Set(rows.map(r => r.email)).size,
-    questions: new Set(rows.map(r => r.question).filter(Boolean)).size
+    total: Number(totals?.answers || 0),
+    developers: Number(totals?.developers || 0),
+    questions: Number(totals?.questions || 0)
   });
 });
 

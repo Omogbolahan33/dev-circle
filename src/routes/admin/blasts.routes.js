@@ -15,12 +15,19 @@ const router = express.Router();
 router.get('/blasts', requirePermission('blasts.send', 'members.read'), async (req, res) => {
   const blasts = await db.prepare(`
     SELECT b.*,
-      (SELECT COUNT(*) FROM message_deliveries d
-        WHERE d.source_type = 'blast' AND d.source_id = b.id
-          AND d.status IN ('sent','simulated')) as delivered_count,
-      (SELECT COUNT(*) FROM message_deliveries d
-        WHERE d.source_type = 'blast' AND d.source_id = b.id AND d.status = 'skipped') as skipped_count
-    FROM message_blasts b WHERE b.circle_id = ? ORDER BY b.created_at DESC
+      COALESCE(d.delivered_count, 0) as delivered_count,
+      COALESCE(d.skipped_count, 0) as skipped_count
+    FROM message_blasts b
+    LEFT JOIN (
+      SELECT source_id,
+             SUM(CASE WHEN status IN ('sent','simulated') THEN 1 ELSE 0 END) as delivered_count,
+             SUM(CASE WHEN status = 'skipped' THEN 1 ELSE 0 END) as skipped_count
+      FROM message_deliveries
+      WHERE source_type = 'blast'
+      GROUP BY source_id
+    ) d ON d.source_id = b.id
+    WHERE b.circle_id = ?
+    ORDER BY b.created_at DESC
   `).all(req.circleId);
 
   res.json({ blasts: blasts.map(b => ({ ...b, target_ids: parseJSON(b.target_ids, []) })) });

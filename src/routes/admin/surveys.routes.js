@@ -82,18 +82,23 @@ router.get('/surveys/schema', requirePermission('surveys.read'), async (req, res
 
 // GET /api/admin/surveys/:id — one survey, for editing or reviewing
 router.get('/surveys/:id', requirePermission('surveys.read'), async (req, res) => {
-  const survey = await db.prepare('SELECT * FROM surveys WHERE id = ?').get(req.params.id);
+  const survey = await db.prepare(`
+    SELECT s.*,
+           c.survey_theme as circle_theme,
+           (SELECT COUNT(*) FROM survey_responses sr
+             WHERE sr.survey_id = s.id AND sr.completed_at IS NOT NULL) as completed_count
+    FROM surveys s
+    LEFT JOIN circles c ON c.id = s.circle_id
+    WHERE s.id = ?
+  `).get(req.params.id);
   if (!survey) return res.status(404).json({ error: 'Survey not found' });
 
-  // Questions can only be rewritten while no answers depend on them, and the
-  // builder needs to know that before it lets someone start editing.
-  const completed = Number((await db.prepare(
-    'SELECT COUNT(*) as c FROM survey_responses WHERE survey_id = ? AND completed_at IS NOT NULL'
-  ).get(survey.id))?.c || 0);
+  const { circle_theme, completed_count, ...row } = survey;
+  const completed = Number(completed_count || 0);
 
   res.json({
-    survey: surveyForm.hydrate(survey),
-    circle_theme: parseJSON((await circles.byId(survey.circle_id))?.survey_theme, null),
+    survey: surveyForm.hydrate(row),
+    circle_theme: parseJSON(circle_theme, null),
     completed_count: completed,
     questions_locked: completed > 0
   });

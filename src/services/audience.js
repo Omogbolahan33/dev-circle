@@ -12,9 +12,12 @@ const cohortRules = require('./cohortRules');
 // This used to treat the root circle as "no restriction", which meant Dev
 // Circle silently meant everyone — a leak between workspaces by construction.
 function circleScope(circleId) {
-  if (!circleId) return { clause: '', params: [] };
+  if (!circleId) return { join: '', clause: '', params: [] };
+  // Starting at circle_members is the plan the membership PK can serve.
+  // A nested IN (SELECT user_id …) hides that from the planner.
   return {
-    clause: 'AND u.id IN (SELECT user_id FROM circle_members WHERE circle_id = ?)',
+    join: 'JOIN circle_members cm ON cm.user_id = u.id AND cm.circle_id = ?',
+    clause: '',
     params: [circleId]
   };
 }
@@ -99,7 +102,7 @@ async function resolveAudience(survey) {
   if (survey.target_type === 'anonymous') return [];
 
   if (survey.target_type === 'all') {
-    return await db.prepare(`SELECT * FROM users u WHERE u.status = 'active' ${scope.clause}`)
+    return await db.prepare(`SELECT * FROM users u ${scope.join} WHERE u.status = 'active' ${scope.clause}`)
       .all(...scope.params);
   }
 
@@ -109,15 +112,17 @@ async function resolveAudience(survey) {
   if (survey.target_type === 'cohort') {
     return await db.prepare(`
       SELECT DISTINCT u.* FROM users u
+      ${scope.join}
       JOIN user_cohorts uc ON uc.user_id = u.id
       WHERE uc.cohort_id IN (${placeholders}) AND u.status = 'active' ${scope.clause}
-    `).all(...targets, ...scope.params);
+    `).all(...scope.params, ...targets);
   }
 
   if (survey.target_type === 'specific') {
     return await db.prepare(`
-      SELECT * FROM users u WHERE u.id IN (${placeholders}) AND u.status = 'active' ${scope.clause}
-    `).all(...targets, ...scope.params);
+      SELECT * FROM users u ${scope.join}
+      WHERE u.id IN (${placeholders}) AND u.status = 'active' ${scope.clause}
+    `).all(...scope.params, ...targets);
   }
 
   return [];
@@ -129,7 +134,7 @@ async function blastRecipients(blast) {
   const scope = circleScope(blast.circle_id);
 
   if (blast.target_type === 'all') {
-    return await db.prepare(`SELECT * FROM users u WHERE u.status = 'active' ${scope.clause}`)
+    return await db.prepare(`SELECT * FROM users u ${scope.join} WHERE u.status = 'active' ${scope.clause}`)
       .all(...scope.params);
   }
 
@@ -139,14 +144,16 @@ async function blastRecipients(blast) {
   if (blast.target_type === 'cohort') {
     return await db.prepare(`
       SELECT DISTINCT u.* FROM users u
+      ${scope.join}
       JOIN user_cohorts uc ON uc.user_id = u.id
       WHERE uc.cohort_id IN (${placeholders}) AND u.status = 'active' ${scope.clause}
-    `).all(...targetIds, ...scope.params);
+    `).all(...scope.params, ...targetIds);
   }
 
   return await db.prepare(`
-    SELECT * FROM users u WHERE u.id IN (${placeholders}) AND u.status = 'active' ${scope.clause}
-  `).all(...targetIds, ...scope.params);
+    SELECT * FROM users u ${scope.join}
+    WHERE u.id IN (${placeholders}) AND u.status = 'active' ${scope.clause}
+  `).all(...scope.params, ...targetIds);
 }
 
 module.exports = { circleScope, memberFilters, resolveAudience, blastRecipients };

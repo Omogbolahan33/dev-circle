@@ -31,11 +31,13 @@ router.get('/profile', requireAuth, async (req, res) => {
     circles.forUser(id),
     db.prepare(`
       SELECT
-        (SELECT COUNT(*) FROM survey_responses WHERE user_id = ? AND completed_at IS NOT NULL) as surveys_completed,
-        (SELECT COUNT(*) FROM survey_responses WHERE user_id = ?) as surveys_invited,
+        SUM(CASE WHEN completed_at IS NOT NULL THEN 1 ELSE 0 END) as surveys_completed,
+        COUNT(*) as surveys_invited,
         (SELECT COUNT(*) FROM user_gifts WHERE user_id = ?) as gifts_claimed,
         (SELECT COUNT(*) FROM feedback WHERE user_id = ?) as feedback_submitted
-    `).get(id, id, id, id),
+      FROM survey_responses
+      WHERE user_id = ?
+    `).get(id, id, id),
     notifications.inbox(id, { limit: 1 })
   ]);
 

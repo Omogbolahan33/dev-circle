@@ -33,10 +33,13 @@ router.get('/', requirePermission('sessions.read'), async (req, res) => {
 
   const sessions = await db.prepare(`
     SELECT s.*, c.name as circle_name, sv.title as survey_title,
-      (SELECT COUNT(*) FROM session_dispatches d WHERE d.session_id = s.id) as dispatches_sent
+      COALESCE(d.n, 0) as dispatches_sent
     FROM scheduled_sessions s
     LEFT JOIN circles c ON c.id = s.circle_id
     LEFT JOIN surveys sv ON sv.id = s.survey_id
+    LEFT JOIN (
+      SELECT session_id, COUNT(*) as n FROM session_dispatches GROUP BY session_id
+    ) d ON d.session_id = s.id
     WHERE ${where.join(' AND ')}
     ORDER BY s.scheduled_for ASC
   `).all(...params);

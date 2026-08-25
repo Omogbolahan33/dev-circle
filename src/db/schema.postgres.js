@@ -441,6 +441,9 @@ const SCHEMA_POSTGRES = `
   CREATE INDEX IF NOT EXISTS idx_feedback_circle_created ON feedback(circle_id, created_at DESC);
   CREATE INDEX IF NOT EXISTS idx_surveys_circle_created ON surveys(circle_id, created_at DESC);
   CREATE INDEX IF NOT EXISTS idx_cohorts_circle ON cohorts(circle_id);
+  CREATE INDEX IF NOT EXISTS idx_admin_users_role ON admin_users(role_id);
+  CREATE INDEX IF NOT EXISTS idx_gifts_circle ON gifts(circle_id);
+  CREATE INDEX IF NOT EXISTS idx_blasts_circle ON message_blasts(circle_id);
   CREATE UNIQUE INDEX IF NOT EXISTS idx_feedback_verbatim ON feedback(user_id, survey_id, question_id) WHERE question_id IS NOT NULL AND survey_id IS NOT NULL AND user_id IS NOT NULL;
   CREATE UNIQUE INDEX IF NOT EXISTS idx_feedback_verbatim_anon ON feedback(response_id, question_id) WHERE response_id IS NOT NULL AND question_id IS NOT NULL;
   CREATE UNIQUE INDEX IF NOT EXISTS idx_feedback_external_response ON feedback(source_system, external_response_id) WHERE external_response_id IS NOT NULL;

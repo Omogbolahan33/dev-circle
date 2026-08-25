@@ -204,11 +204,16 @@ async function askedIn(questionId) {
 async function reusable({ type = 'text' } = {}) {
   return await db.prepare(`
     SELECT q.id, q.text, q.type,
-           (SELECT ${RESPONDENTS} FROM feedback f
-             WHERE f.canonical_question_id = q.id) as developer_count,
-           (SELECT COUNT(DISTINCT f.survey_id) FROM feedback f
-             WHERE f.canonical_question_id = q.id) as survey_count
+           COALESCE(f.developer_count, 0) as developer_count,
+           COALESCE(f.survey_count, 0) as survey_count
     FROM questions q
+    LEFT JOIN (
+      SELECT canonical_question_id,
+             ${RESPONDENTS} as developer_count,
+             COUNT(DISTINCT survey_id) as survey_count
+      FROM feedback
+      GROUP BY canonical_question_id
+    ) f ON f.canonical_question_id = q.id
     WHERE q.type = ?
     ORDER BY developer_count DESC, q.text
   `).all(type);

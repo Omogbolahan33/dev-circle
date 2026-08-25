@@ -69,9 +69,12 @@ router.get('/:id', requirePermission('circles.read'), async (req, res) => {
     db.prepare('SELECT COUNT(*) as c FROM circle_members WHERE circle_id = ?').get(circle.id),
     circles.members(circle.id, { limit, offset }),
     db.prepare(`
-      SELECT c.id, c.name, c.color,
-        (SELECT COUNT(*) FROM user_cohorts uc WHERE uc.cohort_id = c.id) as member_count
-      FROM cohorts c WHERE c.circle_id = ?
+      SELECT c.id, c.name, c.color, COALESCE(mc.n, 0) as member_count
+      FROM cohorts c
+      LEFT JOIN (
+        SELECT cohort_id, COUNT(*) as n FROM user_cohorts GROUP BY cohort_id
+      ) mc ON mc.cohort_id = c.id
+      WHERE c.circle_id = ?
     `).all(circle.id),
     db.prepare('SELECT id, title, status FROM surveys WHERE circle_id = ?').all(circle.id),
     db.prepare(`

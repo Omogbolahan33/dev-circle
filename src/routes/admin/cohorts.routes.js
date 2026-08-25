@@ -11,13 +11,17 @@ const router = express.Router();
 
 // GET /api/admin/cohorts
 router.get('/cohorts', requirePermission('cohorts.read'), async (req, res) => {
-  // Cohorts belong to the circle they were made in. Member counts are a
-  // subquery so Postgres does not demand every selected column in GROUP BY.
+  // Cohorts belong to the circle they were made in. Counts come from one
+  // GROUP BY of user_cohorts — a correlated COUNT per cohort is the plan
+  // that gets worse as membership grows. The outer query is not grouped, so
+  // Postgres never has to prove ci.name from c.id.
   const cohorts = await db.prepare(`
-    SELECT c.*, ci.name as circle_name,
-      (SELECT COUNT(*) FROM user_cohorts uc WHERE uc.cohort_id = c.id) as member_count
+    SELECT c.*, ci.name as circle_name, COALESCE(mc.n, 0) as member_count
     FROM cohorts c
     LEFT JOIN circles ci ON ci.id = c.circle_id
+    LEFT JOIN (
+      SELECT cohort_id, COUNT(*) as n FROM user_cohorts GROUP BY cohort_id
+    ) mc ON mc.cohort_id = c.id
     WHERE c.circle_id = ?
     ORDER BY member_count DESC
   `).all(req.circleId);
