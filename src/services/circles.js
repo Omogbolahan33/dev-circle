@@ -1,13 +1,5 @@
 const db = require('../db');
 const { uuid } = require('../utils/helpers');
-const { ttlCache, singleflight } = require('../utils/ttlCache');
-
-const accessCache = ttlCache({ ttlMs: 45_000, max: 500 });
-const loadAccessOnce = singleflight();
-
-function invalidateAccess() {
-  accessCache.clear();
-}
 
 // ─── Circles ────────────────────────────────────────────────
 // A circle is a workspace. Dev Circle is one instance of it, not a container
@@ -28,10 +20,16 @@ class CircleError extends Error {}
 async function all({ includeArchived = false } = {}) {
   return await db.prepare(`
     SELECT c.*,
-      (SELECT COUNT(*) FROM circle_members m WHERE m.circle_id = c.id) as member_count,
-      (SELECT COUNT(*) FROM cohorts x WHERE x.circle_id = c.id) as cohort_count,
-      (SELECT COUNT(*) FROM surveys s WHERE s.circle_id = c.id) as survey_count
+      COALESCE(mc.n, 0) as member_count,
+      COALESCE(cc.n, 0) as cohort_count,
+      COALESCE(sc.n, 0) as survey_count
     FROM circles c
+    LEFT JOIN (SELECT circle_id, COUNT(*) as n FROM circle_members GROUP BY circle_id) mc
+      ON mc.circle_id = c.id
+    LEFT JOIN (SELECT circle_id, COUNT(*) as n FROM cohorts GROUP BY circle_id) cc
+      ON cc.circle_id = c.id
+    LEFT JOIN (SELECT circle_id, COUNT(*) as n FROM surveys GROUP BY circle_id) sc
+      ON sc.circle_id = c.id
     ${includeArchived ? '' : "WHERE c.status = 'active'"}
     ORDER BY c.created_at
   `).all();
@@ -74,7 +72,6 @@ async function create({ name, description, color, createdBy }) {
     VALUES (?, ?, ?, ?, ?, ?)
   `).run(id, String(name).trim(), await uniqueSlug(name), description || null, color || '#107EBC', createdBy || null);
 
-  invalidateAccess();
   return byId(id);
 }
 
@@ -160,38 +157,28 @@ async function isMember(circleId, userId) {
 // Which circles a staff member may work in, and with what role in each.
 // A global admin is not listed against circles — they reach all of them.
 async function forAdmin(admin) {
-  // Access control does not need a COUNT of every member. That scan sat on
-  // every admin request; the switcher asks for counts on its own endpoint.
-  const key = `${admin.id}:${admin.is_global ? 1 : 0}:${admin.role_id || ''}`;
-  const cached = accessCache.get(key);
-  if (cached) return cached;
+  // Access control does not count members. A GROUP BY of circle_members on
+  // every request is the plan that gets worse as the base grows; the switcher
+  // loads counts on GET /admin/circles instead.
+  if (admin.is_global) {
+    const rows = await db.prepare(`
+      SELECT c.id, c.name, c.slug, c.description, c.color, c.status, c.survey_theme, c.created_at
+      FROM circles c
+      WHERE c.status = 'active'
+      ORDER BY c.created_at
+    `).all();
+    return (rows || []).map(c => ({ ...c, role_id: admin.role_id, global: true }));
+  }
 
-  return loadAccessOnce(key, async () => {
-    const hit = accessCache.get(key);
-    if (hit) return hit;
-
-    let rows;
-    if (admin.is_global) {
-      rows = ((await db.prepare(`
-        SELECT c.id, c.name, c.slug, c.description, c.color, c.status, c.survey_theme, c.created_at
-        FROM circles c
-        WHERE c.status = 'active'
-        ORDER BY c.created_at
-      `).all()) || []).map(c => ({ ...c, role_id: admin.role_id, global: true }));
-    } else {
-      rows = await db.prepare(`
-        SELECT c.id, c.name, c.slug, c.description, c.color, c.status, c.survey_theme, c.created_at,
-               ca.role_id, 0 as global, r.permissions as role_permissions
-        FROM circle_admins ca
-        JOIN circles c ON c.id = ca.circle_id
-        LEFT JOIN roles r ON r.id = ca.role_id
-        WHERE ca.admin_id = ? AND c.status = 'active'
-        ORDER BY c.created_at
-      `).all(admin.id);
-    }
-    accessCache.set(key, rows || []);
-    return rows || [];
-  });
+  return await db.prepare(`
+    SELECT c.id, c.name, c.slug, c.description, c.color, c.status, c.survey_theme, c.created_at,
+           ca.role_id, 0 as global, r.permissions as role_permissions
+    FROM circle_admins ca
+    JOIN circles c ON c.id = ca.circle_id
+    LEFT JOIN roles r ON r.id = ca.role_id
+    WHERE ca.admin_id = ? AND c.status = 'active'
+    ORDER BY c.created_at
+  `).all(admin.id);
 }
 
 // The role this staff member holds *in this circle*. Permissions are unchanged;
@@ -215,14 +202,11 @@ async function grantAdmin(circleId, adminId, roleId) {
     INSERT INTO circle_admins (circle_id, admin_id, role_id) VALUES (?, ?, ?)
     ON CONFLICT(circle_id, admin_id) DO UPDATE SET role_id = excluded.role_id
   `).run(circleId, adminId, roleId);
-  invalidateAccess();
 }
 
 async function revokeAdmin(circleId, adminId) {
-  const removed = Number((await db.prepare('DELETE FROM circle_admins WHERE circle_id = ? AND admin_id = ?')
+  return Number((await db.prepare('DELETE FROM circle_admins WHERE circle_id = ? AND admin_id = ?')
     .run(circleId, adminId))?.changes || 0);
-  if (removed) invalidateAccess();
-  return removed;
 }
 
 async function archive(circleId) {
@@ -242,5 +226,5 @@ module.exports = {
   all, byId, bySlug, fallback, create, slugify,
   members, addMembers, removeMember, join, forUser, circleIdsForUser, isMember,
   forAdmin, roleFor, canAdminister, grantAdmin, revokeAdmin,
-  archive, invalidateAccess, CircleError
+  archive, CircleError
 };

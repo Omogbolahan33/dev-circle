@@ -30,6 +30,7 @@ function circleScope(circleId) {
 function memberFilters(query) {
   const where = ['1=1'];
   const params = [];
+  let from = 'users u';
 
   const {
     search, status, api_status, cohort_id, work_sector, location_state,
@@ -76,12 +77,14 @@ function memberFilters(query) {
     where.push('u.id IN (SELECT user_id FROM user_cohorts WHERE cohort_id = ?)');
     params.push(cohort_id);
   }
+  // Nested IN (SELECT user_id …) hides the circle PK from the planner.
+  // Starting at circle_members is the plan that stays cheap at 1,000+ members.
   if (circle_id) {
-    where.push('u.id IN (SELECT user_id FROM circle_members WHERE circle_id = ?)');
-    params.push(circle_id);
+    from = 'users u JOIN circle_members cm ON cm.user_id = u.id AND cm.circle_id = ?';
+    params.unshift(circle_id);
   }
 
-  return { where: where.join(' AND '), params };
+  return { from, where: where.join(' AND '), params };
 }
 
 // Resolve a survey's audience to member rows

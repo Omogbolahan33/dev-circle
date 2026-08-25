@@ -1,13 +1,6 @@
 const crypto = require('crypto');
 const db = require('../db');
 const config = require('../config');
-const { ttlCache, singleflight } = require('../utils/ttlCache');
-
-// A session lookup is a round-trip to Postgres before every API call. Empty
-// tables still pay that latency; caching the resolved principal for a short
-// window is what keeps admin pages under 100ms.
-const sessionCache = ttlCache({ ttlMs: 45_000, max: 2000 });
-const loadSessionOnce = singleflight();
 
 // ─── Sessions ───────────────────────────────────────────────
 // Tokens are random 32-byte values handed to the client; only their SHA-256
@@ -67,13 +60,10 @@ async function getSession(token) {
 }
 
 async function destroySession(token) {
-  const hash = hashToken(token);
-  sessionCache.delete(hash);
-  await db.prepare('DELETE FROM sessions WHERE token_hash = ?').run(hash);
+  await db.prepare('DELETE FROM sessions WHERE token_hash = ?').run(hashToken(token));
 }
 
 async function destroyAllSessionsFor(subjectId) {
-  sessionCache.clear();
   await db.prepare('DELETE FROM sessions WHERE subject_id = ?').run(subjectId);
 }
 
@@ -148,9 +138,6 @@ function hasPermission(perms, permission) {
 // ─── Middleware ─────────────────────────────────────────────
 
 async function resolvePrincipal(hash) {
-  const cached = sessionCache.get(hash);
-  if (cached) return cached;
-
   const row = await db.prepare(`
     SELECT
       s.subject_id, s.is_admin, s.issued_via, s.scope,
@@ -201,7 +188,6 @@ async function resolvePrincipal(hash) {
       permissions: parsePermissions(row.role_permissions),
       user: null
     };
-    sessionCache.set(hash, principal);
     return principal;
   }
 
@@ -219,7 +205,6 @@ async function resolvePrincipal(hash) {
     permissions: [],
     user
   };
-  sessionCache.set(hash, principal);
   return principal;
 }
 
@@ -231,7 +216,7 @@ async function requireAuth(req, res, next) {
     }
 
     const hash = hashToken(authHeader.slice(7));
-    const principal = await loadSessionOnce(hash, () => resolvePrincipal(hash));
+    const principal = await resolvePrincipal(hash);
 
     if (!principal) {
       return res.status(401).json({ error: 'Invalid or expired token' });

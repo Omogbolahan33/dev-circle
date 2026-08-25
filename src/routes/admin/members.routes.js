@@ -21,11 +21,11 @@ router.get('/members', requirePermission('members.read'), async (req, res) => {
   const { offset, limit: l, page: p } = paginate(req.query.page, req.query.limit);
   // Scoped to the circle being worked in. A member of another workspace is not
   // "filtered out" here — they are not part of this one.
-  const { where, params } = memberFilters({ ...req.query, circle_id: req.circleId });
+  const { from, where, params } = memberFilters({ ...req.query, circle_id: req.circleId });
 
-  // Page, total, survey tallies and cohorts in one network wait. COUNT(*) OVER()
-  // is the filter total (not the page size) in both SQLite and Postgres, so a
-  // thousand members still only return `limit` rows.
+  // Page + filter total in one plan (COUNT(*) OVER is the matching set, not
+  // the page). Survey tallies are index lookups on the page only — not a scan
+  // of every response. Cohorts join the same page of ids.
   const [members, cohortRows] = await Promise.all([
     db.prepare(`
       SELECT u.id, u.email, u.name, u.phone, u.company, u.work_sector,
@@ -37,7 +37,7 @@ router.get('/members', requirePermission('members.read'), async (req, res) => {
              (SELECT COUNT(*) FROM survey_responses sr WHERE sr.user_id = u.id) as surveys_invited,
              (SELECT COUNT(*) FROM survey_responses sr
                WHERE sr.user_id = u.id AND sr.completed_at IS NOT NULL) as surveys_completed
-      FROM users u
+      FROM ${from}
       WHERE ${where}
       ORDER BY u.created_at DESC
       LIMIT ? OFFSET ?
@@ -47,7 +47,7 @@ router.get('/members', requirePermission('members.read'), async (req, res) => {
       FROM user_cohorts uc
       JOIN cohorts c ON c.id = uc.cohort_id
       WHERE uc.user_id IN (
-        SELECT u.id FROM users u WHERE ${where}
+        SELECT u.id FROM ${from} WHERE ${where}
         ORDER BY u.created_at DESC LIMIT ? OFFSET ?
       )
     `).all(...params, l, offset)
@@ -55,7 +55,7 @@ router.get('/members', requirePermission('members.read'), async (req, res) => {
 
   const total = (members && members.length)
     ? Number(members[0]._total || 0)
-    : (offset ? Number((await db.prepare(`SELECT COUNT(*) as c FROM users u WHERE ${where}`).get(...params))?.c || 0) : 0);
+    : (offset ? Number((await db.prepare(`SELECT COUNT(*) as c FROM ${from} WHERE ${where}`).get(...params))?.c || 0) : 0);
 
   const cohortsByUser = new Map();
   for (const row of cohortRows || []) {
@@ -487,7 +487,7 @@ const EXPORT_COLUMNS = [
 ];
 
 async function selectMembers(query) {
-  const { where, params } = memberFilters(query);
+  const { from, where, params } = memberFilters(query);
 
   const rows = await db.prepare(`
     SELECT u.id, u.email, u.name, u.phone, u.company, u.work_sector,
@@ -505,7 +505,7 @@ async function selectMembers(query) {
              JOIN circle_members cm ON cm.circle_id = ci.id WHERE cm.user_id = u.id) as circles,
            (SELECT GROUP_CONCAT(ch.channel, '; ') FROM consent ch
              WHERE ch.user_id = u.id AND ch.status = 'granted') as consented_channels
-    FROM users u WHERE ${where}
+    FROM ${from} WHERE ${where}
     ORDER BY u.created_at DESC
   `).all(...params);
 
@@ -544,8 +544,8 @@ router.get('/export/fields', requirePermission('export.read'), async (req, res) 
 // to a download. Cheap enough to run on every edit of the filter builder.
 router.get('/export/count', requirePermission('export.read'), async (req, res) => {
   try {
-    const { where, params } = memberFilters({ ...req.query, circle_id: req.circleId });
-    const total = Number((await db.prepare(`SELECT COUNT(*) as c FROM users u WHERE ${where}`).get(...params))?.c || 0);
+    const { from, where, params } = memberFilters({ ...req.query, circle_id: req.circleId });
+    const total = Number((await db.prepare(`SELECT COUNT(*) as c FROM ${from} WHERE ${where}`).get(...params))?.c || 0);
     res.json({ total });
   } catch (err) {
     if (err instanceof cohortRules.RuleError) return res.status(400).json({ error: err.message });

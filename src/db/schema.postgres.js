@@ -401,6 +401,7 @@ const SCHEMA_POSTGRES = `
   CREATE INDEX IF NOT EXISTS idx_user_cohorts_cohort ON user_cohorts(cohort_id);
   CREATE INDEX IF NOT EXISTS idx_consent_user ON consent(user_id);
   CREATE INDEX IF NOT EXISTS idx_circles_slug ON circles(slug);
+  CREATE INDEX IF NOT EXISTS idx_circles_status_created ON circles(status, created_at);
   CREATE INDEX IF NOT EXISTS idx_circle_members_user ON circle_members(user_id);
   CREATE INDEX IF NOT EXISTS idx_circle_admins_admin ON circle_admins(admin_id);
   CREATE INDEX IF NOT EXISTS idx_surveys_trigger ON surveys(trigger_event);

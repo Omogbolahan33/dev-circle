@@ -8,16 +8,20 @@ const router = express.Router();
 
 // GET /api/admin/dashboard
 router.get('/dashboard', requirePermission('members.read'), async (req, res) => {
-  const [
-    statsRow, recentActivity, cohortBreakdown, statusBreakdown
-  ] = await Promise.all([
+  const [userRows, surveyRow, recentActivity, cohortBreakdown] = await Promise.all([
+    // Status chart is one GROUP BY. Headlines sit next to the survey scan so
+    // users are not counted five times as independent statements.
+    db.prepare(`
+      SELECT api_status, COUNT(*) as count FROM users GROUP BY api_status
+    `).all(),
     db.prepare(`
       SELECT
-        (SELECT COUNT(*) FROM users) as total_members,
+        COUNT(*) as surveys_sent,
+        SUM(CASE WHEN completed_at IS NOT NULL THEN 1 ELSE 0 END) as surveys_completed,
         (SELECT COUNT(*) FROM cohorts) as active_cohorts,
-        (SELECT COUNT(*) FROM survey_responses) as surveys_sent,
-        (SELECT COUNT(*) FROM survey_responses WHERE completed_at IS NOT NULL) as surveys_completed,
+        (SELECT COUNT(*) FROM users) as total_members,
         (SELECT COUNT(*) FROM users WHERE created_at > datetime('now', '-7 days')) as new_this_week
+      FROM survey_responses
     `).get(),
     db.prepare(`
       SELECT eh.*, u.name as user_name, u.email as user_email
@@ -33,25 +37,23 @@ router.get('/dashboard', requirePermission('members.read'), async (req, res) => 
       GROUP BY c.id, c.name, c.color
       ORDER BY member_count DESC
       LIMIT 10
-    `).all(),
-    db.prepare(`
-      SELECT api_status, COUNT(*) as count FROM users GROUP BY api_status
     `).all()
   ]);
 
-  const totalMembers = Number(statsRow?.total_members || 0);
-  const totalSurveysSent = Number(statsRow?.surveys_sent || 0);
-  const completedSurveys = Number(statsRow?.surveys_completed || 0);
+  const statusBreakdown = (userRows || []).map(r => ({ api_status: r.api_status, count: Number(r.count || 0) }));
+  const totalMembers = Number(surveyRow?.total_members || 0);
+  const totalSurveysSent = Number(surveyRow?.surveys_sent || 0);
+  const completedSurveys = Number(surveyRow?.surveys_completed || 0);
   const engagementRate = totalSurveysSent > 0 ? Math.round((completedSurveys / totalSurveysSent) * 100) : 0;
 
   res.json({
     stats: {
       total_members: totalMembers,
-      active_cohorts: Number(statsRow?.active_cohorts || 0),
+      active_cohorts: Number(surveyRow?.active_cohorts || 0),
       engagement_rate: engagementRate,
       surveys_sent: totalSurveysSent,
       surveys_completed: completedSurveys,
-      new_this_week: Number(statsRow?.new_this_week || 0)
+      new_this_week: Number(surveyRow?.new_this_week || 0)
     },
     recent_activity: recentActivity,
     cohort_breakdown: cohortBreakdown,
@@ -63,96 +65,93 @@ router.get('/dashboard', requirePermission('members.read'), async (req, res) => 
 // The blueprint asks for an at-a-glance view of demography, age, and products.
 // None of that data existed before; these are the real distributions.
 router.get('/demography', requirePermission('members.read'), async (req, res) => {
-  // Ten GROUP BYs used to open ten connections on a pool of ten. One scan of
-  // the member columns plus one survey tally is enough through a few thousand
-  // rows and stays a single network wait.
-  const [users, completedRows] = await Promise.all([
-    db.prepare(`
-      SELECT id, work_sector, location_state, gender, date_of_birth,
-             api_products, api_status, kyb_completed
-      FROM users
-    `).all(),
-    db.prepare(`
-      SELECT user_id, COUNT(*) as c FROM survey_responses
-      WHERE completed_at IS NOT NULL
-      GROUP BY user_id
-    `).all()
-  ]);
+  // Aggregations stay in SQL. Shipping every member row to Node to GROUP BY
+  // is the plan that gets worse as the base grows; UNION ALL is one round-trip
+  // and the same JSON the page already reads.
+  const rows = await db.prepare(`
+    SELECT 'work_sector' as axis, COALESCE(NULLIF(work_sector, ''), 'Unspecified') as label, COUNT(*) as count
+      FROM users GROUP BY 2
+    UNION ALL
+    SELECT 'location_state', COALESCE(NULLIF(location_state, ''), 'Unspecified'), COUNT(*)
+      FROM users GROUP BY 2
+    UNION ALL
+    SELECT 'gender', COALESCE(NULLIF(gender, ''), 'Unspecified'), COUNT(*)
+      FROM users GROUP BY 2
+    UNION ALL
+    SELECT 'api_status', api_status, COUNT(*)
+      FROM users GROUP BY 2
+    UNION ALL
+    SELECT 'kyb', CASE WHEN CAST(kyb_completed AS TEXT) IN ('1', 'true', 't') THEN 'Completed' ELSE 'Pending' END, COUNT(*)
+      FROM users GROUP BY 2
+    UNION ALL
+    SELECT 'age_band', CASE
+        WHEN date_of_birth IS NULL OR date_of_birth = '' THEN 'Unspecified'
+        WHEN (julianday('now') - julianday(date_of_birth)) / 365.25 < 25 THEN 'Under 25'
+        WHEN (julianday('now') - julianday(date_of_birth)) / 365.25 < 35 THEN '25–34'
+        WHEN (julianday('now') - julianday(date_of_birth)) / 365.25 < 45 THEN '35–44'
+        ELSE '45+'
+      END, COUNT(*)
+      FROM users GROUP BY 2
+    UNION ALL
+    SELECT 'api_products', json_each.value, COUNT(*)
+      FROM users, json_each(users.api_products)
+      WHERE COALESCE(json_each.value, '') != ''
+      GROUP BY 2
+    UNION ALL
+    SELECT 'engagement_depth', CASE
+        WHEN completed = 0 THEN 'Never responded'
+        WHEN completed BETWEEN 1 AND 2 THEN '1–2 surveys'
+        WHEN completed BETWEEN 3 AND 5 THEN '3–5 surveys'
+        ELSE '6+ surveys'
+      END, COUNT(*)
+      FROM (
+        SELECT u.id, COUNT(sr.id) as completed
+        FROM users u
+        LEFT JOIN survey_responses sr ON sr.user_id = u.id AND sr.completed_at IS NOT NULL
+        GROUP BY u.id
+      ) depths
+      GROUP BY 2
+    UNION ALL
+    SELECT 'coverage', 'total', COUNT(*) FROM users
+    UNION ALL
+    SELECT 'coverage', 'no_date_of_birth',
+           SUM(CASE WHEN date_of_birth IS NULL OR date_of_birth = '' THEN 1 ELSE 0 END) FROM users
+    UNION ALL
+    SELECT 'coverage', 'no_gender',
+           SUM(CASE WHEN gender IS NULL OR gender = '' THEN 1 ELSE 0 END) FROM users
+    UNION ALL
+    SELECT 'coverage', 'no_location',
+           SUM(CASE WHEN location_state IS NULL OR location_state = '' THEN 1 ELSE 0 END) FROM users
+    UNION ALL
+    SELECT 'coverage', 'no_products',
+           SUM(CASE WHEN api_products IS NULL OR api_products = '' OR api_products = '[]' THEN 1 ELSE 0 END) FROM users
+  `).all();
 
-  const rows = users || [];
-  const completedByUser = new Map((completedRows || []).map(r => [r.user_id, Number(r.c || 0)]));
-
-  const tally = (pick, { limit } = {}) => {
-    const map = new Map();
-    for (const row of rows) {
-      const label = pick(row);
-      map.set(label, (map.get(label) || 0) + 1);
-    }
-    const out = [...map.entries()]
-      .map(([label, count]) => ({ label, count }))
-      .sort((a, b) => b.count - a.count);
-    return limit ? out.slice(0, limit) : out;
-  };
-
-  const blank = value => value == null || value === '' ? 'Unspecified' : value;
-
-  const ageBand = dob => {
-    if (!dob) return 'Unspecified';
-    const years = (Date.now() - new Date(String(dob)).getTime()) / (365.25 * 86400000);
-    if (!Number.isFinite(years) || years < 0) return 'Unspecified';
-    if (years < 25) return 'Under 25';
-    if (years < 35) return '25–34';
-    if (years < 45) return '35–44';
-    return '45+';
-  };
-
-  const productCounts = new Map();
-  let noProducts = 0;
-  for (const row of rows) {
-    let products = row.api_products;
-    if (typeof products === 'string') {
-      try { products = JSON.parse(products); } catch { products = []; }
-    }
-    if (!Array.isArray(products) || products.length === 0) {
-      noProducts++;
-      continue;
-    }
-    for (const product of products) {
-      if (product == null || product === '') continue;
-      const label = String(product);
-      productCounts.set(label, (productCounts.get(label) || 0) + 1);
-    }
+  const buckets = new Map();
+  for (const row of rows || []) {
+    const list = buckets.get(row.axis) || [];
+    list.push({ label: row.label, count: Number(row.count || 0) });
+    buckets.set(row.axis, list);
   }
 
-  const depthTally = new Map();
-  for (const row of rows) {
-    const n = completedByUser.get(row.id) || 0;
-    const label = n === 0 ? 'Never responded'
-      : n <= 2 ? '1–2 surveys'
-        : n <= 5 ? '3–5 surveys'
-          : '6+ surveys';
-    depthTally.set(label, (depthTally.get(label) || 0) + 1);
-  }
-
-  const kybCompleted = value => value === 1 || value === true || value === '1';
+  const ranked = axis => (buckets.get(axis) || []).sort((a, b) => b.count - a.count);
+  const coverage = Object.fromEntries((buckets.get('coverage') || []).map(r => [r.label, r.count]));
 
   res.json({
-    total: rows.length,
-    work_sector: tally(r => blank(r.work_sector)),
-    location_state: tally(r => blank(r.location_state), { limit: 15 }),
-    gender: tally(r => blank(r.gender)),
-    age_band: tally(r => ageBand(r.date_of_birth)),
-    api_products: [...productCounts.entries()]
-      .map(([label, count]) => ({ label, count }))
-      .sort((a, b) => b.count - a.count),
-    api_status: tally(r => r.api_status),
-    kyb: tally(r => kybCompleted(r.kyb_completed) ? 'Completed' : 'Pending'),
-    engagement_depth: [...depthTally.entries()].map(([label, count]) => ({ label, count })),
+    total: Number(coverage.total || 0),
+    work_sector: ranked('work_sector'),
+    location_state: ranked('location_state').slice(0, 15),
+    gender: ranked('gender'),
+    age_band: ranked('age_band'),
+    api_products: ranked('api_products'),
+    api_status: ranked('api_status'),
+    kyb: ranked('kyb'),
+    engagement_depth: ranked('engagement_depth'),
     data_coverage: {
-      no_date_of_birth: rows.filter(r => r.date_of_birth == null || r.date_of_birth === '').length,
-      no_gender: rows.filter(r => r.gender == null || r.gender === '').length,
-      no_location: rows.filter(r => r.location_state == null || r.location_state === '').length,
-      no_products: noProducts
+      no_date_of_birth: Number(coverage.no_date_of_birth || 0),
+      no_gender: Number(coverage.no_gender || 0),
+      no_location: Number(coverage.no_location || 0),
+      no_products: Number(coverage.no_products || 0)
     }
   });
 });

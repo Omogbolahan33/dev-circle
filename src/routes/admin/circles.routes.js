@@ -155,7 +155,6 @@ router.put('/:id', requirePermission('circles.write'), async (req, res) => {
 
   params.push(circle.id);
   await db.prepare(`UPDATE circles SET ${updates.join(', ')} WHERE id = ?`).run(...params);
-  circles.invalidateAccess();
 
   res.json({
     circle: await circles.byId(circle.id),

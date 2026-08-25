@@ -73,4 +73,21 @@ describe('SQLite → Postgres SQL', () => {
     const sql = "SELECT * FROM users WHERE created_at > datetime('now', '-7 days')";
     assert.equal(pg.translateSql(sql), pg.translateSql(sql));
   });
+
+  test('demography age bands and json_each survive the dialect shim', () => {
+    const sql = pgSql(`
+      SELECT 'age_band', CASE
+        WHEN (julianday('now') - julianday(date_of_birth)) / 365.25 < 35 THEN '25–34'
+        ELSE '45+'
+      END, COUNT(*) FROM users GROUP BY 2
+      UNION ALL
+      SELECT 'api_products', json_each.value, COUNT(*)
+      FROM users, json_each(users.api_products)
+      GROUP BY 2
+    `);
+    assert.match(sql, /EXTRACT\(EPOCH FROM NOW\(\)\)/);
+    assert.match(sql, /jsonb_array_elements_text/);
+    assert.doesNotMatch(sql, /julianday/i);
+    assert.doesNotMatch(sql, /json_each\s*\(/);
+  });
 });
