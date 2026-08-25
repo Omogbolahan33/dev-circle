@@ -42,4 +42,18 @@ describe('ttl cache', () => {
     cache.noteWrite('INSERT INTO sessions (token_hash, subject_id) VALUES (?, ?)');
     assert.deepEqual(cache.principals.get(cache.authKey('abc')), { ok: true });
   });
+
+  it('a warmed page uses the same key the request will look up', () => {
+    cache.clearAll();
+    cache.putPage('/dashboard', { circleId: 'circ-1', body: { stats: { total_members: 0 } } });
+    const req = {
+      method: 'GET',
+      path: '/dashboard',
+      baseUrl: '/api/admin',
+      query: {},
+      headers: { 'x-circle-id': 'circ-1' },
+      circleId: 'circ-1'
+    };
+    assert.deepEqual(cache.peekPage(req), { stats: { total_members: 0 } });
+  });
 });

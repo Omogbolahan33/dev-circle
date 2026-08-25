@@ -41,12 +41,8 @@ async function loadSurveyList(circleId) {
   `).all(circleId, circleId);
 }
 
-// GET /api/admin/surveys
-router.get('/surveys', requirePermission('surveys.read'), async (req, res) => {
-  const { takePreload } = require('../../middleware/preload');
-  const surveys = await takePreload(req, () => loadSurveyList(req.circleId));
-
-  res.json({
+function presentSurveyList(surveys) {
+  return {
     surveys: (surveys || []).map(row => {
       const survey = surveyForm.hydrate({ ...row, questions: '[]' });
       return {
@@ -57,7 +53,13 @@ router.get('/surveys', requirePermission('surveys.read'), async (req, res) => {
         completed_count: Number(row.completed_count || 0)
       };
     })
-  });
+  };
+}
+
+// GET /api/admin/surveys
+router.get('/surveys', requirePermission('surveys.read'), async (req, res) => {
+  const { takePreload } = require('../../middleware/preload');
+  res.json(presentSurveyList(await takePreload(req, () => loadSurveyList(req.circleId))));
 });
 
 // GET /api/admin/surveys/schema
@@ -1069,3 +1071,4 @@ router.get('/surveys/:id/export', requirePermission('export.read'), async (req, 
 
 module.exports = router;
 module.exports.loadSurveyList = loadSurveyList;
+module.exports.presentSurveyList = presentSurveyList;

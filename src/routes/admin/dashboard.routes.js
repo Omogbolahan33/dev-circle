@@ -77,11 +77,7 @@ async function loadDashboard(circleId) {
   `).all(circleId);
 }
 
-// GET /api/admin/dashboard
-router.get('/dashboard', requirePermission('members.read'), async (req, res) => {
-  const { takePreload } = require('../../middleware/preload');
-  const rows = await takePreload(req, () => loadDashboard(req.circleId));
-
+function presentDashboard(rows) {
   const statusBreakdown = [];
   const cohortBreakdown = [];
   const recentActivity = [];
@@ -121,7 +117,7 @@ router.get('/dashboard', requirePermission('members.read'), async (req, res) => 
   const totalMembers = statusBreakdown.reduce((n, r) => n + r.count, 0);
   const engagementRate = surveysSent > 0 ? Math.round((surveysCompleted / surveysSent) * 100) : 0;
 
-  res.json({
+  return {
     stats: {
       total_members: totalMembers,
       active_cohorts: activeCohorts,
@@ -134,7 +130,13 @@ router.get('/dashboard', requirePermission('members.read'), async (req, res) => 
     cohort_breakdown: cohortBreakdown,
     status_breakdown: statusBreakdown,
     open_feedback: openFeedback
-  });
+  };
+}
+
+// GET /api/admin/dashboard
+router.get('/dashboard', requirePermission('members.read'), async (req, res) => {
+  const { takePreload } = require('../../middleware/preload');
+  res.json(presentDashboard(await takePreload(req, () => loadDashboard(req.circleId))));
 });
 
 // GET /api/admin/demography
@@ -238,10 +240,7 @@ async function loadDemography(circleId) {
   `).all(circleId);
 }
 
-router.get('/demography', requirePermission('members.read'), async (req, res) => {
-  const { takePreload } = require('../../middleware/preload');
-  const rows = await takePreload(req, () => loadDemography(req.circleId));
-
+function presentDemography(rows) {
   const buckets = new Map();
   for (const row of rows || []) {
     const list = buckets.get(row.axis) || [];
@@ -252,7 +251,7 @@ router.get('/demography', requirePermission('members.read'), async (req, res) =>
   const ranked = axis => (buckets.get(axis) || []).sort((a, b) => b.count - a.count);
   const coverage = Object.fromEntries((buckets.get('coverage') || []).map(r => [r.label, r.count]));
 
-  res.json({
+  return {
     total: Number(coverage.total || 0),
     work_sector: ranked('work_sector'),
     location_state: ranked('location_state').slice(0, 15),
@@ -271,9 +270,16 @@ router.get('/demography', requirePermission('members.read'), async (req, res) =>
       no_location: Number(coverage.no_location || 0),
       no_products: Number(coverage.no_products || 0)
     }
-  });
+  };
+}
+
+router.get('/demography', requirePermission('members.read'), async (req, res) => {
+  const { takePreload } = require('../../middleware/preload');
+  res.json(presentDemography(await takePreload(req, () => loadDemography(req.circleId))));
 });
 
 module.exports = router;
 module.exports.loadDashboard = loadDashboard;
 module.exports.loadDemography = loadDemography;
+module.exports.presentDashboard = presentDashboard;
+module.exports.presentDemography = presentDemography;

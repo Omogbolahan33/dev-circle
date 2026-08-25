@@ -5,8 +5,8 @@ const context = require('../db/context');
 // /me, /permissions and every list is what the console is timing.
 // The page bodies are the second RTT. Both live here, dropped on write.
 
-const principals = createTtlCache({ ttlMs: 60_000, max: 2_000 });
-const pages = createTtlCache({ ttlMs: 45_000, max: 500 });
+const principals = createTtlCache({ ttlMs: 5 * 60_000, max: 2_000 });
+const pages = createTtlCache({ ttlMs: 5 * 60_000, max: 500 });
 
 const SKIP = /export|template|\.csv$|\.xlsx$|sandbox/i;
 const WRITE = /^\s*(INSERT|UPDATE|DELETE|REPLACE)/i;
@@ -53,6 +53,11 @@ function pageKey(req) {
   return `${ns()}|${req.baseUrl || ''}${req.path}${queryKey(req.query)}|${circle}|${subject}`;
 }
 
+function putPage(path, { circleId = '', query, body } = {}) {
+  pages.set(`l|/api/admin${path}${queryKey(query)}|${circleId}|`, body);
+  return body;
+}
+
 function peekPage(req) {
   if (req.method !== 'GET' || SKIP.test(req.path)) return undefined;
   return pages.get(pageKey(req));
@@ -87,6 +92,7 @@ module.exports = {
   clearAll,
   authKey,
   pageKey,
+  putPage,
   peekPage,
   rememberGet
 };

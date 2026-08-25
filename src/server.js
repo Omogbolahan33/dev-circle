@@ -66,6 +66,9 @@ async function boot() {
   // Fire due session reminders, nudge stale surveys, close past sessions
   scheduler.start();
 
+  // Fill the page cache so the first console visit is not a Postgres RTT.
+  require('./services/warmCache').start();
+
   // Finish in-flight requests before exiting, so a deploy does not cut someone off mid-survey
   for (const signal of ['SIGTERM', 'SIGINT']) {
     process.on(signal, () => {

@@ -42,6 +42,9 @@ async function createSession(subjectId, isAdmin = false, meta = {}) {
     meta.scope || 'full'
   );
 
+  // Fill the principal cache before the client asks for /me, so the
+  // first authenticated GET does not wait on the session JOIN.
+  await resolvePrincipal(hashToken(token)).catch(() => {});
   return token;
 }
 
