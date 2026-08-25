@@ -16,7 +16,10 @@ async function circleContext(req, res, next) {
   if (!req.isAdmin) return next();
 
   const requested = req.headers['x-circle-id'] || req.query.circle_id || null;
-  const available = await circles.forAdmin(req.admin);
+  // requireAuth already joined the reachable circles onto the session.
+  const available = Array.isArray(req.availableCircles)
+    ? req.availableCircles
+    : await circles.forAdmin(req.admin);
 
   if (!available.length) {
     return res.status(403).json({

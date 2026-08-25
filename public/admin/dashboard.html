@@ -111,16 +111,13 @@
 
   async function load() {
     try {
-      const [dashboard, feedback] = await Promise.all([
-        api.get('/admin/dashboard'),
-        api.get('/admin/feedback?status=open&limit=4')
-      ]);
+      const dashboard = await api.get('/admin/dashboard');
 
       renderStats(dashboard.stats);
       renderActivity(dashboard.recent_activity);
       renderCohorts(dashboard.cohort_breakdown);
       renderStatus(dashboard.status_breakdown, dashboard.stats.total_members);
-      renderFeedback(feedback.feedback);
+      renderFeedback(dashboard.open_feedback || []);
     } catch (err) {
       showToast('Failed to load overview: ' + err.message, 'error');
     }

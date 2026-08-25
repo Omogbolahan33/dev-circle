@@ -13,7 +13,14 @@ const router = express.Router();
 
 // GET /api/admin/questions
 router.get('/questions', requirePermission('feedback.read'), async (req, res) => {
-  const catalogue = await questions.catalogue({ search: req.query.search || null, circleId: req.circleId });
+  const [catalogue, developerRow] = await Promise.all([
+    questions.catalogue({ search: req.query.search || null, circleId: req.circleId }),
+    db.prepare(`
+      SELECT COUNT(DISTINCT COALESCE(f.user_id, 'anon:' || COALESCE(f.response_id, f.id))) as c
+      FROM feedback f
+      WHERE f.source IN ('survey', 'external_survey') AND f.circle_id = ?
+    `).get(req.circleId)
+  ]);
 
   res.json({
     questions: catalogue,
@@ -22,15 +29,7 @@ router.get('/questions', requirePermission('feedback.read'), async (req, res) =>
     // render them identically
     totals: {
       questions: catalogue.length,
-      // Counted the same way the per-question numbers are: someone who
-      // answered over a public link has no user_id, and COUNT(DISTINCT) skips
-      // nulls, so a plain count would quietly leave every one of them out of
-      // the headline while listing their answers underneath it.
-      developers: Number((await db.prepare(`
-        SELECT COUNT(DISTINCT COALESCE(f.user_id, 'anon:' || COALESCE(f.response_id, f.id))) as c
-        FROM feedback f
-        WHERE f.source IN ('survey', 'external_survey') AND f.circle_id = ?
-      `).get(req.circleId))?.c || 0),
+      developers: Number(developerRow?.c || 0),
       answers: catalogue.reduce((sum, q) => sum + q.answer_count, 0)
     }
   });

@@ -137,8 +137,38 @@ function hasPermission(perms, permission) {
 
 // ─── Middleware ─────────────────────────────────────────────
 
+function flagOn(value) {
+  return value === 1 || value === true || value === '1' || value === 't' || value === 'true';
+}
+
+function circlesFromAccessRows(rows, admin) {
+  const global = flagOn(admin.is_global);
+  const seen = new Set();
+  const circles = [];
+  for (const row of rows) {
+    if (!row.circle_id || seen.has(row.circle_id)) continue;
+    seen.add(row.circle_id);
+    circles.push({
+      id: row.circle_id,
+      name: row.circle_name,
+      slug: row.circle_slug,
+      description: row.circle_description,
+      color: row.circle_color,
+      status: row.circle_status,
+      survey_theme: row.circle_survey_theme,
+      created_at: row.circle_created_at,
+      role_id: global ? admin.role_id : row.circle_role_id,
+      global,
+      role_permissions: global ? row.role_permissions : row.circle_role_permissions
+    });
+  }
+  return circles;
+}
+
 async function resolvePrincipal(hash) {
-  const row = await db.prepare(`
+  // Session, staff, role and the circles they may work in — one plan. A
+  // second query in circleContext was another RTT on every admin page.
+  const rows = await db.prepare(`
     SELECT
       s.subject_id, s.is_admin, s.issued_via, s.scope,
       a.id as admin_id, a.email as admin_email, a.name as admin_name,
@@ -148,19 +178,38 @@ async function resolvePrincipal(hash) {
       a.invited_by as admin_invited_by, a.invited_at as admin_invited_at,
       a.created_at as admin_created_at,
       r.permissions as role_permissions,
-      u.id as user_id, u.status as user_status
+      u.id as user_id, u.status as user_status,
+      c.id as circle_id, c.name as circle_name, c.slug as circle_slug,
+      c.description as circle_description, c.color as circle_color,
+      c.status as circle_status, c.survey_theme as circle_survey_theme,
+      c.created_at as circle_created_at,
+      ca.role_id as circle_role_id,
+      cr.permissions as circle_role_permissions
     FROM sessions s
     LEFT JOIN admin_users a ON a.id = s.subject_id
     LEFT JOIN roles r ON r.id = a.role_id
     LEFT JOIN users u ON u.id = s.subject_id
+    LEFT JOIN circles c ON CAST(s.is_admin AS TEXT) IN ('1', 'true', 't')
+      AND c.status = 'active'
+      AND (
+        CAST(a.is_global AS TEXT) IN ('1', 'true', 't')
+        OR EXISTS (
+          SELECT 1 FROM circle_admins gx
+          WHERE gx.admin_id = a.id AND gx.circle_id = c.id
+        )
+      )
+    LEFT JOIN circle_admins ca ON ca.admin_id = a.id AND ca.circle_id = c.id
+    LEFT JOIN roles cr ON cr.id = ca.role_id
     WHERE s.token_hash = ? AND s.expires_at > datetime('now')
-  `).get(hash);
+    ORDER BY c.created_at
+  `).all(hash);
 
+  const row = rows && rows[0];
   if (!row) return null;
 
   const session = {
     userId: row.subject_id,
-    isAdmin: row.is_admin === 1 || row.is_admin === true || row.is_admin === '1',
+    isAdmin: flagOn(row.is_admin),
     issuedVia: row.issued_via,
     scope: row.scope || 'full'
   };
@@ -186,7 +235,11 @@ async function resolvePrincipal(hash) {
         created_at: row.admin_created_at
       },
       permissions: parsePermissions(row.role_permissions),
-      user: null
+      user: null,
+      circles: circlesFromAccessRows(rows, {
+        role_id: row.admin_role_id,
+        is_global: row.admin_is_global
+      })
     };
     return principal;
   }
@@ -242,8 +295,12 @@ async function requireAuth(req, res, next) {
     req.session = session;
     req.isAdmin = principal.isAdmin;
     req.permissions = principal.permissions;
-    if (principal.isAdmin) req.admin = principal.admin;
-    else req.user = principal.user;
+    if (principal.isAdmin) {
+      req.admin = principal.admin;
+      req.availableCircles = principal.circles || [];
+    } else {
+      req.user = principal.user;
+    }
     next();
   } catch (err) {
     next(err);

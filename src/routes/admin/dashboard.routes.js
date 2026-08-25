@@ -8,7 +8,7 @@ const router = express.Router();
 
 // GET /api/admin/dashboard
 router.get('/dashboard', requirePermission('members.read'), async (req, res) => {
-  const [userRows, surveyRow, recentActivity, cohortBreakdown] = await Promise.all([
+  const [userRows, surveyRow, recentActivity, cohortBreakdown, openFeedback] = await Promise.all([
     // Status chart is one GROUP BY. Headlines sit next to the survey scan so
     // users are not counted five times as independent statements.
     db.prepare(`
@@ -37,6 +37,15 @@ router.get('/dashboard', requirePermission('members.read'), async (req, res) => 
       GROUP BY c.id, c.name, c.color
       ORDER BY member_count DESC
       LIMIT 10
+    `).all(),
+    db.prepare(`
+      SELECT f.id, f.content, f.source, f.created_at, f.status,
+             u.name as user_name, u.email as user_email
+      FROM feedback f
+      LEFT JOIN users u ON u.id = f.user_id
+      WHERE f.status = 'open'
+      ORDER BY f.created_at DESC
+      LIMIT 4
     `).all()
   ]);
 
@@ -57,7 +66,8 @@ router.get('/dashboard', requirePermission('members.read'), async (req, res) => 
     },
     recent_activity: recentActivity,
     cohort_breakdown: cohortBreakdown,
-    status_breakdown: statusBreakdown
+    status_breakdown: statusBreakdown,
+    open_feedback: openFeedback || []
   });
 });
 
@@ -112,6 +122,25 @@ router.get('/demography', requirePermission('members.read'), async (req, res) =>
       ) depths
       GROUP BY 2
     UNION ALL
+    SELECT 'streak_band', CASE
+        WHEN COALESCE(engagement_streak, 0) = 0 THEN 'None'
+        WHEN engagement_streak <= 3 THEN '1–3 days'
+        WHEN engagement_streak <= 7 THEN '4–7 days'
+        WHEN engagement_streak <= 14 THEN '8–14 days'
+        ELSE '15+ days'
+      END, COUNT(*)
+      FROM users GROUP BY 2
+    UNION ALL
+    SELECT 'preferred_channels', json_each.value, COUNT(*)
+      FROM users, json_each(users.preferred_channels)
+      WHERE COALESCE(json_each.value, '') != ''
+      GROUP BY 2
+    UNION ALL
+    SELECT 'preferred_days', json_each.value, COUNT(*)
+      FROM users, json_each(users.preferred_days)
+      WHERE COALESCE(json_each.value, '') != ''
+      GROUP BY 2
+    UNION ALL
     SELECT 'coverage', 'total', COUNT(*) FROM users
     UNION ALL
     SELECT 'coverage', 'no_date_of_birth',
@@ -147,6 +176,9 @@ router.get('/demography', requirePermission('members.read'), async (req, res) =>
     api_status: ranked('api_status'),
     kyb: ranked('kyb'),
     engagement_depth: ranked('engagement_depth'),
+    streak_band: ranked('streak_band'),
+    preferred_channels: ranked('preferred_channels'),
+    preferred_days: ranked('preferred_days'),
     data_coverage: {
       no_date_of_birth: Number(coverage.no_date_of_birth || 0),
       no_gender: Number(coverage.no_gender || 0),

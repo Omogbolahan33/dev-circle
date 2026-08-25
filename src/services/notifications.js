@@ -396,16 +396,20 @@ function startDrain(intervalMs = 15 * 60 * 1000) {
 
 async function inbox(userId, { unreadOnly = false, limit = 50 } = {}) {
   const rows = await db.prepare(`
-    SELECT * FROM notifications
-    WHERE user_id = ? ${unreadOnly ? 'AND read_at IS NULL' : ''}
-    ORDER BY created_at DESC
+    SELECT n.*,
+      (SELECT COUNT(*) FROM notifications u
+        WHERE u.user_id = n.user_id AND u.read_at IS NULL) as _unread
+    FROM notifications n
+    WHERE n.user_id = ? ${unreadOnly ? 'AND n.read_at IS NULL' : ''}
+    ORDER BY n.created_at DESC
     LIMIT ?
   `).all(userId, limit);
 
-  const unread = Number((await db.prepare('SELECT COUNT(*) as c FROM notifications WHERE user_id = ? AND read_at IS NULL')
-    .get(userId))?.c || 0);
-
-  return { notifications: rows, unread_count: unread };
+  const unread = Number(rows?.[0]?._unread || 0);
+  return {
+    notifications: (rows || []).map(({ _unread, ...n }) => n),
+    unread_count: unread
+  };
 }
 
 async function markRead(userId, notificationId) {
