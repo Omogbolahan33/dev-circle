@@ -66,17 +66,19 @@ router.get('/:id', requirePermission('circles.read'), async (req, res) => {
 
   const { offset, limit } = paginate(req.query.page, req.query.limit);
 
-  const [countRow, members, cohorts, surveys, staff] = await Promise.all([
-    db.prepare('SELECT COUNT(*) as c FROM circle_members WHERE circle_id = ?').get(circle.id),
+  const [members, cohorts, surveys, staff] = await Promise.all([
     circles.members(circle.id, { limit, offset }),
     db.prepare(`
       SELECT c.id, c.name, c.color, COALESCE(mc.n, 0) as member_count
       FROM cohorts c
       LEFT JOIN (
-        SELECT cohort_id, COUNT(*) as n FROM user_cohorts GROUP BY cohort_id
+        SELECT uc.cohort_id, COUNT(*) as n
+        FROM user_cohorts uc
+        JOIN cohorts cx ON cx.id = uc.cohort_id AND cx.circle_id = ?
+        GROUP BY uc.cohort_id
       ) mc ON mc.cohort_id = c.id
       WHERE c.circle_id = ?
-    `).all(circle.id),
+    `).all(circle.id, circle.id),
     db.prepare('SELECT id, title, status FROM surveys WHERE circle_id = ?').all(circle.id),
     db.prepare(`
       SELECT a.id, a.name, a.email, r.name as role_name
@@ -87,10 +89,14 @@ router.get('/:id', requirePermission('circles.read'), async (req, res) => {
     `).all(circle.id)
   ]);
 
+  const member_count = (members && members.length)
+    ? Number(members[0]._total || 0)
+    : (offset ? Number((await db.prepare('SELECT COUNT(*) as c FROM circle_members WHERE circle_id = ?').get(circle.id))?.c || 0) : 0);
+
   res.json({
     circle,
-    member_count: Number(countRow?.c || 0),
-    members,
+    member_count,
+    members: (members || []).map(({ _total, ...row }) => row),
     cohorts,
     surveys,
     staff

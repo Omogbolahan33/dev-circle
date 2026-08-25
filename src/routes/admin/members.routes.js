@@ -103,16 +103,16 @@ router.get('/members/:id', requirePermission('members.read'), async (req, res) =
   const [cohorts, consent, engagementRows, feedback, survey_responses, gifts, deliveries] =
     await Promise.all([
       db.prepare(`
-        SELECT c.* FROM cohorts c JOIN user_cohorts uc ON uc.cohort_id = c.id
+        SELECT c.id, c.name, c.color FROM cohorts c JOIN user_cohorts uc ON uc.cohort_id = c.id
         WHERE uc.user_id = ? AND c.circle_id = ?
       `).all(user.id, req.circleId),
-      db.prepare('SELECT * FROM consent WHERE user_id = ?').all(user.id),
+      db.prepare('SELECT channel, status FROM consent WHERE user_id = ?').all(user.id),
       db.prepare(
-        'SELECT * FROM engagement_history WHERE user_id = ? ORDER BY created_at DESC LIMIT 50'
+        'SELECT type, created_at, source FROM engagement_history WHERE user_id = ? ORDER BY created_at DESC LIMIT 50'
       ).all(user.id),
       verbatims.forUser(user.id, { limit: 50 }),
       db.prepare(`
-        SELECT sr.*, s.title as survey_title
+        SELECT sr.id, sr.survey_id, sr.completed_at, sr.created_at, s.title as survey_title
         FROM survey_responses sr JOIN surveys s ON s.id = sr.survey_id
         WHERE sr.user_id = ? ORDER BY sr.created_at DESC
       `).all(user.id),

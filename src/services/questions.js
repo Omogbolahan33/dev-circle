@@ -65,7 +65,7 @@ async function suggest(text, type = 'text', { limit = 5 } = {}) {
       SELECT canonical_question_id,
              ${RESPONDENTS} as developer_count,
              COUNT(DISTINCT survey_id) as survey_count
-      FROM feedback
+      FROM feedback f
       WHERE canonical_question_id IN (
         SELECT id FROM questions WHERE type = ? AND normalized = ?
       )
@@ -157,8 +157,15 @@ async function catalogue({ search = null, circleId = null } = {}) {
     params.push(`%${search}%`, `%${search}%`);
   }
 
-  return await db.prepare(`
-    SELECT q.id, q.text, q.type, q.external_source,
+  // Developers is everyone who answered a survey in this circle, not just
+  // those whose answers attached to a catalogue row — and not narrowed by
+  // the search that filters the question list.
+  const totWhere = ["f.source IN ('survey', 'external_survey')"];
+  const totParams = [];
+  if (circleId) { totWhere.push('(f.circle_id = ? OR f.circle_id IS NULL)'); totParams.push(circleId); }
+
+  const rows = await db.prepare(`
+    SELECT 'q' as kind, q.id, q.text, q.type, q.external_source,
            COUNT(f.id) as answer_count,
            ${RESPONDENTS} as developer_count,
            COUNT(DISTINCT COALESCE(f.survey_id, f.source_system)) as survey_count,
@@ -168,8 +175,36 @@ async function catalogue({ search = null, circleId = null } = {}) {
     JOIN feedback f ON f.canonical_question_id = q.id
     WHERE ${where.join(' AND ')}
     GROUP BY q.id
-    ORDER BY developer_count DESC, last_answered_at DESC
-  `).all(...params);
+    UNION ALL
+    SELECT 'tot', NULL, NULL, NULL, NULL,
+           COUNT(f.id),
+           ${RESPONDENTS},
+           COUNT(DISTINCT COALESCE(f.survey_id, f.source_system)),
+           MAX(f.created_at),
+           MIN(f.created_at)
+    FROM feedback f
+    WHERE ${totWhere.join(' AND ')}
+  `).all(...params, ...totParams);
+
+  const questions = [];
+  let totals = { questions: 0, developers: 0, answers: 0 };
+  for (const row of rows || []) {
+    if (row.kind === 'tot') {
+      totals = {
+        questions: 0,
+        developers: Number(row.developer_count || 0),
+        answers: Number(row.answer_count || 0)
+      };
+      continue;
+    }
+    const { kind, ...rest } = row;
+    questions.push(rest);
+  }
+  totals.questions = questions.length;
+  totals.answers = questions.reduce((sum, q) => sum + Number(q.answer_count || 0), 0);
+  questions.sort((a, b) => Number(b.developer_count || 0) - Number(a.developer_count || 0)
+    || String(b.last_answered_at || '').localeCompare(String(a.last_answered_at || '')));
+  return { questions, totals };
 }
 
 // Everything said in answer to one question, whichever survey asked it.
@@ -219,7 +254,7 @@ async function reusable({ type = 'text' } = {}) {
       SELECT canonical_question_id,
              ${RESPONDENTS} as developer_count,
              COUNT(DISTINCT survey_id) as survey_count
-      FROM feedback
+      FROM feedback f
       GROUP BY canonical_question_id
     ) f ON f.canonical_question_id = q.id
     WHERE q.type = ?

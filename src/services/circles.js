@@ -80,7 +80,8 @@ async function create({ name, description, color, createdBy }) {
 async function members(circleId, { limit = 100, offset = 0 } = {}) {
   return await db.prepare(`
     SELECT u.id, u.name, u.email, u.company, u.work_sector, u.api_status,
-           u.engagement_streak, m.role, m.added_at
+           u.engagement_streak, m.role, m.added_at,
+           COUNT(*) OVER() as _total
     FROM circle_members m
     JOIN users u ON u.id = m.user_id
     WHERE m.circle_id = ?

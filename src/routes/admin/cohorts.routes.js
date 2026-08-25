@@ -20,11 +20,14 @@ router.get('/cohorts', requirePermission('cohorts.read'), async (req, res) => {
     FROM cohorts c
     LEFT JOIN circles ci ON ci.id = c.circle_id
     LEFT JOIN (
-      SELECT cohort_id, COUNT(*) as n FROM user_cohorts GROUP BY cohort_id
+      SELECT uc.cohort_id, COUNT(*) as n
+      FROM user_cohorts uc
+      JOIN cohorts cx ON cx.id = uc.cohort_id AND cx.circle_id = ?
+      GROUP BY uc.cohort_id
     ) mc ON mc.cohort_id = c.id
     WHERE c.circle_id = ?
     ORDER BY member_count DESC
-  `).all(req.circleId);
+  `).all(req.circleId, req.circleId);
 
   res.json({
     cohorts: (cohorts || []).map(c => ({ ...c, filter_rules: parseJSON(c.filter_rules, null) }))

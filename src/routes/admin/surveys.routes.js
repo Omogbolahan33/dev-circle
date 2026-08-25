@@ -2,7 +2,7 @@ const express = require('express');
 const db = require('../../db');
 const { uuid, now, parseJSON, toCSV, parseCSV } = require('../../utils/helpers');
 const { requirePermission } = require('../../middleware/auth');
-const { resolveAudience } = require('../../services/audience');
+const { resolveAudience, USER_NOTIFY_COLS } = require('../../services/audience');
 const engagement = require('../../services/engagement');
 const notifications = require('../../services/notifications');
 const circles = require('../../services/circles');
@@ -131,18 +131,23 @@ router.get('/surveys/:id', requirePermission('surveys.read'), async (req, res) =
 // "See eligible cohorts of users according to their cohorts for surveys" —
 // who this survey would reach, and who is already excluded.
 router.get('/surveys/:id/audience', requirePermission('surveys.read'), async (req, res) => {
-  const survey = await db.prepare('SELECT * FROM surveys WHERE id = ?').get(req.params.id);
+  const survey = await db.prepare(`
+    SELECT id, title, engagement_mode, target_type, target_ids, circle_id
+    FROM surveys WHERE id = ?
+  `).get(req.params.id);
   if (!survey) return res.status(404).json({ error: 'Survey not found' });
 
-  const audience = await resolveAudience(survey);
+  const [audience, progress] = await Promise.all([
+    resolveAudience(survey),
+    db.prepare('SELECT user_id, completed_at FROM survey_responses WHERE survey_id = ?').all(survey.id)
+  ]);
 
-  const alreadyInvited = new Set(
-    ((await db.prepare('SELECT user_id FROM survey_responses WHERE survey_id = ?').all(survey.id) || []) || []).map(r => r.user_id)
-  );
-  const completed = new Set(
-    ((await db.prepare('SELECT user_id FROM survey_responses WHERE survey_id = ? AND completed_at IS NOT NULL')
-      .all(survey.id)) || []).map(r => r.user_id)
-  );
+  const alreadyInvited = new Set();
+  const completed = new Set();
+  for (const row of progress || []) {
+    alreadyInvited.add(row.user_id);
+    if (row.completed_at) completed.add(row.user_id);
+  }
 
   const mode = survey.engagement_mode;
   const reachable = [];
@@ -446,15 +451,17 @@ router.post('/surveys/:id/invite', requirePermission('surveys.invite'), async (r
   }
 
   const { resend = false } = req.body;
-  const audience = await resolveAudience(survey);
+  const [audience, progress] = await Promise.all([
+    resolveAudience(survey),
+    db.prepare('SELECT user_id, completed_at FROM survey_responses WHERE survey_id = ?').all(survey.id)
+  ]);
 
-  const invited = new Set(
-    ((await db.prepare('SELECT user_id FROM survey_responses WHERE survey_id = ?').all(survey.id) || []) || []).map(r => r.user_id)
-  );
-  const completed = new Set(
-    ((await db.prepare('SELECT user_id FROM survey_responses WHERE survey_id = ? AND completed_at IS NOT NULL')
-      .all(survey.id)) || []).map(r => r.user_id)
-  );
+  const invited = new Set();
+  const completed = new Set();
+  for (const row of progress || []) {
+    invited.add(row.user_id);
+    if (row.completed_at) completed.add(row.user_id);
+  }
 
   const mode = survey.engagement_mode;
   const channels = mode === 'in_portal' || mode === '1-on-1' ? ['in_portal'] : ['in_portal', mode];
@@ -514,7 +521,8 @@ router.post('/surveys/:id/remind', requirePermission('surveys.invite'), async (r
   if (!survey) return res.status(404).json({ error: 'Survey not found' });
 
   const pending = await db.prepare(`
-    SELECT u.* FROM survey_responses sr
+    SELECT ${USER_NOTIFY_COLS}
+    FROM survey_responses sr
     JOIN users u ON u.id = sr.user_id
     WHERE sr.survey_id = ? AND sr.completed_at IS NULL AND u.status = 'active'
   `).all(survey.id);

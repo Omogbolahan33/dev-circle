@@ -142,7 +142,9 @@ async function record(userId, survey, answers, {
 // the query the whole change exists to make possible.
 async function forUser(userId, { limit = 100 } = {}) {
   return await db.prepare(`
-    SELECT f.*, s.title as survey_title
+    SELECT f.id, f.content, f.prompt, f.source, f.category, f.status,
+           f.created_at, f.external_ticket_id, f.canonical_question_id,
+           s.title as survey_title
     FROM feedback f
     LEFT JOIN surveys s ON s.id = f.survey_id
     WHERE f.user_id = ?

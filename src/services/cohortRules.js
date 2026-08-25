@@ -270,16 +270,15 @@ function buildQuery(definition, { activeOnly = true, circleId = null } = {}) {
 async function evaluate(definition, { limit = null, activeOnly = true, circleId = null } = {}) {
   const { where, from, params, ruleCount } = buildQuery(definition, { activeOnly, circleId });
 
-  const [totalRow, members] = await Promise.all([
-    db.prepare(`SELECT COUNT(*) as c FROM ${from} WHERE ${where}`).get(...params),
-    db.prepare(`
-      SELECT u.id, u.name, u.email, u.company, u.work_sector, u.api_status, u.engagement_streak
-      FROM ${from} WHERE ${where}
-      ORDER BY u.created_at DESC
-      ${limit ? 'LIMIT ?' : ''}
-    `).all(...params, ...(limit ? [limit] : []))
-  ]);
-  const total = Number(totalRow?.c || 0);
+  const rows = await db.prepare(`
+    SELECT u.id, u.name, u.email, u.company, u.work_sector, u.api_status, u.engagement_streak,
+           COUNT(*) OVER() as _total
+    FROM ${from} WHERE ${where}
+    ORDER BY u.created_at DESC
+    ${limit ? 'LIMIT ?' : ''}
+  `).all(...params, ...(limit ? [limit] : []));
+  const total = (rows && rows.length) ? Number(rows[0]._total || 0) : 0;
+  const members = (rows || []).map(({ _total, ...row }) => row);
 
   return { total, members, rule_count: ruleCount };
 }

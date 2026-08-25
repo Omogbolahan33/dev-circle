@@ -24,7 +24,8 @@ function hydrate(session) {
 router.get('/', requirePermission('sessions.read'), async (req, res) => {
   const { status, upcoming } = req.query;
   const where = ['1=1'];
-  const params = [];
+  // First bind is the scoped dispatch aggregate in the JOIN.
+  const params = [req.circleId];
 
   // Sessions belong to the circle that scheduled them
   where.push('s.circle_id = ?'); params.push(req.circleId);
@@ -38,7 +39,10 @@ router.get('/', requirePermission('sessions.read'), async (req, res) => {
     LEFT JOIN circles c ON c.id = s.circle_id
     LEFT JOIN surveys sv ON sv.id = s.survey_id
     LEFT JOIN (
-      SELECT session_id, COUNT(*) as n FROM session_dispatches GROUP BY session_id
+      SELECT sd.session_id, COUNT(*) as n
+      FROM session_dispatches sd
+      JOIN scheduled_sessions sx ON sx.id = sd.session_id AND sx.circle_id = ?
+      GROUP BY sd.session_id
     ) d ON d.session_id = s.id
     WHERE ${where.join(' AND ')}
     ORDER BY s.scheduled_for ASC

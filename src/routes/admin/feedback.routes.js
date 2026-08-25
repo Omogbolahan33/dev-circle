@@ -32,7 +32,10 @@ router.get('/feedback', requirePermission('feedback.read'), async (req, res) => 
 
   const [feedback, bySource] = await Promise.all([
     db.prepare(`
-      SELECT f.*, u.name as user_name, u.email as user_email, u.company as user_company,
+      SELECT f.id, f.user_id, f.type, f.content, f.category, f.status, f.source,
+             f.survey_id, f.canonical_question_id, f.prompt, f.created_at,
+             f.external_ticket_id, f.circle_id,
+             u.name as user_name, u.email as user_email, u.company as user_company,
              s.title as survey_title
       FROM feedback f
       LEFT JOIN users u ON u.id = f.user_id
@@ -45,7 +48,7 @@ router.get('/feedback', requirePermission('feedback.read'), async (req, res) => 
     // empty result is distinguishable from a source that has never had anything
     db.prepare(`
       SELECT source, COUNT(*) as count FROM feedback
-      WHERE circle_id = ?
+      WHERE circle_id = ? OR circle_id IS NULL
       GROUP BY source
     `).all(req.circleId)
   ]);

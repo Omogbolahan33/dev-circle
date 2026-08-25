@@ -2,6 +2,12 @@ const db = require('../db');
 const { parseJSON } = require('../utils/helpers');
 const cohortRules = require('./cohortRules');
 
+// Columns notify() and availability() actually read. SELECT u.* was shipping
+// password hashes and JSON the send path never looks at.
+const USER_NOTIFY_COLS = `u.id, u.email, u.name, u.phone, u.status, u.company,
+  u.preferred_channels, u.preferred_days, u.preferred_time_start, u.preferred_time_end,
+  u.notification_prefs, u.quiet_hours_start, u.quiet_hours_end`;
+
 // ─── Audience resolution ────────────────────────────────────
 // Who a piece of work reaches. Surveys, blasts and member listings all need
 // the same targeting rules, so they live here rather than being reimplemented
@@ -106,7 +112,7 @@ async function resolveAudience(survey) {
   if (survey.target_type === 'anonymous') return [];
 
   if (survey.target_type === 'all') {
-    return await db.prepare(`SELECT * FROM users u ${scope.join} WHERE u.status = 'active' ${scope.clause}`)
+    return await db.prepare(`SELECT ${USER_NOTIFY_COLS} FROM users u ${scope.join} WHERE u.status = 'active' ${scope.clause}`)
       .all(...scope.params);
   }
 
@@ -115,7 +121,7 @@ async function resolveAudience(survey) {
 
   if (survey.target_type === 'cohort') {
     return await db.prepare(`
-      SELECT DISTINCT u.* FROM users u
+      SELECT DISTINCT ${USER_NOTIFY_COLS} FROM users u
       ${scope.join}
       JOIN user_cohorts uc ON uc.user_id = u.id
       WHERE uc.cohort_id IN (${placeholders}) AND u.status = 'active' ${scope.clause}
@@ -124,7 +130,7 @@ async function resolveAudience(survey) {
 
   if (survey.target_type === 'specific') {
     return await db.prepare(`
-      SELECT * FROM users u ${scope.join}
+      SELECT ${USER_NOTIFY_COLS} FROM users u ${scope.join}
       WHERE u.id IN (${placeholders}) AND u.status = 'active' ${scope.clause}
     `).all(...scope.params, ...targets);
   }
@@ -138,7 +144,7 @@ async function blastRecipients(blast) {
   const scope = circleScope(blast.circle_id);
 
   if (blast.target_type === 'all') {
-    return await db.prepare(`SELECT * FROM users u ${scope.join} WHERE u.status = 'active' ${scope.clause}`)
+    return await db.prepare(`SELECT ${USER_NOTIFY_COLS} FROM users u ${scope.join} WHERE u.status = 'active' ${scope.clause}`)
       .all(...scope.params);
   }
 
@@ -147,7 +153,7 @@ async function blastRecipients(blast) {
 
   if (blast.target_type === 'cohort') {
     return await db.prepare(`
-      SELECT DISTINCT u.* FROM users u
+      SELECT DISTINCT ${USER_NOTIFY_COLS} FROM users u
       ${scope.join}
       JOIN user_cohorts uc ON uc.user_id = u.id
       WHERE uc.cohort_id IN (${placeholders}) AND u.status = 'active' ${scope.clause}
@@ -155,9 +161,9 @@ async function blastRecipients(blast) {
   }
 
   return await db.prepare(`
-    SELECT * FROM users u ${scope.join}
+    SELECT ${USER_NOTIFY_COLS} FROM users u ${scope.join}
     WHERE u.id IN (${placeholders}) AND u.status = 'active' ${scope.clause}
   `).all(...scope.params, ...targetIds);
 }
 
-module.exports = { circleScope, memberFilters, resolveAudience, blastRecipients };
+module.exports = { circleScope, memberFilters, resolveAudience, blastRecipients, USER_NOTIFY_COLS };

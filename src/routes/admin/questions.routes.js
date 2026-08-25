@@ -13,25 +13,16 @@ const router = express.Router();
 
 // GET /api/admin/questions
 router.get('/questions', requirePermission('feedback.read'), async (req, res) => {
-  const [catalogue, developerRow] = await Promise.all([
-    questions.catalogue({ search: req.query.search || null, circleId: req.circleId }),
-    db.prepare(`
-      SELECT COUNT(DISTINCT COALESCE(f.user_id, 'anon:' || COALESCE(f.response_id, f.id))) as c
-      FROM feedback f
-      WHERE f.source IN ('survey', 'external_survey') AND (f.circle_id = ? OR f.circle_id IS NULL)
-    `).get(req.circleId)
-  ]);
+  const { questions: catalogue, totals } = await questions.catalogue({
+    search: req.query.search || null, circleId: req.circleId
+  });
 
   res.json({
     questions: catalogue,
     // Distinct developers, not answers: one developer saying a thing five
     // times and five saying it once are different facts, and a total would
     // render them identically
-    totals: {
-      questions: catalogue.length,
-      developers: Number(developerRow?.c || 0),
-      answers: catalogue.reduce((sum, q) => sum + q.answer_count, 0)
-    }
+    totals
   });
 });
 
@@ -40,13 +31,16 @@ router.get('/questions/:id', requirePermission('feedback.read'), async (req, res
   const question = await db.prepare('SELECT * FROM questions WHERE id = ?').get(req.params.id);
   if (!question) return res.status(404).json({ error: 'Question not found' });
 
-  const answers = await questions.answers(question.id);
+  const [answers, asked_in] = await Promise.all([
+    questions.answers(question.id),
+    questions.askedIn(question.id)
+  ]);
 
   res.json({
     question,
     // Where it has been asked, so a question carried by more than one survey
     // reads as one body of evidence with several occasions behind it
-    asked_in: await questions.askedIn(question.id),
+    asked_in,
     developer_count: new Set(answers.map(a => a.user_id)).size,
     answers
   });

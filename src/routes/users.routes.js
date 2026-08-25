@@ -77,11 +77,17 @@ router.get('/circles', requireAuth, async (req, res) => {
 
 // GET /api/users/sessions — upcoming engagements for this member
 router.get('/sessions', requireAuth, async (req, res) => {
-  const [circleIds, cohortRows] = await Promise.all([
-    circles.circleIdsForUser(req.user.id),
-    db.prepare('SELECT cohort_id FROM user_cohorts WHERE user_id = ?').all(req.user.id)
-  ]);
-  const cohortIds = (cohortRows || []).map(r => r.cohort_id);
+  const membership = await db.prepare(`
+    SELECT 'circle' as k, circle_id as id FROM circle_members WHERE user_id = ?
+    UNION ALL
+    SELECT 'cohort', cohort_id FROM user_cohorts WHERE user_id = ?
+  `).all(req.user.id, req.user.id);
+  const circleIds = [];
+  const cohortIds = [];
+  for (const row of membership || []) {
+    if (row.k === 'circle') circleIds.push(row.id);
+    else cohortIds.push(row.id);
+  }
 
   const circlePlaceholders = (circleIds || []).map(() => '?').join(',') || "''";
   const sessions = await db.prepare(`
