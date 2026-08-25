@@ -74,6 +74,22 @@ describe('SQLite → Postgres SQL', () => {
     assert.equal(pg.translateSql(sql), pg.translateSql(sql));
   });
 
+  test('a membership CTE plus json_each still names the set json_each', () => {
+    const sql = pgSql(`
+      WITH scoped AS (
+        SELECT u.* FROM users u
+        JOIN circle_members cm ON cm.user_id = u.id AND cm.circle_id = ?
+      )
+      SELECT json_each.value, COUNT(*)
+      FROM scoped, json_each(scoped.api_products)
+      GROUP BY 1
+    `);
+    assert.match(sql, /WITH scoped AS/i);
+    assert.match(sql, /jsonb_array_elements_text/);
+    assert.match(sql, /AS json_each/);
+    assert.doesNotMatch(sql, /json_each\s*\(/);
+  });
+
   test('demography age bands and json_each survive the dialect shim', () => {
     const sql = pgSql(`
       SELECT 'age_band', CASE

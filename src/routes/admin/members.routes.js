@@ -505,17 +505,39 @@ async function selectMembers(query) {
            u.status, u.api_status, u.kyb_completed, u.engagement_streak,
            u.preferred_channels, u.preferred_days, u.last_active_at, u.created_at,
            CAST((julianday('now') - julianday(u.date_of_birth)) / 365.25 AS INTEGER) as age,
-           (SELECT COUNT(*) FROM survey_responses sr
-             WHERE sr.user_id = u.id AND sr.completed_at IS NOT NULL) as surveys_completed,
-           (SELECT COUNT(*) FROM user_gifts ug WHERE ug.user_id = u.id) as gifts_claimed,
-           (SELECT COUNT(*) FROM feedback f WHERE f.user_id = u.id) as feedback_submitted,
-           (SELECT GROUP_CONCAT(c.name, '; ') FROM cohorts c
-             JOIN user_cohorts uc ON uc.cohort_id = c.id WHERE uc.user_id = u.id) as cohorts,
-           (SELECT GROUP_CONCAT(ci.name, '; ') FROM circles ci
-             JOIN circle_members cm ON cm.circle_id = ci.id WHERE cm.user_id = u.id) as circles,
-           (SELECT GROUP_CONCAT(ch.channel, '; ') FROM consent ch
-             WHERE ch.user_id = u.id AND ch.status = 'granted') as consented_channels
-    FROM ${from} WHERE ${where}
+           COALESCE(sr_x.n, 0) as surveys_completed,
+           COALESCE(ug_x.n, 0) as gifts_claimed,
+           COALESCE(fb_x.n, 0) as feedback_submitted,
+           coh_x.names as cohorts,
+           cir_x.names as circles,
+           con_x.names as consented_channels
+    FROM ${from}
+    LEFT JOIN (
+      SELECT user_id, SUM(CASE WHEN completed_at IS NOT NULL THEN 1 ELSE 0 END) as n
+      FROM survey_responses GROUP BY user_id
+    ) sr_x ON sr_x.user_id = u.id
+    LEFT JOIN (
+      SELECT user_id, COUNT(*) as n FROM user_gifts GROUP BY user_id
+    ) ug_x ON ug_x.user_id = u.id
+    LEFT JOIN (
+      SELECT user_id, COUNT(*) as n FROM feedback GROUP BY user_id
+    ) fb_x ON fb_x.user_id = u.id
+    LEFT JOIN (
+      SELECT uc.user_id, GROUP_CONCAT(c.name, '; ') as names
+      FROM user_cohorts uc JOIN cohorts c ON c.id = uc.cohort_id
+      GROUP BY uc.user_id
+    ) coh_x ON coh_x.user_id = u.id
+    LEFT JOIN (
+      SELECT cmx.user_id, GROUP_CONCAT(ci.name, '; ') as names
+      FROM circle_members cmx JOIN circles ci ON ci.id = cmx.circle_id
+      GROUP BY cmx.user_id
+    ) cir_x ON cir_x.user_id = u.id
+    LEFT JOIN (
+      SELECT user_id, GROUP_CONCAT(channel, '; ') as names
+      FROM consent WHERE status = 'granted'
+      GROUP BY user_id
+    ) con_x ON con_x.user_id = u.id
+    WHERE ${where}
     ORDER BY u.created_at DESC
   `).all(...params);
 

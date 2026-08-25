@@ -312,7 +312,20 @@ const Shell = {
 
     let data;
     try {
-      data = await api.get('/admin/circles');
+      // The session already joined the reachable circles. /auth/me returns
+      // them without recounting members — enough to name and switch.
+      const me = await api.get('/auth/me');
+      if (Array.isArray(me.circles) && me.circles.length) {
+        const stored = Auth.getCircle();
+        const current = me.circles.find(c => c.id === stored) || me.circles[0];
+        data = {
+          circles: me.circles,
+          current,
+          can_create: Boolean(me.can_create_circles)
+        };
+      } else {
+        data = await api.get('/admin/circles');
+      }
     } catch {
       return;   // the console still works in whichever circle the server picked
     }
@@ -554,9 +567,8 @@ const Shell = {
   // Unread marker on the portal bell.
   async _loadUnread() {
     try {
-      const data = await api.get('/users/notifications?limit=25');
-      const unread = (data.notifications || []).filter(n => !n.read_at).length;
-      if (unread) document.getElementById('bellUnread')?.classList.remove('hide');
+      const data = await api.get('/users/notifications?limit=1');
+      if (Number(data.unread_count || 0)) document.getElementById('bellUnread')?.classList.remove('hide');
     } catch { /* the bell simply stays quiet */ }
   }
 };

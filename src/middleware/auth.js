@@ -177,7 +177,9 @@ async function resolvePrincipal(hash) {
       a.must_change_password as admin_must_change_password,
       a.invited_by as admin_invited_by, a.invited_at as admin_invited_at,
       a.created_at as admin_created_at,
-      r.permissions as role_permissions,
+      r.id as joined_role_id, r.name as role_name, r.description as role_description,
+      r.permissions as role_permissions, r.is_system as role_is_system,
+      r.created_at as role_created_at,
       u.id as user_id, u.status as user_status,
       c.id as circle_id, c.name as circle_name, c.slug as circle_slug,
       c.description as circle_description, c.color as circle_color,
@@ -235,6 +237,14 @@ async function resolvePrincipal(hash) {
         created_at: row.admin_created_at
       },
       permissions: parsePermissions(row.role_permissions),
+      role: row.joined_role_id ? {
+        id: row.joined_role_id,
+        name: row.role_name,
+        description: row.role_description,
+        permissions: row.role_permissions,
+        is_system: row.role_is_system,
+        created_at: row.role_created_at
+      } : null,
       user: null,
       circles: circlesFromAccessRows(rows, {
         role_id: row.admin_role_id,
@@ -297,6 +307,7 @@ async function requireAuth(req, res, next) {
     req.permissions = principal.permissions;
     if (principal.isAdmin) {
       req.admin = principal.admin;
+      req.role = principal.role || null;
       req.availableCircles = principal.circles || [];
     } else {
       req.user = principal.user;

@@ -8,48 +8,54 @@ const router = express.Router();
 
 // GET /api/admin/dashboard
 router.get('/dashboard', requirePermission('members.read'), async (req, res) => {
+  const circleId = req.circleId;
   const [userRows, surveyRow, recentActivity, cohortBreakdown, openFeedback] = await Promise.all([
-    // Status chart is one GROUP BY. Headlines sit next to the survey scan so
-    // users are not counted five times as independent statements.
+    // Status chart is one GROUP BY of this workspace. Headlines come from the
+    // same rows so members are not counted five times as independent statements.
     db.prepare(`
       SELECT
-        api_status,
+        u.api_status,
         COUNT(*) as count,
-        SUM(CASE WHEN created_at > datetime('now', '-7 days') THEN 1 ELSE 0 END) as new_this_week
-      FROM users
-      GROUP BY api_status
-    `).all(),
+        SUM(CASE WHEN u.created_at > datetime('now', '-7 days') THEN 1 ELSE 0 END) as new_this_week
+      FROM users u
+      JOIN circle_members cm ON cm.user_id = u.id AND cm.circle_id = ?
+      GROUP BY u.api_status
+    `).all(circleId),
     db.prepare(`
       SELECT
         COUNT(*) as surveys_sent,
-        SUM(CASE WHEN completed_at IS NOT NULL THEN 1 ELSE 0 END) as surveys_completed,
-        (SELECT COUNT(*) FROM cohorts) as active_cohorts
-      FROM survey_responses
-    `).get(),
+        SUM(CASE WHEN sr.completed_at IS NOT NULL THEN 1 ELSE 0 END) as surveys_completed,
+        (SELECT COUNT(*) FROM cohorts WHERE circle_id = ?) as active_cohorts
+      FROM survey_responses sr
+      JOIN surveys s ON s.id = sr.survey_id
+      WHERE s.circle_id = ?
+    `).get(circleId, circleId),
     db.prepare(`
       SELECT eh.*, u.name as user_name, u.email as user_email
       FROM engagement_history eh
+      JOIN circle_members cm ON cm.user_id = eh.user_id AND cm.circle_id = ?
       LEFT JOIN users u ON u.id = eh.user_id
       ORDER BY eh.created_at DESC
       LIMIT 20
-    `).all(),
+    `).all(circleId),
     db.prepare(`
       SELECT c.id, c.name, c.color, COUNT(uc.user_id) as member_count
       FROM cohorts c
       LEFT JOIN user_cohorts uc ON uc.cohort_id = c.id
+      WHERE c.circle_id = ?
       GROUP BY c.id, c.name, c.color
       ORDER BY member_count DESC
       LIMIT 10
-    `).all(),
+    `).all(circleId),
     db.prepare(`
       SELECT f.id, f.content, f.source, f.created_at, f.status,
              u.name as user_name, u.email as user_email
       FROM feedback f
       LEFT JOIN users u ON u.id = f.user_id
-      WHERE f.status = 'open'
+      WHERE f.status = 'open' AND f.circle_id = ?
       ORDER BY f.created_at DESC
       LIMIT 4
-    `).all()
+    `).all(circleId)
   ]);
 
   const statusBreakdown = (userRows || []).map(r => ({ api_status: r.api_status, count: Number(r.count || 0) }));
@@ -82,21 +88,28 @@ router.get('/demography', requirePermission('members.read'), async (req, res) =>
   // Aggregations stay in SQL. Shipping every member row to Node to GROUP BY
   // is the plan that gets worse as the base grows; UNION ALL is one round-trip
   // and the same JSON the page already reads.
+  // One membership join, then every axis reads the same set. Binding the
+  // circle once keeps the planner on circle_members instead of fourteen
+  // independent scans of every user in every workspace.
   const rows = await db.prepare(`
+    WITH scoped AS (
+      SELECT u.* FROM users u
+      JOIN circle_members cm ON cm.user_id = u.id AND cm.circle_id = ?
+    )
     SELECT 'work_sector' as axis, COALESCE(NULLIF(work_sector, ''), 'Unspecified') as label, COUNT(*) as count
-      FROM users GROUP BY 2
+      FROM scoped GROUP BY 2
     UNION ALL
     SELECT 'location_state', COALESCE(NULLIF(location_state, ''), 'Unspecified'), COUNT(*)
-      FROM users GROUP BY 2
+      FROM scoped GROUP BY 2
     UNION ALL
     SELECT 'gender', COALESCE(NULLIF(gender, ''), 'Unspecified'), COUNT(*)
-      FROM users GROUP BY 2
+      FROM scoped GROUP BY 2
     UNION ALL
     SELECT 'api_status', api_status, COUNT(*)
-      FROM users GROUP BY 2
+      FROM scoped GROUP BY 2
     UNION ALL
     SELECT 'kyb', CASE WHEN CAST(kyb_completed AS TEXT) IN ('1', 'true', 't') THEN 'Completed' ELSE 'Pending' END, COUNT(*)
-      FROM users GROUP BY 2
+      FROM scoped GROUP BY 2
     UNION ALL
     SELECT 'age_band', CASE
         WHEN date_of_birth IS NULL OR date_of_birth = '' THEN 'Unspecified'
@@ -105,10 +118,10 @@ router.get('/demography', requirePermission('members.read'), async (req, res) =>
         WHEN (julianday('now') - julianday(date_of_birth)) / 365.25 < 45 THEN '35–44'
         ELSE '45+'
       END, COUNT(*)
-      FROM users GROUP BY 2
+      FROM scoped GROUP BY 2
     UNION ALL
     SELECT 'api_products', json_each.value, COUNT(*)
-      FROM users, json_each(users.api_products)
+      FROM scoped, json_each(scoped.api_products)
       WHERE COALESCE(json_each.value, '') != ''
       GROUP BY 2
     UNION ALL
@@ -119,10 +132,10 @@ router.get('/demography', requirePermission('members.read'), async (req, res) =>
         ELSE '6+ surveys'
       END, COUNT(*)
       FROM (
-        SELECT u.id, COUNT(sr.id) as completed
-        FROM users u
-        LEFT JOIN survey_responses sr ON sr.user_id = u.id AND sr.completed_at IS NOT NULL
-        GROUP BY u.id
+        SELECT s.id, COUNT(sr.id) as completed
+        FROM scoped s
+        LEFT JOIN survey_responses sr ON sr.user_id = s.id AND sr.completed_at IS NOT NULL
+        GROUP BY s.id
       ) depths
       GROUP BY 2
     UNION ALL
@@ -133,32 +146,32 @@ router.get('/demography', requirePermission('members.read'), async (req, res) =>
         WHEN engagement_streak <= 14 THEN '8–14 days'
         ELSE '15+ days'
       END, COUNT(*)
-      FROM users GROUP BY 2
+      FROM scoped GROUP BY 2
     UNION ALL
     SELECT 'preferred_channels', json_each.value, COUNT(*)
-      FROM users, json_each(users.preferred_channels)
+      FROM scoped, json_each(scoped.preferred_channels)
       WHERE COALESCE(json_each.value, '') != ''
       GROUP BY 2
     UNION ALL
     SELECT 'preferred_days', json_each.value, COUNT(*)
-      FROM users, json_each(users.preferred_days)
+      FROM scoped, json_each(scoped.preferred_days)
       WHERE COALESCE(json_each.value, '') != ''
       GROUP BY 2
     UNION ALL
-    SELECT 'coverage', 'total', COUNT(*) FROM users
+    SELECT 'coverage', 'total', COUNT(*) FROM scoped
     UNION ALL
     SELECT 'coverage', 'no_date_of_birth',
-           SUM(CASE WHEN date_of_birth IS NULL OR date_of_birth = '' THEN 1 ELSE 0 END) FROM users
+           SUM(CASE WHEN date_of_birth IS NULL OR date_of_birth = '' THEN 1 ELSE 0 END) FROM scoped
     UNION ALL
     SELECT 'coverage', 'no_gender',
-           SUM(CASE WHEN gender IS NULL OR gender = '' THEN 1 ELSE 0 END) FROM users
+           SUM(CASE WHEN gender IS NULL OR gender = '' THEN 1 ELSE 0 END) FROM scoped
     UNION ALL
     SELECT 'coverage', 'no_location',
-           SUM(CASE WHEN location_state IS NULL OR location_state = '' THEN 1 ELSE 0 END) FROM users
+           SUM(CASE WHEN location_state IS NULL OR location_state = '' THEN 1 ELSE 0 END) FROM scoped
     UNION ALL
     SELECT 'coverage', 'no_products',
-           SUM(CASE WHEN api_products IS NULL OR api_products = '' OR api_products = '[]' THEN 1 ELSE 0 END) FROM users
-  `).all();
+           SUM(CASE WHEN api_products IS NULL OR api_products = '' OR api_products = '[]' THEN 1 ELSE 0 END) FROM scoped
+  `).all(req.circleId);
 
   const buckets = new Map();
   for (const row of rows || []) {

@@ -296,8 +296,18 @@ router.post('/logout', requireAuth, async (req, res) => {
 // GET /api/auth/me
 router.get('/me', requireAuth, async (req, res) => {
   if (req.isAdmin) {
-    const role = await db.prepare('SELECT * FROM roles WHERE id = ?').get(req.admin.role_id);
-    return res.json({ user: safeUser(req.admin), role, permissions: req.permissions, isAdmin: true });
+    return res.json({
+      user: safeUser(req.admin),
+      role: req.role || null,
+      permissions: req.permissions,
+      isAdmin: true,
+      // Enough for the switcher without a second COUNT of circle_members.
+      // member_count is omitted on purpose — the circles page still loads it.
+      circles: (req.availableCircles || []).map(c => ({
+        id: c.id, name: c.name, slug: c.slug, description: c.description, color: c.color
+      })),
+      can_create_circles: Boolean(req.admin.is_global)
+    });
   }
   res.json({ user: safeUser(req.user), isAdmin: false });
 });
