@@ -117,11 +117,18 @@ const PERMISSIONS = [
 
 const PERMISSION_KEYS = new Set(PERMISSIONS.map(p => p.key));
 
+function parsePermissions(raw) {
+  if (raw == null || raw === '') return [];
+  if (Array.isArray(raw)) return raw;
+  try { return JSON.parse(raw); } catch { return []; }
+}
+
 async function permissionsFor(admin) {
   if (!admin || !admin.role_id) return [];
+  if (admin.role_permissions !== undefined) return parsePermissions(admin.role_permissions);
   const role = await db.prepare('SELECT permissions FROM roles WHERE id = ?').get(admin.role_id);
   if (!role) return [];
-  try { return JSON.parse(role.permissions || '[]'); } catch { return []; }
+  return parsePermissions(role.permissions);
 }
 
 function hasPermission(perms, permission) {
@@ -137,10 +144,36 @@ async function requireAuth(req, res, next) {
       return res.status(401).json({ error: 'Authentication required' });
     }
 
-    const session = await getSession(authHeader.slice(7));
-    if (!session) {
+    // Session, account and role in one round-trip. Three sequential lookups
+    // used to sit in front of every authenticated request to Postgres.
+    const row = await db.prepare(`
+      SELECT
+        s.subject_id, s.is_admin, s.issued_via, s.scope,
+        a.id as admin_id, a.email as admin_email, a.name as admin_name,
+        a.password_hash as admin_password_hash, a.role_id as admin_role_id,
+        a.status as admin_status, a.is_global as admin_is_global,
+        a.must_change_password as admin_must_change_password,
+        a.invited_by as admin_invited_by, a.invited_at as admin_invited_at,
+        a.created_at as admin_created_at,
+        r.permissions as role_permissions,
+        u.id as user_id, u.status as user_status
+      FROM sessions s
+      LEFT JOIN admin_users a ON a.id = s.subject_id
+      LEFT JOIN roles r ON r.id = a.role_id
+      LEFT JOIN users u ON u.id = s.subject_id
+      WHERE s.token_hash = ? AND s.expires_at > datetime('now')
+    `).get(hashToken(authHeader.slice(7)));
+
+    if (!row) {
       return res.status(401).json({ error: 'Invalid or expired token' });
     }
+
+    const session = {
+      userId: row.subject_id,
+      isAdmin: row.is_admin === 1 || row.is_admin === true || row.is_admin === '1',
+      issuedVia: row.issued_via,
+      scope: row.scope || 'full'
+    };
 
     // Checked before the account is even loaded: a temporary password gets you
     // to the "choose a password" screen and nowhere else.
@@ -155,17 +188,32 @@ async function requireAuth(req, res, next) {
     }
 
     if (session.isAdmin) {
-      const admin = await db.prepare('SELECT * FROM admin_users WHERE id = ?').get(session.userId);
-      if (!admin || admin.status !== 'active') {
+      if (!row.admin_id || row.admin_status !== 'active') {
         return res.status(401).json({ error: 'Admin account inactive' });
       }
-      req.admin = admin;
+      req.admin = {
+        id: row.admin_id,
+        email: row.admin_email,
+        name: row.admin_name,
+        password_hash: row.admin_password_hash,
+        role_id: row.admin_role_id,
+        status: row.admin_status,
+        is_global: row.admin_is_global,
+        must_change_password: row.admin_must_change_password,
+        invited_by: row.admin_invited_by,
+        invited_at: row.admin_invited_at,
+        created_at: row.admin_created_at
+      };
       req.isAdmin = true;
       // A provisional value: a role is held within a circle, so circleContext
       // replaces this with the permissions that apply where they are working
-      req.permissions = await permissionsFor(admin);
+      req.permissions = parsePermissions(row.role_permissions);
     } else {
-      const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(session.userId);
+      if (!row.user_id || row.user_status !== 'active') {
+        return res.status(401).json({ error: 'User account inactive' });
+      }
+      // Members need the full profile row further down the stack.
+      const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(row.user_id);
       if (!user || user.status !== 'active') {
         return res.status(401).json({ error: 'User account inactive' });
       }
@@ -326,6 +374,7 @@ module.exports = {
   signSSOToken,
   verifySSOToken,
   permissionsFor,
+  parsePermissions,
   hasPermission,
   PERMISSIONS,
   PERMISSION_KEYS,

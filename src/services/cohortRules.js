@@ -259,14 +259,16 @@ function buildQuery(definition, { activeOnly = true, circleId = null } = {}) {
 async function evaluate(definition, { limit = null, activeOnly = true, circleId = null } = {}) {
   const { where, params, ruleCount } = buildQuery(definition, { activeOnly, circleId });
 
-  const total = Number((await db.prepare(`SELECT COUNT(*) as c FROM users u WHERE ${where}`).get(...params))?.c || 0);
-
-  const members = await db.prepare(`
-    SELECT u.id, u.name, u.email, u.company, u.work_sector, u.api_status, u.engagement_streak
-    FROM users u WHERE ${where}
-    ORDER BY u.created_at DESC
-    ${limit ? 'LIMIT ?' : ''}
-  `).all(...params, ...(limit ? [limit] : []));
+  const [totalRow, members] = await Promise.all([
+    db.prepare(`SELECT COUNT(*) as c FROM users u WHERE ${where}`).get(...params),
+    db.prepare(`
+      SELECT u.id, u.name, u.email, u.company, u.work_sector, u.api_status, u.engagement_streak
+      FROM users u WHERE ${where}
+      ORDER BY u.created_at DESC
+      ${limit ? 'LIMIT ?' : ''}
+    `).all(...params, ...(limit ? [limit] : []))
+  ]);
+  const total = Number(totalRow?.c || 0);
 
   return { total, members, rule_count: ruleCount };
 }
@@ -358,10 +360,11 @@ async function resolveValues(field) {
 }
 
 async function catalogue() {
-  const entries = [];
-  for (const [key, field] of Object.entries(FIELDS)) {
-    const values = await resolveValues(field);
-    entries.push({
+  const keys = Object.entries(FIELDS);
+  const resolved = await Promise.all(keys.map(([, field]) => resolveValues(field)));
+  return keys.map(([key, field], i) => {
+    const values = resolved[i];
+    return {
       field: key,
       label: field.label,
       type: field.type,
@@ -374,9 +377,8 @@ async function catalogue() {
       // nobody. The UI says so rather than showing an empty dropdown.
       empty: Boolean(field.values) && values !== null && values.length === 0,
       open: OPEN_TEXT.has(key)
-    });
-  }
-  return entries;
+    };
+  });
 }
 
 module.exports = { evaluate, sync, syncAll, buildQuery, catalogue, normalizeDefinition, FIELDS, RuleError };

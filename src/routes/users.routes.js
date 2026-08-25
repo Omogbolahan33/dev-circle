@@ -67,9 +67,11 @@ router.get('/circles', requireAuth, async (req, res) => {
 
 // GET /api/users/sessions — upcoming engagements for this member
 router.get('/sessions', requireAuth, async (req, res) => {
-  const circleIds = await circles.circleIdsForUser(req.user.id);
-  const cohortIds = ((await db.prepare('SELECT cohort_id FROM user_cohorts WHERE user_id = ?')
-    .all(req.user.id)) || []).map(r => r.cohort_id);
+  const [circleIds, cohortRows] = await Promise.all([
+    circles.circleIdsForUser(req.user.id),
+    db.prepare('SELECT cohort_id FROM user_cohorts WHERE user_id = ?').all(req.user.id)
+  ]);
+  const cohortIds = (cohortRows || []).map(r => r.cohort_id);
 
   const sessions = await db.prepare(`
     SELECT s.*, c.name as circle_name, sv.title as survey_title
@@ -381,22 +383,23 @@ router.get('/engagement', requireAuth, async (req, res) => {
 
 // GET /api/users/gifts — what this member can claim, and what they already have
 router.get('/gifts', requireAuth, async (req, res) => {
-  const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
-  const cohortIds = ((await db.prepare('SELECT cohort_id FROM user_cohorts WHERE user_id = ?')
-    .all(user.id)) || []).map(r => r.cohort_id);
+  const [user, cohortRows, surveysRow, claimed] = await Promise.all([
+    db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id),
+    db.prepare('SELECT cohort_id FROM user_cohorts WHERE user_id = ?').all(req.user.id),
+    db.prepare(
+      "SELECT COUNT(*) as c FROM survey_responses WHERE user_id = ? AND completed_at IS NOT NULL"
+    ).get(req.user.id),
+    db.prepare(`
+      SELECT g.*, ug.claimed_at, ug.delivered_at
+      FROM user_gifts ug JOIN gifts g ON g.id = ug.gift_id
+      WHERE ug.user_id = ?
+      ORDER BY ug.claimed_at DESC
+    `).all(req.user.id)
+  ]);
+  const cohortIds = (cohortRows || []).map(r => r.cohort_id);
+  const surveysCompleted = Number(surveysRow?.c || 0);
 
-  const surveysCompleted = Number((await db.prepare(
-    "SELECT COUNT(*) as c FROM survey_responses WHERE user_id = ? AND completed_at IS NOT NULL"
-  ).get(user.id))?.c || 0);
-
-  const claimed = await db.prepare(`
-    SELECT g.*, ug.claimed_at, ug.delivered_at
-    FROM user_gifts ug JOIN gifts g ON g.id = ug.gift_id
-    WHERE ug.user_id = ?
-    ORDER BY ug.claimed_at DESC
-  `).all(user.id);
-
-  const claimedIds = new Set(claimed.map(g => g.id));
+  const claimedIds = new Set((claimed || []).map(g => g.id));
 
   const [catalogue, claimCounts] = await Promise.all([
     db.prepare("SELECT * FROM gifts WHERE COALESCE(active, 1) = 1").all(),

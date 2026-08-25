@@ -153,9 +153,11 @@ async function isMember(circleId, userId) {
 async function forAdmin(admin) {
   if (admin.is_global) {
     const rows = await db.prepare(`
-      SELECT c.*,
-        (SELECT COUNT(*) FROM circle_members m WHERE m.circle_id = c.id) as member_count
+      SELECT c.*, COALESCE(mc.n, 0) as member_count
       FROM circles c
+      LEFT JOIN (
+        SELECT circle_id, COUNT(*) as n FROM circle_members GROUP BY circle_id
+      ) mc ON mc.circle_id = c.id
       WHERE c.status = 'active'
       ORDER BY c.created_at
     `).all();
@@ -163,10 +165,14 @@ async function forAdmin(admin) {
   }
 
   return await db.prepare(`
-    SELECT c.*, ca.role_id, 0 as global,
-      (SELECT COUNT(*) FROM circle_members m WHERE m.circle_id = c.id) as member_count
+    SELECT c.*, ca.role_id, 0 as global, r.permissions as role_permissions,
+           COALESCE(mc.n, 0) as member_count
     FROM circle_admins ca
     JOIN circles c ON c.id = ca.circle_id
+    LEFT JOIN roles r ON r.id = ca.role_id
+    LEFT JOIN (
+      SELECT circle_id, COUNT(*) as n FROM circle_members GROUP BY circle_id
+    ) mc ON mc.circle_id = c.id
     WHERE ca.admin_id = ? AND c.status = 'active'
     ORDER BY c.created_at
   `).all(admin.id);

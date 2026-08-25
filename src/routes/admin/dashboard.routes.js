@@ -8,17 +8,17 @@ const router = express.Router();
 
 // GET /api/admin/dashboard
 router.get('/dashboard', requirePermission('members.read'), async (req, res) => {
-  const count = async sql => Number((await db.prepare(sql).get())?.c || 0);
-
   const [
-    totalMembers, activeCohorts, totalSurveysSent, completedSurveys, newThisWeek,
-    recentActivity, cohortBreakdown, statusBreakdown
+    statsRow, recentActivity, cohortBreakdown, statusBreakdown
   ] = await Promise.all([
-    count('SELECT COUNT(*) as c FROM users'),
-    count('SELECT COUNT(*) as c FROM cohorts'),
-    count('SELECT COUNT(*) as c FROM survey_responses'),
-    count("SELECT COUNT(*) as c FROM survey_responses WHERE completed_at IS NOT NULL"),
-    count("SELECT COUNT(*) as c FROM users WHERE created_at > datetime('now', '-7 days')"),
+    db.prepare(`
+      SELECT
+        (SELECT COUNT(*) FROM users) as total_members,
+        (SELECT COUNT(*) FROM cohorts) as active_cohorts,
+        (SELECT COUNT(*) FROM survey_responses) as surveys_sent,
+        (SELECT COUNT(*) FROM survey_responses WHERE completed_at IS NOT NULL) as surveys_completed,
+        (SELECT COUNT(*) FROM users WHERE created_at > datetime('now', '-7 days')) as new_this_week
+    `).get(),
     db.prepare(`
       SELECT eh.*, u.name as user_name, u.email as user_email
       FROM engagement_history eh
@@ -39,16 +39,19 @@ router.get('/dashboard', requirePermission('members.read'), async (req, res) => 
     `).all()
   ]);
 
+  const totalMembers = Number(statsRow?.total_members || 0);
+  const totalSurveysSent = Number(statsRow?.surveys_sent || 0);
+  const completedSurveys = Number(statsRow?.surveys_completed || 0);
   const engagementRate = totalSurveysSent > 0 ? Math.round((completedSurveys / totalSurveysSent) * 100) : 0;
 
   res.json({
     stats: {
       total_members: totalMembers,
-      active_cohorts: activeCohorts,
+      active_cohorts: Number(statsRow?.active_cohorts || 0),
       engagement_rate: engagementRate,
       surveys_sent: totalSurveysSent,
       surveys_completed: completedSurveys,
-      new_this_week: newThisWeek
+      new_this_week: Number(statsRow?.new_this_week || 0)
     },
     recent_activity: recentActivity,
     cohort_breakdown: cohortBreakdown,

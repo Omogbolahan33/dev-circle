@@ -53,23 +53,31 @@ router.get('/:id', requirePermission('circles.read'), async (req, res) => {
 
   const { offset, limit } = paginate(req.query.page, req.query.limit);
 
-  res.json({
-    circle,
-    member_count: Number((await db.prepare('SELECT COUNT(*) as c FROM circle_members WHERE circle_id = ?').get(circle.id))?.c || 0),
-    members: await circles.members(circle.id, { limit, offset }),
-    cohorts: await db.prepare(`
+  const [countRow, members, cohorts, surveys, staff] = await Promise.all([
+    db.prepare('SELECT COUNT(*) as c FROM circle_members WHERE circle_id = ?').get(circle.id),
+    circles.members(circle.id, { limit, offset }),
+    db.prepare(`
       SELECT c.id, c.name, c.color,
         (SELECT COUNT(*) FROM user_cohorts uc WHERE uc.cohort_id = c.id) as member_count
       FROM cohorts c WHERE c.circle_id = ?
     `).all(circle.id),
-    surveys: await db.prepare('SELECT id, title, status FROM surveys WHERE circle_id = ?').all(circle.id),
-    staff: await db.prepare(`
+    db.prepare('SELECT id, title, status FROM surveys WHERE circle_id = ?').all(circle.id),
+    db.prepare(`
       SELECT a.id, a.name, a.email, r.name as role_name
       FROM circle_admins ca
       JOIN admin_users a ON a.id = ca.admin_id
       LEFT JOIN roles r ON r.id = ca.role_id
       WHERE ca.circle_id = ?
     `).all(circle.id)
+  ]);
+
+  res.json({
+    circle,
+    member_count: Number(countRow?.c || 0),
+    members,
+    cohorts,
+    surveys,
+    staff
   });
 });
 

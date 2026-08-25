@@ -1,6 +1,6 @@
 const circles = require('../services/circles');
 const context = require('../db/context');
-const { permissionsFor } = require('./auth');
+const { parsePermissions } = require('./auth');
 
 // ─── Working inside a circle ────────────────────────────────
 // Every admin request happens in one workspace. Which one comes from the
@@ -46,9 +46,12 @@ async function circleContext(req, res, next) {
   req.circleId = circle.id;
   req.availableCircles = available;
 
-  // Permissions belong to the role held in *this* circle
-  const roleId = await circles.roleFor(req.admin, circle.id);
-  req.permissions = await permissionsFor({ ...req.admin, role_id: roleId });
+  // Permissions belong to the role held in *this* circle. forAdmin already
+  // joined that role; global staff keep the list loaded with the session.
+  const isGlobalCircle = circle.global === true || circle.global === 1 || circle.global === '1';
+  if (!isGlobalCircle) {
+    req.permissions = parsePermissions(circle.role_permissions);
+  }
 
   // So a client can tell which workspace answered
   res.setHeader('X-Circle-Id', circle.id);

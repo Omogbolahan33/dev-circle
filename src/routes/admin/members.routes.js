@@ -150,17 +150,38 @@ router.get('/members/:id/timeline', requirePermission('members.read'), async (re
 
   const limit = Math.min(300, parseInt(req.query.limit, 10) || 150);
 
+  const [eventRows, saidRows, sentRows] = await Promise.all([
+    db.prepare(`
+      SELECT eh.id, eh.type, eh.created_at, eh.metadata, eh.source, eh.reference_id,
+             s.title as survey_title, g.name as gift_name
+      FROM engagement_history eh
+      LEFT JOIN surveys s ON s.id = eh.reference_id
+      LEFT JOIN gifts g ON g.id = eh.reference_id
+      WHERE eh.user_id = ?
+      ORDER BY eh.created_at DESC
+      LIMIT ?
+    `).all(user.id, limit),
+    db.prepare(`
+      SELECT f.id, f.content, f.prompt, f.source, f.source_system, f.category,
+             f.created_at, f.external_ticket_id, f.canonical_question_id,
+             s.title as survey_title
+      FROM feedback f
+      LEFT JOIN surveys s ON s.id = f.survey_id
+      WHERE f.user_id = ?
+      ORDER BY f.created_at DESC
+      LIMIT ?
+    `).all(user.id, limit),
+    db.prepare(`
+      SELECT id, source_type, channel, status, reason, created_at
+      FROM message_deliveries
+      WHERE user_id = ? AND status IN ('sent', 'simulated')
+      ORDER BY created_at DESC
+      LIMIT ?
+    `).all(user.id, limit)
+  ]);
+
   // What they did — the events the system recorded about them
-  const events = ((await db.prepare(`
-    SELECT eh.id, eh.type, eh.created_at, eh.metadata, eh.source, eh.reference_id,
-           s.title as survey_title, g.name as gift_name
-    FROM engagement_history eh
-    LEFT JOIN surveys s ON s.id = eh.reference_id
-    LEFT JOIN gifts g ON g.id = eh.reference_id
-    WHERE eh.user_id = ?
-    ORDER BY eh.created_at DESC
-    LIMIT ?
-  `).all(user.id, limit) || []) || []).map(e => ({
+  const events = (eventRows || []).map(e => ({
     kind: 'did',
     at: e.created_at,
     id: e.id,
@@ -172,16 +193,7 @@ router.get('/members/:id/timeline', requirePermission('members.read'), async (re
   }));
 
   // What they said — every verbatim, whichever door it came through
-  const said = (await db.prepare(`
-    SELECT f.id, f.content, f.prompt, f.source, f.source_system, f.category,
-           f.created_at, f.external_ticket_id, f.canonical_question_id,
-           s.title as survey_title
-    FROM feedback f
-    LEFT JOIN surveys s ON s.id = f.survey_id
-    WHERE f.user_id = ?
-    ORDER BY f.created_at DESC
-    LIMIT ?
-  `).all(user.id, limit) || []).map(f => ({
+  const said = (saidRows || []).map(f => ({
     kind: 'said',
     at: f.created_at,
     id: f.id,
@@ -197,13 +209,7 @@ router.get('/members/:id/timeline', requirePermission('members.read'), async (re
   // What we sent them, and whether it actually went. A member who has been
   // messaged eight times and answered nothing reads very differently from one
   // nobody has contacted.
-  const sent = (await db.prepare(`
-    SELECT id, source_type, channel, status, reason, created_at
-    FROM message_deliveries
-    WHERE user_id = ? AND status IN ('sent', 'simulated')
-    ORDER BY created_at DESC
-    LIMIT ?
-  `).all(user.id, limit) || []).map(d => ({
+  const sent = (sentRows || []).map(d => ({
     kind: 'sent',
     at: d.created_at,
     id: d.id,
