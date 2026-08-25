@@ -23,64 +23,59 @@ router.get('/members', requirePermission('members.read'), async (req, res) => {
   // "filtered out" here — they are not part of this one.
   const { where, params } = memberFilters({ ...req.query, circle_id: req.circleId });
 
-  const [totalRow, members] = await Promise.all([
-    db.prepare(`SELECT COUNT(*) as c FROM users u WHERE ${where}`).get(...params),
+  // Page, total, survey tallies and cohorts in one network wait. COUNT(*) OVER()
+  // is the filter total (not the page size) in both SQLite and Postgres, so a
+  // thousand members still only return `limit` rows.
+  const [members, cohortRows] = await Promise.all([
     db.prepare(`
       SELECT u.id, u.email, u.name, u.phone, u.company, u.work_sector,
              u.status, u.api_status, u.kyb_completed, u.engagement_streak,
              u.preferred_channels, u.preferred_days, u.api_products,
              u.gender, u.location_state, u.date_of_birth,
-             u.last_active_at, u.created_at
+             u.last_active_at, u.created_at,
+             COUNT(*) OVER() as _total,
+             (SELECT COUNT(*) FROM survey_responses sr WHERE sr.user_id = u.id) as surveys_invited,
+             (SELECT COUNT(*) FROM survey_responses sr
+               WHERE sr.user_id = u.id AND sr.completed_at IS NOT NULL) as surveys_completed
       FROM users u
       WHERE ${where}
       ORDER BY u.created_at DESC
       LIMIT ? OFFSET ?
+    `).all(...params, l, offset),
+    db.prepare(`
+      SELECT uc.user_id, c.id, c.name, c.color
+      FROM user_cohorts uc
+      JOIN cohorts c ON c.id = uc.cohort_id
+      WHERE uc.user_id IN (
+        SELECT u.id FROM users u WHERE ${where}
+        ORDER BY u.created_at DESC LIMIT ? OFFSET ?
+      )
     `).all(...params, l, offset)
   ]);
-  const total = Number(totalRow?.c || 0);
 
-  const ids = (members || []).map(m => m.id);
+  const total = (members && members.length)
+    ? Number(members[0]._total || 0)
+    : (offset ? Number((await db.prepare(`SELECT COUNT(*) as c FROM users u WHERE ${where}`).get(...params))?.c || 0) : 0);
+
   const cohortsByUser = new Map();
-  const surveysByUser = new Map();
-  if (ids.length) {
-    const placeholders = ids.map(() => '?').join(',');
-    const [surveyRows, cohortRows] = await Promise.all([
-      db.prepare(`
-        SELECT user_id,
-               COUNT(*) as invited,
-               SUM(CASE WHEN completed_at IS NOT NULL THEN 1 ELSE 0 END) as completed
-        FROM survey_responses
-        WHERE user_id IN (${placeholders})
-        GROUP BY user_id
-      `).all(...ids),
-      db.prepare(`
-        SELECT uc.user_id, c.id, c.name, c.color
-        FROM user_cohorts uc
-        JOIN cohorts c ON c.id = uc.cohort_id
-        WHERE uc.user_id IN (${placeholders})
-      `).all(...ids)
-    ]);
-    for (const row of surveyRows || []) {
-      surveysByUser.set(row.user_id, {
-        surveys_completed: Number(row.completed || 0),
-        surveys_invited: Number(row.invited || 0)
-      });
-    }
-    for (const row of cohortRows || []) {
-      const list = cohortsByUser.get(row.user_id) || [];
-      list.push({ id: row.id, name: row.name, color: row.color });
-      cohortsByUser.set(row.user_id, list);
-    }
+  for (const row of cohortRows || []) {
+    const list = cohortsByUser.get(row.user_id) || [];
+    list.push({ id: row.id, name: row.name, color: row.color });
+    cohortsByUser.set(row.user_id, list);
   }
 
-  const result = (members || []).map(m => ({
-    ...m,
-    preferred_channels: parseJSON(m.preferred_channels, []),
-    preferred_days: parseJSON(m.preferred_days, []),
-    api_products: parseJSON(m.api_products, []),
-    ...(surveysByUser.get(m.id) || { surveys_completed: 0, surveys_invited: 0 }),
-    cohorts: cohortsByUser.get(m.id) || []
-  }));
+  const result = (members || []).map(m => {
+    const { _total, ...rest } = m;
+    return {
+      ...rest,
+      preferred_channels: parseJSON(m.preferred_channels, []),
+      preferred_days: parseJSON(m.preferred_days, []),
+      api_products: parseJSON(m.api_products, []),
+      surveys_completed: Number(m.surveys_completed || 0),
+      surveys_invited: Number(m.surveys_invited || 0),
+      cohorts: cohortsByUser.get(m.id) || []
+    };
+  });
 
   res.json({
     members: result,

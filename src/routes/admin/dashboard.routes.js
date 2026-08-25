@@ -63,81 +63,97 @@ router.get('/dashboard', requirePermission('members.read'), async (req, res) => 
 // The blueprint asks for an at-a-glance view of demography, age, and products.
 // None of that data existed before; these are the real distributions.
 router.get('/demography', requirePermission('members.read'), async (req, res) => {
-  const [
-    bySector, byState, byGender, byAge, byProduct, byApiStatus, kyb,
-    engagementDepth, missing, totalRow
-  ] = await Promise.all([
+  // Ten GROUP BYs used to open ten connections on a pool of ten. One scan of
+  // the member columns plus one survey tally is enough through a few thousand
+  // rows and stays a single network wait.
+  const [users, completedRows] = await Promise.all([
     db.prepare(`
-      SELECT COALESCE(NULLIF(work_sector, ''), 'Unspecified') as label, COUNT(*) as count
-      FROM users GROUP BY 1 ORDER BY count DESC
-    `).all(),
-    db.prepare(`
-      SELECT COALESCE(NULLIF(location_state, ''), 'Unspecified') as label, COUNT(*) as count
-      FROM users GROUP BY 1 ORDER BY count DESC LIMIT 15
-    `).all(),
-    db.prepare(`
-      SELECT COALESCE(NULLIF(gender, ''), 'Unspecified') as label, COUNT(*) as count
-      FROM users GROUP BY 1 ORDER BY count DESC
-    `).all(),
-    db.prepare(`
-      SELECT CASE
-        WHEN date_of_birth IS NULL THEN 'Unspecified'
-        WHEN (julianday('now') - julianday(date_of_birth)) / 365.25 < 25 THEN 'Under 25'
-        WHEN (julianday('now') - julianday(date_of_birth)) / 365.25 < 35 THEN '25–34'
-        WHEN (julianday('now') - julianday(date_of_birth)) / 365.25 < 45 THEN '35–44'
-        ELSE '45+'
-      END as label, COUNT(*) as count
-      FROM users GROUP BY 1 ORDER BY count DESC
-    `).all(),
-    db.prepare(`
-      SELECT json_each.value as label, COUNT(*) as count
-      FROM users, json_each(users.api_products)
-      GROUP BY 1 ORDER BY count DESC
-    `).all(),
-    db.prepare('SELECT api_status as label, COUNT(*) as count FROM users GROUP BY 1').all(),
-    db.prepare(`
-      SELECT CASE COALESCE(kyb_completed, 0) WHEN 1 THEN 'Completed' ELSE 'Pending' END as label,
-             COUNT(*) as count
-      FROM users GROUP BY 1
-    `).all(),
-    db.prepare(`
-      SELECT CASE
-        WHEN completed = 0 THEN 'Never responded'
-        WHEN completed BETWEEN 1 AND 2 THEN '1–2 surveys'
-        WHEN completed BETWEEN 3 AND 5 THEN '3–5 surveys'
-        ELSE '6+ surveys'
-      END as label, COUNT(*) as count
-      FROM (
-        SELECT u.id, COUNT(sr.id) as completed
-        FROM users u
-        LEFT JOIN survey_responses sr ON sr.user_id = u.id AND sr.completed_at IS NOT NULL
-        GROUP BY u.id
-      ) depths
-      GROUP BY 1
-    `).all(),
-    db.prepare(`
-      SELECT
-        SUM(CASE WHEN date_of_birth IS NULL THEN 1 ELSE 0 END) as no_date_of_birth,
-        SUM(CASE WHEN gender IS NULL OR gender = '' THEN 1 ELSE 0 END) as no_gender,
-        SUM(CASE WHEN location_state IS NULL OR location_state = '' THEN 1 ELSE 0 END) as no_location,
-        SUM(CASE WHEN api_products IS NULL OR api_products = '[]' THEN 1 ELSE 0 END) as no_products
+      SELECT id, work_sector, location_state, gender, date_of_birth,
+             api_products, api_status, kyb_completed
       FROM users
-    `).get(),
-    db.prepare('SELECT COUNT(*) as c FROM users').get()
+    `).all(),
+    db.prepare(`
+      SELECT user_id, COUNT(*) as c FROM survey_responses
+      WHERE completed_at IS NOT NULL
+      GROUP BY user_id
+    `).all()
   ]);
 
+  const rows = users || [];
+  const completedByUser = new Map((completedRows || []).map(r => [r.user_id, Number(r.c || 0)]));
+
+  const tally = (pick, { limit } = {}) => {
+    const map = new Map();
+    for (const row of rows) {
+      const label = pick(row);
+      map.set(label, (map.get(label) || 0) + 1);
+    }
+    const out = [...map.entries()]
+      .map(([label, count]) => ({ label, count }))
+      .sort((a, b) => b.count - a.count);
+    return limit ? out.slice(0, limit) : out;
+  };
+
+  const blank = value => value == null || value === '' ? 'Unspecified' : value;
+
+  const ageBand = dob => {
+    if (!dob) return 'Unspecified';
+    const years = (Date.now() - new Date(String(dob)).getTime()) / (365.25 * 86400000);
+    if (!Number.isFinite(years) || years < 0) return 'Unspecified';
+    if (years < 25) return 'Under 25';
+    if (years < 35) return '25–34';
+    if (years < 45) return '35–44';
+    return '45+';
+  };
+
+  const productCounts = new Map();
+  let noProducts = 0;
+  for (const row of rows) {
+    let products = row.api_products;
+    if (typeof products === 'string') {
+      try { products = JSON.parse(products); } catch { products = []; }
+    }
+    if (!Array.isArray(products) || products.length === 0) {
+      noProducts++;
+      continue;
+    }
+    for (const product of products) {
+      if (product == null || product === '') continue;
+      const label = String(product);
+      productCounts.set(label, (productCounts.get(label) || 0) + 1);
+    }
+  }
+
+  const depthTally = new Map();
+  for (const row of rows) {
+    const n = completedByUser.get(row.id) || 0;
+    const label = n === 0 ? 'Never responded'
+      : n <= 2 ? '1–2 surveys'
+        : n <= 5 ? '3–5 surveys'
+          : '6+ surveys';
+    depthTally.set(label, (depthTally.get(label) || 0) + 1);
+  }
+
+  const kybCompleted = value => value === 1 || value === true || value === '1';
+
   res.json({
-    total: Number(totalRow?.c || 0),
-    work_sector: bySector,
-    location_state: byState,
-    gender: byGender,
-    age_band: byAge,
-    api_products: byProduct,
-    api_status: byApiStatus,
-    kyb: kyb,
-    engagement_depth: engagementDepth,
-    // Surfaced so nobody reads a chart without knowing the coverage behind it
-    data_coverage: missing
+    total: rows.length,
+    work_sector: tally(r => blank(r.work_sector)),
+    location_state: tally(r => blank(r.location_state), { limit: 15 }),
+    gender: tally(r => blank(r.gender)),
+    age_band: tally(r => ageBand(r.date_of_birth)),
+    api_products: [...productCounts.entries()]
+      .map(([label, count]) => ({ label, count }))
+      .sort((a, b) => b.count - a.count),
+    api_status: tally(r => r.api_status),
+    kyb: tally(r => kybCompleted(r.kyb_completed) ? 'Completed' : 'Pending'),
+    engagement_depth: [...depthTally.entries()].map(([label, count]) => ({ label, count })),
+    data_coverage: {
+      no_date_of_birth: rows.filter(r => r.date_of_birth == null || r.date_of_birth === '').length,
+      no_gender: rows.filter(r => r.gender == null || r.gender === '').length,
+      no_location: rows.filter(r => r.location_state == null || r.location_state === '').length,
+      no_products: noProducts
+    }
   });
 });
 

@@ -27,10 +27,22 @@ function handleCircleError(err, res) {
 // Every admin needs this to render the switcher, so it takes no permission
 // beyond being staff.
 router.get('/', async (req, res) => {
+  const ids = req.availableCircles.map(c => c.id);
+  const counts = new Map();
+  if (ids.length) {
+    const placeholders = ids.map(() => '?').join(',');
+    const rows = await db.prepare(`
+      SELECT circle_id, COUNT(*) as n FROM circle_members
+      WHERE circle_id IN (${placeholders})
+      GROUP BY circle_id
+    `).all(...ids);
+    for (const row of rows || []) counts.set(row.circle_id, Number(row.n || 0));
+  }
+
   res.json({
     circles: req.availableCircles.map(c => ({
       id: c.id, name: c.name, slug: c.slug, description: c.description,
-      color: c.color, member_count: c.member_count ?? null
+      color: c.color, member_count: counts.has(c.id) ? counts.get(c.id) : 0
     })),
     current: { id: req.circle.id, name: req.circle.name, slug: req.circle.slug },
     can_create: Boolean(req.admin.is_global)
@@ -143,6 +155,7 @@ router.put('/:id', requirePermission('circles.write'), async (req, res) => {
 
   params.push(circle.id);
   await db.prepare(`UPDATE circles SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+  circles.invalidateAccess();
 
   res.json({
     circle: await circles.byId(circle.id),

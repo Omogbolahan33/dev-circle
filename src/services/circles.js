@@ -1,5 +1,13 @@
 const db = require('../db');
 const { uuid } = require('../utils/helpers');
+const { ttlCache, singleflight } = require('../utils/ttlCache');
+
+const accessCache = ttlCache({ ttlMs: 45_000, max: 500 });
+const loadAccessOnce = singleflight();
+
+function invalidateAccess() {
+  accessCache.clear();
+}
 
 // ─── Circles ────────────────────────────────────────────────
 // A circle is a workspace. Dev Circle is one instance of it, not a container
@@ -66,6 +74,7 @@ async function create({ name, description, color, createdBy }) {
     VALUES (?, ?, ?, ?, ?, ?)
   `).run(id, String(name).trim(), await uniqueSlug(name), description || null, color || '#107EBC', createdBy || null);
 
+  invalidateAccess();
   return byId(id);
 }
 
@@ -151,31 +160,38 @@ async function isMember(circleId, userId) {
 // Which circles a staff member may work in, and with what role in each.
 // A global admin is not listed against circles — they reach all of them.
 async function forAdmin(admin) {
-  if (admin.is_global) {
-    const rows = await db.prepare(`
-      SELECT c.*, COALESCE(mc.n, 0) as member_count
-      FROM circles c
-      LEFT JOIN (
-        SELECT circle_id, COUNT(*) as n FROM circle_members GROUP BY circle_id
-      ) mc ON mc.circle_id = c.id
-      WHERE c.status = 'active'
-      ORDER BY c.created_at
-    `).all();
-    return (rows || []).map(c => ({ ...c, role_id: admin.role_id, global: true }));
-  }
+  // Access control does not need a COUNT of every member. That scan sat on
+  // every admin request; the switcher asks for counts on its own endpoint.
+  const key = `${admin.id}:${admin.is_global ? 1 : 0}:${admin.role_id || ''}`;
+  const cached = accessCache.get(key);
+  if (cached) return cached;
 
-  return await db.prepare(`
-    SELECT c.*, ca.role_id, 0 as global, r.permissions as role_permissions,
-           COALESCE(mc.n, 0) as member_count
-    FROM circle_admins ca
-    JOIN circles c ON c.id = ca.circle_id
-    LEFT JOIN roles r ON r.id = ca.role_id
-    LEFT JOIN (
-      SELECT circle_id, COUNT(*) as n FROM circle_members GROUP BY circle_id
-    ) mc ON mc.circle_id = c.id
-    WHERE ca.admin_id = ? AND c.status = 'active'
-    ORDER BY c.created_at
-  `).all(admin.id);
+  return loadAccessOnce(key, async () => {
+    const hit = accessCache.get(key);
+    if (hit) return hit;
+
+    let rows;
+    if (admin.is_global) {
+      rows = ((await db.prepare(`
+        SELECT c.id, c.name, c.slug, c.description, c.color, c.status, c.survey_theme, c.created_at
+        FROM circles c
+        WHERE c.status = 'active'
+        ORDER BY c.created_at
+      `).all()) || []).map(c => ({ ...c, role_id: admin.role_id, global: true }));
+    } else {
+      rows = await db.prepare(`
+        SELECT c.id, c.name, c.slug, c.description, c.color, c.status, c.survey_theme, c.created_at,
+               ca.role_id, 0 as global, r.permissions as role_permissions
+        FROM circle_admins ca
+        JOIN circles c ON c.id = ca.circle_id
+        LEFT JOIN roles r ON r.id = ca.role_id
+        WHERE ca.admin_id = ? AND c.status = 'active'
+        ORDER BY c.created_at
+      `).all(admin.id);
+    }
+    accessCache.set(key, rows || []);
+    return rows || [];
+  });
 }
 
 // The role this staff member holds *in this circle*. Permissions are unchanged;
@@ -199,11 +215,14 @@ async function grantAdmin(circleId, adminId, roleId) {
     INSERT INTO circle_admins (circle_id, admin_id, role_id) VALUES (?, ?, ?)
     ON CONFLICT(circle_id, admin_id) DO UPDATE SET role_id = excluded.role_id
   `).run(circleId, adminId, roleId);
+  invalidateAccess();
 }
 
 async function revokeAdmin(circleId, adminId) {
-  return Number((await db.prepare('DELETE FROM circle_admins WHERE circle_id = ? AND admin_id = ?')
+  const removed = Number((await db.prepare('DELETE FROM circle_admins WHERE circle_id = ? AND admin_id = ?')
     .run(circleId, adminId))?.changes || 0);
+  if (removed) invalidateAccess();
+  return removed;
 }
 
 async function archive(circleId) {
@@ -223,5 +242,5 @@ module.exports = {
   all, byId, bySlug, fallback, create, slugify,
   members, addMembers, removeMember, join, forUser, circleIdsForUser, isMember,
   forAdmin, roleFor, canAdminister, grantAdmin, revokeAdmin,
-  archive, CircleError
+  archive, invalidateAccess, CircleError
 };

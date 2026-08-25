@@ -94,6 +94,7 @@ function getPool() {
     max: config.database.pgPool.max,
     idleTimeoutMillis: config.database.pgPool.idleTimeoutMillis,
     connectionTimeoutMillis: config.database.pgPool.connectionTimeoutMillis,
+    keepAlive: true,
     ssl: config.database.pgPool.ssl || undefined
   });
 

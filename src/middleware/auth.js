@@ -1,6 +1,13 @@
 const crypto = require('crypto');
 const db = require('../db');
 const config = require('../config');
+const { ttlCache, singleflight } = require('../utils/ttlCache');
+
+// A session lookup is a round-trip to Postgres before every API call. Empty
+// tables still pay that latency; caching the resolved principal for a short
+// window is what keeps admin pages under 100ms.
+const sessionCache = ttlCache({ ttlMs: 45_000, max: 2000 });
+const loadSessionOnce = singleflight();
 
 // ─── Sessions ───────────────────────────────────────────────
 // Tokens are random 32-byte values handed to the client; only their SHA-256
@@ -60,10 +67,13 @@ async function getSession(token) {
 }
 
 async function destroySession(token) {
-  await db.prepare('DELETE FROM sessions WHERE token_hash = ?').run(hashToken(token));
+  const hash = hashToken(token);
+  sessionCache.delete(hash);
+  await db.prepare('DELETE FROM sessions WHERE token_hash = ?').run(hash);
 }
 
 async function destroyAllSessionsFor(subjectId) {
+  sessionCache.clear();
   await db.prepare('DELETE FROM sessions WHERE subject_id = ?').run(subjectId);
 }
 
@@ -137,6 +147,82 @@ function hasPermission(perms, permission) {
 
 // ─── Middleware ─────────────────────────────────────────────
 
+async function resolvePrincipal(hash) {
+  const cached = sessionCache.get(hash);
+  if (cached) return cached;
+
+  const row = await db.prepare(`
+    SELECT
+      s.subject_id, s.is_admin, s.issued_via, s.scope,
+      a.id as admin_id, a.email as admin_email, a.name as admin_name,
+      a.password_hash as admin_password_hash, a.role_id as admin_role_id,
+      a.status as admin_status, a.is_global as admin_is_global,
+      a.must_change_password as admin_must_change_password,
+      a.invited_by as admin_invited_by, a.invited_at as admin_invited_at,
+      a.created_at as admin_created_at,
+      r.permissions as role_permissions,
+      u.id as user_id, u.status as user_status
+    FROM sessions s
+    LEFT JOIN admin_users a ON a.id = s.subject_id
+    LEFT JOIN roles r ON r.id = a.role_id
+    LEFT JOIN users u ON u.id = s.subject_id
+    WHERE s.token_hash = ? AND s.expires_at > datetime('now')
+  `).get(hash);
+
+  if (!row) return null;
+
+  const session = {
+    userId: row.subject_id,
+    isAdmin: row.is_admin === 1 || row.is_admin === true || row.is_admin === '1',
+    issuedVia: row.issued_via,
+    scope: row.scope || 'full'
+  };
+
+  if (session.isAdmin) {
+    if (!row.admin_id || row.admin_status !== 'active') {
+      return { error: 'inactive', message: 'Admin account inactive' };
+    }
+    const principal = {
+      session,
+      isAdmin: true,
+      admin: {
+        id: row.admin_id,
+        email: row.admin_email,
+        name: row.admin_name,
+        password_hash: row.admin_password_hash,
+        role_id: row.admin_role_id,
+        status: row.admin_status,
+        is_global: row.admin_is_global,
+        must_change_password: row.admin_must_change_password,
+        invited_by: row.admin_invited_by,
+        invited_at: row.admin_invited_at,
+        created_at: row.admin_created_at
+      },
+      permissions: parsePermissions(row.role_permissions),
+      user: null
+    };
+    sessionCache.set(hash, principal);
+    return principal;
+  }
+
+  if (!row.user_id || row.user_status !== 'active') {
+    return { error: 'inactive', message: 'User account inactive' };
+  }
+  const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(row.user_id);
+  if (!user || user.status !== 'active') {
+    return { error: 'inactive', message: 'User account inactive' };
+  }
+  const principal = {
+    session,
+    isAdmin: false,
+    admin: null,
+    permissions: [],
+    user
+  };
+  sessionCache.set(hash, principal);
+  return principal;
+}
+
 async function requireAuth(req, res, next) {
   try {
     const authHeader = req.headers.authorization;
@@ -144,36 +230,17 @@ async function requireAuth(req, res, next) {
       return res.status(401).json({ error: 'Authentication required' });
     }
 
-    // Session, account and role in one round-trip. Three sequential lookups
-    // used to sit in front of every authenticated request to Postgres.
-    const row = await db.prepare(`
-      SELECT
-        s.subject_id, s.is_admin, s.issued_via, s.scope,
-        a.id as admin_id, a.email as admin_email, a.name as admin_name,
-        a.password_hash as admin_password_hash, a.role_id as admin_role_id,
-        a.status as admin_status, a.is_global as admin_is_global,
-        a.must_change_password as admin_must_change_password,
-        a.invited_by as admin_invited_by, a.invited_at as admin_invited_at,
-        a.created_at as admin_created_at,
-        r.permissions as role_permissions,
-        u.id as user_id, u.status as user_status
-      FROM sessions s
-      LEFT JOIN admin_users a ON a.id = s.subject_id
-      LEFT JOIN roles r ON r.id = a.role_id
-      LEFT JOIN users u ON u.id = s.subject_id
-      WHERE s.token_hash = ? AND s.expires_at > datetime('now')
-    `).get(hashToken(authHeader.slice(7)));
+    const hash = hashToken(authHeader.slice(7));
+    const principal = await loadSessionOnce(hash, () => resolvePrincipal(hash));
 
-    if (!row) {
+    if (!principal) {
       return res.status(401).json({ error: 'Invalid or expired token' });
     }
+    if (principal.error === 'inactive') {
+      return res.status(401).json({ error: principal.message });
+    }
 
-    const session = {
-      userId: row.subject_id,
-      isAdmin: row.is_admin === 1 || row.is_admin === true || row.is_admin === '1',
-      issuedVia: row.issued_via,
-      scope: row.scope || 'full'
-    };
+    const session = principal.session;
 
     // Checked before the account is even loaded: a temporary password gets you
     // to the "choose a password" screen and nowhere else.
@@ -187,42 +254,11 @@ async function requireAuth(req, res, next) {
       }
     }
 
-    if (session.isAdmin) {
-      if (!row.admin_id || row.admin_status !== 'active') {
-        return res.status(401).json({ error: 'Admin account inactive' });
-      }
-      req.admin = {
-        id: row.admin_id,
-        email: row.admin_email,
-        name: row.admin_name,
-        password_hash: row.admin_password_hash,
-        role_id: row.admin_role_id,
-        status: row.admin_status,
-        is_global: row.admin_is_global,
-        must_change_password: row.admin_must_change_password,
-        invited_by: row.admin_invited_by,
-        invited_at: row.admin_invited_at,
-        created_at: row.admin_created_at
-      };
-      req.isAdmin = true;
-      // A provisional value: a role is held within a circle, so circleContext
-      // replaces this with the permissions that apply where they are working
-      req.permissions = parsePermissions(row.role_permissions);
-    } else {
-      if (!row.user_id || row.user_status !== 'active') {
-        return res.status(401).json({ error: 'User account inactive' });
-      }
-      // Members need the full profile row further down the stack.
-      const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(row.user_id);
-      if (!user || user.status !== 'active') {
-        return res.status(401).json({ error: 'User account inactive' });
-      }
-      req.user = user;
-      req.isAdmin = false;
-      req.permissions = [];
-    }
-
     req.session = session;
+    req.isAdmin = principal.isAdmin;
+    req.permissions = principal.permissions;
+    if (principal.isAdmin) req.admin = principal.admin;
+    else req.user = principal.user;
     next();
   } catch (err) {
     next(err);
