@@ -43,6 +43,30 @@ describe('ttl cache', () => {
     assert.deepEqual(cache.principals.get(cache.authKey('abc')), { ok: true });
   });
 
+  it('touching last_used_at does not drop a list', () => {
+    cache.clearAll();
+    cache.putPage('/members', { body: { members: [1] } });
+    cache.noteWrite("UPDATE api_keys SET last_used_at = datetime('now') WHERE id = ?");
+    assert.deepEqual(cache.pages.get('l|/api/admin/members||'), { members: [1] });
+  });
+
+  it('a survey write drops surveys and the overview, not roles', () => {
+    cache.clearAll();
+    cache.putPage('/surveys', { body: { surveys: [] } });
+    cache.putPage('/dashboard', { body: { stats: {} } });
+    cache.putPage('/roles', { body: { roles: [1] } });
+    cache.noteWrite('INSERT INTO surveys (id, title) VALUES (?, ?)');
+    assert.equal(cache.pages.get('l|/api/admin/surveys||'), undefined);
+    assert.equal(cache.pages.get('l|/api/admin/dashboard||'), undefined);
+    assert.deepEqual(cache.pages.get('l|/api/admin/roles||'), { roles: [1] });
+  });
+
+  it('names the table a statement writes', () => {
+    assert.deepEqual(cache.tablesTouched('INSERT INTO surveys (id) VALUES (?)'), ['surveys']);
+    assert.deepEqual(cache.tablesTouched('UPDATE users SET status = ? WHERE id = ?'), ['users']);
+    assert.deepEqual(cache.tablesTouched('DELETE FROM sessions WHERE token_hash = ?'), ['sessions']);
+  });
+
   it('a warmed page uses the same key the request will look up', () => {
     cache.clearAll();
     cache.putPage('/dashboard', { circleId: 'circ-1', body: { stats: { total_members: 0 } } });
