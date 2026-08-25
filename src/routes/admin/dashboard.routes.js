@@ -7,25 +7,24 @@ const router = express.Router();
 // ─── Dashboard ──────────────────────────────────────────────
 
 async function loadDashboard(circleId) {
-  // One statement, one bind. Five independent round-trips were the whole
-  // second on an empty workspace talking to remote Postgres.
+  // One statement, one RTT. Each arm filters circle_id directly — a CTE of
+  // `SELECT ? AS id` hid the predicate and Postgres scanned engagement_history
+  // and survey_responses end to end (~900ms) to return twenty rows.
   return db.prepare(`
-    WITH circle AS (SELECT ? AS id),
-    scoped AS (
-      SELECT u.id, u.api_status, u.created_at
-      FROM users u
-      JOIN circle_members cm ON cm.user_id = u.id
-      JOIN circle x ON x.id = cm.circle_id
-    )
     SELECT 'status' AS part, api_status AS id, CAST(NULL AS TEXT) AS label, CAST(COUNT(*) AS INTEGER) AS n,
            CAST(NULL AS TEXT) AS name, CAST(NULL AS TEXT) AS email, CAST(NULL AS TEXT) AS ts,
            CAST(NULL AS TEXT) AS extra, CAST(NULL AS TEXT) AS extra2
-      FROM scoped GROUP BY api_status
+      FROM users u
+      JOIN circle_members cm ON cm.user_id = u.id
+     WHERE cm.circle_id = ?
+     GROUP BY api_status
     UNION ALL
     SELECT 'new_week', CAST(NULL AS TEXT), CAST(NULL AS TEXT),
-           CAST(SUM(CASE WHEN created_at > datetime('now', '-7 days') THEN 1 ELSE 0 END) AS INTEGER),
+           CAST(SUM(CASE WHEN u.created_at > datetime('now', '-7 days') THEN 1 ELSE 0 END) AS INTEGER),
            CAST(NULL AS TEXT), CAST(NULL AS TEXT), CAST(NULL AS TEXT), CAST(NULL AS TEXT), CAST(NULL AS TEXT)
-      FROM scoped
+      FROM users u
+      JOIN circle_members cm ON cm.user_id = u.id
+     WHERE cm.circle_id = ?
     UNION ALL
     SELECT 'surveys', CAST(NULL AS TEXT), CAST(NULL AS TEXT), CAST(COUNT(*) AS INTEGER),
            CAST(NULL AS TEXT), CAST(NULL AS TEXT), CAST(NULL AS TEXT),
@@ -33,19 +32,20 @@ async function loadDashboard(circleId) {
            CAST(NULL AS TEXT)
       FROM survey_responses sr
       JOIN surveys s ON s.id = sr.survey_id
-      JOIN circle x ON x.id = s.circle_id
+     WHERE s.circle_id = ?
     UNION ALL
     SELECT 'cohorts', CAST(NULL AS TEXT), CAST(NULL AS TEXT), CAST(COUNT(*) AS INTEGER),
            CAST(NULL AS TEXT), CAST(NULL AS TEXT), CAST(NULL AS TEXT), CAST(NULL AS TEXT), CAST(NULL AS TEXT)
-      FROM cohorts c JOIN circle x ON x.id = c.circle_id
+      FROM cohorts c
+     WHERE c.circle_id = ?
     UNION ALL
     SELECT * FROM (
       SELECT 'cohort_row' AS part, c.id AS id, c.color AS label, CAST(COUNT(uc.user_id) AS INTEGER) AS n,
              c.name AS name, CAST(NULL AS TEXT) AS email, CAST(NULL AS TEXT) AS ts,
              CAST(NULL AS TEXT) AS extra, CAST(NULL AS TEXT) AS extra2
       FROM cohorts c
-      JOIN circle x ON x.id = c.circle_id
       LEFT JOIN user_cohorts uc ON uc.cohort_id = c.id
+      WHERE c.circle_id = ?
       GROUP BY c.id, c.name, c.color
       ORDER BY n DESC
       LIMIT 10
@@ -57,8 +57,8 @@ async function loadDashboard(circleId) {
              eh.user_id AS extra, CAST(NULL AS TEXT) AS extra2
       FROM engagement_history eh
       JOIN circle_members cm ON cm.user_id = eh.user_id
-      JOIN circle x ON x.id = cm.circle_id
       LEFT JOIN users u ON u.id = eh.user_id
+      WHERE cm.circle_id = ?
       ORDER BY eh.created_at DESC
       LIMIT 20
     ) activity
@@ -68,13 +68,12 @@ async function loadDashboard(circleId) {
              u.name AS name, u.email AS email, CAST(f.created_at AS TEXT) AS ts,
              f.status AS extra, f.content AS extra2
       FROM feedback f
-      JOIN circle x ON x.id = f.circle_id
       LEFT JOIN users u ON u.id = f.user_id
-      WHERE f.status = 'open'
+      WHERE f.circle_id = ? AND f.status = 'open'
       ORDER BY f.created_at DESC
       LIMIT 4
     ) feedback
-  `).all(circleId);
+  `).all(circleId, circleId, circleId, circleId, circleId, circleId, circleId);
 }
 
 function presentDashboard(rows) {
@@ -149,8 +148,7 @@ async function loadDemography(circleId) {
   // Age is computed once in the CTE — the previous plan ran julianday twice
   // per member, per UNION arm.
   return db.prepare(`
-    WITH circle AS (SELECT ? AS id),
-    scoped AS (
+    WITH scoped AS (
       SELECT u.id, u.work_sector, u.location_state, u.gender, u.api_status,
              u.kyb_completed, u.api_products, u.engagement_streak,
              u.preferred_channels, u.preferred_days, u.date_of_birth,
@@ -163,7 +161,7 @@ async function loadDemography(circleId) {
              END as age_band
       FROM users u
       JOIN circle_members cm ON cm.user_id = u.id
-      JOIN circle x ON x.id = cm.circle_id
+      WHERE cm.circle_id = ?
     ),
     completed AS (
       SELECT sr.user_id, COUNT(*) as completed

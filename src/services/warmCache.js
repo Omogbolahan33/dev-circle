@@ -22,9 +22,14 @@ async function warmCircle(cache, circleId) {
   const blasts = require('../routes/admin/blasts.routes');
   const views = require('./feedbackViews');
 
-  const [dash, demo, memberPage, cohortList, surveyRows, giftList, blastList, grouped] =
+  // Overview first so a visit during warm is not the 900ms miss the logs show.
+  cache.putPage('/dashboard', {
+    circleId,
+    body: dashboard.presentDashboard(await dashboard.loadDashboard(circleId))
+  });
+
+  const [demo, memberPage, cohortList, surveyRows, giftList, blastList, grouped] =
     await Promise.all([
-      dashboard.loadDashboard(circleId).then(dashboard.presentDashboard),
       dashboard.loadDemography(circleId).then(dashboard.presentDemography),
       members.loadMemberPage({ page: 1, limit: 20 }, circleId),
       cohorts.loadCohortList(circleId),
@@ -42,7 +47,6 @@ async function warmCircle(cache, circleId) {
       }))
     ]);
 
-  cache.putPage('/dashboard', { circleId, body: dash });
   cache.putPage('/demography', { circleId, body: demo });
   cache.putPage('/members', { circleId, query: { limit: 20, page: 1 }, body: memberPage });
   cache.putPage('/cohorts', { circleId, body: cohortList });
