@@ -75,7 +75,12 @@ router.get('/surveys/schema', requirePermission('surveys.read'), async (req, res
       contrast: { floor: surveyForm.themes.FLOOR, comfortable: surveyForm.themes.AA },
       // What this circle's surveys start from, so the builder opens on the
       // workspace's look rather than the product's
-      circle: parseJSON(req.circle?.survey_theme, null)
+      circle: parseJSON(
+        req.circle?.survey_theme != null
+          ? req.circle.survey_theme
+          : (await db.prepare('SELECT survey_theme FROM circles WHERE id = ?').get(req.circleId))?.survey_theme,
+        null
+      )
     }
   });
 });

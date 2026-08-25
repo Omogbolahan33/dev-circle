@@ -3,7 +3,7 @@
 -- plain SQL file for Supabase CLI (`supabase db push`) and SQL Editor.
 -- Generated from SCHEMA_POSTGRES — keep them in sync.
 
-CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+  CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
   -- Users (base + migrations 2,3,10,16, etc.)
   CREATE TABLE IF NOT EXISTS users (
@@ -394,6 +394,7 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
   CREATE INDEX IF NOT EXISTS idx_user_cohorts_cohort ON user_cohorts(cohort_id);
   CREATE INDEX IF NOT EXISTS idx_consent_user ON consent(user_id);
   CREATE INDEX IF NOT EXISTS idx_circles_slug ON circles(slug);
+  CREATE INDEX IF NOT EXISTS idx_circles_status_created ON circles(status, created_at);
   CREATE INDEX IF NOT EXISTS idx_circle_members_user ON circle_members(user_id);
   CREATE INDEX IF NOT EXISTS idx_circle_admins_admin ON circle_admins(admin_id);
   CREATE INDEX IF NOT EXISTS idx_surveys_trigger ON surveys(trigger_event);
@@ -408,6 +409,7 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
   CREATE INDEX IF NOT EXISTS idx_engagement_user ON engagement_history(user_id);
   CREATE INDEX IF NOT EXISTS idx_engagement_type ON engagement_history(type);
   CREATE INDEX IF NOT EXISTS idx_engagement_created ON engagement_history(created_at);
+  CREATE INDEX IF NOT EXISTS idx_engagement_user_created ON engagement_history(user_id, created_at DESC);
   CREATE INDEX IF NOT EXISTS idx_feedback_user ON feedback(user_id);
   CREATE INDEX IF NOT EXISTS idx_feedback_status ON feedback(status);
   CREATE INDEX IF NOT EXISTS idx_feedback_source ON feedback(source);
@@ -425,6 +427,17 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
   CREATE INDEX IF NOT EXISTS idx_integration_events_processed ON integration_events(processed);
   CREATE INDEX IF NOT EXISTS idx_user_gifts_user ON user_gifts(user_id);
   CREATE UNIQUE INDEX IF NOT EXISTS idx_user_gifts_unique ON user_gifts(user_id, gift_id);
+  CREATE INDEX IF NOT EXISTS idx_user_gifts_gift ON user_gifts(gift_id);
+  CREATE INDEX IF NOT EXISTS idx_users_created_at ON users(created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_survey_responses_user_completed ON survey_responses(user_id, completed_at);
+  CREATE INDEX IF NOT EXISTS idx_survey_responses_survey_completed ON survey_responses(survey_id, completed_at);
+  CREATE INDEX IF NOT EXISTS idx_feedback_created ON feedback(created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_feedback_circle_created ON feedback(circle_id, created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_surveys_circle_created ON surveys(circle_id, created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_cohorts_circle ON cohorts(circle_id);
+  CREATE INDEX IF NOT EXISTS idx_admin_users_role ON admin_users(role_id);
+  CREATE INDEX IF NOT EXISTS idx_gifts_circle ON gifts(circle_id);
+  CREATE INDEX IF NOT EXISTS idx_blasts_circle ON message_blasts(circle_id);
   CREATE UNIQUE INDEX IF NOT EXISTS idx_feedback_verbatim ON feedback(user_id, survey_id, question_id) WHERE question_id IS NOT NULL AND survey_id IS NOT NULL AND user_id IS NOT NULL;
   CREATE UNIQUE INDEX IF NOT EXISTS idx_feedback_verbatim_anon ON feedback(response_id, question_id) WHERE response_id IS NOT NULL AND question_id IS NOT NULL;
   CREATE UNIQUE INDEX IF NOT EXISTS idx_feedback_external_response ON feedback(source_system, external_response_id) WHERE external_response_id IS NOT NULL;

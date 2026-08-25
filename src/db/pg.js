@@ -202,6 +202,11 @@ function translateSqliteToPostgres(sql) {
     return `(EXTRACT(EPOCH FROM (${args})::timestamptz) / 86400.0)`;
   });
 
+  out = replaceFnCall(out, 'json_array_length', args => {
+    const expr = args.split(',')[0].trim();
+    return `jsonb_array_length(COALESCE(NULLIF(TRIM((${expr})::text), ''), '[]')::jsonb)`;
+  });
+
   // json_each(col) → a set of text values aliased json_each, so `.value`
   // in the original SQL still resolves.
   out = replaceFnCall(out, 'json_each', args => {

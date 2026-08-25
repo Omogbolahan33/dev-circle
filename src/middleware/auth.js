@@ -191,7 +191,6 @@ function circlesFromAccessRows(rows, admin) {
       description: row.circle_description,
       color: row.circle_color,
       status: row.circle_status,
-      survey_theme: row.circle_survey_theme,
       created_at: row.circle_created_at,
       role_id: global ? admin.role_id : row.circle_role_id,
       global,
@@ -239,22 +238,22 @@ async function resolvePrincipal(hash) {
       u.last_engagement_at as member_last_engagement_at,
       c.id as circle_id, c.name as circle_name, c.slug as circle_slug,
       c.description as circle_description, c.color as circle_color,
-      c.status as circle_status, c.survey_theme as circle_survey_theme,
-      c.created_at as circle_created_at,
+      c.status as circle_status, c.created_at as circle_created_at,
       ca.role_id as circle_role_id,
       cr.permissions as circle_role_permissions
     FROM sessions s
     LEFT JOIN admin_users a ON a.id = s.subject_id
     LEFT JOIN roles r ON r.id = a.role_id
     LEFT JOIN users u ON u.id = s.subject_id
+      AND CAST(s.is_admin AS TEXT) NOT IN ('1', 'true', 't')
+    LEFT JOIN circle_admins ca0 ON ca0.admin_id = a.id
+      AND CAST(s.is_admin AS TEXT) IN ('1', 'true', 't')
+      AND CAST(a.is_global AS TEXT) NOT IN ('1', 'true', 't')
     LEFT JOIN circles c ON CAST(s.is_admin AS TEXT) IN ('1', 'true', 't')
       AND c.status = 'active'
       AND (
         CAST(a.is_global AS TEXT) IN ('1', 'true', 't')
-        OR EXISTS (
-          SELECT 1 FROM circle_admins gx
-          WHERE gx.admin_id = a.id AND gx.circle_id = c.id
-        )
+        OR c.id = ca0.circle_id
       )
     LEFT JOIN circle_admins ca ON ca.admin_id = a.id AND ca.circle_id = c.id
     LEFT JOIN roles cr ON cr.id = ca.role_id

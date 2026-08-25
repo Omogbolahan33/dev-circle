@@ -61,6 +61,12 @@ describe('SQLite → Postgres SQL', () => {
     assert.match(sql, /json_each\.value = \$1/);
   });
 
+  test('json_array_length becomes jsonb_array_length', () => {
+    const sql = pgSql('SELECT json_array_length(s.questions) FROM surveys s');
+    assert.match(sql, /jsonb_array_length/);
+    assert.doesNotMatch(sql, /json_array_length/);
+  });
+
   test('GROUP_CONCAT becomes string_agg', () => {
     const sql = pgSql(
       "SELECT GROUP_CONCAT(c.name, '; ') as cohorts FROM cohorts c WHERE c.id = ?"

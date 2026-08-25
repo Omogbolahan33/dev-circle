@@ -8,76 +8,127 @@ const router = express.Router();
 
 // GET /api/admin/dashboard
 router.get('/dashboard', requirePermission('members.read'), async (req, res) => {
-  const circleId = req.circleId;
-  const [userRows, surveyRow, recentActivity, cohortBreakdown, openFeedback] = await Promise.all([
-    // Status chart is one GROUP BY of this workspace. Headlines come from the
-    // same rows so members are not counted five times as independent statements.
-    db.prepare(`
-      SELECT
-        u.api_status,
-        COUNT(*) as count,
-        SUM(CASE WHEN u.created_at > datetime('now', '-7 days') THEN 1 ELSE 0 END) as new_this_week
+  // One statement, one bind. Five independent round-trips were the whole
+  // second on an empty workspace talking to remote Postgres.
+  const rows = await db.prepare(`
+    WITH circle AS (SELECT ? AS id),
+    scoped AS (
+      SELECT u.id, u.api_status, u.created_at
       FROM users u
-      JOIN circle_members cm ON cm.user_id = u.id AND cm.circle_id = ?
-      GROUP BY u.api_status
-    `).all(circleId),
-    db.prepare(`
-      SELECT
-        COUNT(*) as surveys_sent,
-        SUM(CASE WHEN sr.completed_at IS NOT NULL THEN 1 ELSE 0 END) as surveys_completed,
-        (SELECT COUNT(*) FROM cohorts WHERE circle_id = ?) as active_cohorts
+      JOIN circle_members cm ON cm.user_id = u.id
+      JOIN circle x ON x.id = cm.circle_id
+    )
+    SELECT 'status' AS part, api_status AS id, CAST(NULL AS TEXT) AS label, CAST(COUNT(*) AS INTEGER) AS n,
+           CAST(NULL AS TEXT) AS name, CAST(NULL AS TEXT) AS email, CAST(NULL AS TEXT) AS ts,
+           CAST(NULL AS TEXT) AS extra, CAST(NULL AS TEXT) AS extra2
+      FROM scoped GROUP BY api_status
+    UNION ALL
+    SELECT 'new_week', CAST(NULL AS TEXT), CAST(NULL AS TEXT),
+           CAST(SUM(CASE WHEN created_at > datetime('now', '-7 days') THEN 1 ELSE 0 END) AS INTEGER),
+           CAST(NULL AS TEXT), CAST(NULL AS TEXT), CAST(NULL AS TEXT), CAST(NULL AS TEXT), CAST(NULL AS TEXT)
+      FROM scoped
+    UNION ALL
+    SELECT 'surveys', CAST(NULL AS TEXT), CAST(NULL AS TEXT), CAST(COUNT(*) AS INTEGER),
+           CAST(NULL AS TEXT), CAST(NULL AS TEXT), CAST(NULL AS TEXT),
+           CAST(SUM(CASE WHEN sr.completed_at IS NOT NULL THEN 1 ELSE 0 END) AS TEXT),
+           CAST(NULL AS TEXT)
       FROM survey_responses sr
       JOIN surveys s ON s.id = sr.survey_id
-      WHERE s.circle_id = ?
-    `).get(circleId, circleId),
-    db.prepare(`
-      SELECT eh.*, u.name as user_name, u.email as user_email
+      JOIN circle x ON x.id = s.circle_id
+    UNION ALL
+    SELECT 'cohorts', CAST(NULL AS TEXT), CAST(NULL AS TEXT), CAST(COUNT(*) AS INTEGER),
+           CAST(NULL AS TEXT), CAST(NULL AS TEXT), CAST(NULL AS TEXT), CAST(NULL AS TEXT), CAST(NULL AS TEXT)
+      FROM cohorts c JOIN circle x ON x.id = c.circle_id
+    UNION ALL
+    SELECT * FROM (
+      SELECT 'cohort_row' AS part, c.id AS id, c.color AS label, CAST(COUNT(uc.user_id) AS INTEGER) AS n,
+             c.name AS name, CAST(NULL AS TEXT) AS email, CAST(NULL AS TEXT) AS ts,
+             CAST(NULL AS TEXT) AS extra, CAST(NULL AS TEXT) AS extra2
+      FROM cohorts c
+      JOIN circle x ON x.id = c.circle_id
+      LEFT JOIN user_cohorts uc ON uc.cohort_id = c.id
+      GROUP BY c.id, c.name, c.color
+      ORDER BY n DESC
+      LIMIT 10
+    ) cohort_rows
+    UNION ALL
+    SELECT * FROM (
+      SELECT 'activity' AS part, eh.id AS id, eh.type AS label, CAST(NULL AS INTEGER) AS n,
+             u.name AS name, u.email AS email, CAST(eh.created_at AS TEXT) AS ts,
+             eh.user_id AS extra, CAST(NULL AS TEXT) AS extra2
       FROM engagement_history eh
-      JOIN circle_members cm ON cm.user_id = eh.user_id AND cm.circle_id = ?
+      JOIN circle_members cm ON cm.user_id = eh.user_id
+      JOIN circle x ON x.id = cm.circle_id
       LEFT JOIN users u ON u.id = eh.user_id
       ORDER BY eh.created_at DESC
       LIMIT 20
-    `).all(circleId),
-    db.prepare(`
-      SELECT c.id, c.name, c.color, COUNT(uc.user_id) as member_count
-      FROM cohorts c
-      LEFT JOIN user_cohorts uc ON uc.cohort_id = c.id
-      WHERE c.circle_id = ?
-      GROUP BY c.id, c.name, c.color
-      ORDER BY member_count DESC
-      LIMIT 10
-    `).all(circleId),
-    db.prepare(`
-      SELECT f.id, f.content, f.source, f.created_at, f.status,
-             u.name as user_name, u.email as user_email
+    ) activity
+    UNION ALL
+    SELECT * FROM (
+      SELECT 'feedback' AS part, f.id AS id, f.source AS label, CAST(NULL AS INTEGER) AS n,
+             u.name AS name, u.email AS email, CAST(f.created_at AS TEXT) AS ts,
+             f.status AS extra, f.content AS extra2
       FROM feedback f
+      JOIN circle x ON x.id = f.circle_id
       LEFT JOIN users u ON u.id = f.user_id
-      WHERE f.status = 'open' AND f.circle_id = ?
+      WHERE f.status = 'open'
       ORDER BY f.created_at DESC
       LIMIT 4
-    `).all(circleId)
-  ]);
+    ) feedback
+  `).all(req.circleId);
 
-  const statusBreakdown = (userRows || []).map(r => ({ api_status: r.api_status, count: Number(r.count || 0) }));
-  const totalMembers = (userRows || []).reduce((n, r) => n + Number(r.count || 0), 0);
-  const newThisWeek = (userRows || []).reduce((n, r) => n + Number(r.new_this_week || 0), 0);
-  const totalSurveysSent = Number(surveyRow?.surveys_sent || 0);
-  const completedSurveys = Number(surveyRow?.surveys_completed || 0);
-  const engagementRate = totalSurveysSent > 0 ? Math.round((completedSurveys / totalSurveysSent) * 100) : 0;
+  const statusBreakdown = [];
+  const cohortBreakdown = [];
+  const recentActivity = [];
+  const openFeedback = [];
+  let newThisWeek = 0;
+  let surveysSent = 0;
+  let surveysCompleted = 0;
+  let activeCohorts = 0;
+
+  for (const row of rows || []) {
+    if (row.part === 'status') {
+      statusBreakdown.push({ api_status: row.id, count: Number(row.n || 0) });
+    } else if (row.part === 'new_week') {
+      newThisWeek = Number(row.n || 0);
+    } else if (row.part === 'surveys') {
+      surveysSent = Number(row.n || 0);
+      surveysCompleted = Number(row.extra || 0);
+    } else if (row.part === 'cohorts') {
+      activeCohorts = Number(row.n || 0);
+    } else if (row.part === 'cohort_row') {
+      cohortBreakdown.push({
+        id: row.id, name: row.name, color: row.label, member_count: Number(row.n || 0)
+      });
+    } else if (row.part === 'activity') {
+      recentActivity.push({
+        id: row.id, type: row.label, user_id: row.extra,
+        user_name: row.name, user_email: row.email, created_at: row.ts
+      });
+    } else if (row.part === 'feedback') {
+      openFeedback.push({
+        id: row.id, content: row.extra2, source: row.label, status: row.extra,
+        created_at: row.ts, user_name: row.name, user_email: row.email
+      });
+    }
+  }
+
+  const totalMembers = statusBreakdown.reduce((n, r) => n + r.count, 0);
+  const engagementRate = surveysSent > 0 ? Math.round((surveysCompleted / surveysSent) * 100) : 0;
 
   res.json({
     stats: {
       total_members: totalMembers,
-      active_cohorts: Number(surveyRow?.active_cohorts || 0),
+      active_cohorts: activeCohorts,
       engagement_rate: engagementRate,
-      surveys_sent: totalSurveysSent,
-      surveys_completed: completedSurveys,
+      surveys_sent: surveysSent,
+      surveys_completed: surveysCompleted,
       new_this_week: newThisWeek
     },
     recent_activity: recentActivity,
     cohort_breakdown: cohortBreakdown,
     status_breakdown: statusBreakdown,
-    open_feedback: openFeedback || []
+    open_feedback: openFeedback
   });
 });
 
@@ -88,13 +139,25 @@ router.get('/demography', requirePermission('members.read'), async (req, res) =>
   // Aggregations stay in SQL. Shipping every member row to Node to GROUP BY
   // is the plan that gets worse as the base grows; UNION ALL is one round-trip
   // and the same JSON the page already reads.
-  // One membership join, then every axis reads the same set. Binding the
-  // circle once keeps the planner on circle_members instead of fourteen
-  // independent scans of every user in every workspace.
+  // The membership CTE is only the columns the axes read. Pulling u.* fourteen
+  // times was a wide materialize of notification prefs and product JSON the
+  // age band never looks at.
   const rows = await db.prepare(`
-    WITH scoped AS (
-      SELECT u.* FROM users u
-      JOIN circle_members cm ON cm.user_id = u.id AND cm.circle_id = ?
+    WITH circle AS (SELECT ? AS id),
+    scoped AS (
+      SELECT u.id, u.work_sector, u.location_state, u.gender, u.api_status,
+             u.kyb_completed, u.date_of_birth, u.api_products, u.engagement_streak,
+             u.preferred_channels, u.preferred_days
+      FROM users u
+      JOIN circle_members cm ON cm.user_id = u.id
+      JOIN circle x ON x.id = cm.circle_id
+    ),
+    completed AS (
+      SELECT sr.user_id, COUNT(*) as completed
+      FROM survey_responses sr
+      JOIN scoped s ON s.id = sr.user_id
+      WHERE sr.completed_at IS NOT NULL
+      GROUP BY sr.user_id
     )
     SELECT 'work_sector' as axis, COALESCE(NULLIF(work_sector, ''), 'Unspecified') as label, COUNT(*) as count
       FROM scoped GROUP BY 2
@@ -126,17 +189,13 @@ router.get('/demography', requirePermission('members.read'), async (req, res) =>
       GROUP BY 2
     UNION ALL
     SELECT 'engagement_depth', CASE
-        WHEN completed = 0 THEN 'Never responded'
-        WHEN completed BETWEEN 1 AND 2 THEN '1–2 surveys'
-        WHEN completed BETWEEN 3 AND 5 THEN '3–5 surveys'
+        WHEN COALESCE(c.completed, 0) = 0 THEN 'Never responded'
+        WHEN c.completed BETWEEN 1 AND 2 THEN '1–2 surveys'
+        WHEN c.completed BETWEEN 3 AND 5 THEN '3–5 surveys'
         ELSE '6+ surveys'
       END, COUNT(*)
-      FROM (
-        SELECT s.id, COUNT(sr.id) as completed
-        FROM scoped s
-        LEFT JOIN survey_responses sr ON sr.user_id = s.id AND sr.completed_at IS NOT NULL
-        GROUP BY s.id
-      ) depths
+      FROM scoped s
+      LEFT JOIN completed c ON c.user_id = s.id
       GROUP BY 2
     UNION ALL
     SELECT 'streak_band', CASE

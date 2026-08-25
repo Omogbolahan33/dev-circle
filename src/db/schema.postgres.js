@@ -416,6 +416,7 @@ const SCHEMA_POSTGRES = `
   CREATE INDEX IF NOT EXISTS idx_engagement_user ON engagement_history(user_id);
   CREATE INDEX IF NOT EXISTS idx_engagement_type ON engagement_history(type);
   CREATE INDEX IF NOT EXISTS idx_engagement_created ON engagement_history(created_at);
+  CREATE INDEX IF NOT EXISTS idx_engagement_user_created ON engagement_history(user_id, created_at DESC);
   CREATE INDEX IF NOT EXISTS idx_feedback_user ON feedback(user_id);
   CREATE INDEX IF NOT EXISTS idx_feedback_status ON feedback(status);
   CREATE INDEX IF NOT EXISTS idx_feedback_source ON feedback(source);
