@@ -76,16 +76,17 @@ function memberFilters(query) {
     where.push('EXISTS (SELECT 1 FROM json_each(u.api_products) WHERE json_each.value = ?)');
     params.push(api_product);
   }
-  if (cohort_id) {
-    where.push('u.id IN (SELECT user_id FROM user_cohorts WHERE cohort_id = ?)');
-    params.push(cohort_id);
-  }
-  // Nested IN (SELECT user_id …) hides the circle PK from the planner.
-  // Starting at circle_members is the plan that stays cheap at 1,000+ members.
+
+  const joinParams = [];
   if (circle_id) {
-    from = 'users u JOIN circle_members cm ON cm.user_id = u.id AND cm.circle_id = ?';
-    params.unshift(circle_id);
+    from = `${from} JOIN circle_members cm ON cm.user_id = u.id AND cm.circle_id = ?`;
+    joinParams.push(circle_id);
   }
+  if (cohort_id) {
+    from = `${from} JOIN user_cohorts ucf ON ucf.user_id = u.id AND ucf.cohort_id = ?`;
+    joinParams.push(cohort_id);
+  }
+  if (joinParams.length) params.unshift(...joinParams);
 
   return { from, where: where.join(' AND '), params };
 }

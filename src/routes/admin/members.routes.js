@@ -28,19 +28,30 @@ router.get('/members', requirePermission('members.read'), async (req, res) => {
   // of every response. Cohorts join the same page of ids.
   const [members, cohortRows] = await Promise.all([
     db.prepare(`
-      SELECT u.id, u.email, u.name, u.phone, u.company, u.work_sector,
-             u.status, u.api_status, u.kyb_completed, u.engagement_streak,
-             u.preferred_channels, u.preferred_days, u.api_products,
-             u.gender, u.location_state, u.date_of_birth,
-             u.last_active_at, u.created_at,
-             COUNT(*) OVER() as _total,
-             (SELECT COUNT(*) FROM survey_responses sr WHERE sr.user_id = u.id) as surveys_invited,
-             (SELECT COUNT(*) FROM survey_responses sr
-               WHERE sr.user_id = u.id AND sr.completed_at IS NOT NULL) as surveys_completed
-      FROM ${from}
-      WHERE ${where}
-      ORDER BY u.created_at DESC
-      LIMIT ? OFFSET ?
+      WITH page AS (
+        SELECT u.id, u.email, u.name, u.phone, u.company, u.work_sector,
+               u.status, u.api_status, u.kyb_completed, u.engagement_streak,
+               u.preferred_channels, u.preferred_days, u.api_products,
+               u.gender, u.location_state, u.date_of_birth,
+               u.last_active_at, u.created_at,
+               COUNT(*) OVER() as _total
+        FROM ${from}
+        WHERE ${where}
+        ORDER BY u.created_at DESC
+        LIMIT ? OFFSET ?
+      )
+      SELECT page.*,
+             COALESCE(sr.surveys_invited, 0) as surveys_invited,
+             COALESCE(sr.surveys_completed, 0) as surveys_completed
+      FROM page
+      LEFT JOIN (
+        SELECT user_id,
+               COUNT(*) as surveys_invited,
+               SUM(CASE WHEN completed_at IS NOT NULL THEN 1 ELSE 0 END) as surveys_completed
+        FROM survey_responses
+        WHERE user_id IN (SELECT id FROM page)
+        GROUP BY user_id
+      ) sr ON sr.user_id = page.id
     `).all(...params, l, offset),
     db.prepare(`
       SELECT uc.user_id, c.id, c.name, c.color
@@ -85,13 +96,12 @@ router.get('/members', requirePermission('members.read'), async (req, res) => {
 
 // GET /api/admin/members/:id
 router.get('/members/:id', requirePermission('members.read'), async (req, res) => {
-  const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
+  const user = await db.prepare(`
+    SELECT u.* FROM users u
+    JOIN circle_members cm ON cm.user_id = u.id AND cm.circle_id = ?
+    WHERE u.id = ?
+  `).get(req.circleId, req.params.id);
   if (!user) return res.status(404).json({ error: 'Member not found' });
-
-  // Reachable only from a circle they are actually in
-  if (!await circles.isMember(req.circleId, user.id)) {
-    return res.status(404).json({ error: 'Member not found in this circle' });
-  }
 
   const [cohorts, consent, engagementRows, feedback, survey_responses, gifts, deliveries] =
     await Promise.all([

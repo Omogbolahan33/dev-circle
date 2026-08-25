@@ -12,15 +12,18 @@ router.get('/dashboard', requirePermission('members.read'), async (req, res) => 
     // Status chart is one GROUP BY. Headlines sit next to the survey scan so
     // users are not counted five times as independent statements.
     db.prepare(`
-      SELECT api_status, COUNT(*) as count FROM users GROUP BY api_status
+      SELECT
+        api_status,
+        COUNT(*) as count,
+        SUM(CASE WHEN created_at > datetime('now', '-7 days') THEN 1 ELSE 0 END) as new_this_week
+      FROM users
+      GROUP BY api_status
     `).all(),
     db.prepare(`
       SELECT
         COUNT(*) as surveys_sent,
         SUM(CASE WHEN completed_at IS NOT NULL THEN 1 ELSE 0 END) as surveys_completed,
-        (SELECT COUNT(*) FROM cohorts) as active_cohorts,
-        (SELECT COUNT(*) FROM users) as total_members,
-        (SELECT COUNT(*) FROM users WHERE created_at > datetime('now', '-7 days')) as new_this_week
+        (SELECT COUNT(*) FROM cohorts) as active_cohorts
       FROM survey_responses
     `).get(),
     db.prepare(`
@@ -50,7 +53,8 @@ router.get('/dashboard', requirePermission('members.read'), async (req, res) => 
   ]);
 
   const statusBreakdown = (userRows || []).map(r => ({ api_status: r.api_status, count: Number(r.count || 0) }));
-  const totalMembers = Number(surveyRow?.total_members || 0);
+  const totalMembers = (userRows || []).reduce((n, r) => n + Number(r.count || 0), 0);
+  const newThisWeek = (userRows || []).reduce((n, r) => n + Number(r.new_this_week || 0), 0);
   const totalSurveysSent = Number(surveyRow?.surveys_sent || 0);
   const completedSurveys = Number(surveyRow?.surveys_completed || 0);
   const engagementRate = totalSurveysSent > 0 ? Math.round((completedSurveys / totalSurveysSent) * 100) : 0;
@@ -62,7 +66,7 @@ router.get('/dashboard', requirePermission('members.read'), async (req, res) => 
       engagement_rate: engagementRate,
       surveys_sent: totalSurveysSent,
       surveys_completed: completedSurveys,
-      new_this_week: Number(surveyRow?.new_this_week || 0)
+      new_this_week: newThisWeek
     },
     recent_activity: recentActivity,
     cohort_breakdown: cohortBreakdown,

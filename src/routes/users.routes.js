@@ -75,6 +75,7 @@ router.get('/sessions', requireAuth, async (req, res) => {
   ]);
   const cohortIds = (cohortRows || []).map(r => r.cohort_id);
 
+  const circlePlaceholders = (circleIds || []).map(() => '?').join(',') || "''";
   const sessions = await db.prepare(`
     SELECT s.*, c.name as circle_name, sv.title as survey_title
     FROM scheduled_sessions s
@@ -82,8 +83,9 @@ router.get('/sessions', requireAuth, async (req, res) => {
     LEFT JOIN surveys sv ON sv.id = s.survey_id
     WHERE s.status IN ('scheduled','announced')
       AND s.scheduled_for > datetime('now', '-1 hour')
+      AND (s.circle_id IS NULL ${circleIds.length ? `OR s.circle_id IN (${circlePlaceholders})` : ''})
     ORDER BY s.scheduled_for ASC
-  `).all();
+  `).all(...circleIds);
 
   // Mirror the same targeting the dispatcher uses, so what a member sees here
   // matches what they will actually be invited to.
@@ -524,18 +526,26 @@ router.post('/gifts/:id/claim', requireAuth, async (req, res) => {
 
 // GET /api/users/surveys — active surveys for this user
 router.get('/surveys', requireAuth, async (req, res) => {
-  const userCohortIds = ((await db.prepare('SELECT cohort_id FROM user_cohorts WHERE user_id = ?')
-    .all(req.user.id)) || []).map(r => r.cohort_id);
-  const userCircleIds = await circles.circleIdsForUser(req.user.id);
+  const [allSurveys, cohortRows, completedRows, startedRows] = await Promise.all([
+    db.prepare(`
+      SELECT * FROM surveys
+      WHERE status = 'active' AND (expires_at IS NULL OR expires_at > datetime('now'))
+        AND (circle_id IS NULL OR circle_id IN (
+          SELECT circle_id FROM circle_members WHERE user_id = ?
+        ))
+    `).all(req.user.id),
+    db.prepare('SELECT cohort_id FROM user_cohorts WHERE user_id = ?').all(req.user.id),
+    db.prepare(`
+      SELECT survey_id FROM survey_responses WHERE user_id = ? AND completed_at IS NOT NULL
+    `).all(req.user.id),
+    db.prepare(`
+      SELECT survey_id, answers FROM survey_responses
+      WHERE user_id = ? AND completed_at IS NULL
+    `).all(req.user.id)
+  ]);
+  const userCohortIds = (cohortRows || []).map(r => r.cohort_id);
 
-  const allSurveys = await db.prepare(`
-    SELECT * FROM surveys
-    WHERE status = 'active' AND (expires_at IS NULL OR expires_at > datetime('now'))
-  `).all();
-
-  const eligible = allSurveys.filter(s => {
-    // A survey belonging to a sub-circle is only for that circle's members
-    if (s.circle_id && !userCircleIds.includes(s.circle_id)) return false;
+  const eligible = (allSurveys || []).filter(s => {
     if (s.target_type === 'all') return true;
     const targets = parseJSON(s.target_ids, []);
     if (s.target_type === 'cohort') return targets.some(t => userCohortIds.includes(t));
@@ -543,17 +553,8 @@ router.get('/surveys', requireAuth, async (req, res) => {
     return false;
   });
 
-  const completed = ((await db.prepare(`
-    SELECT survey_id FROM survey_responses WHERE user_id = ? AND completed_at IS NOT NULL
-  `).all(req.user.id) || []) || []).map(r => r.survey_id);
-
-  // A survey already begun and left is the thing a member most wants to see
-  // first, so the list says how far in they were rather than offering it as
-  // though it were untouched.
-  const started = new Map((await db.prepare(`
-    SELECT survey_id, answers FROM survey_responses
-    WHERE user_id = ? AND completed_at IS NULL
-  `).all(req.user.id) || []).map(r => [r.survey_id, Object.keys(parseJSON(r.answers, {})).length]));
+  const completed = (completedRows || []).map(r => r.survey_id);
+  const started = new Map((startedRows || []).map(r => [r.survey_id, Object.keys(parseJSON(r.answers, {})).length]));
 
   const result = eligible.map(s => {
     const survey = surveyForm.hydrate(s);

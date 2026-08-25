@@ -16,8 +16,8 @@ const router = express.Router();
 // GET /api/admin/feedback
 router.get('/feedback', requirePermission('feedback.read'), async (req, res) => {
   const { status, source, type, prompted, limit = 50 } = req.query;
-  const where = ['1=1'];
-  const params = [];
+  const where = ['f.circle_id = ?'];
+  const params = [req.circleId];
 
   if (status) { where.push('f.status = ?'); params.push(status); }
   if (source) { where.push('f.source = ?'); params.push(source); }
@@ -43,7 +43,11 @@ router.get('/feedback', requirePermission('feedback.read'), async (req, res) => 
     `).all(...params, Math.min(200, parseInt(limit, 10) || 50)),
     // What the sources add up to, so the filter chips can carry counts and an
     // empty result is distinguishable from a source that has never had anything
-    db.prepare('SELECT source, COUNT(*) as count FROM feedback GROUP BY source').all()
+    db.prepare(`
+      SELECT source, COUNT(*) as count FROM feedback
+      WHERE circle_id = ?
+      GROUP BY source
+    `).all(req.circleId)
   ]);
 
   res.json({ feedback: feedback || [], sources: bySource || [] });
