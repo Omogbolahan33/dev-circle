@@ -16,30 +16,38 @@ const router = express.Router();
 
 // GET /api/users/profile
 router.get('/profile', requireAuth, async (req, res) => {
-  // Roll back a streak the member has let lapse before reporting it
-  await engagement.decayStale(req.user.id);
+  // The session already joined this member. Reloading users (and the inbox)
+  // was four extra round-trips for a screen that only needs counts.
+  const user = await engagement.decayStale(req.user) || req.user;
+  const id = user.id;
 
-  const id = req.user.id;
-  const [user, cohorts, consent, memberCircles, counts, inbox] = await Promise.all([
-    db.prepare('SELECT * FROM users WHERE id = ?').get(id),
+  const [cohorts, consent, memberCircles, stats] = await Promise.all([
     db.prepare(`
-      SELECT c.* FROM cohorts c
+      SELECT c.id, c.name, c.color, c.description
+      FROM cohorts c
       JOIN user_cohorts uc ON uc.cohort_id = c.id
       WHERE uc.user_id = ?
     `).all(id),
-    db.prepare('SELECT * FROM consent WHERE user_id = ?').all(id),
+    db.prepare('SELECT channel, status, granted_at, withdrawn_at FROM consent WHERE user_id = ?').all(id),
     circles.forUser(id),
     db.prepare(`
-      SELECT
-        SUM(CASE WHEN completed_at IS NOT NULL THEN 1 ELSE 0 END) as surveys_completed,
-        COUNT(*) as surveys_invited,
-        (SELECT COUNT(*) FROM user_gifts WHERE user_id = ?) as gifts_claimed,
-        (SELECT COUNT(*) FROM feedback WHERE user_id = ?) as feedback_submitted
-      FROM survey_responses
-      WHERE user_id = ?
-    `).get(id, id, id),
-    notifications.inbox(id, { limit: 1 })
+      SELECT 'sr' as k,
+             CAST(COUNT(*) AS INTEGER) as n,
+             CAST(SUM(CASE WHEN completed_at IS NOT NULL THEN 1 ELSE 0 END) AS INTEGER) as n2
+      FROM survey_responses WHERE user_id = ?
+      UNION ALL
+      SELECT 'gifts', CAST(COUNT(*) AS INTEGER), CAST(NULL AS INTEGER)
+      FROM user_gifts WHERE user_id = ?
+      UNION ALL
+      SELECT 'feedback', CAST(COUNT(*) AS INTEGER), CAST(NULL AS INTEGER)
+      FROM feedback WHERE user_id = ?
+      UNION ALL
+      SELECT 'unread', CAST(COUNT(*) AS INTEGER), CAST(NULL AS INTEGER)
+      FROM notifications WHERE user_id = ? AND read_at IS NULL
+    `).all(id, id, id, id)
   ]);
+
+  const byK = Object.fromEntries((stats || []).map(r => [r.k, r]));
 
   res.json({
     user: sanitizeUser(user),
@@ -47,14 +55,14 @@ router.get('/profile', requireAuth, async (req, res) => {
     circles: memberCircles,
     consent,
     stats: {
-      surveys_completed: Number(counts?.surveys_completed || 0),
-      surveys_invited: Number(counts?.surveys_invited || 0),
-      gifts_claimed: Number(counts?.gifts_claimed || 0),
-      feedback_submitted: Number(counts?.feedback_submitted || 0),
+      surveys_completed: Number(byK.sr?.n2 || 0),
+      surveys_invited: Number(byK.sr?.n || 0),
+      gifts_claimed: Number(byK.gifts?.n || 0),
+      feedback_submitted: Number(byK.feedback?.n || 0),
       streak: user.engagement_streak,
       best_streak: user.best_streak
     },
-    unread_notifications: inbox.unread_count
+    unread_notifications: Number(byK.unread?.n || 0)
   });
 });
 
@@ -387,29 +395,39 @@ router.get('/engagement', requireAuth, async (req, res) => {
 
 // GET /api/users/gifts — what this member can claim, and what they already have
 router.get('/gifts', requireAuth, async (req, res) => {
-  const [user, cohortRows, surveysRow, claimed] = await Promise.all([
-    db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id),
+  const user = req.user;
+  const [cohortRows, surveysRow, claimed, catalogue] = await Promise.all([
     db.prepare('SELECT cohort_id FROM user_cohorts WHERE user_id = ?').all(req.user.id),
     db.prepare(
       "SELECT COUNT(*) as c FROM survey_responses WHERE user_id = ? AND completed_at IS NOT NULL"
     ).get(req.user.id),
     db.prepare(`
-      SELECT g.*, ug.claimed_at, ug.delivered_at
+      SELECT g.id, g.name, g.description, g.value, g.currency, g.target_cohort_ids,
+             g.stock, g.min_surveys_completed, g.min_streak, g.active,
+             ug.claimed_at, ug.delivered_at
       FROM user_gifts ug JOIN gifts g ON g.id = ug.gift_id
       WHERE ug.user_id = ?
       ORDER BY ug.claimed_at DESC
-    `).all(req.user.id)
+    `).all(req.user.id),
+    db.prepare(`
+      SELECT g.id, g.name, g.description, g.value, g.currency, g.target_cohort_ids,
+             g.stock, g.min_surveys_completed, g.min_streak, g.active,
+             COALESCE(ug.c, 0) as claimed_count
+      FROM gifts g
+      LEFT JOIN (
+        SELECT ug.gift_id, COUNT(*) as c
+        FROM user_gifts ug
+        JOIN gifts gx ON gx.id = ug.gift_id AND COALESCE(gx.active, 1) = 1
+        GROUP BY ug.gift_id
+      ) ug ON ug.gift_id = g.id
+      WHERE COALESCE(g.active, 1) = 1
+    `).all()
   ]);
   const cohortIds = (cohortRows || []).map(r => r.cohort_id);
   const surveysCompleted = Number(surveysRow?.c || 0);
 
   const claimedIds = new Set((claimed || []).map(g => g.id));
-
-  const [catalogue, claimCounts] = await Promise.all([
-    db.prepare("SELECT * FROM gifts WHERE COALESCE(active, 1) = 1").all(),
-    db.prepare('SELECT gift_id, COUNT(*) as c FROM user_gifts GROUP BY gift_id').all()
-  ]);
-  const claimedByGift = new Map((claimCounts || []).map(r => [r.gift_id, Number(r.c)]));
+  const claimedByGift = new Map((catalogue || []).map(r => [r.id, Number(r.claimed_count || 0)]));
 
   const available = [];
   const locked = [];
@@ -526,21 +544,21 @@ router.post('/gifts/:id/claim', requireAuth, async (req, res) => {
 
 // GET /api/users/surveys — active surveys for this user
 router.get('/surveys', requireAuth, async (req, res) => {
-  const [allSurveys, cohortRows, completedRows, startedRows] = await Promise.all([
+  const [allSurveys, cohortRows, progress] = await Promise.all([
     db.prepare(`
-      SELECT * FROM surveys
-      WHERE status = 'active' AND (expires_at IS NULL OR expires_at > datetime('now'))
-        AND (circle_id IS NULL OR circle_id IN (
-          SELECT circle_id FROM circle_members WHERE user_id = ?
+      SELECT s.id, s.title, s.description, s.status, s.target_type, s.target_ids,
+             s.engagement_mode, s.time_estimate_min, s.expires_at, s.circle_id,
+             COALESCE(json_array_length(s.questions), 0) as question_count
+      FROM surveys s
+      WHERE s.status = 'active' AND (s.expires_at IS NULL OR s.expires_at > datetime('now'))
+        AND (s.circle_id IS NULL OR EXISTS (
+          SELECT 1 FROM circle_members cm WHERE cm.circle_id = s.circle_id AND cm.user_id = ?
         ))
     `).all(req.user.id),
     db.prepare('SELECT cohort_id FROM user_cohorts WHERE user_id = ?').all(req.user.id),
     db.prepare(`
-      SELECT survey_id FROM survey_responses WHERE user_id = ? AND completed_at IS NOT NULL
-    `).all(req.user.id),
-    db.prepare(`
-      SELECT survey_id, answers FROM survey_responses
-      WHERE user_id = ? AND completed_at IS NULL
+      SELECT survey_id, completed_at, answers
+      FROM survey_responses WHERE user_id = ?
     `).all(req.user.id)
   ]);
   const userCohortIds = (cohortRows || []).map(r => r.cohort_id);
@@ -553,19 +571,30 @@ router.get('/surveys', requireAuth, async (req, res) => {
     return false;
   });
 
-  const completed = (completedRows || []).map(r => r.survey_id);
-  const started = new Map((startedRows || []).map(r => [r.survey_id, Object.keys(parseJSON(r.answers, {})).length]));
+  const completed = new Set();
+  const started = new Map();
+  for (const row of progress || []) {
+    if (row.completed_at) completed.add(row.survey_id);
+    else started.set(row.survey_id, Object.keys(parseJSON(row.answers, {})).length);
+  }
 
   const result = eligible.map(s => {
-    const survey = surveyForm.hydrate(s);
+    const done = completed.has(s.id);
     return {
-      ...survey,
-      completed: completed.includes(s.id),
-      already_responded: completed.includes(s.id),
+      id: s.id,
+      title: s.title,
+      description: s.description,
+      status: s.status,
+      target_type: s.target_type,
+      target_ids: parseJSON(s.target_ids, []),
+      engagement_mode: s.engagement_mode,
+      time_estimate_min: s.time_estimate_min,
+      expires_at: s.expires_at,
+      circle_id: s.circle_id,
+      completed: done,
+      already_responded: done,
       answered_so_far: started.get(s.id) || 0,
-      // Sections are not questions, and counting them makes "5 questions,
-      // about 2 minutes" a promise the survey does not keep
-      question_count: survey.questions.filter(surveyForm.isAnswerable).length
+      question_count: Number(s.question_count || 0)
     };
   });
 

@@ -17,15 +17,16 @@ router.get('/gifts', requirePermission('gifts.read'), async (req, res) => {
       COALESCE(ug.delivered_count, 0) as delivered_count
     FROM gifts g
     LEFT JOIN (
-      SELECT gift_id,
+      SELECT ug.gift_id,
              COUNT(*) as claimed_count,
-             SUM(CASE WHEN delivered_at IS NOT NULL THEN 1 ELSE 0 END) as delivered_count
-      FROM user_gifts
-      GROUP BY gift_id
+             SUM(CASE WHEN ug.delivered_at IS NOT NULL THEN 1 ELSE 0 END) as delivered_count
+      FROM user_gifts ug
+      JOIN gifts gx ON gx.id = ug.gift_id AND gx.circle_id = ?
+      GROUP BY ug.gift_id
     ) ug ON ug.gift_id = g.id
     WHERE g.circle_id = ?
     ORDER BY g.created_at DESC
-  `).all(req.circleId);
+  `).all(req.circleId, req.circleId);
 
   res.json({ gifts: (gifts || []).map(g => ({ ...g, target_cohort_ids: parseJSON(g.target_cohort_ids, []) })) });
 });

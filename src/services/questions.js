@@ -150,7 +150,7 @@ async function catalogue({ search = null, circleId = null } = {}) {
   const where = ["f.source IN ('survey', 'external_survey')"];
   const params = [];
 
-  if (circleId) { where.push('f.circle_id = ?'); params.push(circleId); }
+  if (circleId) { where.push('(f.circle_id = ? OR f.circle_id IS NULL)'); params.push(circleId); }
 
   if (search) {
     where.push('(q.text LIKE ? OR f.content LIKE ?)');

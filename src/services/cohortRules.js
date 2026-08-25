@@ -86,15 +86,18 @@ const FIELDS = {
     type: 'number', label: 'Age', unit: 'years'
   },
   surveys_completed: {
-    sql: '(SELECT COUNT(*) FROM survey_responses sr WHERE sr.user_id = u.id AND sr.completed_at IS NOT NULL)',
+    sql: 'COALESCE(_sr.n, 0)',
+    join: 'LEFT JOIN (SELECT user_id, COUNT(*) as n FROM survey_responses WHERE completed_at IS NOT NULL GROUP BY user_id) _sr ON _sr.user_id = u.id',
     type: 'number', label: 'Surveys completed'
   },
   feedback_submitted: {
-    sql: "(SELECT COUNT(*) FROM feedback f WHERE f.user_id = u.id)",
+    sql: 'COALESCE(_fb.n, 0)',
+    join: 'LEFT JOIN (SELECT user_id, COUNT(*) as n FROM feedback GROUP BY user_id) _fb ON _fb.user_id = u.id',
     type: 'number', label: 'Feedback submitted'
   },
   gifts_claimed: {
-    sql: '(SELECT COUNT(*) FROM user_gifts ug WHERE ug.user_id = u.id)',
+    sql: 'COALESCE(_ug.n, 0)',
+    join: 'LEFT JOIN (SELECT user_id, COUNT(*) as n FROM user_gifts GROUP BY user_id) _ug ON _ug.user_id = u.id',
     type: 'number', label: 'Gifts claimed'
   },
   days_since_active: {
@@ -107,12 +110,12 @@ const FIELDS = {
   },
   cohort_id: {
     type: 'membership', label: 'Member of cohort',
-    subquery: 'SELECT user_id FROM user_cohorts WHERE cohort_id = ?',
+    exists: 'SELECT 1 FROM user_cohorts WHERE cohort_id = ? AND user_id = u.id',
     values: async db => await db.prepare('SELECT id AS value, name AS label FROM cohorts ORDER BY name').all()
   },
   circle_id: {
     type: 'membership', label: 'Member of circle',
-    subquery: 'SELECT user_id FROM circle_members WHERE circle_id = ?',
+    exists: 'SELECT 1 FROM circle_members WHERE circle_id = ? AND user_id = u.id',
     values: async db => await db.prepare(
       "SELECT id AS value, name AS label FROM circles WHERE status = 'active' ORDER BY created_at"
     ).all()
@@ -121,7 +124,7 @@ const FIELDS = {
   // whether a segment is reachable at all
   consent_channel: {
     type: 'membership', label: 'Consented to channel',
-    subquery: "SELECT user_id FROM consent WHERE channel = ? AND status = 'granted'",
+    exists: "SELECT 1 FROM consent WHERE channel = ? AND status = 'granted' AND user_id = u.id",
     values: CHANNELS
   },
   has_phone: {
@@ -129,8 +132,8 @@ const FIELDS = {
     type: 'bool', label: 'Has a phone number'
   },
   has_responded: {
-    sql: `(SELECT COUNT(*) FROM survey_responses sr
-           WHERE sr.user_id = u.id AND sr.completed_at IS NOT NULL) > 0`,
+    sql: `EXISTS (SELECT 1 FROM survey_responses sr
+           WHERE sr.user_id = u.id AND sr.completed_at IS NOT NULL)`,
     type: 'bool', label: 'Has ever responded to a survey'
   }
 };
@@ -167,12 +170,12 @@ function buildClause(rule) {
   const op = rule.op || 'eq';
 
   // Membership fields ask whether the member appears in some join table.
-  // "is not" has to become NOT IN rather than a negated equality, or it would
-  // only exclude the row that matched instead of the member.
+  // EXISTS stops at the first matching row; IN (SELECT …) materialises the
+  // whole membership list per candidate.
   if (field.type === 'membership') {
     const negate = op === 'neq';
     return {
-      sql: `u.id ${negate ? 'NOT IN' : 'IN'} (${field.subquery})`,
+      sql: `${negate ? 'NOT ' : ''}EXISTS (${field.exists})`,
       params: [String(rule.value)]
     };
   }
@@ -220,9 +223,16 @@ function buildQuery(definition, { activeOnly = true, circleId = null } = {}) {
 
   const ruleClauses = [];
   const ruleParams = [];
+  const joins = [];
+  const seenJoins = new Set();
 
   for (const rule of rules) {
     if (rule.value === undefined || rule.value === null || rule.value === '') continue;
+    const field = FIELDS[rule.field];
+    if (field?.join && !seenJoins.has(field.join)) {
+      seenJoins.add(field.join);
+      joins.push(field.join);
+    }
     const built = buildClause(rule);
     ruleClauses.push(built.sql);
     ruleParams.push(...built.params);
@@ -250,6 +260,7 @@ function buildQuery(definition, { activeOnly = true, circleId = null } = {}) {
 
   return {
     where: conditions.length ? conditions.join(' AND ') : '1=1',
+    from: `users u${joins.length ? ' ' + joins.join(' ') : ''}`,
     params,
     ruleCount: ruleClauses.length
   };
@@ -257,13 +268,13 @@ function buildQuery(definition, { activeOnly = true, circleId = null } = {}) {
 
 // Resolve a rule definition to matching member rows
 async function evaluate(definition, { limit = null, activeOnly = true, circleId = null } = {}) {
-  const { where, params, ruleCount } = buildQuery(definition, { activeOnly, circleId });
+  const { where, from, params, ruleCount } = buildQuery(definition, { activeOnly, circleId });
 
   const [totalRow, members] = await Promise.all([
-    db.prepare(`SELECT COUNT(*) as c FROM users u WHERE ${where}`).get(...params),
+    db.prepare(`SELECT COUNT(*) as c FROM ${from} WHERE ${where}`).get(...params),
     db.prepare(`
       SELECT u.id, u.name, u.email, u.company, u.work_sector, u.api_status, u.engagement_streak
-      FROM users u WHERE ${where}
+      FROM ${from} WHERE ${where}
       ORDER BY u.created_at DESC
       ${limit ? 'LIMIT ?' : ''}
     `).all(...params, ...(limit ? [limit] : []))
@@ -281,8 +292,8 @@ async function sync(cohortId) {
   if (!cohort.filter_rules) return { added: 0, removed: 0, total: 0, rule_based: false };
 
   // A cohort slices the members of the circle it belongs to, never beyond it
-  const { where, params } = buildQuery(cohort.filter_rules, { circleId: cohort.circle_id });
-  const matching = ((await db.prepare(`SELECT u.id FROM users u WHERE ${where}`).all(...params) || []) || []).map(r => r.id);
+  const { where, from, params } = buildQuery(cohort.filter_rules, { circleId: cohort.circle_id });
+  const matching = ((await db.prepare(`SELECT u.id FROM ${from} WHERE ${where}`).all(...params) || []) || []).map(r => r.id);
   const matchingSet = new Set(matching);
 
   const current = ((await db.prepare('SELECT user_id FROM user_cohorts WHERE cohort_id = ?')

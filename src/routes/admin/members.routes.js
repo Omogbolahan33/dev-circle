@@ -26,8 +26,7 @@ router.get('/members', requirePermission('members.read'), async (req, res) => {
   // Page + filter total in one plan (COUNT(*) OVER is the matching set, not
   // the page). Survey tallies are index lookups on the page only — not a scan
   // of every response. Cohorts join the same page of ids.
-  const [members, cohortRows] = await Promise.all([
-    db.prepare(`
+  const members = await db.prepare(`
       WITH page AS (
         SELECT u.id, u.email, u.name, u.phone, u.company, u.work_sector,
                u.status, u.api_status, u.kyb_completed, u.engagement_streak,
@@ -42,7 +41,8 @@ router.get('/members', requirePermission('members.read'), async (req, res) => {
       )
       SELECT page.*,
              COALESCE(sr.surveys_invited, 0) as surveys_invited,
-             COALESCE(sr.surveys_completed, 0) as surveys_completed
+             COALESCE(sr.surveys_completed, 0) as surveys_completed,
+             ch.packed as cohort_packed
       FROM page
       LEFT JOIN (
         SELECT user_id,
@@ -52,31 +52,28 @@ router.get('/members', requirePermission('members.read'), async (req, res) => {
         WHERE user_id IN (SELECT id FROM page)
         GROUP BY user_id
       ) sr ON sr.user_id = page.id
-    `).all(...params, l, offset),
-    db.prepare(`
-      SELECT uc.user_id, c.id, c.name, c.color
-      FROM user_cohorts uc
-      JOIN cohorts c ON c.id = uc.cohort_id
-      WHERE uc.user_id IN (
-        SELECT u.id FROM ${from} WHERE ${where}
-        ORDER BY u.created_at DESC LIMIT ? OFFSET ?
-      )
-    `).all(...params, l, offset)
-  ]);
+      LEFT JOIN (
+        SELECT uc.user_id, GROUP_CONCAT(c.id || '|' || c.name || '|' || c.color, '; ') as packed
+        FROM user_cohorts uc
+        JOIN cohorts c ON c.id = uc.cohort_id
+        WHERE uc.user_id IN (SELECT id FROM page)
+        GROUP BY uc.user_id
+      ) ch ON ch.user_id = page.id
+    `).all(...params, l, offset);
 
   const total = (members && members.length)
     ? Number(members[0]._total || 0)
     : (offset ? Number((await db.prepare(`SELECT COUNT(*) as c FROM ${from} WHERE ${where}`).get(...params))?.c || 0) : 0);
 
-  const cohortsByUser = new Map();
-  for (const row of cohortRows || []) {
-    const list = cohortsByUser.get(row.user_id) || [];
-    list.push({ id: row.id, name: row.name, color: row.color });
-    cohortsByUser.set(row.user_id, list);
-  }
-
   const result = (members || []).map(m => {
-    const { _total, ...rest } = m;
+    const { _total, cohort_packed, ...rest } = m;
+    const cohorts = String(cohort_packed || '')
+      .split('; ')
+      .filter(Boolean)
+      .map(packed => {
+        const [id, name, color] = packed.split('|');
+        return { id, name, color: color || null };
+      });
     return {
       ...rest,
       preferred_channels: parseJSON(m.preferred_channels, []),
@@ -84,7 +81,7 @@ router.get('/members', requirePermission('members.read'), async (req, res) => {
       api_products: parseJSON(m.api_products, []),
       surveys_completed: Number(m.surveys_completed || 0),
       surveys_invited: Number(m.surveys_invited || 0),
-      cohorts: cohortsByUser.get(m.id) || []
+      cohorts
     };
   });
 

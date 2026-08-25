@@ -18,7 +18,7 @@ router.get('/questions', requirePermission('feedback.read'), async (req, res) =>
     db.prepare(`
       SELECT COUNT(DISTINCT COALESCE(f.user_id, 'anon:' || COALESCE(f.response_id, f.id))) as c
       FROM feedback f
-      WHERE f.source IN ('survey', 'external_survey') AND f.circle_id = ?
+      WHERE f.source IN ('survey', 'external_survey') AND (f.circle_id = ? OR f.circle_id IS NULL)
     `).get(req.circleId)
   ]);
 

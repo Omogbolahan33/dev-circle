@@ -19,16 +19,17 @@ router.get('/blasts', requirePermission('blasts.send', 'members.read'), async (r
       COALESCE(d.skipped_count, 0) as skipped_count
     FROM message_blasts b
     LEFT JOIN (
-      SELECT source_id,
-             SUM(CASE WHEN status IN ('sent','simulated') THEN 1 ELSE 0 END) as delivered_count,
-             SUM(CASE WHEN status = 'skipped' THEN 1 ELSE 0 END) as skipped_count
-      FROM message_deliveries
-      WHERE source_type = 'blast'
-      GROUP BY source_id
+      SELECT md.source_id,
+             SUM(CASE WHEN md.status IN ('sent','simulated') THEN 1 ELSE 0 END) as delivered_count,
+             SUM(CASE WHEN md.status = 'skipped' THEN 1 ELSE 0 END) as skipped_count
+      FROM message_deliveries md
+      JOIN message_blasts bx ON bx.id = md.source_id AND bx.circle_id = ?
+      WHERE md.source_type = 'blast'
+      GROUP BY md.source_id
     ) d ON d.source_id = b.id
     WHERE b.circle_id = ?
     ORDER BY b.created_at DESC
-  `).all(req.circleId);
+  `).all(req.circleId, req.circleId);
 
   res.json({ blasts: blasts.map(b => ({ ...b, target_ids: parseJSON(b.target_ids, []) })) });
 });

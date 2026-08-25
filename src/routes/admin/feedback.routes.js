@@ -16,7 +16,7 @@ const router = express.Router();
 // GET /api/admin/feedback
 router.get('/feedback', requirePermission('feedback.read'), async (req, res) => {
   const { status, source, type, prompted, limit = 50 } = req.query;
-  const where = ['f.circle_id = ?'];
+  const where = ['(f.circle_id = ? OR f.circle_id IS NULL)'];
   const params = [req.circleId];
 
   if (status) { where.push('f.status = ?'); params.push(status); }

@@ -52,16 +52,21 @@ router.get('/:id', requirePermission('sessions.read'), async (req, res) => {
   const session = await db.prepare('SELECT * FROM scheduled_sessions WHERE id = ?').get(req.params.id);
   if (!session) return res.status(404).json({ error: 'Session not found' });
 
-  res.json({
-    session: hydrate(session),
-    dispatches: await db.prepare('SELECT * FROM session_dispatches WHERE session_id = ? ORDER BY offset_minutes DESC')
+  const [dispatches, deliveries] = await Promise.all([
+    db.prepare('SELECT * FROM session_dispatches WHERE session_id = ? ORDER BY offset_minutes DESC')
       .all(session.id),
-    deliveries: await db.prepare(`
+    db.prepare(`
       SELECT d.channel, d.status, d.reason, COUNT(*) as count
       FROM message_deliveries d
       WHERE d.source_id = ? AND d.source_type IN ('session_invite','session_reminder')
       GROUP BY d.channel, d.status, d.reason
     `).all(session.id)
+  ]);
+
+  res.json({
+    session: hydrate(session),
+    dispatches,
+    deliveries
   });
 });
 

@@ -80,14 +80,20 @@ async function record(userId, type, options = {}) {
 
 // Roll a lapsed streak back to zero. Called on read so a member who walked
 // away does not keep showing a stale number.
-async function decayStale(userId) {
-  const user = await db.prepare('SELECT engagement_streak, last_engagement_at FROM users WHERE id = ?').get(userId);
-  if (!user || !user.engagement_streak) return;
+async function decayStale(userOrId) {
+  // The session already joined the member row. Reloading it just to read two
+  // columns was another RTT on every profile view.
+  const user = userOrId && typeof userOrId === 'object'
+    ? userOrId
+    : await db.prepare('SELECT id, engagement_streak, last_engagement_at FROM users WHERE id = ?').get(userOrId);
+  if (!user || !user.engagement_streak) return user;
 
   const last = parseSqliteDate(user.last_engagement_at);
-  if (last && daysBetween(new Date(), last) <= STREAK_WINDOW_DAYS) return;
+  if (last && daysBetween(new Date(), last) <= STREAK_WINDOW_DAYS) return user;
 
-  await db.prepare('UPDATE users SET engagement_streak = 0 WHERE id = ?').run(userId);
+  await db.prepare('UPDATE users SET engagement_streak = 0 WHERE id = ?').run(user.id);
+  user.engagement_streak = 0;
+  return user;
 }
 
 module.exports = { log, record, recordActivity, decayStale, STREAK_EVENTS, STREAK_WINDOW_DAYS };

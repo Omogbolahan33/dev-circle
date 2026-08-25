@@ -198,7 +198,7 @@ router.get('/:id/candidates', requirePermission('circles.read'), async (req, res
       SELECT u.id, u.name, u.email, u.company, u.work_sector
       FROM users u
       WHERE u.status = 'active'
-        AND u.id NOT IN (SELECT user_id FROM circle_members WHERE circle_id = ?)
+        AND NOT EXISTS (SELECT 1 FROM circle_members cm WHERE cm.user_id = u.id AND cm.circle_id = ?)
         ${searchClause}
       ORDER BY u.name LIMIT 100
     `).all(...params)

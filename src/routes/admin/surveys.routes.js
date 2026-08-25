@@ -18,25 +18,41 @@ const router = express.Router();
 
 // GET /api/admin/surveys
 router.get('/surveys', requirePermission('surveys.read'), async (req, res) => {
-  // A survey belongs to the circle that ran it
+  // The list never renders the definition. Pulling questions and theme on
+  // every row was a megabyte of JSON for a table of titles and counts.
   const surveys = await db.prepare(`
-    SELECT s.*,
-      COALESCE(sr.response_count, 0) as response_count,
-      COALESCE(sr.completed_count, 0) as completed_count
+    SELECT s.id, s.title, s.description, s.status, s.target_type, s.target_ids,
+           s.engagement_mode, s.time_estimate_min, s.expires_at, s.trigger_event,
+           s.reminder_after_days, s.circle_id, s.public_token, s.created_by, s.created_at,
+           COALESCE(sr.response_count, 0) as response_count,
+           COALESCE(sr.completed_count, 0) as completed_count,
+           COALESCE(json_array_length(s.questions), 0) as question_count,
+           CASE WHEN s.questions LIKE '%visible_if%' THEN 1 ELSE 0 END as has_branching
     FROM surveys s
     LEFT JOIN (
-      SELECT survey_id,
+      SELECT sr.survey_id,
              COUNT(*) as response_count,
-             SUM(CASE WHEN completed_at IS NOT NULL THEN 1 ELSE 0 END) as completed_count
-      FROM survey_responses
-      WHERE survey_id IN (SELECT id FROM surveys WHERE circle_id = ?)
-      GROUP BY survey_id
+             SUM(CASE WHEN sr.completed_at IS NOT NULL THEN 1 ELSE 0 END) as completed_count
+      FROM survey_responses sr
+      JOIN surveys sx ON sx.id = sr.survey_id AND sx.circle_id = ?
+      GROUP BY sr.survey_id
     ) sr ON sr.survey_id = s.id
     WHERE s.circle_id = ?
     ORDER BY s.created_at DESC
   `).all(req.circleId, req.circleId);
 
-  res.json({ surveys: (surveys || []).map(surveyForm.hydrate) });
+  res.json({
+    surveys: (surveys || []).map(row => {
+      const survey = surveyForm.hydrate({ ...row, questions: '[]' });
+      return {
+        ...survey,
+        question_count: Number(row.question_count || 0),
+        has_branching: Number(row.has_branching) === 1,
+        response_count: Number(row.response_count || 0),
+        completed_count: Number(row.completed_count || 0)
+      };
+    })
+  });
 });
 
 // GET /api/admin/surveys/schema
@@ -719,12 +735,12 @@ router.post('/surveys/:id/responses/import', requirePermission('surveys.write'),
   const findMember = survey.circle_id
     ? db.prepare(`
         SELECT u.id, u.name, u.email FROM users u
+        JOIN circle_members cm ON cm.user_id = u.id AND cm.circle_id = ?
         WHERE u.email = ?
-          AND u.id IN (SELECT user_id FROM circle_members WHERE circle_id = ?)
       `)
     : db.prepare('SELECT id, name, email FROM users WHERE email = ?');
   const lookup = email => (survey.circle_id
-    ? findMember.get(email, survey.circle_id)
+    ? findMember.get(survey.circle_id, email)
     : findMember.get(email)); // awaited at call sites
 
   // Only consulted to tell two failures apart. "We have never heard of them"

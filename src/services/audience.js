@@ -51,6 +51,9 @@ function memberFilters(query) {
     if (built.ruleCount) {
       where.push(`(${built.where})`);
       params.push(...built.params);
+      // Derived counts (surveys completed, gifts claimed, …) are joined once
+      // rather than correlated per member.
+      if (built.from && built.from !== 'users u') from = built.from;
     }
   }
 

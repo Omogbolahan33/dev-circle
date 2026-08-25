@@ -133,7 +133,9 @@ function conditions(query = {}) {
 
   // Scoped to one workspace. A developer in two circles has what they said in
   // one stay there — the same person, two separate bodies of evidence.
-  if (query.circle_id) { where.push('f.circle_id = ?'); params.push(query.circle_id); }
+  // Rows filed before a circle was set still belong to that workspace's
+  // evidence. Dropping them with `=` hid every NULL-circle verbatim.
+  if (query.circle_id) { where.push('(f.circle_id = ? OR f.circle_id IS NULL)'); params.push(query.circle_id); }
 
   const direct = {
     status: 'f.status', source: 'f.source', source_system: 'f.source_system',
@@ -161,7 +163,7 @@ function conditions(query = {}) {
     params.push(like, like, like);
   }
   if (query.cohort_id) {
-    where.push('f.user_id IN (SELECT user_id FROM user_cohorts WHERE cohort_id = ?)');
+    where.push('EXISTS (SELECT 1 FROM user_cohorts uc WHERE uc.user_id = f.user_id AND uc.cohort_id = ?)');
     params.push(query.cohort_id);
   }
   return { where: where.join(' AND '), params };
