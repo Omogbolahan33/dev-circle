@@ -16,11 +16,10 @@ const router = express.Router();
 
 // ─── Surveys ────────────────────────────────────────────────
 
-// GET /api/admin/surveys
-router.get('/surveys', requirePermission('surveys.read'), async (req, res) => {
+async function loadSurveyList(circleId) {
   // The list never renders the definition. Pulling questions and theme on
   // every row was a megabyte of JSON for a table of titles and counts.
-  const surveys = await db.prepare(`
+  return db.prepare(`
     SELECT s.id, s.title, s.description, s.status, s.target_type, s.target_ids,
            s.engagement_mode, s.time_estimate_min, s.expires_at, s.trigger_event,
            s.reminder_after_days, s.circle_id, s.public_token, s.created_by, s.created_at,
@@ -39,7 +38,13 @@ router.get('/surveys', requirePermission('surveys.read'), async (req, res) => {
     ) sr ON sr.survey_id = s.id
     WHERE s.circle_id = ?
     ORDER BY s.created_at DESC
-  `).all(req.circleId, req.circleId);
+  `).all(circleId, circleId);
+}
+
+// GET /api/admin/surveys
+router.get('/surveys', requirePermission('surveys.read'), async (req, res) => {
+  const { takePreload } = require('../../middleware/preload');
+  const surveys = await takePreload(req, () => loadSurveyList(req.circleId));
 
   res.json({
     surveys: (surveys || []).map(row => {
@@ -1063,3 +1068,4 @@ router.get('/surveys/:id/export', requirePermission('export.read'), async (req, 
 });
 
 module.exports = router;
+module.exports.loadSurveyList = loadSurveyList;

@@ -21,14 +21,15 @@ router.get('/permissions', requirePermission('roles.read'), async (req, res) => 
 
 // GET /api/admin/roles
 router.get('/roles', requirePermission('roles.read'), async (req, res) => {
-  const roles = await db.prepare(`
+  const { takePreload } = require('../../middleware/preload');
+  const roles = await takePreload(req, () => db.prepare(`
     SELECT r.*, COALESCE(a.n, 0) as admin_count
     FROM roles r
     LEFT JOIN (SELECT role_id, COUNT(*) as n FROM admin_users GROUP BY role_id) a
       ON a.role_id = r.id
     ORDER BY r.is_system DESC, r.created_at DESC
-  `).all();
-  res.json({ roles: roles.map(r => ({ ...r, permissions: parseJSON(r.permissions, []) })) });
+  `).all());
+  res.json({ roles: (roles || []).map(r => ({ ...r, permissions: parseJSON(r.permissions, []) })) });
 });
 
 function validatePermissions(permissions) {
@@ -103,11 +104,12 @@ router.delete('/roles/:id', requirePermission('roles.write'), async (req, res) =
 
 // GET /api/admin/admins
 router.get('/admins', requirePermission('roles.read'), async (req, res) => {
-  const admins = await db.prepare(`
+  const { takePreload } = require('../../middleware/preload');
+  const admins = await takePreload(req, () => db.prepare(`
     SELECT a.id, a.email, a.name, a.status, a.created_at, a.role_id, r.name as role_name
     FROM admin_users a LEFT JOIN roles r ON r.id = a.role_id
     ORDER BY a.created_at DESC
-  `).all();
+  `).all());
   res.json({ admins: admins || [] });
 });
 

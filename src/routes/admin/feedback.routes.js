@@ -67,12 +67,16 @@ router.get('/feedback/axes', requirePermission('feedback.read'), async (req, res
 // Groups first, verbatims on drill-in. Filters and grouping compose, so
 // "what did the Lending cohort say about onboarding, by developer" is one call.
 router.get('/feedback/grouped', requirePermission('feedback.read'), async (req, res) => {
+  const { takePreload } = require('../../middleware/preload');
   const axis = req.query.group_by || 'question';
   const query = scoped(req);
-  const [groups, totals] = await Promise.all([
-    views.group(axis, query),
-    views.summarise(query)
-  ]);
+  const preloaded = await takePreload(req, () => null);
+  const [groups, totals] = preloaded
+    ? [preloaded.groups, preloaded.totals]
+    : await Promise.all([
+      views.group(axis, query),
+      views.summarise(query)
+    ]);
 
   if (!groups) {
     return res.status(400).json({

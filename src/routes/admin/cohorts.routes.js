@@ -9,8 +9,7 @@ const router = express.Router();
 
 // ─── Cohorts ────────────────────────────────────────────────
 
-// GET /api/admin/cohorts
-router.get('/cohorts', requirePermission('cohorts.read'), async (req, res) => {
+async function loadCohortList(circleId) {
   // Cohorts belong to the circle they were made in. Counts come from one
   // GROUP BY of user_cohorts — a correlated COUNT per cohort is the plan
   // that gets worse as membership grows. The outer query is not grouped, so
@@ -27,11 +26,17 @@ router.get('/cohorts', requirePermission('cohorts.read'), async (req, res) => {
     ) mc ON mc.cohort_id = c.id
     WHERE c.circle_id = ?
     ORDER BY member_count DESC
-  `).all(req.circleId, req.circleId);
+  `).all(circleId, circleId);
 
-  res.json({
+  return {
     cohorts: (cohorts || []).map(c => ({ ...c, filter_rules: parseJSON(c.filter_rules, null) }))
-  });
+  };
+}
+
+// GET /api/admin/cohorts
+router.get('/cohorts', requirePermission('cohorts.read'), async (req, res) => {
+  const { takePreload } = require('../../middleware/preload');
+  res.json(await takePreload(req, () => loadCohortList(req.circleId)));
 });
 
 // GET /api/admin/cohorts/rule-fields — catalogue for the cohort builder
@@ -186,3 +191,4 @@ router.delete('/cohorts/:id/members/:userId', requirePermission('cohorts.write')
 });
 
 module.exports = router;
+module.exports.loadCohortList = loadCohortList;

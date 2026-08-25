@@ -102,6 +102,13 @@ function getPool() {
     logger.error('Postgres pool error', { message: err.message });
   });
 
+  // Hold a live connection so the next request is not an SSL handshake.
+  // Not a result cache — just keep the socket warm.
+  const keepAlive = setInterval(() => {
+    pool.query('SELECT 1').catch(() => {});
+  }, 20_000);
+  if (typeof keepAlive.unref === 'function') keepAlive.unref();
+
   return pool;
 }
 

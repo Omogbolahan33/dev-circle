@@ -40,6 +40,12 @@ async function boot() {
     }
   }
 
+  if (config.sandbox.enabled) {
+    try { require('./db/sandbox').db(); } catch (err) {
+      logger.warn('Sandbox did not open at boot', { message: err.message });
+    }
+  }
+
   const server = app.listen(config.port, () => {
     logger.info('Dev Circle API listening', {
       url: `http://localhost:${config.port}`,

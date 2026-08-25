@@ -7,6 +7,9 @@ const { notFoundHandler } = require('../middleware/errorHandler');
 
 const router = express.Router();
 
+const { beginAuth } = require('../middleware/auth');
+router.use(beginAuth);
+
 router.use('/auth', require('./auth.routes'));
 // Answering a survey over its link. The only routes here that take no
 // credential at all — see the file for what that changes about them.

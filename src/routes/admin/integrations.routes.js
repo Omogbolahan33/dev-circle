@@ -22,11 +22,13 @@ router.get('/integration-events', requirePermission('integrations.read'), async 
     where.push('processed = ?'); params.push(parseInt(processed, 10));
   }
 
-  const events = await db.prepare(`
-    SELECT * FROM integration_events
+  const { takePreload } = require('../../middleware/preload');
+  const events = await takePreload(req, () => db.prepare(`
+    SELECT id, source, event_type, payload, processed, created_at, error
+    FROM integration_events
     WHERE ${where.join(' AND ')}
     ORDER BY created_at DESC LIMIT ?
-  `).all(...params, Math.min(200, parseInt(limit, 10) || 50));
+  `).all(...params, Math.min(200, parseInt(limit, 10) || 50)));
 
   res.json({ events });
 });

@@ -16,12 +16,11 @@ const router = express.Router();
 // ─── Members ────────────────────────────────────────────────
 
 
-// GET /api/admin/members
-router.get('/members', requirePermission('members.read'), async (req, res) => {
-  const { offset, limit: l, page: p } = paginate(req.query.page, req.query.limit);
+async function loadMemberPage(query, circleId) {
+  const { offset, limit: l, page: p } = paginate(query.page, query.limit);
   // Scoped to the circle being worked in. A member of another workspace is not
   // "filtered out" here — they are not part of this one.
-  const { from, where, params } = memberFilters({ ...req.query, circle_id: req.circleId });
+  const { from, where, params } = memberFilters({ ...query, circle_id: circleId });
 
   // Page + filter total in one plan (COUNT(*) OVER is the matching set, not
   // the page). Survey tallies are index lookups on the page only — not a scan
@@ -85,10 +84,16 @@ router.get('/members', requirePermission('members.read'), async (req, res) => {
     };
   });
 
-  res.json({
+  return {
     members: result,
     pagination: { page: p, limit: l, total, pages: Math.ceil(total / l) }
-  });
+  };
+}
+
+// GET /api/admin/members
+router.get('/members', requirePermission('members.read'), async (req, res) => {
+  const { takePreload } = require('../../middleware/preload');
+  res.json(await takePreload(req, () => loadMemberPage(req.query, req.circleId)));
 });
 
 // GET /api/admin/members/:id
@@ -628,3 +633,4 @@ router.get('/export', requirePermission('export.read'), async (req, res) => {
 });
 
 module.exports = router;
+module.exports.loadMemberPage = loadMemberPage;

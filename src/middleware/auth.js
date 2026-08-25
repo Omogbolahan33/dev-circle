@@ -323,6 +323,17 @@ async function resolvePrincipal(hash) {
   return principal;
 }
 
+// Kick the session lookup before later middleware awaits it, so a page GET
+// can start its own query on a second pool connection in the same RTT.
+function beginAuth(req, res, next) {
+  if (req._authPromise) return next();
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    req._authPromise = resolvePrincipal(hashToken(authHeader.slice(7)));
+  }
+  next();
+}
+
 async function requireAuth(req, res, next) {
   try {
     const authHeader = req.headers.authorization;
@@ -331,7 +342,7 @@ async function requireAuth(req, res, next) {
     }
 
     const hash = hashToken(authHeader.slice(7));
-    const principal = await resolvePrincipal(hash);
+    const principal = await (req._authPromise || (req._authPromise = resolvePrincipal(hash)));
 
     if (!principal) {
       return res.status(401).json({ error: 'Invalid or expired token' });
@@ -506,6 +517,7 @@ module.exports = {
   getSession,
   destroySession,
   destroyAllSessionsFor,
+  beginAuth,
   requireAuth,
   requireAdmin,
   requirePermission,

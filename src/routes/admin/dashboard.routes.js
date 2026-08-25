@@ -6,11 +6,10 @@ const router = express.Router();
 
 // ─── Dashboard ──────────────────────────────────────────────
 
-// GET /api/admin/dashboard
-router.get('/dashboard', requirePermission('members.read'), async (req, res) => {
+async function loadDashboard(circleId) {
   // One statement, one bind. Five independent round-trips were the whole
   // second on an empty workspace talking to remote Postgres.
-  const rows = await db.prepare(`
+  return db.prepare(`
     WITH circle AS (SELECT ? AS id),
     scoped AS (
       SELECT u.id, u.api_status, u.created_at
@@ -75,7 +74,13 @@ router.get('/dashboard', requirePermission('members.read'), async (req, res) => 
       ORDER BY f.created_at DESC
       LIMIT 4
     ) feedback
-  `).all(req.circleId);
+  `).all(circleId);
+}
+
+// GET /api/admin/dashboard
+router.get('/dashboard', requirePermission('members.read'), async (req, res) => {
+  const { takePreload } = require('../../middleware/preload');
+  const rows = await takePreload(req, () => loadDashboard(req.circleId));
 
   const statusBreakdown = [];
   const cohortBreakdown = [];
@@ -135,19 +140,25 @@ router.get('/dashboard', requirePermission('members.read'), async (req, res) => 
 // GET /api/admin/demography
 // The blueprint asks for an at-a-glance view of demography, age, and products.
 // None of that data existed before; these are the real distributions.
-router.get('/demography', requirePermission('members.read'), async (req, res) => {
+async function loadDemography(circleId) {
   // Aggregations stay in SQL. Shipping every member row to Node to GROUP BY
   // is the plan that gets worse as the base grows; UNION ALL is one round-trip
   // and the same JSON the page already reads.
-  // The membership CTE is only the columns the axes read. Pulling u.* fourteen
-  // times was a wide materialize of notification prefs and product JSON the
-  // age band never looks at.
-  const rows = await db.prepare(`
+  // Age is computed once in the CTE — the previous plan ran julianday twice
+  // per member, per UNION arm.
+  return db.prepare(`
     WITH circle AS (SELECT ? AS id),
     scoped AS (
       SELECT u.id, u.work_sector, u.location_state, u.gender, u.api_status,
-             u.kyb_completed, u.date_of_birth, u.api_products, u.engagement_streak,
-             u.preferred_channels, u.preferred_days
+             u.kyb_completed, u.api_products, u.engagement_streak,
+             u.preferred_channels, u.preferred_days, u.date_of_birth,
+             CASE
+               WHEN u.date_of_birth IS NULL OR u.date_of_birth = '' THEN 'Unspecified'
+               WHEN (julianday('now') - julianday(u.date_of_birth)) / 365.25 < 25 THEN 'Under 25'
+               WHEN (julianday('now') - julianday(u.date_of_birth)) / 365.25 < 35 THEN '25–34'
+               WHEN (julianday('now') - julianday(u.date_of_birth)) / 365.25 < 45 THEN '35–44'
+               ELSE '45+'
+             END as age_band
       FROM users u
       JOIN circle_members cm ON cm.user_id = u.id
       JOIN circle x ON x.id = cm.circle_id
@@ -174,13 +185,7 @@ router.get('/demography', requirePermission('members.read'), async (req, res) =>
     SELECT 'kyb', CASE WHEN CAST(kyb_completed AS TEXT) IN ('1', 'true', 't') THEN 'Completed' ELSE 'Pending' END, COUNT(*)
       FROM scoped GROUP BY 2
     UNION ALL
-    SELECT 'age_band', CASE
-        WHEN date_of_birth IS NULL OR date_of_birth = '' THEN 'Unspecified'
-        WHEN (julianday('now') - julianday(date_of_birth)) / 365.25 < 25 THEN 'Under 25'
-        WHEN (julianday('now') - julianday(date_of_birth)) / 365.25 < 35 THEN '25–34'
-        WHEN (julianday('now') - julianday(date_of_birth)) / 365.25 < 45 THEN '35–44'
-        ELSE '45+'
-      END, COUNT(*)
+    SELECT 'age_band', age_band, COUNT(*)
       FROM scoped GROUP BY 2
     UNION ALL
     SELECT 'api_products', json_each.value, COUNT(*)
@@ -230,7 +235,12 @@ router.get('/demography', requirePermission('members.read'), async (req, res) =>
     UNION ALL
     SELECT 'coverage', 'no_products',
            SUM(CASE WHEN api_products IS NULL OR api_products = '' OR api_products = '[]' THEN 1 ELSE 0 END) FROM scoped
-  `).all(req.circleId);
+  `).all(circleId);
+}
+
+router.get('/demography', requirePermission('members.read'), async (req, res) => {
+  const { takePreload } = require('../../middleware/preload');
+  const rows = await takePreload(req, () => loadDemography(req.circleId));
 
   const buckets = new Map();
   for (const row of rows || []) {
@@ -265,3 +275,5 @@ router.get('/demography', requirePermission('members.read'), async (req, res) =>
 });
 
 module.exports = router;
+module.exports.loadDashboard = loadDashboard;
+module.exports.loadDemography = loadDemography;

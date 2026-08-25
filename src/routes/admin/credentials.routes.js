@@ -157,7 +157,8 @@ function normaliseExpiry(value) {
 
 // GET /api/admin/credentials
 router.get('/credentials', requirePermission('credentials.read'), async (req, res) => {
-  const keys = (await db.prepare(`SELECT ${KEY_COLUMNS} FROM api_keys`).all() || []).map(shape);
+  const { takePreload } = require('../../middleware/preload');
+  const keys = ((await takePreload(req, () => db.prepare(`SELECT ${KEY_COLUMNS} FROM api_keys`).all())) || []).map(shape);
 
   res.json({
     providers: providers(),
@@ -188,8 +189,9 @@ router.get('/credentials', requirePermission('credentials.read'), async (req, re
 router.get('/api-keys', requirePermission('credentials.read', 'integrations.write'), async (req, res) => {
   const { status } = req.query;
 
-  const keys = ((await db.prepare(`SELECT ${KEY_COLUMNS} FROM api_keys ORDER BY created_at DESC`)
-    .all()) || []).map(shape)
+  const { takePreload } = require('../../middleware/preload');
+  const keys = ((await takePreload(req, () => db.prepare(`SELECT ${KEY_COLUMNS} FROM api_keys ORDER BY created_at DESC`)
+    .all())) || []).map(shape)
     .filter(key => !status || key.status === status);
 
   res.json({ keys, scopes: SCOPES });
