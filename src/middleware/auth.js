@@ -141,6 +141,42 @@ function flagOn(value) {
   return value === 1 || value === true || value === '1' || value === 't' || value === 'true';
 }
 
+function userFromAccessRow(row) {
+  if (!row.user_id) return null;
+  return {
+    id: row.user_id,
+    email: row.member_email,
+    name: row.member_name,
+    phone: row.member_phone,
+    phone_normalized: row.member_phone_normalized,
+    password_hash: row.member_password_hash,
+    company: row.member_company,
+    work_sector: row.member_work_sector,
+    dev_hub_user_id: row.member_dev_hub_user_id,
+    status: row.user_status,
+    api_status: row.member_api_status,
+    kyb_completed: row.member_kyb_completed,
+    preferred_channels: row.member_preferred_channels,
+    preferred_days: row.member_preferred_days,
+    preferred_time_start: row.member_preferred_time_start,
+    preferred_time_end: row.member_preferred_time_end,
+    engagement_streak: row.member_engagement_streak,
+    best_streak: row.member_best_streak,
+    last_active_at: row.member_last_active_at,
+    created_at: row.member_created_at,
+    updated_at: row.member_updated_at,
+    date_of_birth: row.member_date_of_birth,
+    gender: row.member_gender,
+    location_state: row.member_location_state,
+    country: row.member_country,
+    api_products: row.member_api_products,
+    notification_prefs: row.member_notification_prefs,
+    quiet_hours_start: row.member_quiet_hours_start,
+    quiet_hours_end: row.member_quiet_hours_end,
+    last_engagement_at: row.member_last_engagement_at
+  };
+}
+
 function circlesFromAccessRows(rows, admin) {
   const global = flagOn(admin.is_global);
   const seen = new Set();
@@ -181,6 +217,26 @@ async function resolvePrincipal(hash) {
       r.permissions as role_permissions, r.is_system as role_is_system,
       r.created_at as role_created_at,
       u.id as user_id, u.status as user_status,
+      u.email as member_email, u.name as member_name,
+      u.phone as member_phone, u.phone_normalized as member_phone_normalized,
+      u.password_hash as member_password_hash, u.company as member_company,
+      u.work_sector as member_work_sector, u.dev_hub_user_id as member_dev_hub_user_id,
+      u.api_status as member_api_status, u.kyb_completed as member_kyb_completed,
+      u.preferred_channels as member_preferred_channels,
+      u.preferred_days as member_preferred_days,
+      u.preferred_time_start as member_preferred_time_start,
+      u.preferred_time_end as member_preferred_time_end,
+      u.engagement_streak as member_engagement_streak,
+      u.best_streak as member_best_streak,
+      u.last_active_at as member_last_active_at,
+      u.created_at as member_created_at, u.updated_at as member_updated_at,
+      u.date_of_birth as member_date_of_birth, u.gender as member_gender,
+      u.location_state as member_location_state, u.country as member_country,
+      u.api_products as member_api_products,
+      u.notification_prefs as member_notification_prefs,
+      u.quiet_hours_start as member_quiet_hours_start,
+      u.quiet_hours_end as member_quiet_hours_end,
+      u.last_engagement_at as member_last_engagement_at,
       c.id as circle_id, c.name as circle_name, c.slug as circle_slug,
       c.description as circle_description, c.color as circle_color,
       c.status as circle_status, c.survey_theme as circle_survey_theme,
@@ -254,10 +310,7 @@ async function resolvePrincipal(hash) {
     return principal;
   }
 
-  if (!row.user_id || row.user_status !== 'active') {
-    return { error: 'inactive', message: 'User account inactive' };
-  }
-  const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(row.user_id);
+  const user = userFromAccessRow(row);
   if (!user || user.status !== 'active') {
     return { error: 'inactive', message: 'User account inactive' };
   }
@@ -467,5 +520,6 @@ module.exports = {
   hasPermission,
   PERMISSIONS,
   PERMISSION_KEYS,
-  PASSWORD_CHANGE_SCOPE
+  PASSWORD_CHANGE_SCOPE,
+  flagOn
 };

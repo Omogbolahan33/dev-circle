@@ -9,7 +9,7 @@ const circles = require('../services/circles');
 const loginCodes = require('../services/loginCodes');
 const {
   createSession, destroySession, requireAuth,
-  signSSOToken, verifySSOToken, permissionsFor
+  signSSOToken, verifySSOToken, permissionsFor, flagOn
 } = require('../middleware/auth');
 
 const router = express.Router();
@@ -306,7 +306,7 @@ router.get('/me', requireAuth, async (req, res) => {
       circles: (req.availableCircles || []).map(c => ({
         id: c.id, name: c.name, slug: c.slug, description: c.description, color: c.color
       })),
-      can_create_circles: Boolean(req.admin.is_global)
+      can_create_circles: flagOn(req.admin.is_global)
     });
   }
   res.json({ user: safeUser(req.user), isAdmin: false });
