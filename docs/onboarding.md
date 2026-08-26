@@ -67,21 +67,38 @@ offered, and a field another question already collects is greyed out (two
 questions filling one column means the second silently wins, and which one is
 second is a matter of what order they were dragged into).
 
-A form cannot go live until:
+### What a form must collect, and what it may
 
-- a question is tagged as the **email address**, and
-- a question is tagged as the **full name**,
+A form cannot go live until it collects an **email address** and a **phone
+number**, both **required** and **not behind a branch**.
 
-and both are **required** and **not behind a branch**. A branch around the email
-question produces an application with nobody in it, and the person who filled it
-in has no way of knowing that happened. The rail on the right shows what is
-still outstanding while there is something to do about it.
+Those two are the credential: a participant signs in with their email address
+and the last six digits of the phone number on their record. A form that can be
+completed without them produces accounts nobody can get into, and the person who
+filled it in has no way of knowing that happened.
+
+**Everything else is the circle's to choose.** A form that collects no name
+publishes fine — the members it makes simply show as unnamed everywhere they are
+listed, and the builder says so in the rail on the right while there is still
+something to do about it. That guidance is advice, never a refusal; it comes
+back on the save response as `warnings` too, so an integration writing forms
+through the API sees the same thing the builder shows.
+
+The rail separates the two: `○` is something that blocks a publish, `·` is
+something worth knowing.
 
 ### Fields a question can be tagged with
 
-`email` · `name` · `phone` · `company` · `work_sector` · `location_state` ·
-`gender` · `date_of_birth` · `api_products` · `dev_hub_user_id` ·
-`preferred_channels` · `preferred_days` · `consent_channels`
+**Required of every form** — the credential:
+`email` · `phone`
+
+**Recommended** — a consequence is warned about if it is missing:
+`name`
+
+**Optional** — collect them or don't:
+`company` · `work_sector` · `location_state` · `gender` · `date_of_birth` ·
+`api_products` · `dev_hub_user_id` · `preferred_channels` · `preferred_days` ·
+`consent_channels`
 
 `GET /api/admin/onboarding/schema` is the live list, and the builder draws its
 menu from it — a field added to `FIELDS` in `src/services/onboarding.js` appears
@@ -94,6 +111,61 @@ and `preferred_channels` fold "E-mail", "A phone call" and "In the portal" onto
 that names **two** ("Email or SMS"), is refused when the form is saved with the
 option quoted back — consent is the last place to resolve an ambiguity on the
 author's behalf.
+
+## Three ways in
+
+The same form, the same questions, the same queue.
+
+### A link
+
+Every form lives at `/o/<token>` — paste it into an email, a WhatsApp group, a
+post, or turn it into a QR code for a conference stand. No account needed to
+open it, and it is the same page the embed frames. **Onboarding → Share** on any
+live form hands you the link.
+
+### An embed on somebody else's page
+
+Two lines, wherever the form should appear. See *Putting it on a page* below.
+
+### A spreadsheet
+
+**Onboarding → Import** on any form. Three steps, in this order:
+
+1. **Take the template.** Excel or CSV, generated from that form's own questions
+   plus two columns of its own — `submitted_at` and `reference`. The example row
+   is a real one: downloading the template and importing it unedited lands one
+   application, which a test asserts. Delete it before a real run.
+2. **Check the file.** A dry run reports exactly what a real run would do and
+   writes nothing. Refusals are reported against their line in the sheet, so a
+   two-hundred-row file is fixed in one pass rather than one row at a time.
+3. **Import.**
+
+One row or five hundred — the mechanism does not care, which is what makes "add
+this one person" and "add these two hundred" the same feature.
+
+Every row goes through the same check a filled-in form gets, from the same
+definition: required answers are required, branching decides what was asked, and
+an answer under a branch the row did not open is dropped. A partner's list that
+omits the phone number will have every row refused, and that is the point — the
+alternative is a queue holding applications that do not satisfy the rules the
+form states about itself.
+
+**Rows become applications, not members.** They land in the same queue a
+filled-in form lands in. Tick **Approve as they land** to do both steps at once;
+because that creates members, it needs `onboarding.approve` on top of
+`onboarding.write` and is hidden from anyone without it.
+
+Two things make a re-run safe:
+
+- a row carrying a `reference` already seen on this form is **skipped**;
+- an address that already has a pending or approved application is **skipped**.
+
+The same address twice *within one sheet* is **refused** instead — unlike a
+re-upload, the operator has not watched that row land once already.
+
+Columns the form has nowhere to put are named back in the result. A blank answer
+and a column that did not line up look identical afterwards, so it is said there
+or not at all.
 
 ## Putting it on a page
 
@@ -162,12 +234,6 @@ leave the visitor looking at a page inside a box.
 Nothing else crosses between the two pages. What is typed into the form is
 readable only by this platform, which is the point of it being a frame.
 
-### Its own address
-
-Every form also lives at `/o/<token>` — a link in an email, a QR code on a
-stand, a post. No account needed to open it, and it is the same page the embed
-frames.
-
 ## Working the queue
 
 **Onboarding → Applications.** Each one shows the questions in the words they
@@ -177,11 +243,12 @@ them, and which channels they consented to.
 
 - **Approve** creates the member, joins them to the circle the form feeds and to
   its cohorts, and writes a granted consent row per channel ticked. They hold no
-  password: like every participant, they sign in with a one-time code sent to
-  the address they gave.
-- Where the address already belongs to a member, they are **joined to this
-  circle** instead of getting a second account, and the application fills in only
-  what their profile did not already have. Somebody who applies through a
+  password: like every participant, they sign in with the email address on the
+  application and the last six digits of the phone number beside it.
+- Where the address already belongs to a member — or, failing an address, the
+  normalised phone number does — they are **joined to this circle** instead of
+  getting a second account, and the application fills in only what their profile
+  did not already have. Somebody who applies through a
   partner's form having been a member for a year should not have their company
   replaced because they typed it differently this time.
 - A Credit Direct address is refused. Staff accounts are created by an
@@ -242,6 +309,7 @@ deleting it would take their applications with it.
 |---|---|
 | `src/db/migrations.js` (27) | `onboarding_forms`, `onboarding_submissions`, and why they are not `surveys` |
 | `src/services/onboarding.js` | the field catalogue, origin validation, publish rules, and `approve()` |
+| `src/services/onboardingImport.js` | the spreadsheet path — a thin wrapper over `responseImport.js` |
 | `src/routes/onboarding.routes.js` | the four unauthenticated endpoints a browser reaches |
 | `src/routes/admin/onboarding.routes.js` | authoring, the queue, and the decisions |
 | `src/middleware/security.js` | `allowFraming()` — the one carve-out in the frame policy |
@@ -249,3 +317,54 @@ deleting it would take their applications with it.
 | `public/embed/onboarding.js` | the loader a host page includes |
 | `public/admin/onboarding*.html` | the list, the builder, the queue |
 | `docs/api` (`/admin/api-docs.html`) | every endpoint, with worked examples |
+
+---
+
+## How a member signs in
+
+Worth knowing here, because it is why the form is required to collect what it
+collects.
+
+A participant signs in with **their email address and the last six digits of the
+phone number on their record**. There is no password and no one-time code. Staff
+— recognised by a Credit Direct email domain — still use a password, on the same
+form.
+
+A **phone number is not accepted as the identifier**. The secret is six digits
+of that very number, so accepting it in the first box would mean handing over
+the credential to reach the credential box. Typing one is answered with "sign in
+with the email address you registered with".
+
+The digits are counted off the normalised E.164 form, so `0803 555 0142`,
+`+234 803 555 0142` and `8035550142` all yield the same six — otherwise the same
+person would have a different secret depending on how they wrote their number
+the day they registered.
+
+### What this is worth
+
+Six digits is a million combinations, and a phone number is not private the way
+a password is: anyone who has it can derive this. What stands in front of it is
+the login throttle — eight failures per address-and-IP in fifteen minutes — and
+the rate limit on `/api/auth`. That is enough to make guessing impractical for
+one attacker and **not** enough to make this equivalent to a password. The trade
+is deliberate; it is written down beside the code in `src/utils/identity.js`.
+
+Email verification is the intended next step. `src/services/loginCodes.js` is
+left standing for it — the delivery, hashing and throttle machinery is what that
+will be built on, and none of it changed when the login path did.
+
+### Members who predate this
+
+A member with **no phone number on file cannot sign in**, and is told only that
+the credential does not match — "this address exists but has no number" is worth
+nothing to them and something to an attacker.
+
+That state is reachable four ways that have never required a number: Developer
+Hub SSO, the landing-page ingest, a spreadsheet import, and an administrator
+typing somebody in. **Anyone onboarded before this change who has no phone
+number is locked out until one is added to their profile.** Worth a query
+against `users` before this ships:
+
+```sql
+SELECT COUNT(*) FROM users WHERE phone_normalized IS NULL AND status = 'active';
+```

@@ -146,9 +146,10 @@
           </div>
         </td>
         <td class="hide-sm text-xs muted">${escapeHtml(a.form_name)}</td>
-        <td class="hide-sm text-xs muted">${a.source_origin
-          ? escapeHtml(a.source_origin.replace(/^https?:\/\//, ''))
-          : '<span class="dim">its own link</span>'}</td>
+        <td class="hide-sm text-xs muted">${
+          a.arrived_by === 'import' ? 'a spreadsheet'
+            : a.source_origin ? escapeHtml(a.source_origin.replace(/^https?:\/\//, ''))
+            : '<span class="dim">its own link</span>'}</td>
         <td class="text-xs muted nowrap">${timeAgo(a.submitted_at || a.created_at)}</td>
         <td class="col-actions" onclick="event.stopPropagation()">
           <div class="row-actions">
@@ -216,8 +217,11 @@
         </div>
 
         <p class="whence" style="margin-top:var(--sp-4)">
-          Sent in ${a.submitted_at ? timeAgo(a.submitted_at) : 'at some point'}${
-            a.source_page ? ` from ${escapeHtml(a.source_page)}` : ' at the form\'s own link'}.
+          ${a.arrived_by === 'import'
+            ? `Imported from a spreadsheet ${a.submitted_at ? timeAgo(a.submitted_at) : ''}${
+                a.external_ref ? `, as <span class="mono">${escapeHtml(a.external_ref)}</span>` : ''}.`
+            : `Sent in ${a.submitted_at ? timeAgo(a.submitted_at) : 'at some point'}${
+                a.source_page ? ` from ${escapeHtml(a.source_page)}` : ' at the form\'s own link'}.`}
         </p>`;
 
       document.getElementById('oneFoot').innerHTML = a.status === 'pending'
@@ -243,8 +247,12 @@
         ? (open.existing_member ? 'Join them to this circle?' : 'Create this member?')
         : 'Turn this application down?',
       text: action === 'approve'
-        ? `${a.name || 'They'} will be a member of this circle, reachable on the channels they consented to. ` +
-          'They sign in with a one-time code sent to the address on the application.'
+        ? `${a.name || 'They'} will be a member of this circle, reachable on the channels they ` +
+          'consented to. They sign in with the email address on this application and the last ' +
+          'six digits of the phone number beside it.' +
+          (open.application.profile?.phone ? '' :
+            ' This application carries no phone number, so they will not be able to sign in ' +
+            'until somebody adds one to their profile.')
         : 'Nothing is created and nothing is deleted. The application keeps its answers and carries the decision.',
       ok: action === 'approve' ? 'Approve' : 'Turn down',
       danger: action !== 'approve'

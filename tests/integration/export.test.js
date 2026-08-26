@@ -113,8 +113,11 @@ test('engagement separates the responsive from the silent', async () => {
 });
 
 test('members with no phone can be separated out', async () => {
+  // Fixture members carry a number by default now — it is half of what they
+  // sign in with — so the one without has to say so explicitly. They do exist:
+  // SSO, the landing page and a spreadsheet import can all produce one.
   h.makeUser({ phone: '+2348031234567' });
-  h.makeUser();
+  h.makeUser({ phone: null });
 
   assert.equal(await count({ rules: [{ field: 'has_phone', op: 'eq', value: 'yes' }] }), 1);
   assert.equal(await count({ rules: [{ field: 'has_phone', op: 'eq', value: 'no' }] }), 1);

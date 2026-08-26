@@ -185,33 +185,37 @@
         <button type="submit" class="btn btn-primary btn-block btn-lg" id="passwordBtn">Sign in</button>
       </form>
 
-      <!-- Step two, participants: the code we just sent -->
-      <form id="stepCode" onsubmit="handleCode(event)" style="display:none">
+      <!-- Step two, participants: the last digits of the number on their record.
+           Nothing is sent and there is nothing to wait for — they already know
+           their own phone number. -->
+      <form id="stepDigits" onsubmit="handleDigits(event)" style="display:none">
         <div class="whoami">
-          <span class="value" id="codeWho"></span>
+          <span class="value" id="digitsWho"></span>
           <button type="button" onclick="startOver()">Change</button>
         </div>
 
         <div class="field">
-          <label class="label" for="code">Sign-in code</label>
-          <input type="text" id="code" class="input code-input" placeholder="000000" maxlength="6"
-                 inputmode="numeric" pattern="[0-9]*" autocomplete="one-time-code">
-          <p class="hint" id="codeHint"></p>
+          <label class="label" for="digits">Last 6 digits of your phone number</label>
+          <input type="text" id="digits" class="input code-input" placeholder="000000" maxlength="7"
+                 inputmode="numeric" autocomplete="off">
+          <p class="hint" id="digitsHint"></p>
         </div>
 
-        <button type="submit" class="btn btn-primary btn-block btn-lg" id="codeBtn">Sign in</button>
+        <button type="submit" class="btn btn-primary btn-block btn-lg" id="digitsBtn">Sign in</button>
 
         <div class="divider">or</div>
-        <button type="button" class="btn btn-secondary btn-block" id="resendBtn" onclick="resendCode()">Send a new code</button>
-        <button type="button" class="btn btn-ghost btn-block" onclick="handleSSO()" style="margin-top:var(--sp-2)">Continue with Developer Hub</button>
+        <button type="button" class="btn btn-secondary btn-block" onclick="handleSSO()">Continue with Developer Hub</button>
+        <p class="hint" style="text-align:center">
+          Changed your number, or never gave us one? Ask the team that onboarded you to update it.
+        </p>
       </form>
 
       <div class="demo">
         <div class="demo-title">Demo accounts</div>
         <div class="demo-row" onclick="fill('admin@creditdirect.ng','admin123')"><span class="email">admin@creditdirect.ng</span><span class="role">Super admin · password</span></div>
         <div class="demo-row" onclick="fill('engagement@creditdirect.ng','engagement123')"><span class="email">engagement@creditdirect.ng</span><span class="role">CDL rep · password</span></div>
-        <div class="demo-row" onclick="fill('adebayo@paystack.dev')"><span class="email">adebayo@paystack.dev</span><span class="role">Developer · code</span></div>
-        <div class="demo-row" onclick="fill('emeka@kuda.ng')"><span class="email">emeka@kuda.ng</span><span class="role">Developer · code</span></div>
+        <div class="demo-row" onclick="fill('adebayo@paystack.dev','000001')"><span class="email">adebayo@paystack.dev</span><span class="role">Developer · digits 000001</span></div>
+        <div class="demo-row" onclick="fill('emeka@kuda.ng','000002')"><span class="email">emeka@kuda.ng</span><span class="role">Developer · digits 000002</span></div>
       </div>
 
       <p class="legal">Credit Direct Limited · CBN Licensed · <a href="https://creditdirect.ng">creditdirect.ng</a></p>
@@ -225,7 +229,6 @@
   // One field, then whatever the backend says this person needs. The page
   // never decides who you are — it only renders the challenge it is handed.
   let who = null;
-  let resendTimer = null;
 
   if (Auth.isLoggedIn()) {
     window.location.href = Auth.isAdmin() ? '/admin/dashboard.html' : '/member/dashboard.html';
@@ -243,7 +246,7 @@
   }
 
   function showStep(name) {
-    for (const step of ['stepIdentify', 'stepPassword', 'stepCode']) {
+    for (const step of ['stepIdentify', 'stepPassword', 'stepDigits']) {
       $(step).style.display = step === name ? 'block' : 'none';
     }
   }
@@ -253,7 +256,7 @@
     hideError();
     hideNote();
     $('password').value = '';
-    $('code').value = '';
+    $('digits').value = '';
     $('signinSub').textContent = 'Enter the email or phone number you are known by. We work out the rest.';
     showStep('stepIdentify');
     $('identifier').focus();
@@ -278,80 +281,40 @@
         return;
       }
 
-      await requestCode({ firstTime: true });
+      // A phone number cannot be the identifier: its last six digits are the
+      // secret, so typing it would hand over the credential to reach the
+      // credential box. Say so and stay on the first step.
+      if (data.method === 'email_required') {
+        showError('Sign in with the email address you registered with, not your phone number.');
+        $('identifier').select();
+        return;
+      }
+
+      askForDigits(data);
     });
   }
 
-  // Participants never type a password; they receive a code on the channel
-  // they were identified by.
-  async function requestCode({ firstTime = false } = {}) {
-    const { ok, data } = await post('/auth/code/request', { identifier: who.identifier });
-    if (!ok) {
-      showError(data.error || 'Could not send a code just now.');
-      startResendCooldown(0);
-      return;
-    }
+  // Participants never type a password and never wait for anything: the secret
+  // is the tail of the number already on their record.
+  function askForDigits(data) {
+    hideNote();
+    $('digitsWho').textContent = data.identifier;
+    $('digitsHint').textContent =
+      `The last ${data.digits || 6} digits of the phone number you registered with.`;
+    $('signinSub').textContent = 'One more thing, to check it is you.';
 
-    $('codeWho').textContent = data.masked;
-    $('codeHint').textContent = `${data.code_length}-digit code, good for ${Math.round(data.expires_in_sec / 60)} minutes.`;
-    $('signinSub').textContent = data.channel === 'sms'
-      ? 'We sent a code by text message.'
-      : 'We sent a code to your email.';
-
-    // Outside production nothing is actually delivered, so the server hands
-    // the code back and we fill it in rather than leaving a dead end.
-    if (data.dev_code) {
-      $('code').value = data.dev_code;
-      showNote(`Development only — nothing was really sent. Your code is <code>${data.dev_code}</code>.`);
-    } else {
-      hideNote();
-      if (!firstTime) showNote('A new code is on its way.');
-    }
-
-    showStep('stepCode');
-    $('code').focus();
-    startResendCooldown();
+    showStep('stepDigits');
+    $('digits').focus();
   }
 
-  // Not run through busy(): the cooldown owns this button's label and disabled
-  // state once the request lands, and restoring the old label would undo it.
-  async function resendCode() {
-    hideError();
-    const btn = $('resendBtn');
-    btn.disabled = true;
-    btn.innerHTML = '<span class="spinner"></span> Sending';
-
-    try {
-      await requestCode();
-    } catch {
-      showError('Could not reach Dev Circle. Check your connection and try again.');
-      startResendCooldown(0);
-    }
-  }
-
-  function startResendCooldown(seconds = 30) {
-    clearInterval(resendTimer);
-    const btn = $('resendBtn');
-    let left = seconds;
-
-    const tick = () => {
-      btn.disabled = left > 0;
-      btn.textContent = left > 0 ? `Send a new code (${left}s)` : 'Send a new code';
-      if (left-- <= 0) clearInterval(resendTimer);
-    };
-
-    tick();
-    resendTimer = setInterval(tick, 1000);
-  }
-
-  async function handleCode(e) {
+  async function handleDigits(e) {
     e.preventDefault();
-    await busy($('codeBtn'), 'Signing in', async () => {
-      const { ok, data } = await post('/auth/code/verify', {
+    await busy($('digitsBtn'), 'Signing in', async () => {
+      const { ok, data } = await post('/auth/login', {
         identifier: who.identifier,
-        code: $('code').value.trim()
+        digits: $('digits').value.trim()
       });
-      if (!ok) { showError(data.error || 'That code did not work.'); return; }
+      if (!ok) { showError(data.error || 'That did not match. Check the digits and try again.'); return; }
 
       Auth.save(data.token, data.user, false);
       window.location.href = '/member/dashboard.html';
@@ -394,10 +357,17 @@
   }
 
   // Demo rows fill the one field and walk the same path a real visitor does.
-  function fill(identifier, password) {
+  // The second argument is whichever secret that demo account holds — a
+  // password for staff, six digits for a developer. Which box it lands in is
+  // decided by identify(), so both are filled and the unused one is discarded
+  // by startOver() on the next attempt.
+  function fill(identifier, secret) {
     startOver();
     $('identifier').value = identifier;
-    if (password) $('password').value = password;
+    if (secret) {
+      $('password').value = secret;
+      $('digits').value = secret;
+    }
     $('stepIdentify').requestSubmit();
   }
 

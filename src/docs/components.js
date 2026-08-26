@@ -69,8 +69,9 @@ const securitySchemes = {
     description: [
       'A Dev Circle session token, sent as `Authorization: Bearer <token>`.',
       '',
-      'Staff receive one from `POST /auth/login`; members receive one from',
-      '`POST /auth/code/verify` or `POST /auth/sso/exchange`. Tokens expire 24 hours',
+      'Both audiences receive one from `POST /auth/login` — staff with a password,',
+      'members with the last six digits of their phone number — or from',
+      '`POST /auth/sso/exchange`. Tokens expire 24 hours',
       'after issue by default and are revoked immediately when an account is',
       'deactivated or its role changes.'
     ].join('\n')

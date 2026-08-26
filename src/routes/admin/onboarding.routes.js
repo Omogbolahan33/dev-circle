@@ -1,8 +1,10 @@
 const express = require('express');
 const db = require('../../db');
-const { uuid, parseJSON } = require('../../utils/helpers');
+const { uuid, parseJSON, parseCSV } = require('../../utils/helpers');
+const { parseXLSX } = require('../../utils/xlsx');
 const { requirePermission } = require('../../middleware/auth');
 const onboarding = require('../../services/onboarding');
+const onboardingImport = require('../../services/onboardingImport');
 const surveyForm = require('../../services/surveyForm');
 const circles = require('../../services/circles');
 
@@ -59,7 +61,11 @@ router.get('/onboarding/schema', requirePermission('onboarding.read'), async (re
       label: field.label,
       hint: field.hint || null,
       types: field.types,
-      essential: !!field.essential,
+      // Required of every form that goes out (the credential), or merely
+      // advisable. The builder gates its checklist on these rather than
+      // holding its own idea of which fields matter.
+      required: !!field.required,
+      recommended: !!field.recommended,
       // A channel field only accepts options that name a channel, so the
       // builder can offer them rather than leaving an author to guess
       channels: field.channels ? require('../../services/notifications').CHANNELS : null,
@@ -198,10 +204,11 @@ router.post('/onboarding', requirePermission('onboarding.write'), async (req, re
   );
 
   const form = await db.prepare('SELECT * FROM onboarding_forms WHERE id = ?').get(id);
+  const notes = [...(definition.warnings || []), ...onboarding.advice(definition.questions)];
   res.status(201).json({
     form: onboarding.hydrate(form),
     embed_snippet: snippet(req, form),
-    ...(definition.warnings?.length ? { warnings: definition.warnings } : {})
+    ...(notes.length ? { warnings: notes } : {})
   });
 });
 
@@ -306,10 +313,11 @@ router.put('/onboarding/:id', requirePermission('onboarding.write'), async (req,
   );
 
   const updated = await db.prepare('SELECT * FROM onboarding_forms WHERE id = ?').get(form.id);
+  const notes = [...warnings, ...onboarding.advice(questions)];
   res.json({
     form: onboarding.hydrate(updated),
     embed_snippet: snippet(req, updated),
-    ...(warnings.length ? { warnings } : {})
+    ...(notes.length ? { warnings: notes } : {})
   });
 });
 
@@ -367,6 +375,217 @@ router.delete('/onboarding/:id', requirePermission('onboarding.write'), async (r
   res.json({ message: 'Form deleted' });
 });
 
+// ─── Onboarding by spreadsheet ──────────────────────────────
+// The other way a form gets filled in: not one person at a time on a page, but
+// a list handed over by a partner, a page of names off a stand, or somebody's
+// export. One row or five hundred — the mechanism does not care, which is what
+// makes "add this one person" and "add these two hundred" the same feature.
+
+// GET /api/admin/onboarding/:id/import/template
+router.get('/onboarding/:id/import/template', requirePermission('onboarding.read'), async (req, res) => {
+  const form = await formInCircle(req);
+  if (!form) return res.status(404).json({ error: 'Form not found' });
+
+  const hydrated = onboarding.hydrate(form);
+  if (!hydrated.questions.some(surveyForm.isAnswerable)) {
+    return res.status(400).json({
+      error: 'This form asks nothing yet, so there is nothing for a sheet to line up against'
+    });
+  }
+
+  const format = String(req.query.format || 'xlsx').toLowerCase();
+
+  if (format === 'csv') {
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition',
+      `attachment; filename="${onboardingImport.filename(form, 'csv')}"`);
+    // A BOM so Excel opens it as UTF-8 rather than mangling the wording of a
+    // question that carries an accent
+    return res.send('﻿' + onboardingImport.toCsvTemplate(hydrated));
+  }
+
+  if (format === 'xlsx') {
+    res.setHeader('Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition',
+      `attachment; filename="${onboardingImport.filename(form, 'xlsx')}"`);
+    return res.send(onboardingImport.toWorkbook(hydrated));
+  }
+
+  res.status(400).json({ error: 'format must be csv or xlsx' });
+});
+
+// GET /api/admin/onboarding/:id/import/columns
+// The spec behind the template, so a screen can describe the upload without
+// keeping a second copy of the column list that drifts from the parser's.
+router.get('/onboarding/:id/import/columns', requirePermission('onboarding.read'), async (req, res) => {
+  const form = await formInCircle(req);
+  if (!form) return res.status(404).json({ error: 'Form not found' });
+
+  const hydrated = onboarding.hydrate(form);
+
+  res.json({
+    form: { id: form.id, name: form.name },
+    guidance: onboardingImport.guidance(form),
+    columns: onboardingImport.columns(hydrated).map(column => ({
+      key: column.key,
+      kind: column.kind,
+      label: column.kind === 'respondent' ? column.label : column.key,
+      required: column.kind === 'question' && !!column.question.required,
+      question_id: column.kind === 'question' ? column.question.id : null,
+      type: column.kind === 'question' ? column.question.type : null,
+      // Which profile field this column fills in, when it fills one. The screen
+      // uses it to mark the two that are the credential.
+      maps_to: column.kind === 'question' ? (column.question.maps_to || null) : null,
+      row: column.row || null,
+      in_template: column.template !== false,
+      accepts: column.kind === 'question'
+        ? onboardingImport.accepts(column.question)
+        : column.notes,
+      also_accepted: column.match
+    }))
+  });
+});
+
+// POST /api/admin/onboarding/:id/import
+// A sheet of people, landed as applications.
+//
+// `dry_run` is the point of this endpoint as much as the import is: an operator
+// with a two-hundred-row sheet wants to know what is wrong with it before any
+// of it lands, and a refusal per row is what makes a sheet fixable in one pass.
+router.post('/onboarding/:id/import', requirePermission('onboarding.write'), async (req, res) => {
+  const form = await formInCircle(req);
+  if (!form) return res.status(404).json({ error: 'Form not found' });
+
+  const hydrated = onboarding.hydrate(form);
+  const blocking = onboarding.canGoOut(hydrated.questions);
+  if (blocking.length) {
+    return res.status(400).json({
+      error: `This form is not ready to take applications: ${blocking[0].message}`,
+      issues: blocking
+    });
+  }
+
+  const { csv, xlsx_base64, rows: given, dry_run = false, approve = false } = req.body;
+
+  // Approving creates members, and that is a different capability from being
+  // able to write a form — so a sheet may only let itself straight through if
+  // the person uploading it could have approved every row by hand anyway.
+  if (approve && !(req.permissions || []).some(p => p === '*' || p === 'onboarding.approve')) {
+    return res.status(403).json({
+      error: 'Approving as they land needs the onboarding.approve permission. ' +
+             'Import without it and the rows wait in the queue.'
+    });
+  }
+
+  let rows;
+  try {
+    if (xlsx_base64) rows = parseXLSX(xlsx_base64);
+    else if (csv) rows = parseCSV(csv);
+    else if (Array.isArray(given)) rows = given;
+    else return res.status(400).json({ error: 'Provide a rows array, a csv string, or xlsx_base64' });
+  } catch (err) {
+    return res.status(400).json({ error: `Could not read the workbook: ${err.message}` });
+  }
+
+  if (!rows.length) {
+    return res.status(400).json({
+      error: 'No data rows found. The first row must be the headings, with a row per person under it.'
+    });
+  }
+
+  const headings = onboardingImport.index(onboardingImport.columns(hydrated));
+
+  const results = { created: 0, skipped: 0, approved: 0, errors: [] };
+  const unmatched = new Set();
+  const seen = new Set();          // addresses appearing twice in this one sheet
+  const landed = [];
+
+  for (const [position, raw] of rows.entries()) {
+    const line = position + 2;     // the heading row is line 1 in the sheet
+    const read = onboardingImport.readRow(form, headings, raw);
+
+    for (const heading of read.unmatched) unmatched.add(heading);
+
+    if (!read.ok) {
+      results.errors.push({ line, error: read.error });
+      continue;
+    }
+
+    const email = read.profile.email;
+
+    // Twice in one sheet is a copy-paste, not two people. Refused rather than
+    // skipped, because unlike a re-upload the operator has not seen this row
+    // land once already.
+    if (email && seen.has(email)) {
+      results.errors.push({ line, error: `${email} appears more than once in this sheet` });
+      continue;
+    }
+    if (email) seen.add(email);
+
+    // The same reference twice means the same row twice, which is what makes a
+    // re-run of an upload land nothing.
+    if (read.externalRef) {
+      const held = await db.prepare(
+        'SELECT id FROM onboarding_submissions WHERE form_id = ? AND external_ref = ?'
+      ).get(form.id, read.externalRef);
+      if (held) { results.skipped++; continue; }
+    }
+
+    const already = email ? await db.prepare(`
+      SELECT id FROM onboarding_submissions
+      WHERE form_id = ? AND email = ? AND status IN ('pending','approved')
+    `).get(form.id, email) : null;
+    if (already) { results.skipped++; continue; }
+
+    if (dry_run) { results.created++; continue; }
+
+    const id = uuid();
+    await db.prepare(`
+      INSERT INTO onboarding_submissions
+        (id, form_id, circle_id, answers, profile, consent_channels, email, name,
+         status, arrived_by, external_ref, submitted_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', 'import', ?, COALESCE(?, datetime('now')))
+    `).run(
+      id, form.id, form.circle_id,
+      JSON.stringify(read.answers),
+      JSON.stringify(read.profile),
+      JSON.stringify(read.consent),
+      email || null,
+      read.profile.name || null,
+      read.externalRef || null,
+      read.submittedAt
+    );
+
+    results.created++;
+    landed.push({ id, line });
+  }
+
+  // Approved one at a time and after the whole sheet has landed, so a row that
+  // cannot become a member — a Credit Direct address, say — is reported against
+  // its line rather than stopping the import halfway through.
+  if (approve && !dry_run) {
+    for (const { id, line } of landed) {
+      try {
+        await onboarding.approve(id, { adminId: req.admin.id, note: 'Approved on import' });
+        results.approved++;
+      } catch (err) {
+        results.errors.push({ line, error: err.message });
+      }
+    }
+  }
+
+  res.json({
+    ...results,
+    dry_run: !!dry_run,
+    rows: rows.length,
+    // Headings the sheet carried that this form has nowhere to put. A blank
+    // answer and a column that did not line up look identical afterwards, so
+    // it is said here or not at all.
+    unmatched_columns: [...unmatched]
+  });
+});
+
 // ─── The queue ──────────────────────────────────────────────
 
 // Applications across every form in this circle. Unfinished ones are left out
@@ -383,6 +602,7 @@ router.get('/onboarding-applications', requirePermission('onboarding.read'), asy
   const rows = await db.prepare(`
     SELECT s.id, s.form_id, s.email, s.name, s.status, s.submitted_at, s.created_at,
            s.source_origin, s.source_page, s.decided_at, s.decision_note, s.user_id,
+           s.arrived_by, s.external_ref,
            f.name as form_name,
            a.name as decided_by_name
     FROM onboarding_submissions s

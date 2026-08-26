@@ -70,10 +70,16 @@ const DEMO_ADMINS = [
   }
 ];
 
+// A participant signs in with their address and the last six digits of the
+// number on their record, so a demo developer without a number is a demo
+// account nobody can demonstrate anything with. The numbers are fixed rather
+// than random for the same reason: the sign-in page prints the digits beside
+// each demo row, and it can only do that if it knows them.
 const DEMO_USERS = [
   {
     email: 'adebayo@paystack.dev',
     name: 'Adebayo Martins',
+    phone: '+2348030000001',
     company: 'Paystack',
     work_sector: 'Fintech',
     api_status: 'production'
@@ -81,6 +87,7 @@ const DEMO_USERS = [
   {
     email: 'emeka@kuda.ng',
     name: 'Emeka Okafor',
+    phone: '+2348030000002',
     company: 'Kuda Bank',
     work_sector: 'Banking',
     api_status: 'production'
@@ -197,14 +204,21 @@ async function ensureDemoAccounts(database, { force = false } = {}) {
     const existing = await q.get('SELECT id FROM users WHERE lower(email) = ?', user.email);
     let userId;
     if (existing) {
-      await q.run("UPDATE users SET name = ?, status = 'active' WHERE id = ?", user.name, existing.id);
+      // The number is part of the credential, so a demo account that predates
+      // it gets one here rather than staying unsignable-in.
+      await q.run(
+        "UPDATE users SET name = ?, phone = ?, phone_normalized = ?, status = 'active' WHERE id = ?",
+        user.name, user.phone, user.phone, existing.id
+      );
       userId = existing.id;
     } else {
       userId = uuid();
       await q.run(
-        `INSERT INTO users (id, email, name, password_hash, company, work_sector, api_status, status)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 'active')`,
-        userId, user.email, user.name, NO_PASSWORD, user.company, user.work_sector, user.api_status
+        `INSERT INTO users (id, email, name, phone, phone_normalized, password_hash,
+                            company, work_sector, api_status, status)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')`,
+        userId, user.email, user.name, user.phone, user.phone, NO_PASSWORD,
+        user.company, user.work_sector, user.api_status
       );
       created.users++;
     }

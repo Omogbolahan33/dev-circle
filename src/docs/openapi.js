@@ -44,22 +44,18 @@ There are three ways to hold a credential, and which one you use depends on who 
 ### Members — a one-time code
 
 Developers hold no password at all, so there is none to leak, reset or reuse from another site.
-Signing in is two calls:
+They sign in with their email address and the last six digits of the phone number on their
+record — one call:
 
 \`\`\`bash
-# 1. Ask for a code. The answer is the same whether or not the account exists.
-curl -X POST https://your-deployment/api/auth/code/request \\
+curl -X POST https://your-deployment/api/auth/login \\
   -H 'Content-Type: application/json' \\
-  -d '{"identifier":"chidi@paystack.africa"}'
-
-# 2. Send it back for a session token.
-curl -X POST https://your-deployment/api/auth/code/verify \\
-  -H 'Content-Type: application/json' \\
-  -d '{"identifier":"chidi@paystack.africa","code":"418302"}'
+  -d '{"identifier":"chidi@paystack.africa","digits":"550142"}'
 \`\`\`
 
-Outside production the code comes back in the first response as \`dev_code\`, so a local
-environment is usable without mail credentials.
+A phone number is not accepted as the identifier: the secret is six digits of that very
+number. Six digits is a weak secret and is treated as one — eight failed attempts per
+address and IP are throttled for fifteen minutes.
 
 ### Credit Direct staff — a password
 

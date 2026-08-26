@@ -1,3 +1,10 @@
+// The demo bootstrap and this script seed the same accounts, and the bootstrap
+// runs on import — so left alone the two race, and the loser fails on a unique
+// constraint over roles.name. This script is the richer of the two and it is
+// the one being asked for, so it turns the other off before the handle it
+// hangs off is required. Set before the require, because that is when it runs.
+process.env.SEED_DEMO_ACCOUNTS = 'false';
+
 const db = require('.');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
@@ -387,404 +394,419 @@ const surveyStmt = db.prepare(`
   VALUES (?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?)
 `);
 
-for (const s of surveys) {
-  // Through the same door an authored survey goes through, so seeded data
-  // carries question identities the same way — and so a seed that drifts out
-  // of what a survey may contain fails here rather than in front of a member.
-  const definition = surveyForm.normalizeDefinition(s, { createdBy: admins[0].id });
-  if (definition.issues.length) {
-    throw new Error(`Seed survey "${s.title}": ${surveyForm.issueSummary(definition.issues)}`);
-  }
-  s.questions = definition.questions;
+// ─── From here down, one await ──────────────────────────────
+// Normalising a survey definition reaches the questions table, and that read
+// is async now — so everything downstream of it is too. Wrapped rather than
+// scattered: a seed script is a straight line, and the alternative is an
+// await in the middle of a file that otherwise reads top to bottom.
+(async () => {
 
-  surveyStmt.run(
-    s.id, s.title, s.description, JSON.stringify(s.questions),
-    definition.theme ? JSON.stringify(definition.theme) : null,
-    s.target_type, JSON.stringify(s.target_ids || []),
-    s.engagement_mode, s.time_estimate_min,
-    s.trigger_event || null, s.reminder_after_days || null,
-    s.public_token || null, admins[0].id
-  );
-}
-console.log(`✓ ${surveys.length} surveys created (${db.prepare('SELECT COUNT(*) c FROM questions').get().c} questions)`);
-
-// ─── Survey Responses ───────────────────────────────────────
-const responseStmt = db.prepare(`
-  INSERT INTO survey_responses (id, survey_id, user_id, answers, completed_at, triggered_by)
-  VALUES (?, ?, ?, ?, datetime('now', ?), ?)
-`);
-
-// Written answers, so the verbatims a survey collects read like things a
-// person actually typed rather than "Sample feedback text" repeated 30 times
-const VERBATIMS = [
-  'The webhook retry intervals are documented as "every few minutes" — I need the actual schedule to build idempotency properly.',
-  'Sandbox rate limits are far tighter than production, so load testing tells me nothing useful.',
-  'KYB took eight days and the status page never moved. I only found out we were approved by trying a call.',
-  'Error bodies say "unauthorized" whether the key is wrong, expired, or lacks a scope. Three very different fixes.',
-  'The Postman collection is a version behind the docs. Lost half a day to that.',
-  'Honestly the onboarding was the smoothest of any Nigerian provider we have integrated.',
-  'Would like a way to rotate keys without downtime — right now it is a hard cutover.',
-  'Transfer status webhooks arrive before the GET reflects the same state, so we poll anyway.',
-  'Docs assume Node. Our stack is Go and the examples do not translate cleanly.',
-  'Support answered in under two hours on a production issue. That is why we stayed.'
-];
-
-const pick = list => list[Math.floor(Math.random() * list.length)];
-const between = (from, to) => from + Math.floor(Math.random() * (to - from + 1));
-
-// One plausible answer to one question. Kept honest about the shape each type
-// expects, because seeded data that a live submission would have refused is
-// data every screen then has to be defensive about.
-function inventAnswer(q) {
-  switch (q.type) {
-    case 'rating': return between(1, q.scale || 5);
-    case 'nps': return between(0, 10);
-    case 'number': return between(q.min ?? 50, Math.min(q.max ?? 5000, 5000));
-    case 'date': return new Date(Date.now() - between(30, 400) * 86400000).toISOString().slice(0, 10);
-    case 'boolean': return Math.random() > 0.4;
-    case 'choice':
-    case 'dropdown': return pick(q.options);
-    case 'multi_choice': {
-      const exclusive = q.exclusive_options || [];
-      // Sometimes the "None of these" answer, which is the one that has to
-      // stand alone — worth having in the data so the screens meet it
-      if (exclusive.length && Math.random() > 0.75) return [pick(exclusive)];
-      const open = q.options.filter(o => !exclusive.includes(o));
-      const most = Math.min(q.max_select || open.length, open.length);
-      const many = between(Math.max(1, q.min_select || 1), most);
-      return open.slice().sort(() => Math.random() - 0.5).slice(0, many);
+  for (const s of surveys) {
+    // Through the same door an authored survey goes through, so seeded data
+    // carries question identities the same way — and so a seed that drifts out
+    // of what a survey may contain fails here rather than in front of a member.
+    const definition = await surveyForm.normalizeDefinition(s, { createdBy: admins[0].id });
+    if (definition.issues.length) {
+      throw new Error(`Seed survey "${s.title}": ${surveyForm.issueSummary(definition.issues)}`);
     }
-    case 'ranking': return q.options.slice().sort(() => Math.random() - 0.5);
-    case 'matrix':
-      return Object.fromEntries(q.rows.map(row => [row, pick(q.columns)]));
-    case 'text':
-      return q.format ? null : pick(VERBATIMS);
-    default:
-      return null;
+    s.questions = definition.questions;
+
+    surveyStmt.run(
+      s.id, s.title, s.description, JSON.stringify(s.questions),
+      definition.theme ? JSON.stringify(definition.theme) : null,
+      s.target_type, JSON.stringify(s.target_ids || []),
+      s.engagement_mode, s.time_estimate_min,
+      s.trigger_event || null, s.reminder_after_days || null,
+      s.public_token || null, admins[0].id
+    );
   }
-}
+  console.log(`✓ ${surveys.length} surveys created (${db.prepare('SELECT COUNT(*) c FROM questions').get().c} questions)`);
 
-let responseCount = 0;
-for (const dev of developers) {
-  for (const survey of surveys) {
-    // A link survey is answered by people who are not members, so putting
-    // member responses against it would seed a state that cannot occur
-    if (survey.target_type === 'anonymous') continue;
-    if (Math.random() > 0.4) {
+  // ─── Survey Responses ───────────────────────────────────────
+  const responseStmt = db.prepare(`
+    INSERT INTO survey_responses (id, survey_id, user_id, answers, completed_at, triggered_by)
+    VALUES (?, ?, ?, ?, datetime('now', ?), ?)
+  `);
+
+  // Written answers, so the verbatims a survey collects read like things a
+  // person actually typed rather than "Sample feedback text" repeated 30 times
+  const VERBATIMS = [
+    'The webhook retry intervals are documented as "every few minutes" — I need the actual schedule to build idempotency properly.',
+    'Sandbox rate limits are far tighter than production, so load testing tells me nothing useful.',
+    'KYB took eight days and the status page never moved. I only found out we were approved by trying a call.',
+    'Error bodies say "unauthorized" whether the key is wrong, expired, or lacks a scope. Three very different fixes.',
+    'The Postman collection is a version behind the docs. Lost half a day to that.',
+    'Honestly the onboarding was the smoothest of any Nigerian provider we have integrated.',
+    'Would like a way to rotate keys without downtime — right now it is a hard cutover.',
+    'Transfer status webhooks arrive before the GET reflects the same state, so we poll anyway.',
+    'Docs assume Node. Our stack is Go and the examples do not translate cleanly.',
+    'Support answered in under two hours on a production issue. That is why we stayed.'
+  ];
+
+  const pick = list => list[Math.floor(Math.random() * list.length)];
+  const between = (from, to) => from + Math.floor(Math.random() * (to - from + 1));
+
+  // One plausible answer to one question. Kept honest about the shape each type
+  // expects, because seeded data that a live submission would have refused is
+  // data every screen then has to be defensive about.
+  function inventAnswer(q) {
+    switch (q.type) {
+      case 'rating': return between(1, q.scale || 5);
+      case 'nps': return between(0, 10);
+      case 'number': return between(q.min ?? 50, Math.min(q.max ?? 5000, 5000));
+      case 'date': return new Date(Date.now() - between(30, 400) * 86400000).toISOString().slice(0, 10);
+      case 'boolean': return Math.random() > 0.4;
+      case 'choice':
+      case 'dropdown': return pick(q.options);
+      case 'multi_choice': {
+        const exclusive = q.exclusive_options || [];
+        // Sometimes the "None of these" answer, which is the one that has to
+        // stand alone — worth having in the data so the screens meet it
+        if (exclusive.length && Math.random() > 0.75) return [pick(exclusive)];
+        const open = q.options.filter(o => !exclusive.includes(o));
+        const most = Math.min(q.max_select || open.length, open.length);
+        const many = between(Math.max(1, q.min_select || 1), most);
+        return open.slice().sort(() => Math.random() - 0.5).slice(0, many);
+      }
+      case 'ranking': return q.options.slice().sort(() => Math.random() - 0.5);
+      case 'matrix':
+        return Object.fromEntries(q.rows.map(row => [row, pick(q.columns)]));
+      case 'text':
+        return q.format ? null : pick(VERBATIMS);
+      default:
+        return null;
+    }
+  }
+
+  let responseCount = 0;
+  for (const dev of developers) {
+    for (const survey of surveys) {
+      // A link survey is answered by people who are not members, so putting
+      // member responses against it would seed a state that cannot occur
+      if (survey.target_type === 'anonymous') continue;
+      if (Math.random() > 0.4) {
+        const answers = {};
+
+        // Answered in order, re-reading what is on offer after each one, so a
+        // branch only gets an answer when this member's earlier answers actually
+        // opened it. Answering the whole list would seed responses no member
+        // could have given.
+        for (const q of survey.questions) {
+          if (!surveyForm.isAnswerable(q)) continue;
+          if (!surveyForm.visible(survey.questions, answers).some(shown => shown.id === q.id)) continue;
+          // Optional questions go unanswered sometimes, which is what makes a
+          // response rate mean anything
+          if (!q.required && Math.random() > 0.65) continue;
+
+          const invented = inventAnswer(q);
+          if (invented !== null) answers[q.id] = invented;
+        }
+
+        // The same check a submission goes through. A seed that drifts out of
+        // what a survey accepts fails here rather than becoming data every
+        // screen has to be defensive about.
+        const checked = surveyForm.checkResponse(survey.questions, answers);
+        if (!checked.ok) {
+          throw new Error(`Seed response to "${survey.title}": ${JSON.stringify(checked.errors)}`);
+        }
+
+        const completedDaysAgo = Math.floor(Math.random() * 30);
+        responseStmt.run(
+          uuid(), survey.id, dev._id, JSON.stringify(answers),
+          `-${completedDaysAgo} days`, 'manual'
+        );
+
+        // Free-text answers are filed with the rest of the member's feedback,
+        // the same way a live submission does it
+        verbatims.record(dev._id, survey, answers, {
+          at: new Date(Date.now() - completedDaysAgo * 86400000).toISOString().slice(0, 19).replace('T', ' ')
+        });
+
+        responseCount++;
+      }
+    }
+  }
+
+  // ─── Answers from people with no account ────────────────────
+  // The link survey's respondents. They have no user row by definition, which is
+  // the state every screen reading responses has to cope with — so the demo data
+  // contains it rather than leaving it to be discovered in production.
+  const anonymousResponse = db.prepare(`
+    INSERT INTO survey_responses (id, survey_id, user_id, respondent_kind, anonymous_key_hash,
+                                  answers, completed_at, triggered_by)
+    VALUES (?, ?, NULL, 'anonymous', ?, ?, datetime('now', ?), 'link')
+  `);
+
+  let anonymousCount = 0;
+  for (const survey of surveys.filter(s => s.target_type === 'anonymous')) {
+    for (let i = 0; i < 14; i++) {
       const answers = {};
-
-      // Answered in order, re-reading what is on offer after each one, so a
-      // branch only gets an answer when this member's earlier answers actually
-      // opened it. Answering the whole list would seed responses no member
-      // could have given.
       for (const q of survey.questions) {
         if (!surveyForm.isAnswerable(q)) continue;
         if (!surveyForm.visible(survey.questions, answers).some(shown => shown.id === q.id)) continue;
-        // Optional questions go unanswered sometimes, which is what makes a
-        // response rate mean anything
-        if (!q.required && Math.random() > 0.65) continue;
-
+        if (!q.required && Math.random() > 0.55) continue;
         const invented = inventAnswer(q);
         if (invented !== null) answers[q.id] = invented;
       }
 
-      // The same check a submission goes through. A seed that drifts out of
-      // what a survey accepts fails here rather than becoming data every
-      // screen has to be defensive about.
       const checked = surveyForm.checkResponse(survey.questions, answers);
-      if (!checked.ok) {
-        throw new Error(`Seed response to "${survey.title}": ${JSON.stringify(checked.errors)}`);
-      }
+      if (!checked.ok) throw new Error(`Seed link response: ${JSON.stringify(checked.errors)}`);
 
-      const completedDaysAgo = Math.floor(Math.random() * 30);
-      responseStmt.run(
-        uuid(), survey.id, dev._id, JSON.stringify(answers),
-        `-${completedDaysAgo} days`, 'manual'
+      const id = uuid();
+      const daysAgo = Math.floor(Math.random() * 21);
+      anonymousResponse.run(
+        id, survey.id,
+        crypto.createHash('sha256').update(uuid()).digest('hex'),
+        JSON.stringify(checked.answers), `-${daysAgo} days`
       );
 
-      // Free-text answers are filed with the rest of the member's feedback,
-      // the same way a live submission does it
-      verbatims.record(dev._id, survey, answers, {
-        at: new Date(Date.now() - completedDaysAgo * 86400000).toISOString().slice(0, 19).replace('T', ' ')
+      // Filed as evidence the same way a member's words are, minus the member
+      verbatims.record(null, survey, checked.answers, {
+        responseId: id,
+        at: new Date(Date.now() - daysAgo * 86400000).toISOString().slice(0, 19).replace('T', ' ')
       });
-
-      responseCount++;
+      anonymousCount++;
     }
   }
-}
 
-// ─── Answers from people with no account ────────────────────
-// The link survey's respondents. They have no user row by definition, which is
-// the state every screen reading responses has to cope with — so the demo data
-// contains it rather than leaving it to be discovered in production.
-const anonymousResponse = db.prepare(`
-  INSERT INTO survey_responses (id, survey_id, user_id, respondent_kind, anonymous_key_hash,
-                                answers, completed_at, triggered_by)
-  VALUES (?, ?, NULL, 'anonymous', ?, ?, datetime('now', ?), 'link')
-`);
+  db.prepare('UPDATE feedback SET circle_id = ? WHERE circle_id IS NULL').run(rootCircleId);
+  db.prepare('UPDATE questions SET circle_id = ? WHERE circle_id IS NULL').run(rootCircleId);
 
-let anonymousCount = 0;
-for (const survey of surveys.filter(s => s.target_type === 'anonymous')) {
-  for (let i = 0; i < 14; i++) {
-    const answers = {};
-    for (const q of survey.questions) {
-      if (!surveyForm.isAnswerable(q)) continue;
-      if (!surveyForm.visible(survey.questions, answers).some(shown => shown.id === q.id)) continue;
-      if (!q.required && Math.random() > 0.55) continue;
-      const invented = inventAnswer(q);
-      if (invented !== null) answers[q.id] = invented;
+  const verbatimCount = db.prepare("SELECT COUNT(*) c FROM feedback WHERE source = 'survey'").get().c;
+  console.log(`✓ ${responseCount} survey responses created (${verbatimCount} verbatims filed as feedback)`);
+  console.log(`✓ ${anonymousCount} answered over a public link, with no account`);
+
+  // ─── Engagement History ─────────────────────────────────────
+  const ehStmt = db.prepare(`
+    INSERT INTO engagement_history (id, user_id, type, source, metadata, created_at)
+    VALUES (?, ?, ?, ?, ?, datetime('now', ?))
+  `);
+
+  let ehCount = 0;
+  for (const dev of developers) {
+    ehStmt.run(uuid(), dev._id, 'account_created', 'landing_page', '{}', '-60 days');
+    ehCount++;
+
+    if (dev.api_status === 'production') {
+      ehStmt.run(uuid(), dev._id, 'api_key_generated', 'customer_io', '{}', '-50 days');
+      ehStmt.run(uuid(), dev._id, 'first_sandbox_call', 'customer_io', '{}', '-45 days');
+      ehStmt.run(uuid(), dev._id, 'first_production_call', 'customer_io', '{}', '-30 days');
+      ehCount += 3;
+    } else {
+      ehStmt.run(uuid(), dev._id, 'api_key_generated', 'customer_io', '{}', '-20 days');
+      ehCount++;
     }
 
-    const checked = surveyForm.checkResponse(survey.questions, answers);
-    if (!checked.ok) throw new Error(`Seed link response: ${JSON.stringify(checked.errors)}`);
+    if (dev.kyb) {
+      ehStmt.run(uuid(), dev._id, 'kyb_completed', 'customer_io', '{}', '-40 days');
+      ehCount++;
+    }
+  }
+  console.log(`✓ ${ehCount} engagement history events created`);
 
-    const id = uuid();
-    const daysAgo = Math.floor(Math.random() * 21);
-    anonymousResponse.run(
-      id, survey.id,
-      crypto.createHash('sha256').update(uuid()).digest('hex'),
-      JSON.stringify(checked.answers), `-${daysAgo} days`
+  // ─── Feedback ───────────────────────────────────────────────
+  const feedbackData = [
+    { user: 0, content: 'The webhook retry logic documentation is unclear. It says retries happen "every few minutes" but doesn\'t specify the exact intervals.', category: 'documentation', source: 'dev_circle' },
+    { user: 2, content: 'Would love to see a sandbox mode for the transfer API that simulates different bank response times.', category: 'feature_request', source: 'dev_circle' },
+    { user: 4, content: 'Getting 429 errors even within the documented rate limits. Happens during peak testing hours.', category: 'api', source: 'dev_circle' },
+    { user: 1, content: 'KYB process took 8 days. The status tracker didn\'t update in real-time, had to email support.', category: 'support', source: 'feex', external_ticket_id: 'FEEX-2026-1847', feex_status: 'in_progress', feex_priority: 'high' },
+    { user: 6, content: 'The error messages for invalid API keys could be more descriptive. Just says "unauthorized" without details.', category: 'api', source: 'dev_circle' },
+    { user: 8, content: 'Excellent support from the dev relations team. Response within 2 hours for a critical production issue.', category: 'support', source: 'feex', external_ticket_id: 'FEEX-2026-2103' }
+  ];
+
+  const fbStmt = db.prepare(`
+    INSERT INTO feedback (id, user_id, type, content, category, status, source, external_ticket_id,
+                          feex_status, feex_priority, feex_url, feex_updated_at, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now', ?))
+  `);
+
+  for (let i = 0; i < feedbackData.length; i++) {
+    const f = feedbackData[i];
+    const isFeex = f.source === 'feex';
+    fbStmt.run(
+      uuid(), developers[f.user]._id, isFeex ? 'feex_complaint' : 'self_initiated',
+      f.content, f.category, i < 3 ? 'open' : 'reviewed',
+      f.source, f.external_ticket_id || null,
+      // Feex owns these states; Dev Circle only mirrors what Feex last reported
+      isFeex ? f.feex_status : null,
+      isFeex ? f.feex_priority : null,
+      isFeex ? `https://feex.creditdirect.ng/tickets/${f.external_ticket_id}` : null,
+      isFeex ? new Date().toISOString().slice(0, 19).replace('T', ' ') : null,
+      `-${Math.floor(Math.random() * 14)} days`
     );
-
-    // Filed as evidence the same way a member's words are, minus the member
-    verbatims.record(null, survey, checked.answers, {
-      responseId: id,
-      at: new Date(Date.now() - daysAgo * 86400000).toISOString().slice(0, 19).replace('T', ' ')
-    });
-    anonymousCount++;
   }
-}
+  console.log(`✓ ${feedbackData.length} feedback entries created`);
 
-db.prepare('UPDATE feedback SET circle_id = ? WHERE circle_id IS NULL').run(rootCircleId);
-db.prepare('UPDATE questions SET circle_id = ? WHERE circle_id IS NULL').run(rootCircleId);
+  // ─── Gifts ──────────────────────────────────────────────────
+  // Gifts now carry real eligibility rules, so the developer-facing catalogue
+  // can distinguish "available to you" from "keep going to unlock".
+  const gifts = [
+    { id: uuid(), name: '₦5,000 Airtime Credit', description: 'Airtime top-up for any Nigerian network', value: 5000, min_surveys: 1, min_streak: 0, stock: null },
+    { id: uuid(), name: 'Dev Circle Branded Notebook', description: 'Premium notebook with Dev Circle branding', value: 3000, min_surveys: 2, min_streak: 0, stock: 50 },
+    { id: uuid(), name: '₦10,000 Data Bundle', description: 'Monthly data subscription', value: 10000, min_surveys: 3, min_streak: 3, stock: 25 },
+    { id: uuid(), name: 'DevFest Lagos 2026 Ticket', description: 'Conference pass, travel not included', value: 25000, min_surveys: 4, min_streak: 5, stock: 10 }
+  ];
 
-const verbatimCount = db.prepare("SELECT COUNT(*) c FROM feedback WHERE source = 'survey'").get().c;
-console.log(`✓ ${responseCount} survey responses created (${verbatimCount} verbatims filed as feedback)`);
-console.log(`✓ ${anonymousCount} answered over a public link, with no account`);
-
-// ─── Engagement History ─────────────────────────────────────
-const ehStmt = db.prepare(`
-  INSERT INTO engagement_history (id, user_id, type, source, metadata, created_at)
-  VALUES (?, ?, ?, ?, ?, datetime('now', ?))
-`);
-
-let ehCount = 0;
-for (const dev of developers) {
-  ehStmt.run(uuid(), dev._id, 'account_created', 'landing_page', '{}', '-60 days');
-  ehCount++;
-
-  if (dev.api_status === 'production') {
-    ehStmt.run(uuid(), dev._id, 'api_key_generated', 'customer_io', '{}', '-50 days');
-    ehStmt.run(uuid(), dev._id, 'first_sandbox_call', 'customer_io', '{}', '-45 days');
-    ehStmt.run(uuid(), dev._id, 'first_production_call', 'customer_io', '{}', '-30 days');
-    ehCount += 3;
-  } else {
-    ehStmt.run(uuid(), dev._id, 'api_key_generated', 'customer_io', '{}', '-20 days');
-    ehCount++;
+  const giftStmt = db.prepare(`
+    INSERT INTO gifts (id, name, description, value, currency, stock, min_surveys_completed, min_streak, active)
+    VALUES (?, ?, ?, ?, 'NGN', ?, ?, ?, 1)
+  `);
+  for (const g of gifts) {
+    giftStmt.run(g.id, g.name, g.description, g.value, g.stock, g.min_surveys, g.min_streak);
   }
+  console.log(`✓ ${gifts.length} gifts created`);
 
-  if (dev.kyb) {
-    ehStmt.run(uuid(), dev._id, 'kyb_completed', 'customer_io', '{}', '-40 days');
-    ehCount++;
+  // A few claims so the admin view is not empty
+  const claimStmt = db.prepare('INSERT OR IGNORE INTO user_gifts (id, user_id, gift_id, claimed_at) VALUES (?, ?, ?, datetime(\'now\', ?))');
+  let claimCount = 0;
+  for (const dev of developers) {
+    if (dev.streak >= 5) {
+      claimStmt.run(uuid(), dev._id, gifts[0].id, '-10 days');
+      claimCount++;
+    }
   }
-}
-console.log(`✓ ${ehCount} engagement history events created`);
+  console.log(`✓ ${claimCount} gift claims created`);
 
-// ─── Feedback ───────────────────────────────────────────────
-const feedbackData = [
-  { user: 0, content: 'The webhook retry logic documentation is unclear. It says retries happen "every few minutes" but doesn\'t specify the exact intervals.', category: 'documentation', source: 'dev_circle' },
-  { user: 2, content: 'Would love to see a sandbox mode for the transfer API that simulates different bank response times.', category: 'feature_request', source: 'dev_circle' },
-  { user: 4, content: 'Getting 429 errors even within the documented rate limits. Happens during peak testing hours.', category: 'api', source: 'dev_circle' },
-  { user: 1, content: 'KYB process took 8 days. The status tracker didn\'t update in real-time, had to email support.', category: 'support', source: 'feex', external_ticket_id: 'FEEX-2026-1847', feex_status: 'in_progress', feex_priority: 'high' },
-  { user: 6, content: 'The error messages for invalid API keys could be more descriptive. Just says "unauthorized" without details.', category: 'api', source: 'dev_circle' },
-  { user: 8, content: 'Excellent support from the dev relations team. Response within 2 hours for a critical production issue.', category: 'support', source: 'feex', external_ticket_id: 'FEEX-2026-2103' }
-];
+  // ─── Consent ────────────────────────────────────────────────
+  const grantStmt = db.prepare(`
+    INSERT INTO consent (id, user_id, channel, status, granted_at)
+    VALUES (?, ?, ?, 'granted', datetime('now', '-30 days'))
+  `);
+  const withdrawStmt = db.prepare(`
+    INSERT INTO consent (id, user_id, channel, status, granted_at, withdrawn_at)
+    VALUES (?, ?, ?, 'withdrawn', datetime('now', '-30 days'), datetime('now', '-5 days'))
+  `);
 
-const fbStmt = db.prepare(`
-  INSERT INTO feedback (id, user_id, type, content, category, status, source, external_ticket_id,
-                        feex_status, feex_priority, feex_url, feex_updated_at, created_at)
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now', ?))
-`);
-
-for (let i = 0; i < feedbackData.length; i++) {
-  const f = feedbackData[i];
-  const isFeex = f.source === 'feex';
-  fbStmt.run(
-    uuid(), developers[f.user]._id, isFeex ? 'feex_complaint' : 'self_initiated',
-    f.content, f.category, i < 3 ? 'open' : 'reviewed',
-    f.source, f.external_ticket_id || null,
-    // Feex owns these states; Dev Circle only mirrors what Feex last reported
-    isFeex ? f.feex_status : null,
-    isFeex ? f.feex_priority : null,
-    isFeex ? `https://feex.creditdirect.ng/tickets/${f.external_ticket_id}` : null,
-    isFeex ? new Date().toISOString().slice(0, 19).replace('T', ' ') : null,
-    `-${Math.floor(Math.random() * 14)} days`
-  );
-}
-console.log(`✓ ${feedbackData.length} feedback entries created`);
-
-// ─── Gifts ──────────────────────────────────────────────────
-// Gifts now carry real eligibility rules, so the developer-facing catalogue
-// can distinguish "available to you" from "keep going to unlock".
-const gifts = [
-  { id: uuid(), name: '₦5,000 Airtime Credit', description: 'Airtime top-up for any Nigerian network', value: 5000, min_surveys: 1, min_streak: 0, stock: null },
-  { id: uuid(), name: 'Dev Circle Branded Notebook', description: 'Premium notebook with Dev Circle branding', value: 3000, min_surveys: 2, min_streak: 0, stock: 50 },
-  { id: uuid(), name: '₦10,000 Data Bundle', description: 'Monthly data subscription', value: 10000, min_surveys: 3, min_streak: 3, stock: 25 },
-  { id: uuid(), name: 'DevFest Lagos 2026 Ticket', description: 'Conference pass, travel not included', value: 25000, min_surveys: 4, min_streak: 5, stock: 10 }
-];
-
-const giftStmt = db.prepare(`
-  INSERT INTO gifts (id, name, description, value, currency, stock, min_surveys_completed, min_streak, active)
-  VALUES (?, ?, ?, ?, 'NGN', ?, ?, ?, 1)
-`);
-for (const g of gifts) {
-  giftStmt.run(g.id, g.name, g.description, g.value, g.stock, g.min_surveys, g.min_streak);
-}
-console.log(`✓ ${gifts.length} gifts created`);
-
-// A few claims so the admin view is not empty
-const claimStmt = db.prepare('INSERT OR IGNORE INTO user_gifts (id, user_id, gift_id, claimed_at) VALUES (?, ?, ?, datetime(\'now\', ?))');
-let claimCount = 0;
-for (const dev of developers) {
-  if (dev.streak >= 5) {
-    claimStmt.run(uuid(), dev._id, gifts[0].id, '-10 days');
-    claimCount++;
+  let consentCount = 0;
+  for (const [i, dev] of developers.entries()) {
+    for (const ch of ['email', 'in_portal']) {
+      grantStmt.run(uuid(), dev._id, ch);
+      consentCount++;
+    }
+    // A realistic mix: some members granted WhatsApp, some withdrew it, so the
+    // consent checks in the send path have something real to enforce.
+    if (i % 3 === 0) {
+      grantStmt.run(uuid(), dev._id, 'whatsapp');
+      consentCount++;
+    } else if (i % 3 === 1) {
+      withdrawStmt.run(uuid(), dev._id, 'whatsapp');
+      consentCount++;
+    }
   }
-}
-console.log(`✓ ${claimCount} gift claims created`);
+  console.log(`✓ ${consentCount} consent records created`);
 
-// ─── Consent ────────────────────────────────────────────────
-const grantStmt = db.prepare(`
-  INSERT INTO consent (id, user_id, channel, status, granted_at)
-  VALUES (?, ?, ?, 'granted', datetime('now', '-30 days'))
-`);
-const withdrawStmt = db.prepare(`
-  INSERT INTO consent (id, user_id, channel, status, granted_at, withdrawn_at)
-  VALUES (?, ?, ?, 'withdrawn', datetime('now', '-30 days'), datetime('now', '-5 days'))
-`);
+  // ─── Circle membership ──────────────────────────────────────
+  const circleMemberStmt = db.prepare('INSERT OR IGNORE INTO circle_members (circle_id, user_id, role) VALUES (?, ?, ?)');
 
-let consentCount = 0;
-for (const [i, dev] of developers.entries()) {
-  for (const ch of ['email', 'in_portal']) {
-    grantStmt.run(uuid(), dev._id, ch);
-    consentCount++;
-  }
-  // A realistic mix: some members granted WhatsApp, some withdrew it, so the
-  // consent checks in the send path have something real to enforce.
-  if (i % 3 === 0) {
-    grantStmt.run(uuid(), dev._id, 'whatsapp');
-    consentCount++;
-  } else if (i % 3 === 1) {
-    withdrawStmt.run(uuid(), dev._id, 'whatsapp');
-    consentCount++;
-  }
-}
-console.log(`✓ ${consentCount} consent records created`);
-
-// ─── Circle membership ──────────────────────────────────────
-const circleMemberStmt = db.prepare('INSERT OR IGNORE INTO circle_members (circle_id, user_id, role) VALUES (?, ?, ?)');
-
-let circleMemberCount = 0;
-for (const dev of developers) {
-  circleMemberStmt.run(devCircleId, dev._id, 'member');
-  circleMemberCount++;
-
-  // One account, several workspaces: a few of these developers also work on
-  // the business products, so they are in both circles. Nothing else is shared.
-  if (dev.work_sector === 'Payments' || dev.company === 'Interswitch') {
-    circleMemberStmt.run(merchantCircleId, dev._id, 'member');
+  let circleMemberCount = 0;
+  for (const dev of developers) {
+    circleMemberStmt.run(devCircleId, dev._id, 'member');
     circleMemberCount++;
+
+    // One account, several workspaces: a few of these developers also work on
+    // the business products, so they are in both circles. Nothing else is shared.
+    if (dev.work_sector === 'Payments' || dev.company === 'Interswitch') {
+      circleMemberStmt.run(merchantCircleId, dev._id, 'member');
+      circleMemberCount++;
+    }
   }
-}
-console.log(`✓ ${circleMemberCount} circle memberships across 2 circles`);
+  console.log(`✓ ${circleMemberCount} circle memberships across 2 circles`);
 
-// Staff hold a role within a circle. Adaeze spans both as Credit Direct staff;
-// Tunde works in Dev Circle only, and cannot see Merchant Circle at all.
-const staffGrantStmt = db.prepare('INSERT OR IGNORE INTO circle_admins (circle_id, admin_id, role_id) VALUES (?, ?, ?)');
-db.prepare('UPDATE admin_users SET is_global = 1 WHERE id = ?').run(admins[0].id);
-staffGrantStmt.run(devCircleId, admins[0].id, admins[0].role_id);
-staffGrantStmt.run(merchantCircleId, admins[0].id, admins[0].role_id);
-staffGrantStmt.run(devCircleId, admins[1].id, admins[1].role_id);
-console.log('✓ staff granted per circle (Adaeze: both, Tunde: Dev Circle only)');
+  // Staff hold a role within a circle. Adaeze spans both as Credit Direct staff;
+  // Tunde works in Dev Circle only, and cannot see Merchant Circle at all.
+  const staffGrantStmt = db.prepare('INSERT OR IGNORE INTO circle_admins (circle_id, admin_id, role_id) VALUES (?, ?, ?)');
+  db.prepare('UPDATE admin_users SET is_global = 1 WHERE id = ?').run(admins[0].id);
+  staffGrantStmt.run(devCircleId, admins[0].id, admins[0].role_id);
+  staffGrantStmt.run(merchantCircleId, admins[0].id, admins[0].role_id);
+  staffGrantStmt.run(devCircleId, admins[1].id, admins[1].role_id);
+  console.log('✓ staff granted per circle (Adaeze: both, Tunde: Dev Circle only)');
 
-// Everything created above belongs to the workspace it was made in
-for (const table of ['cohorts', 'surveys', 'gifts']) {
-  db.prepare(`UPDATE ${table} SET circle_id = ? WHERE circle_id IS NULL`).run(rootCircleId);
-}
-
-// ─── Scheduled sessions ─────────────────────────────────────
-// Dated engagements with automated lead-up reminders, so "upcoming scheduled
-// info/Test" is something members can actually see and be reminded about.
-const sessions = [
-  {
-    id: uuid(), title: 'Q3 API Roadmap Walkthrough', type: 'info',
-    description: 'What is shipping next quarter, and what we need your input on.',
-    circle_id: rootCircleId, target_type: 'all', target_ids: [],
-    offset_days: 6, hour: 11, duration: 45, location: 'Google Meet',
-    channels: ['in_portal', 'email'], reminders: [1440, 60]
-  },
-  {
-    id: uuid(), title: 'Lending API v2 Preview', type: 'workshop',
-    description: 'Hands-on session on the v2 lending endpoints before general availability.',
-    circle_id: rootCircleId, target_type: 'cohort', target_ids: [cohorts[8].id],
-    offset_days: 10, hour: 14, duration: 90, location: 'Lagos office + remote',
-    channels: ['in_portal', 'email', 'whatsapp'], reminders: [2880, 1440, 60]
-  },
-  {
-    id: uuid(), title: 'Sandbox Load Test Window', type: 'test',
-    description: 'Coordinated load test against the sandbox. Bring your integration.',
-    circle_id: rootCircleId, target_type: 'cohort', target_ids: [cohorts[4].id],
-    offset_days: 3, hour: 10, duration: 120, location: 'Remote',
-    channels: ['in_portal', 'email'], reminders: [1440, 120]
+  // Everything created above belongs to the workspace it was made in
+  for (const table of ['cohorts', 'surveys', 'gifts']) {
+    db.prepare(`UPDATE ${table} SET circle_id = ? WHERE circle_id IS NULL`).run(rootCircleId);
   }
-];
 
-const sessionStmt = db.prepare(`
-  INSERT INTO scheduled_sessions (
-    id, title, description, type, circle_id, target_type, target_ids,
-    scheduled_for, duration_min, location, channels, reminder_offsets, status, created_by
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'scheduled', ?)
-`);
+  // ─── Scheduled sessions ─────────────────────────────────────
+  // Dated engagements with automated lead-up reminders, so "upcoming scheduled
+  // info/Test" is something members can actually see and be reminded about.
+  const sessions = [
+    {
+      id: uuid(), title: 'Q3 API Roadmap Walkthrough', type: 'info',
+      description: 'What is shipping next quarter, and what we need your input on.',
+      circle_id: rootCircleId, target_type: 'all', target_ids: [],
+      offset_days: 6, hour: 11, duration: 45, location: 'Google Meet',
+      channels: ['in_portal', 'email'], reminders: [1440, 60]
+    },
+    {
+      id: uuid(), title: 'Lending API v2 Preview', type: 'workshop',
+      description: 'Hands-on session on the v2 lending endpoints before general availability.',
+      circle_id: rootCircleId, target_type: 'cohort', target_ids: [cohorts[8].id],
+      offset_days: 10, hour: 14, duration: 90, location: 'Lagos office + remote',
+      channels: ['in_portal', 'email', 'whatsapp'], reminders: [2880, 1440, 60]
+    },
+    {
+      id: uuid(), title: 'Sandbox Load Test Window', type: 'test',
+      description: 'Coordinated load test against the sandbox. Bring your integration.',
+      circle_id: rootCircleId, target_type: 'cohort', target_ids: [cohorts[4].id],
+      offset_days: 3, hour: 10, duration: 120, location: 'Remote',
+      channels: ['in_portal', 'email'], reminders: [1440, 120]
+    }
+  ];
 
-for (const s of sessions) {
-  const when = new Date(Date.now() + s.offset_days * 86400000);
-  when.setUTCHours(s.hour - 1, 0, 0, 0); // stored UTC, expressed to members in WAT
-  sessionStmt.run(
-    s.id, s.title, s.description, s.type, s.circle_id, s.target_type,
-    JSON.stringify(s.target_ids), when.toISOString().replace('T', ' ').slice(0, 19),
-    s.duration, s.location, JSON.stringify(s.channels),
-    JSON.stringify(s.reminders), admins[0].id
+  const sessionStmt = db.prepare(`
+    INSERT INTO scheduled_sessions (
+      id, title, description, type, circle_id, target_type, target_ids,
+      scheduled_for, duration_min, location, channels, reminder_offsets, status, created_by
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'scheduled', ?)
+  `);
+
+  for (const s of sessions) {
+    const when = new Date(Date.now() + s.offset_days * 86400000);
+    when.setUTCHours(s.hour - 1, 0, 0, 0); // stored UTC, expressed to members in WAT
+    sessionStmt.run(
+      s.id, s.title, s.description, s.type, s.circle_id, s.target_type,
+      JSON.stringify(s.target_ids), when.toISOString().replace('T', ' ').slice(0, 19),
+      s.duration, s.location, JSON.stringify(s.channels),
+      JSON.stringify(s.reminders), admins[0].id
+    );
+  }
+  console.log(`✓ ${sessions.length} scheduled sessions created`);
+
+  // ─── Cohort membership from rules ───────────────────────────
+  // Requires the rows above to exist, so it runs last.
+  const cohortRules = require('../services/cohortRules');
+  const syncResults = await cohortRules.syncAll();
+  const totalAssigned = syncResults.reduce((sum, r) => sum + (r.added || 0), 0);
+  console.log(`✓ ${totalAssigned} cohort memberships derived from rules across ${syncResults.length} cohorts`);
+
+  // ─── Bootstrap API key ──────────────────────────────────────
+  // Integration endpoints now require a key. Print one so the landing page,
+  // Customer.io, and Feex can be wired up immediately.
+  const { key: bootstrapKey } = generateApiKey();
+  db.prepare(`
+    INSERT INTO api_keys (id, key_hash, name, prefix, permissions, created_by)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(
+    uuid(), hashApiKey(bootstrapKey), 'Bootstrap integration key',
+    bootstrapKey.split('_')[1], JSON.stringify(['*']), admins[0].id
   );
-}
-console.log(`✓ ${sessions.length} scheduled sessions created`);
 
-// ─── Cohort membership from rules ───────────────────────────
-// Requires the rows above to exist, so it runs last.
-const cohortRules = require('../services/cohortRules');
-const syncResults = cohortRules.syncAll();
-const totalAssigned = syncResults.reduce((sum, r) => sum + (r.added || 0), 0);
-console.log(`✓ ${totalAssigned} cohort memberships derived from rules across ${syncResults.length} cohorts`);
+  // ─── Done ───────────────────────────────────────────────────
+  console.log('\n✅ Seed complete!');
+  console.log('\nSign in at / with any of these — one form, no role to pick:');
+  console.log('  Admin (full access):  admin@creditdirect.ng      password: admin123');
+  console.log('  CDL Rep (limited):    engagement@creditdirect.ng password: engagement123');
+  console.log('  Developer:            adebayo@paystack.dev       last 6 digits of their phone');
+  console.log('\nA Credit Direct domain gets asked for a password; everyone else for the last six');
+  console.log('digits of the number on their record. Seeded developers get a random number, so');
+  console.log('take the digits from the members list — or use a demo developer, whose number is fixed.');
+  console.log('\nIntegration API key (shown once — endpoints reject unauthenticated calls):');
+  console.log(`  ${bootstrapKey}`);
 
-// ─── Bootstrap API key ──────────────────────────────────────
-// Integration endpoints now require a key. Print one so the landing page,
-// Customer.io, and Feex can be wired up immediately.
-const { key: bootstrapKey } = generateApiKey();
-db.prepare(`
-  INSERT INTO api_keys (id, key_hash, name, prefix, permissions, created_by)
-  VALUES (?, ?, ?, ?, ?, ?)
-`).run(
-  uuid(), hashApiKey(bootstrapKey), 'Bootstrap integration key',
-  bootstrapKey.split('_')[1], JSON.stringify(['*']), admins[0].id
-);
 
-// ─── Done ───────────────────────────────────────────────────
-console.log('\n✅ Seed complete!');
-console.log('\nSign in at / with any of these — one form, no role to pick:');
-console.log('  Admin (full access):  admin@creditdirect.ng      password: admin123');
-console.log('  CDL Rep (limited):    engagement@creditdirect.ng password: engagement123');
-console.log('  Developer:            adebayo@paystack.dev       one-time code, no password');
-console.log('\nA Credit Direct domain gets asked for a password; everyone else gets a code.');
-console.log('Without Customer.io credentials the code cannot actually be sent, so outside');
-console.log('production it comes back in the response and the sign-in page fills it in.');
-console.log('\nIntegration API key (shown once — endpoints reject unauthenticated calls):');
-console.log(`  ${bootstrapKey}`);
+})().catch(err => {
+  // A seed that half-ran is worse than one that did not: it leaves a database
+  // that looks populated and is missing whatever came after the failure.
+  console.error('\n✗ Seed failed:', err.message);
+  process.exitCode = 1;
+});

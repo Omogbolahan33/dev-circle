@@ -73,6 +73,10 @@ function reset() {
   // Rate-limit windows are process-wide, so a test that made many requests
   // would otherwise spend the next test's budget
   require('../../src/middleware/rateLimit').store.resetAll();
+  // So is the failed-sign-in counter, and it is keyed by address and IP — every
+  // test signs in from 127.0.0.1, so one test exhausting an address's attempts
+  // would lock out every later test that reused it.
+  require('../../src/routes/auth.routes').resetThrottle();
   require('../../src/middleware/cache').clearAll();
 
   const tables = [
@@ -128,13 +132,20 @@ function makeAdmin({ email, password = 'admin-password', roleId, global: isGloba
   return { id, email, password };
 }
 
+let madeUsers = 0;
+
 function makeUser(overrides = {}) {
   const identity = require('../../src/utils/identity');
   const id = uuid();
+  // Every fixture member gets their own number, because the last six digits of
+  // it are their credential: two members sharing a number would be two members
+  // sharing a password, and a test asserting that the wrong digits are refused
+  // would pass for the wrong reason.
+  const line = String(3000000 + (madeUsers++)).slice(-7);
   const user = {
     email: `dev-${id.slice(0, 8)}@example.ng`,
     name: 'Test Developer',
-    phone: null,
+    phone: `080${line}`,
     company: 'Testco',
     work_sector: 'Fintech',
     api_status: 'sandbox',
@@ -218,13 +229,20 @@ async function loginAdmin(email, password) {
 // Outside production the code comes back in the request response, which is
 // what makes the real flow exercisable here rather than reaching into the
 // database for it.
+// A participant signs in with their address and the last six digits of the
+// number on their record. The fixture looks the number up rather than being
+// told it, so a test that made a member with a particular phone still signs in
+// as them without repeating the digits.
 async function loginUser(identifier) {
-  const requested = await post('/api/auth/code/request', { identifier });
-  const verified = await post('/api/auth/code/verify', {
-    identifier,
-    code: requested.body.dev_code
+  const identityUtil = require('../../src/utils/identity');
+  const email = identityUtil.normalizeEmail(identifier);
+  const row = db.prepare('SELECT phone_normalized FROM users WHERE lower(email) = ?').get(email);
+
+  const signedIn = await post('/api/auth/login', {
+    identifier: email,
+    digits: identityUtil.phoneDigits(row?.phone_normalized)
   });
-  return verified.body.token;
+  return signedIn.body.token;
 }
 
 module.exports = {

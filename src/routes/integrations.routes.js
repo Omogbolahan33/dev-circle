@@ -157,12 +157,13 @@ router.post('/landing-page/ingest', requireApiKey('landing_page'), async (req, r
   await cohortRules.syncAll();
   await markProcessed(eventId);
 
-  // No credential to hand back: the member signs in with a one-time code sent
-  // to the address or number they just registered.
+  // No credential to hand back and none to invent: the member signs in with
+  // this address and the last six digits of the number registered against it,
+  // both of which they already have.
   res.status(201).json({
     message: 'User created',
     user_id: id,
-    sign_in: { method: 'code', identifier: email }
+    sign_in: { method: 'phone_digits', identifier: email, digits: identity.PHONE_DIGITS }
   });
 });
 

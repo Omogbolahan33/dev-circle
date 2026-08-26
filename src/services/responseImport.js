@@ -16,6 +16,12 @@ const { buildXLSX } = require('../utils/xlsx');
 // fixed column list to declare — the columns *are* the survey's questions, so
 // the spec is computed per survey instead of written out.
 //
+// Onboarding forms land the same way, through onboardingImport.js, which is a
+// thin wrapper: it passes its own leading columns and its own guidance and
+// takes everything else — the header matching, the cell coercion, the grid
+// bracket form, the example row — unchanged. That is the whole reason those
+// take an options bag rather than reading a constant.
+//
 // Values are only reshaped here, never judged. A cell becomes the kind of
 // thing an answer is — a number, a list, a grid — and then goes through
 // surveyForm.checkResponse, the same check a member's submission gets. An
@@ -116,9 +122,9 @@ const RESPONDENT_COLUMNS = [
 //
 // A section holds no answer, so it holds no column, exactly as in the CSV
 // export.
-function columns(survey) {
+function columns(survey, { meta = RESPONDENT_COLUMNS } = {}) {
   const questions = surveyForm.hydrate(survey).questions || [];
-  const spec = RESPONDENT_COLUMNS.map(c => ({
+  const spec = meta.map(c => ({
     ...c,
     kind: 'respondent',
     match: [c.key, ...c.aliases]
@@ -536,8 +542,8 @@ function guidance(survey) {
   ];
 }
 
-function toCsvTemplate(survey) {
-  const spec = columns(survey);
+function toCsvTemplate(survey, opts = {}) {
+  const spec = columns(survey, opts);
   const cols = headers(spec);
   const row = exampleRow(spec);
   // Authored here rather than supplied by a member, so the formula guard is
@@ -546,10 +552,10 @@ function toCsvTemplate(survey) {
   return toCSV(cols, [row], (r, header) => r[cols.indexOf(header)], { neutralizeFormulas: false });
 }
 
-function toWorkbook(survey) {
-  const spec = columns(survey);
+function toWorkbook(survey, opts = {}) {
+  const spec = columns(survey, opts);
 
-  const data = { name: 'Responses', rows: [headers(spec), exampleRow(spec)] };
+  const data = { name: opts.sheetName || 'Responses', rows: [headers(spec), exampleRow(spec)] };
 
   // A second sheet carrying the rules, so whoever is transcribing a stack of
   // paper forms does not have to go back to the app to find out what a column
@@ -568,7 +574,7 @@ function toWorkbook(survey) {
         ]),
       [],
       ['Notes'],
-      ...guidance(survey).map(line => [line])
+      ...(opts.guidance ? opts.guidance : guidance(survey)).map(line => [line])
     ]
   };
 

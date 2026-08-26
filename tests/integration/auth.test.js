@@ -17,21 +17,35 @@ beforeEach(() => {
 // Nobody picks "developer" or "Credit Direct" before signing in. They type the
 // one identifier they have, and the backend decides what to ask for next.
 
-test('a Credit Direct address is asked for a password, everyone else for a code', async () => {
+test('a Credit Direct address is asked for a password, everyone else for their phone digits', async () => {
   const staff = await h.post('/api/auth/identify', { identifier: 'tunde@creditdirect.ng' });
   assert.equal(staff.status, 200);
   assert.equal(staff.body.audience, 'staff');
   assert.equal(staff.body.method, 'password');
   assert.equal(staff.body.sso, false, 'Credit Direct staff do not use Developer Hub SSO');
 
-  for (const identifier of ['ada@paystack.dev', 'ope@fcmb.com.ng', '0803 000 0000']) {
+  for (const identifier of ['ada@paystack.dev', 'ope@fcmb.com.ng']) {
     const res = await h.post('/api/auth/identify', { identifier });
-    assert.equal(res.body.method, 'code', `${identifier} should be sent down the code path`);
+    assert.equal(res.body.method, 'phone_digits', `${identifier} should be asked for their digits`);
     assert.equal(res.body.audience, 'participant');
+    assert.equal(res.body.digits, 6);
   }
 
   const fcmb = await h.post('/api/auth/identify', { identifier: 'ope@fcmb.com' });
   assert.equal(fcmb.body.audience, 'staff');
+});
+
+test('a phone number is not accepted as the identifier, because it contains the secret', async () => {
+  const res = await h.post('/api/auth/identify', { identifier: '0803 000 0000' });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.audience, 'participant');
+  assert.equal(res.body.method, 'email_required',
+    'the last six digits of this very number are the credential');
+
+  h.makeUser({ email: 'ada@example.ng', phone: '+2348030000000' });
+  const attempt = await h.post('/api/auth/login', { identifier: '08030000000', digits: '000000' });
+  assert.equal(attempt.status, 400);
+  assert.match(attempt.body.error, /email address you registered with/);
 });
 
 test('identify does not say whether an account exists', async () => {
@@ -51,110 +65,87 @@ test('nonsense in the one field is refused before anything is sent', async () =>
   assert.equal(res.status, 400);
 });
 
-// ─── Participants: one-time code ────────────────────────────
+// ─── Participants: the last six digits ──────────────────────
 
-test('a member signs in with a code sent to their email, and holds no password', async () => {
-  const user = h.makeUser({ email: 'ada@example.ng' });
+test('a member signs in with their address and the last six digits of their number', async () => {
+  h.makeUser({ email: 'ada@example.ng', phone: '+2348030001234' });
 
-  const requested = await h.post('/api/auth/code/request', { identifier: 'ada@example.ng' });
-  assert.equal(requested.status, 200);
-  assert.equal(requested.body.channel, 'email');
-  assert.equal(requested.body.masked, 'a•••@example.ng');
-
-  const login = await h.post('/api/auth/code/verify', {
-    identifier: 'ada@example.ng', code: requested.body.dev_code
-  });
-  assert.equal(login.status, 200);
+  const login = await h.post('/api/auth/login', { identifier: 'ada@example.ng', digits: '001234' });
+  assert.equal(login.status, 200, JSON.stringify(login.body));
   assert.ok(login.body.token);
+  assert.equal(login.body.isAdmin, false);
 
   const profile = await h.get('/api/users/profile', { token: login.body.token });
   assert.equal(profile.status, 200);
   assert.equal(profile.body.user.email, 'ada@example.ng');
   assert.equal(profile.body.user.password_hash, undefined, 'password hash must never be returned');
-
-  // The stored code is a hash, exactly like a session token
-  const row = h.db.prepare('SELECT code_hash FROM login_codes WHERE user_id = ?').get(user.id);
-  assert.notEqual(row.code_hash, requested.body.dev_code);
-  assert.equal(row.code_hash.length, 64);
 });
 
-test('a member signs in by phone, however they write the number', async () => {
-  h.makeUser({ email: 'ada@example.ng', phone: '+2348030000000' });
+test('the digits are counted off the normalised number, however it was written', async () => {
+  // 0803 000 1234, +234 803 000 1234 and 8030001234 are one number and one
+  // secret. Anything else would give the same person a different credential
+  // depending on how they happened to type it the day they registered.
+  for (const written of ['0803 000 1234', '+2348030001234', '803-000-1234']) {
+    h.reset();
+    h.makeRootCircle();
+    h.makeUser({ email: 'ada@example.ng', phone: written });
 
-  const requested = await h.post('/api/auth/code/request', { identifier: '0803 000 0000' });
-  assert.equal(requested.status, 200);
-  assert.equal(requested.body.channel, 'sms');
-
-  const login = await h.post('/api/auth/code/verify', {
-    identifier: '08030000000', code: requested.body.dev_code
-  });
-  assert.equal(login.status, 200);
-  assert.ok(login.body.token);
-});
-
-test('asking for a code says nothing about whether the account exists', async () => {
-  h.makeUser({ email: 'ada@example.ng' });
-
-  const known = await h.post('/api/auth/code/request', { identifier: 'ada@example.ng' });
-  const unknown = await h.post('/api/auth/code/request', { identifier: 'ghost@example.ng' });
-
-  assert.equal(known.status, unknown.status);
-  assert.equal(unknown.body.sent, true);
-  assert.equal(unknown.body.dev_code, undefined, 'nothing was issued, so there is no code to hand back');
-
-  // …and a made-up code for a made-up address gets the same answer as a wrong
-  // code for a real one
-  const bad = await h.post('/api/auth/code/verify', { identifier: 'ghost@example.ng', code: '000000' });
-  assert.equal(bad.status, 401);
-});
-
-test('a code works once', async () => {
-  h.makeUser({ email: 'ada@example.ng' });
-  const { body } = await h.post('/api/auth/code/request', { identifier: 'ada@example.ng' });
-
-  const first = await h.post('/api/auth/code/verify', { identifier: 'ada@example.ng', code: body.dev_code });
-  const second = await h.post('/api/auth/code/verify', { identifier: 'ada@example.ng', code: body.dev_code });
-
-  assert.equal(first.status, 200);
-  assert.equal(second.status, 401, 'a replayed code must not open a second session');
-});
-
-test('asking for a new code retires the old one', async () => {
-  h.makeUser({ email: 'ada@example.ng' });
-
-  const first = await h.post('/api/auth/code/request', { identifier: 'ada@example.ng' });
-  const second = await h.post('/api/auth/code/request', { identifier: 'ada@example.ng' });
-
-  const stale = await h.post('/api/auth/code/verify', { identifier: 'ada@example.ng', code: first.body.dev_code });
-  assert.equal(stale.status, 401);
-
-  const fresh = await h.post('/api/auth/code/verify', { identifier: 'ada@example.ng', code: second.body.dev_code });
-  assert.equal(fresh.status, 200);
-});
-
-test('guessing burns the code rather than leaving it open', async () => {
-  h.makeUser({ email: 'ada@example.ng' });
-  const { body } = await h.post('/api/auth/code/request', { identifier: 'ada@example.ng' });
-
-  // Six digits has no depth to spare, so wrong guesses are counted
-  for (let i = 0; i < 5; i++) {
-    await h.post('/api/auth/code/verify', { identifier: 'ada@example.ng', code: '000001' });
+    const login = await h.post('/api/auth/login', { identifier: 'ada@example.ng', digits: '001234' });
+    assert.equal(login.status, 200, `${written} should yield the same six digits`);
   }
-
-  const withRealCode = await h.post('/api/auth/code/verify', {
-    identifier: 'ada@example.ng', code: body.dev_code
-  });
-  assert.equal(withRealCode.status, 401, 'the code should be dead, even for the right guess');
 });
 
-test('a flood of code requests for one identifier is refused', async () => {
-  h.makeUser({ email: 'ada@example.ng' });
+test('spaces and dashes in what they type are ignored', async () => {
+  h.makeUser({ email: 'ada@example.ng', phone: '+2348030001234' });
+
+  const login = await h.post('/api/auth/login', { identifier: 'ada@example.ng', digits: '00 12 34' });
+  assert.equal(login.status, 200);
+});
+
+test('the wrong digits are refused, and say no more than that', async () => {
+  h.makeUser({ email: 'ada@example.ng', phone: '+2348030001234' });
+
+  const wrong = await h.post('/api/auth/login', { identifier: 'ada@example.ng', digits: '999999' });
+  const ghost = await h.post('/api/auth/login', { identifier: 'ghost@example.ng', digits: '999999' });
+
+  assert.equal(wrong.status, 401);
+  assert.equal(ghost.status, 401);
+  assert.equal(wrong.body.error, ghost.body.error,
+    'a real address and a made-up one must be indistinguishable');
+});
+
+test('a member with no phone number cannot sign in, and is not told that is why', async () => {
+  // A real state: members arrive through SSO, a spreadsheet and the landing
+  // page, and none of those has ever had to carry a number.
+  h.makeUser({ email: 'ada@example.ng', phone: null });
+
+  const attempt = await h.post('/api/auth/login', { identifier: 'ada@example.ng', digits: '000000' });
+  assert.equal(attempt.status, 401);
+  assert.match(attempt.body.error, /do not match an account/,
+    '"this address exists but has no number" is worth nothing to them and something to an attacker');
+});
+
+test('a partial guess is refused — it is six digits or nothing', async () => {
+  h.makeUser({ email: 'ada@example.ng', phone: '+2348030001234' });
+
+  for (const digits of ['1234', '0012345', '', '01234']) {
+    const attempt = await h.post('/api/auth/login', { identifier: 'ada@example.ng', digits });
+    assert.ok(attempt.status >= 400, `"${digits}" should not open a session`);
+  }
+});
+
+test('guessing the digits is throttled', async () => {
+  h.makeUser({ email: 'ada@example.ng', phone: '+2348030001234' });
 
   let last;
-  for (let i = 0; i < 6; i++) {
-    last = await h.post('/api/auth/code/request', { identifier: 'ada@example.ng' });
+  for (let i = 0; i < 9; i++) {
+    last = await h.post('/api/auth/login', { identifier: 'ada@example.ng', digits: '000000' });
   }
-  assert.equal(last.status, 429, 'nobody should be able to use this to flood an inbox');
+  assert.equal(last.status, 429, 'six digits is a million combinations and no more');
+
+  // …and the throttle holds even once the right answer is offered
+  const correct = await h.post('/api/auth/login', { identifier: 'ada@example.ng', digits: '001234' });
+  assert.equal(correct.status, 429);
 });
 
 test('a deactivated member cannot sign in, and their live sessions end', async () => {
@@ -170,8 +161,14 @@ test('a deactivated member cannot sign in, and their live sessions end', async (
   const afterDeactivation = await h.get('/api/users/profile', { token });
   assert.equal(afterDeactivation.status, 401, 'the existing session must stop working immediately');
 
-  const requested = await h.post('/api/auth/code/request', { identifier: user.email });
-  assert.equal(requested.body.dev_code, undefined, 'no code is issued to a suspended account');
+  // …and the right credential no longer opens a new one
+  const again = await h.post('/api/auth/login', {
+    identifier: user.email,
+    digits: require('../../src/utils/identity').phoneDigits(
+      h.db.prepare('SELECT phone_normalized FROM users WHERE id = ?').get(user.id).phone_normalized
+    )
+  });
+  assert.equal(again.status, 403, 'a suspended account is refused after the credential verifies');
 });
 
 // ─── Staff: password ────────────────────────────────────────
@@ -215,19 +212,31 @@ test('repeated failures are throttled', async () => {
 });
 
 test('the two halves of the form do not cross over', async () => {
-  h.makeUser({ email: 'ada@example.ng' });
+  h.makeUser({ email: 'ada@example.ng', phone: '+2348030001234' });
 
-  // A participant has no password to be asked for…
-  const participantPassword = await h.post('/api/auth/login', {
-    identifier: 'ada@example.ng', password: 'anything'
+  // A participant has no password. What they type goes to the digit check
+  // whichever box the form posted it in, so a stale client sending `password`
+  // is answered by the credential they actually hold rather than by a lecture.
+  const asPassword = await h.post('/api/auth/login', {
+    identifier: 'ada@example.ng', password: '001234'
   });
-  assert.equal(participantPassword.status, 400);
-  assert.equal(participantPassword.body.method, 'code');
+  assert.equal(asPassword.status, 200, 'the field name is not the credential');
 
-  // …and staff are not sent codes
-  const staffCode = await h.post('/api/auth/code/request', { identifier: 'tunde@creditdirect.ng' });
-  assert.equal(staffCode.status, 400);
-  assert.equal(staffCode.body.method, 'password');
+  const wrongSecret = await h.post('/api/auth/login', {
+    identifier: 'ada@example.ng', password: 'a-real-password'
+  });
+  assert.equal(wrongSecret.status, 401);
+
+  // …and staff are never asked for digits: their address goes down the
+  // password half, and six digits is not their password.
+  const roleId = h.makeRole('super', ['*']);
+  h.makeAdmin({ email: 'tunde@creditdirect.ng', roleId, password: 'staff-password' });
+
+  const staffDigits = await h.post('/api/auth/login', {
+    identifier: 'tunde@creditdirect.ng', digits: '001234'
+  });
+  assert.equal(staffDigits.status, 400, 'no password was given');
+  assert.match(staffDigits.body.error, /password/i);
 });
 
 test('sessions survive a restart because they are stored, not held in memory', async () => {
@@ -333,14 +342,26 @@ test('SSO does not provision a Credit Direct address as a participant', async ()
 // ─── Registration ───────────────────────────────────────────
 
 test('registering creates a profile but hands back no session', async () => {
-  const res = await h.post('/api/auth/register', { email: 'new@stitch.ng', name: 'New Dev' });
+  const res = await h.post('/api/auth/register', {
+    email: 'new@stitch.ng', name: 'New Dev', phone: '0803 000 1234'
+  });
 
   assert.equal(res.status, 201);
-  assert.equal(res.body.token, undefined, 'the code sent to that address is what proves it is theirs');
-  assert.equal(res.body.next.method, 'code');
+  assert.equal(res.body.token, undefined, 'signing in is a separate step');
+  assert.equal(res.body.next.method, 'phone_digits');
+  assert.equal(res.body.next.digits, 6);
 
-  const login = await h.loginUser('new@stitch.ng');
-  assert.ok(login, 'and that code is the way in');
+  const login = await h.post('/api/auth/login', { identifier: 'new@stitch.ng', digits: '001234' });
+  assert.equal(login.status, 200, 'and the digits they already know are the way in');
+});
+
+test('registering without a phone number is refused, because it is half the credential', async () => {
+  const res = await h.post('/api/auth/register', { email: 'new@stitch.ng', name: 'New Dev' });
+
+  assert.equal(res.status, 400);
+  assert.match(res.body.error, /phone number is required/);
+  assert.equal(h.db.prepare('SELECT COUNT(*) as n FROM users').get().n, 0,
+    'a profile nobody could sign in to should not be created at all');
 });
 
 test('a Credit Direct address cannot be self-registered', async () => {

@@ -518,17 +518,13 @@
   // A whole first call — sign in, then use the token — rather than a fragment.
 
   const QUICKSTART = {
-    curl: `# 1. Ask for a one-time sign-in code
-curl -X POST '${window.location.origin}/api/auth/code/request' \\
+    curl: `# 1. Sign in. A developer gives the last six digits of their phone
+#    number; Credit Direct staff give a password instead.
+curl -X POST '${window.location.origin}/api/auth/login' \\
   -H 'Content-Type: application/json' \\
-  -d '{"identifier":"chidi@paystack.africa"}'
+  -d '{"identifier":"chidi@paystack.africa","digits":"550142"}'
 
-# 2. Trade the code for a session token
-curl -X POST '${window.location.origin}/api/auth/code/verify' \\
-  -H 'Content-Type: application/json' \\
-  -d '{"identifier":"chidi@paystack.africa","code":"418302"}'
-
-# 3. Call anything with the token
+# 2. Call anything with the token
 curl '${window.location.origin}/api/users/profile' \\
   -H 'Authorization: Bearer <token>'`,
 
@@ -550,10 +546,9 @@ async function call(path, { method = 'GET', token, body } = {}) {
 }
 
 // Sign in, then use the token on everything that follows.
-await call('/auth/code/request', { method: 'POST', body: { identifier: 'chidi@paystack.africa' } });
-const { token } = await call('/auth/code/verify', {
+const { token } = await call('/auth/login', {
   method: 'POST',
-  body: { identifier: 'chidi@paystack.africa', code: '418302' }
+  body: { identifier: 'chidi@paystack.africa', digits: '550142' }
 });
 
 const profile = await call('/users/profile', { token });`,

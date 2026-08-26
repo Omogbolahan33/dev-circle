@@ -16,11 +16,22 @@ beforeEach(async () => {
   adminToken = await h.loginAdmin(admin.email, admin.password);
 });
 
-// The two questions every form has to ask, in the shape the builder posts them.
+// What every form has to ask, in the shape the builder posts it. The email and
+// the phone number are the credential — an approved member signs in with the
+// address and the last six digits of the number — so a form that goes out
+// without both is refused. The name is merely advisable.
 const IDENTITY = [
   { type: 'text', text: 'What should we call you?', required: true, format: 'none', maps_to: 'name' },
-  { type: 'text', text: 'Which email should we use?', required: true, format: 'email', maps_to: 'email' }
+  { type: 'text', text: 'Which email should we use?', required: true, format: 'email', maps_to: 'email' },
+  { type: 'text', text: 'And your phone number?', required: true, format: 'phone', maps_to: 'phone' }
 ];
+
+// One row of answers to the three above, keyed by wording for fillIn().
+const WHO = {
+  'What should we call you?': 'Chidi Nwosu',
+  'Which email should we use?': 'chidi@paystack.africa',
+  'And your phone number?': '0803 555 0142'
+};
 
 const create = (body, token = adminToken) =>
   h.post('/api/admin/onboarding', { name: 'Partner intake', questions: IDENTITY, ...body }, { token });
@@ -61,7 +72,10 @@ const queue = (status = 'pending') =>
 
 // ─── Writing a form ─────────────────────────────────────────
 
-test('a form cannot go live without collecting an email address and a name', async () => {
+test('a form cannot go live without collecting the credential', async () => {
+  // The email address and the phone number are what an approved member signs
+  // in with, so a form that goes out without both produces accounts nobody can
+  // get into.
   const res = await create({
     status: 'active',
     questions: [{ type: 'text', text: 'Why do you want to join?', required: true, format: 'none' }]
@@ -70,7 +84,26 @@ test('a form cannot go live without collecting an email address and a name', asy
   assert.equal(res.status, 400);
   const messages = res.body.issues.map(i => i.message).join(' | ');
   assert.match(messages, /email address/i);
-  assert.match(messages, /full name/i);
+  assert.match(messages, /phone number/i);
+});
+
+test('everything else is the circle to choose, and a missing name only warns', async () => {
+  const res = await create({
+    status: 'active',
+    questions: [
+      { type: 'text', text: 'Which email should we use?', required: true, format: 'email', maps_to: 'email' },
+      { type: 'text', text: 'And your phone number?', required: true, format: 'phone', maps_to: 'phone' },
+      { type: 'text', text: 'Why do you want to join?', required: false, format: 'none' }
+    ]
+  });
+
+  assert.equal(res.status, 201, JSON.stringify(res.body));
+  assert.equal(res.body.form.status, 'active');
+
+  // Not a refusal — a consequence, said while there is still something to do
+  // about it.
+  const warned = (res.body.warnings || []).map(w => w.message).join(' | ');
+  assert.match(warned, /unnamed/i);
 });
 
 test('a draft may be missing all of that — it is being written', async () => {
@@ -245,10 +278,7 @@ test('a half-finished form comes back to the browser that started it', async () 
 
 test('sending a form in creates an application and no account at all', async () => {
   const form = await live();
-  const { sent } = await fillIn(form, {
-    'What should we call you?': 'Chidi Nwosu',
-    'Which email should we use?': 'chidi@paystack.africa'
-  });
+  const { sent } = await fillIn(form, WHO);
 
   assert.equal(sent.status, 200, JSON.stringify(sent.body));
   assert.equal(sent.body.message, 'Application received');
@@ -287,18 +317,14 @@ test('only the questions this applicant was shown are recorded, and a branch not
   }, { token: adminToken });
   assert.equal(withBranch.status, 200, JSON.stringify(withBranch.body));
 
-  const { sent } = await fillIn(withBranch.body.form, {
-    'What should we call you?': 'Chidi Nwosu',
-    'Which email should we use?': 'chidi@paystack.africa',
-    'Have you built against the sandbox?': false
-  });
+  const { sent } = await fillIn(withBranch.body.form, { ...WHO, 'Have you built against the sandbox?': false });
 
   assert.equal(sent.status, 200, JSON.stringify(sent.body));
-  assert.equal(sent.body.answered, 3, 'the branch was not taken, so it was not asked');
+  assert.equal(sent.body.answered, 4, 'the branch was not taken, so it was not asked');
 
   const waiting = await queue();
   const one = await h.get(`/api/admin/onboarding-applications/${waiting.body.applications[0].id}`, { token: adminToken });
-  assert.equal(one.body.asked.length, 3);
+  assert.equal(one.body.asked.length, 4);
   assert.ok(!one.body.asked.some(q => q.text === 'What slowed you down?'));
 });
 
@@ -321,10 +347,7 @@ test('an application without a usable email is refused before it reaches anybody
 
 test('the same form cannot be sent in twice from one browser', async () => {
   const form = await live();
-  const { key } = await fillIn(form, {
-    'What should we call you?': 'Chidi Nwosu',
-    'Which email should we use?': 'chidi@paystack.africa'
-  });
+  const { key } = await fillIn(form, WHO);
 
   const again = await h.post(`/api/onboarding/${form.public_token}/start`, { session_key: key });
   assert.equal(again.status, 409);
@@ -334,28 +357,16 @@ test('what a second application from one address means is the form\'s decision',
   // Replace: the earlier one is superseded rather than deleted, because
   // somebody may already be part-way through reviewing it.
   const replacing = await live({ duplicate_policy: 'replace' });
-  await fillIn(replacing, {
-    'What should we call you?': 'Chidi Nwosu',
-    'Which email should we use?': 'chidi@paystack.africa'
-  });
-  const second = await fillIn(replacing, {
-    'What should we call you?': 'Chidi N',
-    'Which email should we use?': 'chidi@paystack.africa'
-  });
+  await fillIn(replacing, WHO);
+  const second = await fillIn(replacing, { ...WHO, 'What should we call you?': 'Chidi N' });
   assert.equal(second.sent.status, 200);
   assert.equal((await queue('pending')).body.applications.length, 1);
   assert.equal((await queue('withdrawn')).body.applications.length, 1);
 
   // Reject: the second is refused and told why.
   const refusing = await live({ name: 'Strict intake', duplicate_policy: 'reject' });
-  await fillIn(refusing, {
-    'What should we call you?': 'Ada',
-    'Which email should we use?': 'ada@example.ng'
-  });
-  const blocked = await fillIn(refusing, {
-    'What should we call you?': 'Ada',
-    'Which email should we use?': 'ada@example.ng'
-  });
+  await fillIn(refusing, { ...WHO, 'What should we call you?': 'Ada', 'Which email should we use?': 'ada@example.ng' });
+  const blocked = await fillIn(refusing, { ...WHO, 'What should we call you?': 'Ada', 'Which email should we use?': 'ada@example.ng' });
   assert.equal(blocked.sent.status, 409);
 });
 
@@ -373,12 +384,7 @@ test('approving is what creates the member, joins the circle and records consent
     ]
   });
 
-  await fillIn(form, {
-    'What should we call you?': 'Chidi Nwosu',
-    'Which email should we use?': 'chidi@paystack.africa',
-    'Which company?': 'Paystack',
-    'How may we contact you?': ['E-mail', 'WhatsApp']
-  });
+  await fillIn(form, { ...WHO, 'Which company?': 'Paystack', 'How may we contact you?': ['E-mail', 'WhatsApp'] });
 
   const waiting = await queue();
   const id = waiting.body.applications[0].id;
@@ -411,10 +417,7 @@ test('an approved applicant joins the cohorts the form names', async () => {
     .run(cohortId, circleId);
 
   const form = await live({ cohort_ids: [cohortId] });
-  await fillIn(form, {
-    'What should we call you?': 'Chidi Nwosu',
-    'Which email should we use?': 'chidi@paystack.africa'
-  });
+  await fillIn(form, WHO);
 
   const id = (await queue()).body.applications[0].id;
   await h.post(`/api/admin/onboarding-applications/${id}/approve`, {}, { token: adminToken });
@@ -439,10 +442,7 @@ test('an address that is already a member joins this circle rather than becoming
     { token: leadToken, headers: { 'X-Circle-Id': other } });
   assert.equal(made.status, 201, JSON.stringify(made.body));
 
-  await fillIn(made.body.form, {
-    'What should we call you?': 'Chidi Nwosu',
-    'Which email should we use?': 'chidi@paystack.africa'
-  });
+  await fillIn(made.body.form, WHO);
 
   const waiting = await h.get('/api/admin/onboarding-applications?status=pending',
     { token: leadToken, headers: { 'X-Circle-Id': other } });
@@ -459,10 +459,7 @@ test('an address that is already a member joins this circle rather than becoming
 
 test('a Credit Direct address is not something a form can let in', async () => {
   const form = await live();
-  await fillIn(form, {
-    'What should we call you?': 'Someone Internal',
-    'Which email should we use?': 'someone@creditdirect.ng'
-  });
+  await fillIn(form, { ...WHO, 'Which email should we use?': 'someone@creditdirect.ng' });
 
   const id = (await queue()).body.applications[0].id;
   const res = await h.post(`/api/admin/onboarding-applications/${id}/approve`, {}, { token: adminToken });
@@ -473,10 +470,7 @@ test('a Credit Direct address is not something a form can let in', async () => {
 
 test('turning one down creates nothing and deletes nothing', async () => {
   const form = await live();
-  await fillIn(form, {
-    'What should we call you?': 'Chidi Nwosu',
-    'Which email should we use?': 'chidi@paystack.africa'
-  });
+  await fillIn(form, WHO);
 
   const id = (await queue()).body.applications[0].id;
   await h.post(`/api/admin/onboarding-applications/${id}/reject`, { note: 'Not a developer' }, { token: adminToken });
@@ -494,10 +488,7 @@ test('turning one down creates nothing and deletes nothing', async () => {
 
 test('an application belongs to one workspace and is invisible from another', async () => {
   const form = await live();
-  await fillIn(form, {
-    'What should we call you?': 'Chidi Nwosu',
-    'Which email should we use?': 'chidi@paystack.africa'
-  });
+  await fillIn(form, WHO);
 
   const other = h.makeCircle('Lending Circle', 'lending');
   const seen = await h.get('/api/admin/onboarding-applications?status=pending',
@@ -511,10 +502,7 @@ test('an application belongs to one workspace and is invisible from another', as
 
 test('once an application exists the questions are fixed but the look is not', async () => {
   const form = await live();
-  await fillIn(form, {
-    'What should we call you?': 'Chidi Nwosu',
-    'Which email should we use?': 'chidi@paystack.africa'
-  });
+  await fillIn(form, WHO);
 
   const held = await h.get(`/api/admin/onboarding/${form.id}`, { token: adminToken });
   assert.equal(held.body.questions_locked, true);
@@ -535,10 +523,7 @@ test('once an application exists the questions are fixed but the look is not', a
 
 test('a form people have filled in is closed rather than deleted', async () => {
   const form = await live();
-  await fillIn(form, {
-    'What should we call you?': 'Chidi Nwosu',
-    'Which email should we use?': 'chidi@paystack.africa'
-  });
+  await fillIn(form, WHO);
 
   const res = await h.del(`/api/admin/onboarding/${form.id}`, { token: adminToken });
   assert.equal(res.status, 409);
@@ -606,10 +591,7 @@ test('the embed loader is served and names no other host', async () => {
 test('where an embed was filled in is recorded only when the form allows that site', async () => {
   const form = await live({ allowed_origins: ['https://partner.com'] });
 
-  await fillIn(form, {
-    'What should we call you?': 'Chidi Nwosu',
-    'Which email should we use?': 'chidi@paystack.africa'
-  }, { start: { embedded_on: 'https://partner.com/developers/join' } });
+  await fillIn(form, WHO, { start: { embedded_on: 'https://partner.com/developers/join' } });
 
   const one = (await queue()).body.applications[0];
   assert.equal(one.source_origin, 'https://partner.com');
@@ -618,10 +600,7 @@ test('where an embed was filled in is recorded only when the form allows that si
   // A page claiming to be somewhere the form does not allow records nothing,
   // rather than recording a lie
   const second = await live({ name: 'Second' });
-  await fillIn(second, {
-    'What should we call you?': 'Ada Obi',
-    'Which email should we use?': 'ada@example.ng'
-  }, { start: { embedded_on: 'https://attacker.example/steal' } });
+  await fillIn(second, { ...WHO, 'What should we call you?': 'Ada Obi', 'Which email should we use?': 'ada@example.ng' }, { start: { embedded_on: 'https://attacker.example/steal' } });
 
   const ada = (await queue()).body.applications.find(a => a.email === 'ada@example.ng');
   assert.equal(ada.source_origin, null);
@@ -638,10 +617,7 @@ test('writing a form and approving an applicant are different permissions', asyn
   assert.equal(made.status, 201, 'an author can write a form');
 
   const form = await live({ name: 'For approving' });
-  await fillIn(form, {
-    'What should we call you?': 'Chidi Nwosu',
-    'Which email should we use?': 'chidi@paystack.africa'
-  });
+  await fillIn(form, WHO);
   const id = (await queue()).body.applications[0].id;
 
   const refused = await h.post(`/api/admin/onboarding-applications/${id}/approve`, {}, { token: authorToken });
@@ -655,4 +631,264 @@ test('a role with neither permission cannot read the queue', async () => {
 
   assert.equal((await h.get('/api/admin/onboarding', { token })).status, 403);
   assert.equal((await h.get('/api/admin/onboarding-applications', { token })).status, 403);
+});
+
+// ─── Onboarding by spreadsheet ──────────────────────────────
+// One row or five hundred: a partner's list, a page of names off a stand, or
+// somebody's export. The same questions, the same checks, the same queue.
+
+const csvOf = rows => rows.map(r => r.map(cell => {
+  const value = String(cell ?? '');
+  return /[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+}).join(',')).join('\n');
+
+const importInto = (form, body, token = adminToken) =>
+  h.post(`/api/admin/onboarding/${form.id}/import`, body, { token });
+
+test('the template is built from the form, so it imports back without an edit', async () => {
+  const form = await live();
+
+  const template = await h.get(`/api/admin/onboarding/${form.id}/import/template?format=csv`,
+    { token: adminToken, raw: true });
+
+  assert.equal(template.status, 200);
+  assert.match(template.headers.get('content-disposition'), /applicants-template\.csv/);
+
+  // The example row is a promise about the format, so it has to be one the
+  // parser actually accepts. Anything else is a template that teaches the
+  // wrong thing.
+  const body = template.text.replace(/^﻿/, '');
+  const landed = await importInto(form, { csv: body });
+
+  assert.equal(landed.status, 200, JSON.stringify(landed.body));
+  assert.equal(landed.body.created, 1, JSON.stringify(landed.body.errors));
+  assert.deepEqual(landed.body.errors, []);
+});
+
+test('a sheet of people lands as applications, not as members', async () => {
+  const form = await live();
+
+  const csv = csvOf([
+    ['What should we call you?', 'Which email should we use?', 'And your phone number?'],
+    ['Ada Obi', 'ada@zilla.ng', '08031112222'],
+    ['Tola Bello', 'tola@stitch.ng', '08033334444']
+  ]);
+
+  const landed = await importInto(form, { csv });
+  assert.equal(landed.status, 200, JSON.stringify(landed.body));
+  assert.equal(landed.body.created, 2);
+
+  // The same promise the public endpoint makes, from the other direction
+  assert.equal(h.db.prepare('SELECT COUNT(*) as n FROM users').get().n, 0);
+
+  const waiting = await queue();
+  assert.equal(waiting.body.applications.length, 2);
+  assert.deepEqual(
+    waiting.body.applications.map(a => a.email).sort(),
+    ['ada@zilla.ng', 'tola@stitch.ng']
+  );
+});
+
+test('one row is an import too — that is how a single person is added', async () => {
+  const form = await live();
+
+  const landed = await importInto(form, {
+    rows: [{
+      'What should we call you?': 'Ada Obi',
+      'Which email should we use?': 'ada@zilla.ng',
+      'And your phone number?': '08031112222'
+    }]
+  });
+
+  assert.equal(landed.body.created, 1);
+  assert.equal((await queue()).body.applications[0].name, 'Ada Obi');
+});
+
+test('a row is held to the same rules the form states about itself', async () => {
+  const form = await live();
+
+  const csv = csvOf([
+    ['What should we call you?', 'Which email should we use?', 'And your phone number?'],
+    ['Ada Obi', 'ada@zilla.ng', ''],                    // no phone: half the credential
+    ['Tola Bello', 'not-an-address', '08033334444'],    // not an address
+    ['Ngozi Eze', 'ngozi@zilla.ng', '08035556666']      // fine
+  ]);
+
+  const landed = await importInto(form, { csv });
+
+  assert.equal(landed.body.created, 1);
+  assert.equal(landed.body.errors.length, 2);
+  // Reported against the line in the sheet, so a two-hundred-row file is fixed
+  // in one pass rather than one refusal at a time
+  assert.deepEqual(landed.body.errors.map(e => e.line), [2, 3]);
+  assert.match(landed.body.errors[0].error, /phone number/i);
+});
+
+test('a dry run says what would happen and writes nothing', async () => {
+  const form = await live();
+
+  const csv = csvOf([
+    ['What should we call you?', 'Which email should we use?', 'And your phone number?'],
+    ['Ada Obi', 'ada@zilla.ng', '08031112222'],
+    ['Tola Bello', 'bad-address', '08033334444']
+  ]);
+
+  const checked = await importInto(form, { csv, dry_run: true });
+
+  assert.equal(checked.body.dry_run, true);
+  assert.equal(checked.body.created, 1);
+  assert.equal(checked.body.errors.length, 1);
+  assert.equal((await queue()).body.applications.length, 0, 'a dry run stores nothing');
+});
+
+test('running the same upload twice lands nothing the second time', async () => {
+  const form = await live();
+
+  const csv = csvOf([
+    ['Your reference', 'What should we call you?', 'Which email should we use?', 'And your phone number?'],
+    ['partner-1', 'Ada Obi', 'ada@zilla.ng', '08031112222']
+  ]);
+
+  const first = await importInto(form, { csv });
+  const second = await importInto(form, { csv });
+
+  assert.equal(first.body.created, 1);
+  assert.equal(second.body.created, 0);
+  assert.equal(second.body.skipped, 1);
+  assert.equal((await queue()).body.applications.length, 1);
+});
+
+test('the same address twice in one sheet is a copy-paste, and is refused', async () => {
+  const form = await live();
+
+  const csv = csvOf([
+    ['What should we call you?', 'Which email should we use?', 'And your phone number?'],
+    ['Ada Obi', 'ada@zilla.ng', '08031112222'],
+    ['Ada O.', 'ada@zilla.ng', '08031112222']
+  ]);
+
+  const landed = await importInto(form, { csv });
+
+  assert.equal(landed.body.created, 1);
+  assert.equal(landed.body.errors.length, 1);
+  assert.match(landed.body.errors[0].error, /more than once in this sheet/);
+});
+
+test('somebody already in the queue is skipped rather than duplicated', async () => {
+  const form = await live();
+  await fillIn(form, WHO);
+
+  const csv = csvOf([
+    ['What should we call you?', 'Which email should we use?', 'And your phone number?'],
+    ['Chidi Nwosu', 'chidi@paystack.africa', '08035550142']
+  ]);
+
+  const landed = await importInto(form, { csv });
+  assert.equal(landed.body.skipped, 1);
+  assert.equal((await queue()).body.applications.length, 1);
+});
+
+test('a column the form has nowhere to put is named rather than silently dropped', async () => {
+  const form = await live();
+
+  const csv = csvOf([
+    ['What should we call you?', 'Which email should we use?', 'And your phone number?', 'Shoe size'],
+    ['Ada Obi', 'ada@zilla.ng', '08031112222', '43']
+  ]);
+
+  const landed = await importInto(form, { csv });
+
+  assert.equal(landed.body.created, 1);
+  // Reported as the CSV parser saw it — headings arrive lowercased with spaces
+  // folded to underscores, which is what lets one sheet be read whether it came
+  // from our own export or out of Google Forms.
+  assert.deepEqual(landed.body.unmatched_columns, ['shoe_size'],
+    'a blank answer and a column that did not line up look identical afterwards');
+});
+
+test('branching applies to an imported row as it does to a filled-in one', async () => {
+  const form = await live({
+    questions: [
+      ...IDENTITY,
+      { type: 'boolean', text: 'Already building?', required: true, true_label: 'Yes', false_label: 'No' }
+    ]
+  });
+
+  const full = await h.get(`/api/admin/onboarding/${form.id}`, { token: adminToken });
+  const trigger = full.body.form.questions.find(q => q.type === 'boolean');
+  const branched = await h.put(`/api/admin/onboarding/${form.id}`, {
+    ...full.body.form,
+    questions: [...full.body.form.questions, {
+      type: 'text', text: 'What are you building?', required: true, format: 'none',
+      visible_if: { match: 'all', rules: [{ question: trigger.id, op: 'is', value: true }] }
+    }],
+    status: 'active'
+  }, { token: adminToken });
+  assert.equal(branched.status, 200, JSON.stringify(branched.body));
+
+  const csv = csvOf([
+    ['What should we call you?', 'Which email should we use?', 'And your phone number?',
+     'Already building?', 'What are you building?'],
+    // "No" closes the branch, so the last column is not asked of this row and
+    // the required answer under it is not missed
+    ['Ada Obi', 'ada@zilla.ng', '08031112222', 'No', ''],
+    // "Yes" opens it, and leaving it blank is a refusal
+    ['Tola Bello', 'tola@stitch.ng', '08033334444', 'Yes', '']
+  ]);
+
+  const landed = await importInto(branched.body.form, { csv });
+
+  assert.equal(landed.body.created, 1);
+  assert.equal(landed.body.errors.length, 1);
+  assert.match(landed.body.errors[0].error, /What are you building/);
+});
+
+test('a sheet can be approved as it lands, but only by somebody who could approve it by hand', async () => {
+  const form = await live();
+  const csv = csvOf([
+    ['What should we call you?', 'Which email should we use?', 'And your phone number?'],
+    ['Ada Obi', 'ada@zilla.ng', '08031112222']
+  ]);
+
+  const authorRole = h.makeRole('Author', ['onboarding.read', 'onboarding.write']);
+  const author = h.makeAdmin({ email: 'author@creditdirect.ng', roleId: authorRole });
+  const authorToken = await h.loginAdmin(author.email, author.password);
+
+  const refused = await importInto(form, { csv, approve: true }, authorToken);
+  assert.equal(refused.status, 403);
+  assert.equal(h.db.prepare('SELECT COUNT(*) as n FROM users').get().n, 0);
+
+  const landed = await importInto(form, { csv, approve: true });
+  assert.equal(landed.status, 200, JSON.stringify(landed.body));
+  assert.equal(landed.body.approved, 1);
+
+  const user = h.db.prepare('SELECT * FROM users WHERE email = ?').get('ada@zilla.ng');
+  assert.ok(user, 'approving on import creates the member');
+  assert.equal(user.phone_normalized, '+2348031112222');
+});
+
+test('a row that cannot become a member is reported against its line, not left half-done', async () => {
+  const form = await live();
+  const csv = csvOf([
+    ['What should we call you?', 'Which email should we use?', 'And your phone number?'],
+    ['Ada Obi', 'ada@zilla.ng', '08031112222'],
+    ['Someone Internal', 'someone@creditdirect.ng', '08033334444']
+  ]);
+
+  const landed = await importInto(form, { csv, approve: true });
+
+  assert.equal(landed.body.created, 2, 'both are applications');
+  assert.equal(landed.body.approved, 1, 'only one can become a member');
+  assert.match(landed.body.errors[0].error, /created by an administrator/);
+
+  // The refused one is still in the queue for somebody to look at
+  assert.equal((await queue()).body.applications.length, 1);
+});
+
+test('a form that is not ready has nothing for a sheet to line up against', async () => {
+  const draft = await create({ status: 'draft', questions: [] });
+  const landed = await importInto(draft.body.form, { rows: [{ a: 1 }] });
+
+  assert.equal(landed.status, 400);
+  assert.match(landed.body.error, /not ready to take applications/);
 });

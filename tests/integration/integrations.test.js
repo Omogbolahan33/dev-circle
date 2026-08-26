@@ -85,13 +85,22 @@ test('a landing-page registration creates a profile, cohort and circle membershi
   const inCircle = h.db.prepare('SELECT COUNT(*) as c FROM circle_members WHERE user_id = ?').get(user.id).c;
   assert.equal(inCircle, 1);
 
-  // Registration hands out no credential — the member signs in with a code,
-  // on either the address or the number they gave
+  // Registration hands out no credential and invents none. The member signs in
+  // with the address they gave and the last six digits of the number beside it,
+  // both of which they already have.
   assert.equal(res.body.temp_password, undefined);
   assert.equal(user.phone_normalized, '+2348031112222');
+  assert.equal(res.body.sign_in.method, 'phone_digits');
+  assert.equal(res.body.sign_in.digits, 6);
 
   assert.ok(await h.loginUser('tola@stitch.ng'));
-  assert.ok(await h.loginUser('+234 803 111 2222'));
+
+  // Not by phone number, however it is written. The last six digits of that
+  // number are the secret, so the number cannot also be the identifier.
+  const byPhone = await h.post('/api/auth/login', {
+    identifier: '+234 803 111 2222', digits: '112222'
+  });
+  assert.equal(byPhone.status, 400);
 });
 
 test('a Credit Direct address cannot arrive as a landing-page registration', async () => {

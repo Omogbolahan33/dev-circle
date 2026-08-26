@@ -58,6 +58,8 @@
     }
     .checklist .ok { color: var(--emerald); }
     .checklist .todo { color: var(--amber-ink, var(--ash-dim)); }
+    /* Worth knowing, never blocking — drawn quieter than the two that are. */
+    .checklist .advisory { color: var(--ash-dim); }
   </style>
 </head>
 <body>
@@ -317,18 +319,29 @@
     renderChecklist();
   }
 
-  // A new form opens on the two questions every form has to ask, already
-  // tagged. Starting from an empty page means every author writes "What is
-  // your email address?" from scratch and half of them forget to tag it.
+  // A new form opens on the questions every form has to ask, already tagged and
+  // already required. Starting from an empty page means every author writes
+  // "What is your email address?" from scratch, half of them forget to tag it,
+  // and all of them meet the same refusal at publish time.
+  //
+  // The wording is a starting point, not a fixture — rewrite it, reorder it,
+  // brand it. What cannot change is that the two halves of the credential are
+  // asked of everybody.
   function seed() {
-    addQuestion('text');
-    addQuestion('text');
-    Object.assign(state.questions[0], {
-      text: 'What should we call you?', required: true, format: 'none', multiline: false, maps_to: 'name'
-    });
-    Object.assign(state.questions[1], {
-      text: 'Which email address should we reach you on?', required: true, format: 'email', multiline: false, maps_to: 'email'
-    });
+    const start = [
+      { text: 'What should we call you?', maps_to: 'name', format: 'none' },
+      { text: 'Which email address should we reach you on?', maps_to: 'email', format: 'email' },
+      { text: 'And your phone number?', maps_to: 'phone', format: 'phone' }
+    ];
+
+    for (const spec of start) {
+      addQuestion('text');
+      Object.assign(state.questions[state.questions.length - 1], {
+        ...spec,
+        required: true,
+        multiline: false
+      });
+    }
     state.openQuestion = 0;
   }
 
@@ -473,7 +486,7 @@
           ${usable.map(f => `
             <option value="${f.value}"${f.value === question.maps_to ? ' selected' : ''}${
               taken.has(f.value) ? ' disabled' : ''}>
-              ${escapeHtml(f.label)}${f.essential ? ' — required by every form' : ''}${
+              ${escapeHtml(f.label)}${f.required ? ' — required by every form' : f.recommended ? ' — recommended' : ''}${
                 taken.has(f.value) ? ' (already collected)' : ''}
             </option>`).join('')}
         </select>
@@ -487,6 +500,8 @@
           ? '<p class="maps-note" style="color:var(--rose-ink)">Set the answer format to “Email address” — an address we cannot mail is an application nobody can act on.</p>' : ''}
         ${question.maps_to === 'phone' && question.format !== 'phone'
           ? '<p class="maps-note" style="color:var(--rose-ink)">Set the answer format to “Phone number”.</p>' : ''}
+        ${question.maps_to === 'phone' && question.format === 'phone'
+          ? '<p class="maps-note">Its last six digits are what they sign in with, so it is worth saying on the form why you are asking.</p>' : ''}
       </div>`;
   }
 
@@ -496,11 +511,11 @@
       if (value) question.maps_to = value;
       else delete question.maps_to;
 
-      // An essential field has to be asked of everybody, so tagging one sets
-      // the two things that make that true rather than leaving an author to
+      // A required field has to be asked of everybody, so tagging one sets the
+      // two things that make that true rather than leaving an author to
       // discover the refusal at publish time.
       const field = fields.find(f => f.value === value);
-      if (field?.essential) question.required = true;
+      if (field?.required) question.required = true;
       if (value === 'email') question.format = 'email';
       if (value === 'phone') question.format = 'phone';
 
@@ -519,15 +534,33 @@
 
     const items = [];
 
-    for (const field of fields.filter(f => f.essential)) {
+    // The credential first, because it is the only thing that blocks a publish.
+    for (const field of fields.filter(f => f.required)) {
       const question = state.questions.find(q => q.maps_to === field.value);
       const ok = !!question && question.required && !question.visible_if;
       items.push({
         ok,
+        blocking: true,
         text: !question ? `Tag a question as the ${field.label.toLowerCase()}`
           : question.visible_if ? `The ${field.label.toLowerCase()} is behind a branch, so it can be skipped`
           : !question.required ? `An answer to the ${field.label.toLowerCase()} has to be required`
           : `${field.label} is collected`
+      });
+    }
+
+    // Then what is merely worth knowing. Everything else a form asks is the
+    // circle's to choose, and a form that skips it publishes fine.
+    for (const field of fields.filter(f => f.recommended)) {
+      const question = state.questions.find(q => q.maps_to === field.value);
+      const ok = !!question && question.required && !question.visible_if;
+      items.push({
+        ok,
+        blocking: false,
+        text: ok
+          ? `${field.label} is collected`
+          : !question
+            ? `No question collects the ${field.label.toLowerCase()} — members will show as unnamed`
+            : `The ${field.label.toLowerCase()} can be skipped, so some members will be unnamed`
       });
     }
 
@@ -543,7 +576,11 @@
     });
 
     list.innerHTML = items.map(i => `
-      <li><span class="${i.ok ? 'ok' : 'todo'}">${i.ok ? '✓' : '○'}</span> ${escapeHtml(i.text)}</li>`).join('');
+      <li>
+        <span class="${i.ok ? 'ok' : i.blocking ? 'todo' : 'advisory'}">${
+          i.ok ? '✓' : i.blocking ? '○' : '·'}</span>
+        ${escapeHtml(i.text)}
+      </li>`).join('');
   }
 
   const readOrigins = () => document.getElementById('fOrigins').value

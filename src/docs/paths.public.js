@@ -70,9 +70,13 @@ const paths = {
       operationId: 'identify',
       summary: 'Work out how this person signs in',
       description: [
-        'Step one of the single sign-in form. The visitor types the email address or',
-        'phone number they are known by, and this says what to ask for next: a password',
-        'for Credit Direct staff, a one-time code for everybody else.',
+        'Step one of the single sign-in form. The visitor types the address they are known',
+        'by, and this says what to ask for next: a password for Credit Direct staff, and for',
+        'everybody else the last six digits of the phone number on their record.',
+        '',
+        'A participant who types their **phone number** gets `method: "email_required"`. That is',
+        'not a preference: the secret is six digits of that very number, so accepting it as the',
+        'identifier would mean handing over the credential to reach the credential box.',
         '',
         'The answer comes from the identifier alone with no database lookup, so this',
         'endpoint cannot be used to discover who holds an account.'
@@ -85,16 +89,18 @@ const paths = {
           identifier: str('The identifier, normalised — lowercased email or E.164 phone'),
           type: str('What was recognised', { enum: ['email', 'phone'] }),
           audience: str('Which side of the product they belong to', { enum: ['staff', 'participant'] }),
-          method: str('What to ask for next', { enum: ['password', 'code'] }),
-          channel: str('Where a one-time code would be sent', { enum: ['email', 'sms'], nullable: true }),
+          method: str('What to ask for next', { enum: ['password', 'phone_digits', 'email_required'] }),
+          channel: str('Unused by the current scheme; always null', { nullable: true }),
+          digits: int('How many digits of the phone number to ask for, when that is the method'),
           masked: str('The identifier, masked for display back to the visitor'),
           sso: bool('Whether Developer Hub SSO is an option for them')
         }), {
           identifier: 'chidi@paystack.africa',
           type: 'email',
           audience: 'participant',
-          method: 'code',
-          channel: 'email',
+          method: 'phone_digits',
+          channel: null,
+          digits: 6,
           masked: 'c•••i@paystack.africa',
           sso: true
         }),
@@ -105,92 +111,35 @@ const paths = {
     })
   },
 
-  '/auth/code/request': {
-    post: op({
-      tag: 'Authentication',
-      auth: 'none',
-      operationId: 'requestLoginCode',
-      summary: 'Send a member a one-time sign-in code',
-      description: [
-        'Answers identically whether or not the account exists, so it never becomes a',
-        'membership oracle — only a real, active member is actually sent anything.',
-        '',
-        'Outside production the code is echoed back as `dev_code`, because without',
-        'provider credentials there would otherwise be no way into a local or demo',
-        'environment. That field is absent in production.'
-      ].join('\n'),
-      requestBody: jsonBody(object({
-        identifier: str('The email address or phone number the member registered with')
-      }, { required: ['identifier'] }), { identifier: 'chidi@paystack.africa' }),
-      responses: {
-        200: json('A code was sent, if the account exists.', object({
-          sent: bool('Always true — it does not report whether an account was found'),
-          channel: str('Where the code went', { enum: ['email', 'sms'] }),
-          masked: str('The destination, masked'),
-          expires_in_sec: int('How long the code stays valid'),
-          code_length: int('Number of digits to collect'),
-          dev_code: str('The code itself. Non-production environments only')
-        }), {
-          sent: true,
-          channel: 'email',
-          masked: 'c•••i@paystack.africa',
-          expires_in_sec: 600,
-          code_length: 6
-        }),
-        400: json('A staff address was given — staff sign in with a password.', ref('Error'), {
-          error: 'Credit Direct staff sign in with a password.', method: 'password'
-        }),
-        429: json('Too many codes requested for this identifier.', ref('Error'), {
-          error: 'Too many codes requested. Wait a few minutes before trying again.'
-        })
-      }
-    })
-  },
-
-  '/auth/code/verify': {
-    post: op({
-      tag: 'Authentication',
-      auth: 'none',
-      operationId: 'verifyLoginCode',
-      summary: 'Exchange a one-time code for a session',
-      description: 'Five wrong guesses burn the code. Repeated failures from one address are throttled for 15 minutes.',
-      requestBody: jsonBody(object({
-        identifier: str('The same identifier the code was requested for'),
-        code: str('The digits the member received')
-      }, { required: ['identifier', 'code'] }), { identifier: 'chidi@paystack.africa', code: '418302' }),
-      responses: {
-        200: json('Signed in.', object({
-          token: str('Session token for the Authorization header'),
-          user: ref('Member'),
-          isAdmin: bool('Always false here — members are never admins')
-        }), { token: TOKEN_EXAMPLE, user: MEMBER_EXAMPLE, isAdmin: false }),
-        401: json('The code is wrong, expired, or already used.', ref('Error'), {
-          error: 'That code is not valid. Check it and try again.'
-        }),
-        403: json('The code was right but the account is not active.', ref('Error'), { error: 'Account is suspended' })
-      }
-    })
-  },
-
   '/auth/login': {
     post: op({
       tag: 'Authentication',
       auth: 'none',
-      operationId: 'staffLogin',
-      summary: 'Sign in as Credit Direct staff',
+      operationId: 'login',
+      summary: 'Sign in',
       description: [
-        'The password half of the single sign-in form. Only addresses on a Credit Direct',
-        'domain hold a password; anyone else is told to use a one-time code instead.',
+        'One endpoint for both audiences, because it is one form on one page. Which',
+        'credential is expected follows from the address:',
         '',
-        'Eight failed attempts from one address and IP pair are throttled for 15 minutes.',
-        'The response carries the role\'s permission list so a console can hide the',
-        'actions that role cannot perform.'
+        '- **Credit Direct staff** give `password`.',
+        '- **Participants** give `digits` — the last six of the phone number on their record.',
+        '  They hold no password at all. `phone_digits` and `password` are accepted as aliases',
+        '  for the field, so one form can post whichever box it rendered.',
+        '',
+        'Failure answers identically whichever audience it was, and the account status is',
+        'checked only after the credential verifies, so neither half can be used to find out',
+        'which addresses have accounts. Eight failed attempts from one address and IP pair are',
+        'throttled for 15 minutes.',
+        '',
+        'A member with no phone number on file cannot sign in this way, and that is reported',
+        'as bad credentials rather than as a missing number.'
       ].join('\n'),
       requestBody: jsonBody(object({
-        identifier: str('Credit Direct email address. `email` is accepted as an alias'),
-        password: str('The account password', { format: 'password' })
-      }, { required: ['identifier', 'password'] }), {
-        identifier: 'adaeze@creditdirect.ng', password: 'correct-horse-battery-staple'
+        identifier: str('The email address. `email` is accepted as an alias'),
+        password: str('Staff only: the account password', { format: 'password' }),
+        digits: str('Participants only: the last six digits of their phone number')
+      }, { required: ['identifier'] }), {
+        identifier: 'chidi@paystack.africa', digits: '550142'
       }),
       responses: {
         200: json('Signed in.', object({
@@ -212,11 +161,13 @@ const paths = {
           isAdmin: true,
           permissions: ['*']
         }),
-        400: json('A participant address was given, or a field is missing.', ref('Error'), {
-          error: 'Sign in with a one-time code sent to your email or phone. Passwords are for Credit Direct staff.',
-          method: 'code'
+        400: json('A phone number was given as the identifier, or the credential is missing.', ref('Error'), {
+          error: 'Sign in with the email address you registered with, not your phone number.',
+          method: 'email_required'
         }),
-        401: json('Wrong email or password.', ref('Error'), { error: 'Invalid credentials' }),
+        401: json('The credential does not match an account.', ref('Error'), {
+          error: 'That email address and those digits do not match an account.'
+        }),
         403: json('The account is not active.', ref('Error'), { error: 'Account is inactive' }),
         429: json('Too many failed attempts.', ref('Error'), {
           error: 'Too many failed attempts. Try again in 15 minutes.'
@@ -229,9 +180,9 @@ const paths = {
     post: op({
       tag: 'Authentication',
       auth: 'none',
-      operationId: 'staffLoginLegacy',
-      summary: 'Sign in as staff (legacy path)',
-      description: 'Identical to `POST /auth/login`. Kept for callers written against the old split between the member and admin sign-in forms.',
+      operationId: 'loginLegacy',
+      summary: 'Sign in (legacy path)',
+      description: 'Identical to `POST /auth/login`, both audiences included. Kept for callers written against the old split between the member and admin sign-in forms.',
       requestBody: jsonBody(object({
         identifier: str('Credit Direct email address'),
         password: str('The account password', { format: 'password' })
@@ -288,7 +239,7 @@ const paths = {
           }, { description: 'The step that turns this profile into a usable account.' })
         }), {
           user: MEMBER_EXAMPLE,
-          next: { method: 'code', endpoint: '/api/auth/code/request', identifier: 'chidi@paystack.africa' }
+          next: { method: 'phone_digits', endpoint: '/api/auth/login', identifier: 'chidi@paystack.africa', digits: 6 }
         }),
         400: json('Missing or invalid fields, or a Credit Direct address.', ref('Error'), {
           error: 'A valid email and a name are required'

@@ -8,7 +8,7 @@
 // everything that does is under /admin.
 
 const { ref, str, int, bool, id, timestamp, arrayOf, object } = require('./components');
-const { op, json, jsonBody, query, path } = require('./operation');
+const { op, json, jsonBody, fileResponse, query, path } = require('./operation');
 
 const FORM_TOKEN = 'k3Nv8QpZ2xR7tYbW1mAe5LcH9dFsJ0uG';
 
@@ -22,13 +22,17 @@ const QUESTIONS_EXAMPLE = [
     required: true, format: 'email', maps_to: 'email'
   },
   {
-    id: 'q3_2c8e6a44', type: 'boolean', text: 'Have you already built against our sandbox?',
+    id: 'q3_2c8e6a44', type: 'text', text: 'And your phone number?',
+    required: true, format: 'phone', maps_to: 'phone'
+  },
+  {
+    id: 'q4_1e5a9c07', type: 'boolean', text: 'Have you already built against our sandbox?',
     required: true, true_label: 'Yes', false_label: 'Not yet'
   },
   {
     id: 'q4_7d3f1b62', type: 'multi_choice', text: 'Which products are you integrating?',
     required: false, options: ['Lending', 'Payments', 'Identity'], maps_to: 'api_products',
-    visible_if: { match: 'all', rules: [{ question: 'q3_2c8e6a44', op: 'is', value: true }] }
+    visible_if: { match: 'all', rules: [{ question: 'q4_1e5a9c07', op: 'is', value: true }] }
   }
 ];
 
@@ -37,7 +41,9 @@ const FORM_EXAMPLE = {
   description: 'Join the Credit Direct developer circle.',
   questions: QUESTIONS_EXAMPLE,
   theme: { accent: '#107EBC', layout: 'one_per_page', corner: 'soft' },
-  field_map: { q1_4a7c2e19: 'name', q2_9f1b3d05: 'email', q4_7d3f1b62: 'api_products' },
+  field_map: {
+    q1_4a7c2e19: 'name', q2_9f1b3d05: 'email', q3_2c8e6a44: 'phone', q4_7d3f1b62: 'api_products'
+  },
   cohort_ids: ['co_partner'],
   status: 'active',
   public_token: FORM_TOKEN,
@@ -263,9 +269,14 @@ const paths = {
         'validated by the same code. What is added is `maps_to` on a question: the profile field',
         'that answer fills in. `GET /admin/onboarding/schema` lists what may be tagged with what.',
         '',
-        'A draft may be anything. A form saved with `status: "active"` must ask for an email',
-        'address and a name, both required and neither behind a branch — a form that can be',
-        'completed without those produces an application nobody can act on.',
+        'A draft may be anything. A form saved with `status: "active"` must ask for an **email',
+        'address** and a **phone number**, both required and neither behind a branch: together',
+        'they are what an approved member signs in with, so a form that can be completed without',
+        'them produces accounts nobody can get into.',
+        '',
+        'Nothing else is compulsory. A form that collects no name publishes fine and comes back',
+        'with a `warnings` entry saying those members will show as unnamed — the consequence is',
+        'surfaced, not imposed.',
         '',
         'The form is created in the circle being worked in, and that is the circle its approved',
         'applicants join. The public token is issued on creation, so the embed snippet can be',
@@ -300,8 +311,8 @@ const paths = {
           embed_snippet: `<div data-devcircle-onboarding="${FORM_TOKEN}"></div>\n<script src="https://circle.creditdirect.ng/embed/onboarding.js" async></script>`
         }),
         400: json('The form could not be saved.', ref('Error'), {
-          error: 'No question collects the email address, and an application without one cannot become a member',
-          issues: [{ field: 'maps_to', message: 'No question collects the email address, and an application without one cannot become a member' }]
+          error: 'No question collects the phone number. It is half of what an approved member signs in with, so a form without it produces accounts nobody can get into.',
+          issues: [{ field: 'maps_to', message: 'No question collects the phone number. It is half of what an approved member signs in with, so a form without it produces accounts nobody can get into.' }]
         })
       }
     })
@@ -319,7 +330,12 @@ const paths = {
         '',
         'What is added is `fields`: the profile fields a question may be tagged with, and which',
         'question types may carry each. The builder draws its menu from this rather than holding',
-        'its own copy.'
+        'its own copy.',
+        '',
+        'Two of them carry `required: true` — the email address and the phone number. Those are',
+        'the credential a member signs in with, so every form that goes out must collect both,',
+        'required and not behind a branch. `recommended: true` marks a field whose absence is',
+        'only warned about. Everything else is the circle\'s to choose.'
       ].join('\n'),
       responses: {
         200: json('The schema.', object({
@@ -332,10 +348,11 @@ const paths = {
           theme: object({}, { description: 'Theme options, and this circle\'s default' })
         }), {
           fields: [
-            { value: 'email', label: 'Email address', types: ['text'], essential: true },
-            { value: 'name', label: 'Full name', types: ['text'], essential: true },
-            { value: 'api_products', label: 'API products', types: ['multi_choice', 'ranking', 'choice', 'dropdown'], essential: false },
-            { value: 'consent_channels', label: 'Consent to contact', types: ['multi_choice'], essential: false, channels: ['in_portal', 'email', 'whatsapp', 'sms', 'calls'] }
+            { value: 'email', label: 'Email address', types: ['text'], required: true, recommended: false },
+            { value: 'phone', label: 'Phone number', types: ['text'], required: true, recommended: false },
+            { value: 'name', label: 'Full name', types: ['text'], required: false, recommended: true },
+            { value: 'api_products', label: 'API products', types: ['multi_choice', 'ranking', 'choice', 'dropdown'], required: false, recommended: false },
+            { value: 'consent_channels', label: 'Consent to contact', types: ['multi_choice'], required: false, recommended: false, channels: ['in_portal', 'email', 'whatsapp', 'sms', 'calls'] }
           ],
           types: [{ type: 'text', label: 'Text', answerable: true }]
         })
@@ -449,6 +466,135 @@ const paths = {
     })
   },
 
+  '/admin/onboarding/{id}/import/template': {
+    get: op({
+      tag: 'Admin · Onboarding',
+      operationId: 'onboardingImportTemplate',
+      permission: 'onboarding.read',
+      summary: 'A blank sheet shaped like this form',
+      description: [
+        'One column per question the form asks, plus two of its own: when the details were',
+        'collected, and your own reference for the row.',
+        '',
+        'Generated from the form rather than written out, so it can never advertise a column the',
+        'parser ignores. The example row is a real one — downloading the template and importing',
+        'it unedited lands one application, which is asserted by a test and is the only honest',
+        'way to promise that the format shown is the format accepted. Delete it before a real run.',
+        '',
+        '`format` is `xlsx` (default) or `csv`. The workbook carries a second sheet spelling out',
+        'what each column accepts, for whoever is transcribing a stack of paper forms.'
+      ].join('\n'),
+      parameters: [
+        path('id', 'Form id'),
+        query('format', 'xlsx (default) or csv')
+      ],
+      responses: {
+        200: fileResponse('The template.',
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          'submitted_at,reference,q1. What should we call you?,q2. Which email should we send your invitation to?,q3. And your phone number?'),
+        400: json('The form asks nothing yet, or the format is unknown.', ref('Error'), {
+          error: 'This form asks nothing yet, so there is nothing for a sheet to line up against'
+        }),
+        404: json('No such form in this circle.', ref('Error'), { error: 'Form not found' })
+      }
+    })
+  },
+
+  '/admin/onboarding/{id}/import/columns': {
+    get: op({
+      tag: 'Admin · Onboarding',
+      operationId: 'onboardingImportColumns',
+      permission: 'onboarding.read',
+      summary: 'The spec behind the template',
+      description: 'So a screen can describe the upload without keeping a second copy of the column list that drifts from the parser\'s. `also_accepted` is every other heading a column answers to, which is why an export from another tool lines up without being edited.',
+      parameters: [path('id', 'Form id')],
+      responses: {
+        200: json('The columns.', object({
+          form: object({}),
+          guidance: arrayOf(str(), 'The rules, in prose, as the template prints them'),
+          columns: arrayOf(object({}), 'One per column, question columns included')
+        }), {
+          form: { id: 'ob_3f19', name: 'Partner developer intake' },
+          guidance: ['One row per person you are onboarding through "Partner developer intake". Delete the example row before importing.'],
+          columns: [{
+            key: 'q2. Which email should we send your invitation to?',
+            kind: 'question', required: true, maps_to: 'email', type: 'text',
+            accepts: 'An email address.', in_template: true,
+            also_accepted: ['q2', 'q2_9f1b3d05', 'Which email should we send your invitation to?']
+          }]
+        }),
+        404: json('No such form in this circle.', ref('Error'), { error: 'Form not found' })
+      }
+    })
+  },
+
+  '/admin/onboarding/{id}/import': {
+    post: op({
+      tag: 'Admin · Onboarding',
+      operationId: 'importOnboarding',
+      permission: 'onboarding.write',
+      summary: 'Land a sheet of people as applications',
+      description: [
+        'One row or five hundred — a partner\'s list, a page of names off a stand, somebody\'s',
+        'export. The mechanism does not care, which is what makes "add this one person" and',
+        '"add these two hundred" the same feature.',
+        '',
+        'Every row goes through the same check a filled-in form gets, from the same definition:',
+        'required answers are required, branching decides what was asked, and an answer under a',
+        'branch the row did not open is dropped. A refusal is reported against its line in the',
+        'sheet, so a two-hundred-row file is fixed in one pass rather than one refusal at a time.',
+        '',
+        '**Nothing here creates a member by default.** Rows become applications in the same queue',
+        'a filled-in form lands in. `approve: true` approves each one as it lands — and because',
+        'that creates members, it needs `onboarding.approve` on top of `onboarding.write`, and',
+        'answers 403 without it.',
+        '',
+        'Two things make a re-run safe: a row carrying a `Your reference` already seen on this',
+        'form is skipped, and an address that already has a pending or approved application is',
+        'skipped. The same address twice *within one sheet* is refused instead — unlike a',
+        're-upload, the operator has not watched that row land once already.',
+        '',
+        'Use `dry_run: true` first. It reports exactly what a real run would do and writes nothing.'
+      ].join('\n'),
+      parameters: [path('id', 'Form id')],
+      requestBody: jsonBody(object({
+        csv: str('The sheet as CSV text'),
+        xlsx_base64: str('The workbook, base64 encoded'),
+        rows: arrayOf(object({}), 'Or the rows already parsed, keyed by heading'),
+        dry_run: bool('Report what would happen and write nothing'),
+        approve: bool('Approve each row as it lands. Needs onboarding.approve.')
+      }), {
+        csv: 'What should we call you?,Which email should we use?,And your phone number?\nAda Obi,ada@zilla.ng,08031112222',
+        dry_run: true
+      }),
+      responses: {
+        200: json('What landed, and what did not.', object({
+          created: int('Applications created — or that would be, on a dry run'),
+          skipped: int('Rows already held, by reference or by address'),
+          approved: int('Members created, when approve was set'),
+          errors: arrayOf(object({
+            line: int('The line in the sheet, counting the headings as line 1'),
+            error: str('Why that row was refused')
+          }), 'One per refused row'),
+          dry_run: bool(),
+          rows: int('How many data rows the sheet carried'),
+          unmatched_columns: arrayOf(str(), 'Headings this form has nowhere to put')
+        }), {
+          created: 2, skipped: 1, approved: 0,
+          errors: [{ line: 4, error: 'Not answered: And your phone number?' }],
+          dry_run: false, rows: 4, unmatched_columns: ['shoe_size']
+        }),
+        400: json('The sheet could not be read, or the form is not ready to take applications.', ref('Error'), {
+          error: 'No data rows found. The first row must be the headings, with a row per person under it.'
+        }),
+        403: json('Approving as they land needs its own permission.', ref('Error'), {
+          error: 'Approving as they land needs the onboarding.approve permission. Import without it and the rows wait in the queue.'
+        }),
+        404: json('No such form in this circle.', ref('Error'), { error: 'Form not found' })
+      }
+    })
+  },
+
   // ─── Deciding on what comes back ──────────────────────────
 
   '/admin/onboarding-applications': {
@@ -532,23 +678,25 @@ const paths = {
         'publicly embeddable form safe to publish at all.',
         '',
         'Creates the account if that address holds none, joins them to the circle the form feeds',
-        'and to its cohorts, and writes a granted consent row for every channel they ticked.',
-        'They hold no password — like every participant, they sign in with a one-time code sent',
-        'to the address they gave.',
+        'and to its cohorts, and writes a granted consent row for every channel they ticked. They',
+        'hold no password at all: like every participant, they sign in with their email address',
+        'and the last six digits of the phone number on the application.',
         '',
-        'Where the address already belongs to a member, they are joined to the circle instead and',
-        'the application fills in only what their profile did not already have. A Credit Direct',
-        'address is refused: staff accounts are created by an administrator.'
+        'Where the address already belongs to a member — or, failing an address, the normalised',
+        'phone number does — they are joined to the circle instead of getting a second account,',
+        'and the application fills in only what their profile did not already have. A Credit',
+        'Direct address is refused: staff accounts are created by an administrator.'
       ].join('\n'),
       parameters: [path('id', 'Application id')],
       requestBody: jsonBody(object({ note: str('Why, for the record') }), { note: 'Known from the partner programme' }, { required: false }),
       responses: {
         200: json('Approved.', object({
           message: str(), user_id: id('The member'), created: bool('Whether the account is new'),
-          circle_id: id('The circle they joined')
+          circle_id: id('The circle they joined'),
+          can_sign_in: bool('Whether they hold enough to sign in — an address and a number')
         }), {
           message: 'Member created', user_id: '9f1c2a44-6d0b-4a1e-9c2f-7b1d3e5a8c40',
-          created: true, circle_id: 'c_dev'
+          created: true, circle_id: 'c_dev', can_sign_in: true
         }),
         404: json('No such application in this circle.', ref('Error'), { error: 'Application not found' }),
         409: json('It cannot be approved.', ref('Error'), {

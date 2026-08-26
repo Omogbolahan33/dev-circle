@@ -46,25 +46,34 @@ const cohortRules = require('./cohortRules');
 // birth collected as free text is a column full of "early 90s".
 
 const FIELDS = {
+  // ── The credential ──
+  // A participant signs in with their email address and the last six digits of
+  // their phone number. Both, therefore, are required of every form that goes
+  // out: one without them produces members who can never sign in, and the
+  // person who filled it in has no way of knowing that happened.
+  //
+  // This is the only thing a form is *required* to collect. Everything below is
+  // the circle's to choose.
   email: {
     label: 'Email address',
-    hint: 'The address the account is created against',
+    hint: 'Half the credential — this is what they sign in with',
     column: 'email',
     types: ['text'],
-    essential: true
+    required: true
+  },
+  phone: {
+    label: 'Phone number',
+    hint: 'The other half — its last six digits are what they sign in with',
+    column: 'phone',
+    types: ['text'],
+    required: true
   },
   name: {
     label: 'Full name',
     hint: 'What we call them everywhere in the platform',
     column: 'name',
     types: ['text'],
-    essential: true
-  },
-  phone: {
-    label: 'Phone number',
-    hint: 'Used for SMS and WhatsApp, once they consent to those',
-    column: 'phone',
-    types: ['text']
+    recommended: true
   },
   company: {
     label: 'Company',
@@ -384,47 +393,117 @@ async function normalizeDefinition(body, { createdBy = null, allowEmpty = false 
   return { questions, theme, field_map, issues: mapIssues, warnings };
 }
 
-// A draft may be anything. A form that goes out may not.
+// ─── What has to be true, and what is merely wise ───────────
+// A draft may be anything. A form that goes out has to ask *something* — and
+// that is the whole of what is enforced.
 //
-// The two essential fields have to be asked of everybody, which means asked
-// unconditionally and required — a branch around the email question produces
-// an application with nobody in it, and the person who filled it in has no way
-// of knowing that happened. Checking it here means it is checked wherever a
-// form is published, including through an edit of a live one.
+// It used to be more. An email address and a name were required of every form,
+// unconditionally and non-optionally, on the reasoning that an application
+// carrying neither cannot become a member anybody can reach. That reasoning is
+// still true and it is still worth saying; what was wrong was saying it by
+// refusing to save. A circle collecting a roster of names at a stand, or an
+// anonymous interest list, is not making a mistake — and a builder that will
+// not let them publish is a builder they work around.
+//
+// So the consequences are surfaced instead of imposed: advice() returns them,
+// the builder shows them while there is still something to do about them, and
+// the save response carries them as warnings. The one place the platform still
+// insists is at the point a decision is made — approving an application with
+// no way to reach anybody reports that plainly.
+
 function canGoOut(questions) {
   const list = Array.isArray(questions) ? questions : [];
   const issues = [];
 
   if (!list.some(surveyForm.isAnswerable)) {
     issues.push({ field: 'questions', message: 'A form that goes out has to ask something' });
+    return issues;
   }
 
   for (const [key, field] of Object.entries(FIELDS)) {
-    if (!field.essential) continue;
+    if (!field.required) continue;
 
     const question = list.find(q => q.maps_to === key);
+    const noun = field.label.toLowerCase();
+
     if (!question) {
       issues.push({
         field: 'maps_to',
-        message: `No question collects the ${field.label.toLowerCase()}, and an application without one cannot become a member`
+        message: `No question collects the ${noun}. It is half of what an approved member ` +
+                 'signs in with, so a form without it produces accounts nobody can get into.'
       });
       continue;
     }
+
+    const index = list.indexOf(question);
+
+    // Asked of everybody means asked unconditionally and required. A branch
+    // around the email question produces an application with nobody in it, and
+    // whoever filled it in has no way of knowing that happened.
     if (question.visible_if) {
       issues.push({
-        index: list.indexOf(question), number: list.indexOf(question) + 1, field: 'visible_if',
-        message: `The ${field.label.toLowerCase()} is only asked on a branch, so an application can arrive without one`
+        index, number: index + 1, field: 'visible_if',
+        message: `The ${noun} is only asked on a branch, so an application can arrive without one`
       });
     }
     if (!question.required) {
       issues.push({
-        index: list.indexOf(question), number: list.indexOf(question) + 1, field: 'required',
-        message: `An answer to the ${field.label.toLowerCase()} has to be required`
+        index, number: index + 1, field: 'required',
+        message: `An answer to the ${noun} has to be required — it is half the credential`
       });
     }
   }
 
   return issues;
+}
+
+// What is worth knowing before publishing, and what follows from it. Never a
+// refusal — every entry here describes a real consequence of a choice the
+// author is entitled to make.
+//
+// Written once and read from three places: the builder's checklist, the
+// warnings on a save, and the API reference. A fourth copy phrased slightly
+// differently is how a warning starts meaning something else in one of them.
+function advice(questions) {
+  const list = Array.isArray(questions) ? questions : [];
+  const notes = [];
+
+  const at = question => {
+    const index = list.indexOf(question);
+    return { index, number: index + 1 };
+  };
+
+  for (const [key, field] of Object.entries(FIELDS)) {
+    if (!field.recommended) continue;
+
+    const question = list.find(q => q.maps_to === key);
+    const noun = field.label.toLowerCase();
+
+    if (!question) {
+      notes.push({
+        field: 'maps_to',
+        key,
+        message: `No question collects the ${noun}, so approved members will show as unnamed ` +
+                 'everywhere they are listed — the platform falls back to their address.'
+      });
+      continue;
+    }
+
+    if (question.visible_if) {
+      notes.push({
+        ...at(question), field: 'visible_if', key,
+        message: `The ${noun} is only asked on a branch, so an application can arrive without one.`
+      });
+    }
+    if (!question.required) {
+      notes.push({
+        ...at(question), field: 'required', key,
+        message: `An answer to the ${noun} is optional, so an application can arrive without one.`
+      });
+    }
+  }
+
+  return notes;
 }
 
 // ─── Reading a stored form ──────────────────────────────────
@@ -732,7 +811,7 @@ module.exports = {
   foldChannel, foldDay,
   publicToken, sessionKey, hashKey,
   normalizeOrigins, frameAncestors, originAllowed,
-  normalizeDefinition, canGoOut,
+  normalizeDefinition, canGoOut, advice,
   hydrate, forPublic, byToken,
   resolveProfile,
   approve, reject,

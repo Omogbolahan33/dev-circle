@@ -15,8 +15,12 @@ const SCHEMA_POSTGRES = `
   -- Users (base + migrations 2,3,10,16, etc.)
   CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
+    -- email stays required: with the last six digits of the phone number it is
+    -- the whole of a participant's credential. name became nullable in
+    -- migration 28 — an onboarding form decides what it asks, and a circle
+    -- collecting an address and nothing else is not making a mistake.
     email TEXT UNIQUE NOT NULL,
-    name TEXT NOT NULL,
+    name TEXT,
     phone TEXT,
     phone_normalized TEXT,
     password_hash TEXT NOT NULL,
@@ -434,6 +438,10 @@ const SCHEMA_POSTGRES = `
     decision_note TEXT,
     user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
     submitted_at TIMESTAMPTZ,
+    -- The other system's own id for this row, so re-running an upload an
+    -- operator is unsure about lands nothing the second time.
+    external_ref TEXT,
+    arrived_by TEXT DEFAULT 'form',
     created_at TIMESTAMPTZ DEFAULT NOW()
   );
 
@@ -508,6 +516,7 @@ const SCHEMA_POSTGRES = `
   CREATE INDEX IF NOT EXISTS idx_onboarding_submissions_circle ON onboarding_submissions(circle_id, status);
   CREATE INDEX IF NOT EXISTS idx_onboarding_submissions_email ON onboarding_submissions(email) WHERE email IS NOT NULL;
   CREATE INDEX IF NOT EXISTS idx_onboarding_submissions_key ON onboarding_submissions(session_key_hash) WHERE session_key_hash IS NOT NULL;
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_onboarding_submissions_external ON onboarding_submissions(form_id, external_ref) WHERE external_ref IS NOT NULL;
 `;
 
 module.exports = { SCHEMA_POSTGRES };

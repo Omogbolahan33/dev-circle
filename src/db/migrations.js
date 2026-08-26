@@ -1361,6 +1361,120 @@ function define(db) {
           if (add.size !== held.length) update.run(JSON.stringify([...add]), role.id);
         }
       }
+    },
+    {
+      id: 28,
+      name: 'a_member_may_be_known_by_less',
+      up() {
+        // What an onboarding form asks for is the circle's to decide, and most
+        // of it now genuinely is: company, sector, location, products, days,
+        // channels — every one of those columns was already nullable, so a form
+        // that skips them produces a member with gaps rather than a refusal.
+        //
+        // users.name was the exception. It was NOT NULL, which made "the form
+        // decides what it asks" a promise the schema refused to keep: a circle
+        // collecting an address and nothing else had no way to onboard anybody.
+        // So a member may now be nameless, and every screen that lists one
+        // falls back to their address.
+        //
+        // What deliberately does *not* relax is email, and phone joins it in
+        // spirit though not in the schema. Those two are the credential — a
+        // participant signs in with their email address and the last six digits
+        // of their phone number — so a form that omitted either would produce
+        // members who could never sign in. That is enforced where it belongs,
+        // on the form, in services/onboarding.js: an onboarding form must
+        // collect both, required and unbranched.
+        //
+        // The phone column stays nullable even so, because members arrive by
+        // four other doors — SSO from the developer hub, the landing page
+        // ingest, a spreadsheet import, an administrator typing one in — and
+        // none of those has ever had to carry a number. Making it NOT NULL
+        // would fail on the rows already here.
+        //
+        // Foreign keys are already off for the duration of a migration and
+        // every one is followed by a full integrity scan — see run() below — so
+        // rebuilding a table half the schema points at is safe here in a way it
+        // would not be anywhere else.
+
+        // Rebuilt from the table's own definition rather than from a column
+        // list written out here: users has been added to by seven earlier
+        // migrations, and a hand-copied list would silently drop whatever it
+        // forgot.
+        function rebuild(table, edit) {
+          const original = db.prepare(
+            'SELECT sql FROM sqlite_master WHERE type = ? AND name = ?'
+          ).get('table', table).sql;
+
+          const columns = db.prepare(`PRAGMA table_info(${table})`).all().map(c => c.name).join(', ');
+          const ddl = edit(original.replace(
+            new RegExp(`CREATE TABLE\\s+"?${table}"?`, 'i'),
+            `CREATE TABLE ${table}_new`
+          ));
+
+          db.exec(`
+            ${ddl};
+            INSERT INTO ${table}_new (${columns}) SELECT ${columns} FROM ${table};
+            DROP TABLE ${table};
+            ALTER TABLE ${table}_new RENAME TO ${table};
+          `);
+        }
+
+        rebuild('users', ddl => {
+          // Anchored to its own line, because two other columns on this table
+          // are NOT NULL and both stay that way: email, which is half the
+          // credential, and password_hash, which holds a sentinel that can
+          // never match — that sentinel is what says "this person has no
+          // password" rather than "this column was forgotten".
+          //
+          // Finding the change already made is not a failure. Finding the
+          // constraint in a shape this does not recognise is, because
+          // rebuilding it into something subtly different is worse than
+          // stopping here.
+          if (/^\s*name\s+TEXT\s+NOT\s+NULL\s*,\s*$/m.test(ddl)) {
+            return ddl.replace(/^(\s*)name\s+TEXT\s+NOT\s+NULL\s*,\s*$/m, '$1name TEXT,');
+          }
+          if (/^\s*name\s+TEXT\s+NOT\s+NULL/m.test(ddl)) {
+            throw new Error('users.name is NOT NULL in a shape this migration does not recognise');
+          }
+          return ddl;
+        });
+
+        // Dropping the table dropped its indexes with it.
+        db.exec(`
+          CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+          CREATE INDEX IF NOT EXISTS idx_users_status ON users(status);
+          CREATE INDEX IF NOT EXISTS idx_users_api_status ON users(api_status);
+          CREATE INDEX IF NOT EXISTS idx_users_phone_normalized ON users(phone_normalized);
+          CREATE INDEX IF NOT EXISTS idx_users_sector ON users(work_sector);
+          CREATE INDEX IF NOT EXISTS idx_users_state ON users(location_state);
+        `);
+
+        // ── Onboarding by spreadsheet ──────────────────────────
+        // A form is not always filled in by the person it is about. A partner
+        // hands over a list, a stand collects a page of names, a programme
+        // arrives as somebody's export — and until those can be landed against
+        // a form's own questions they are a file on somebody's laptop.
+        //
+        // An imported row becomes exactly what a filled-in form becomes: an
+        // application, checked against the same question definition and waiting
+        // on the same decision. What it needs beyond that is a way to say "this
+        // row is one you already have", so an operator who is not sure whether
+        // the first upload went through can run it again and land nothing the
+        // second time.
+        addColumn('onboarding_submissions', 'external_ref', 'TEXT');
+
+        // How the application arrived. Kept apart from source_origin, which
+        // answers a different question — which page it was embedded on — and is
+        // empty for everything that did not come through an embed.
+        addColumn('onboarding_submissions', 'arrived_by', "TEXT DEFAULT 'form'");
+        db.prepare("UPDATE onboarding_submissions SET arrived_by = 'form' WHERE arrived_by IS NULL").run();
+
+        db.exec(`
+          CREATE UNIQUE INDEX IF NOT EXISTS idx_onboarding_submissions_external
+            ON onboarding_submissions(form_id, external_ref)
+            WHERE external_ref IS NOT NULL;
+        `);
+      }
     }
   ];
   return migrations;
