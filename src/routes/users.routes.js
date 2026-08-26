@@ -161,13 +161,14 @@ router.put('/profile', requireAuth, async (req, res) => {
   try {
     setText('name', name);
 
-    // The phone number is a way in now, not just a contact detail, so it is
+    // The phone number is half the credential now, not just a contact detail —
+    // its last six digits are what they sign in with — so it is
     // stored twice: as the member wrote it, and in the canonical form a
     // sign-in is matched against.
     if (phone !== undefined) {
       const normalized = identity.normalizePhone(phone);
       if (phone && !normalized) {
-        return res.status(400).json({ error: 'That phone number is not one we can send a code to.' });
+        return res.status(400).json({ error: 'That is not a phone number we can read.' });
       }
       setText('phone', phone || null);
       setText('phone_normalized', normalized);

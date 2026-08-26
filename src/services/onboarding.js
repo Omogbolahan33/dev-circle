@@ -684,7 +684,7 @@ async function approve(submissionId, { adminId = null, note = null } = {}) {
 
   const granting = consent.filter(channel => notifications.CHANNELS.includes(channel) && !held.has(channel));
 
-  db.transaction(() => {
+  await db.atomic(async () => {
     if (existing) {
       // Columns are filled from the application, but never over something
       // already there. Somebody who applies through a partner's form having
@@ -712,10 +712,10 @@ async function approve(submissionId, { adminId = null, note = null } = {}) {
         values.push(phone);
       }
       if (sets.length) {
-        db.prepare(`UPDATE users SET ${sets.join(', ')} WHERE id = ?`).run(...values, userId);
+        await db.prepare(`UPDATE users SET ${sets.join(', ')} WHERE id = ?`).run(...values, userId);
       }
     } else {
-      db.prepare(`
+      await db.prepare(`
         INSERT INTO users (id, email, name, phone, phone_normalized, company, work_sector,
                            password_hash, date_of_birth, gender, location_state, api_products,
                            preferred_channels, preferred_days, dev_hub_user_id)
@@ -724,8 +724,8 @@ async function approve(submissionId, { adminId = null, note = null } = {}) {
         userId, email, name,
         profile.phone || null, phone,
         profile.company || null, profile.work_sector || null,
-        // Participants hold no password — they sign in with a one-time code
-        // sent to the address or number they gave us.
+        // Participants hold no password — they sign in with this address and
+        // the last six digits of the number beside it.
         identity.NO_PASSWORD,
         profile.date_of_birth || null, profile.gender || null, profile.location_state || null,
         JSON.stringify(profile.api_products || []),
@@ -738,12 +738,12 @@ async function approve(submissionId, { adminId = null, note = null } = {}) {
     // The circle this form onboards into — the answer to "which workspace am I
     // joining?", decided by the form rather than by whichever circle the
     // approving admin happens to be looking at.
-    db.prepare('INSERT OR IGNORE INTO circle_members (circle_id, user_id) VALUES (?, ?)')
+    await db.prepare('INSERT OR IGNORE INTO circle_members (circle_id, user_id) VALUES (?, ?)')
       .run(circleId, userId);
 
     const addCohort = db.prepare('INSERT OR IGNORE INTO user_cohorts (user_id, cohort_id) VALUES (?, ?)');
-    if (allCohort) addCohort.run(userId, allCohort.id);
-    for (const cohortId of joining) addCohort.run(userId, cohortId);
+    if (allCohort) await addCohort.run(userId, allCohort.id);
+    for (const cohortId of joining) await addCohort.run(userId, cohortId);
 
     // Consent is a record of permission, so it is written from what they
     // actually ticked and nothing is assumed from silence.
@@ -751,14 +751,14 @@ async function approve(submissionId, { adminId = null, note = null } = {}) {
       INSERT INTO consent (id, user_id, channel, status, granted_at)
       VALUES (?, ?, ?, 'granted', datetime('now'))
     `);
-    for (const channel of granting) grant.run(uuid(), userId, channel);
+    for (const channel of granting) await grant.run(uuid(), userId, channel);
 
-    db.prepare(`
+    await db.prepare(`
       UPDATE onboarding_submissions
       SET status = 'approved', user_id = ?, decided_by = ?, decided_at = datetime('now'), decision_note = ?
       WHERE id = ?
     `).run(userId, adminId, note || null, submissionId);
-  })();
+  });
 
   for (const channel of granting) {
     await engagement.log(userId, 'consent_granted', {

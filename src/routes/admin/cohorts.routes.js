@@ -172,12 +172,15 @@ router.post('/cohorts/:id/members', requirePermission('cohorts.write'), async (r
   let added = 0;
   const unknown = [];
 
-  db.transaction(() => {
+  // Awaited inside db.atomic rather than better-sqlite3's synchronous
+  // transaction: on Postgres these statements are promises, and left unawaited
+  // they ran outside the transaction that was opened for them.
+  await db.atomic(async () => {
     for (const uid of user_ids) {
-      if (!exists.get(uid)) { unknown.push(uid); continue; }
-      added += stmt.run(uid, cohort.id).changes;
+      if (!await exists.get(uid)) { unknown.push(uid); continue; }
+      added += Number((await stmt.run(uid, cohort.id)).changes || 0);
     }
-  })();
+  });
 
   const count = Number((await db.prepare('SELECT COUNT(*) as c FROM user_cohorts WHERE cohort_id = ?').get(cohort.id))?.c || 0);
   res.json({ message: `${added} member(s) added`, added, unknown, member_count: count });

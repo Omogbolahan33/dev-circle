@@ -368,3 +368,9 @@ against `users` before this ships:
 ```sql
 SELECT COUNT(*) FROM users WHERE phone_normalized IS NULL AND status = 'active';
 ```
+
+Two ways to fix one: the member sets it themselves under **Profile**, or an
+administrator sets it on the member's page — the Phone row reads *"None — they
+cannot sign in"* and carries an **Add** button. Either way the number is
+normalised to E.164 on the way in, because the six digits are counted off that
+form rather than off what was typed.

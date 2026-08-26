@@ -209,9 +209,10 @@ const paths = {
       summary: 'Register as a developer',
       description: [
         'Creates a participant profile and puts the member in the "All Members" cohort',
-        'and the root circle. No password is set and no session is returned: the account',
-        'is claimed by signing in with a one-time code, which is also what proves the',
-        'address belongs to whoever registered it.',
+        'and the root circle. No password is set and no session is returned: the account is',
+        'signed into with this address and the last six digits of the number registered',
+        'against it, so both are required here — a profile with no number is one nobody can',
+        'ever sign in to.',
         '',
         'Credit Direct addresses are refused — staff accounts are created by an',
         'administrator under Roles.'
@@ -393,9 +394,10 @@ const paths = {
       operationId: 'updateProfile',
       summary: 'Update the signed-in member\'s profile',
       description: [
-        'Only the fields present in the body are touched. A phone number is stored twice:',
-        'as the member wrote it, and in the canonical form a sign-in code is matched',
-        'against — so a number we could not send a code to is refused outright.'
+        'Only the fields present in the body are touched. A phone number is stored twice: as',
+        'the member wrote it, and in the canonical E.164 form whose **last six digits are half',
+        'their credential** — so changing it here changes what they sign in with, and a number',
+        'we cannot read is refused outright.'
       ].join('\n'),
       requestBody: jsonBody(object({
         name: str('Full name'),
@@ -421,7 +423,7 @@ const paths = {
       responses: {
         200: json('The updated profile.', object({ user: ref('Member') }), { user: MEMBER_EXAMPLE }),
         400: json('Nothing to update, or a value was rejected.', ref('Error'), {
-          error: 'That phone number is not one we can send a code to.'
+          error: 'That is not a phone number we can read.'
         })
       }
     })
@@ -1137,8 +1139,9 @@ const paths = {
         'Creates the profile, adds it to the "All Members" cohort and the root circle, and',
         'records the channels ticked on the registration form as granted consent.',
         '',
-        'No credential is handed back: the member signs in with a one-time code sent to the',
-        'address or number they just registered.'
+        'No credential is handed back and none is invented: the member signs in with the',
+        'address they gave and the last six digits of the number beside it, both of which',
+        'they already have.'
       ].join('\n'),
       requestBody: jsonBody(object({
         email: str('Work email address', { format: 'email' }),

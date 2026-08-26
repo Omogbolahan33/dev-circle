@@ -40,4 +40,30 @@ function runWith(database, fn) {
   return storage.run({ db: database, sandbox: true }, fn);
 }
 
-module.exports = { useLive, live, active, inSandbox, runWith };
+// ─── A transaction in progress ──────────────────────────────
+// The same trick, one level down. On Postgres a transaction belongs to one
+// connection: BEGIN on a pooled client and then running the statements through
+// the pool puts them on *other* connections, outside the transaction that was
+// opened for them. Nothing errors — the writes land, the COMMIT commits an
+// empty transaction, and a ROLLBACK rolls back nothing.
+//
+// So the client is carried here for the length of the block, and db.prepare
+// asks for it. Every module still holds the same handle and none of them need
+// to know a transaction is open — which is the point, because the alternative
+// is threading a client argument through every service that might one day be
+// called inside one.
+//
+// Nested blocks keep the outermost client rather than opening a second: a
+// transaction inside a transaction is one transaction, and issuing BEGIN twice
+// on one connection is a warning and a no-op in Postgres anyway.
+function runInTransaction(client, fn) {
+  const store = storage.getStore() || {};
+  if (store.tx) return fn();
+  return storage.run({ ...store, tx: client }, fn);
+}
+
+function txClient() {
+  return storage.getStore()?.tx || null;
+}
+
+module.exports = { useLive, live, active, inSandbox, runWith, runInTransaction, txClient };

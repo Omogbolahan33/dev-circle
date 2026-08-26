@@ -892,3 +892,62 @@ test('a form that is not ready has nothing for a sheet to line up against', asyn
   assert.equal(landed.status, 400);
   assert.match(landed.body.error, /not ready to take applications/);
 });
+
+test('a form can be closed and reopened without losing what it collected', async () => {
+  const form = await live();
+  await fillIn(form, WHO);
+
+  const closed = await h.put(`/api/admin/onboarding/${form.id}`, { status: 'closed' }, { token: adminToken });
+  assert.equal(closed.status, 200);
+
+  // Unreachable at its link and unframeable on any page — the same answer a
+  // token that never existed gets.
+  assert.equal((await h.get(`/api/onboarding/${form.public_token}`)).status, 404);
+
+  const reopened = await h.put(`/api/admin/onboarding/${form.id}`, { status: 'active' }, { token: adminToken });
+  assert.equal(reopened.status, 200);
+  assert.equal((await h.get(`/api/onboarding/${form.public_token}`)).status, 200);
+
+  // And the application it took in between is still there
+  assert.equal((await queue()).body.applications.length, 1);
+});
+
+test('an edit only changes what it carries', async () => {
+  const cohortId = h.uuid();
+  h.db.prepare("INSERT INTO cohorts (id, name, type, circle_id) VALUES (?, 'Partner', 'custom', ?)")
+    .run(cohortId, circleId);
+
+  const form = await live({
+    allowed_origins: ['https://partner.com'],
+    cohort_ids: [cohortId],
+    theme: { accent: '#E6B473' }
+  });
+
+  // The narrowest possible edit: nothing but a status. Reopening a closed form
+  // is exactly this, and it used to replace the questions, the theme and the
+  // origin list with empty ones — then refuse the publish for the missing
+  // questions and leave the form closed.
+  await h.put(`/api/admin/onboarding/${form.id}`, { status: 'closed' }, { token: adminToken });
+  const reopened = await h.put(`/api/admin/onboarding/${form.id}`, { status: 'active' }, { token: adminToken });
+
+  assert.equal(reopened.status, 200, JSON.stringify(reopened.body));
+  assert.equal(reopened.body.form.status, 'active');
+  assert.equal(reopened.body.form.questions.length, form.questions.length);
+  assert.deepEqual(reopened.body.form.allowed_origins, ['https://partner.com']);
+  assert.deepEqual(reopened.body.form.cohort_ids, [cohortId]);
+  assert.equal(reopened.body.form.theme.accent.toLowerCase(), '#e6b473');
+
+  // …and it is genuinely reachable again
+  assert.equal((await h.get(`/api/onboarding/${form.public_token}`)).status, 200);
+});
+
+test('an edit that does carry a field still replaces it', async () => {
+  const form = await live({ allowed_origins: ['https://partner.com'] });
+
+  const cleared = await h.put(`/api/admin/onboarding/${form.id}`,
+    { allowed_origins: [] }, { token: adminToken });
+
+  assert.equal(cleared.status, 200);
+  assert.deepEqual(cleared.body.form.allowed_origins, [],
+    'an empty list is a decision, not an omission');
+});

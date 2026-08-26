@@ -167,7 +167,9 @@ const config = {
   staffEmailDomains: (process.env.STAFF_EMAIL_DOMAINS || 'creditdirect.ng,fcmb.com')
     .split(',').map(s => s.trim().toLowerCase().replace(/^@/, '')).filter(Boolean),
 
-  // One-time sign-in codes for participants
+  // One-time codes. No longer the way in — participants sign in with their
+  // address and the last six digits of their number — but the delivery,
+  // hashing and throttle machinery is what email verification will be built on.
   loginCode: {
     length: 6,
     ttlSec: parseInt(process.env.LOGIN_CODE_TTL_SEC, 10) || 10 * 60,

@@ -261,7 +261,8 @@ for (let i = 0; i < developers.length; i++) {
   const phone = `+234${700 + Math.floor(Math.random() * 300)}${String(Math.floor(Math.random() * 10000000)).padStart(7, '0')}`;
   const hoursAgo = Math.floor(Math.random() * 168);
 
-  // Members hold no password: they sign in with a one-time code on the email
+  // Members hold no password: they sign in with their address and the last six
+  // digits of the number below, generated per member on the email
   // or number seeded here, so there is nothing to publish for them.
   userStmt.run(
     id, d.email, d.name, phone, normalizePhone(phone), NO_PASSWORD,

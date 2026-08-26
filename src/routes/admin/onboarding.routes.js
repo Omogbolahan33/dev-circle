@@ -225,16 +225,32 @@ router.put('/onboarding/:id', requirePermission('onboarding.write'), async (req,
   // Questions are frozen once applications exist. The look, the origins it may
   // be embedded on, where it sends people afterwards and whether it is open
   // can all still change — none of those alters what anybody was asked.
-  let questions = onboarding.hydrate(form).questions;
+  const held = onboarding.hydrate(form);
+  let questions = held.questions;
   let field_map = parseJSON(form.field_map, {});
   let theme = parseJSON(form.theme, null);
   let warnings = [];
+
+  // Only what the body carries is changed. The scalar fields below already work
+  // that way; the JSON ones did not, and a caller that sent nothing but
+  // `{ status: 'active' }` — which is exactly what reopening a closed form is —
+  // had its questions, its theme and its origin list replaced with empty ones.
+  // The questions going missing then failed the publish check, so reopening a
+  // form quietly refused and left it closed.
+  const given = (key, fallback) => (req.body[key] === undefined ? fallback : req.body[key]);
+
+  const body = {
+    ...req.body,
+    questions: given('questions', questions),
+    theme: given('theme', theme)
+  };
 
   // Checked before either branch: where a form may be embedded can change
   // whether or not its questions are frozen, so refusing a bad origin cannot
   // live inside the branch that still rewrites questions. It did, and a locked
   // form silently dropped what it could not parse.
-  const { origins, issues: originIssues } = onboarding.normalizeOrigins(req.body.allowed_origins);
+  const { origins, issues: originIssues } =
+    onboarding.normalizeOrigins(given('allowed_origins', held.allowed_origins));
   if (originIssues.length) {
     return res.status(400).json({
       error: originIssues[0].message,
@@ -245,7 +261,7 @@ router.put('/onboarding/:id', requirePermission('onboarding.write'), async (req,
   if (decided > 0) {
     // The theme is still the author's to change, so it is normalized on its
     // own rather than skipped with the questions.
-    const themed = surveyForm.themes.normalize(req.body.theme);
+    const themed = surveyForm.themes.normalize(body.theme);
     if (themed.issues.length) {
       return res.status(400).json({
         error: themed.issues[0].message,
@@ -256,7 +272,7 @@ router.put('/onboarding/:id', requirePermission('onboarding.write'), async (req,
     warnings = themed.warnings || [];
 
     if (Array.isArray(req.body.questions)) {
-      const posted = JSON.stringify(req.body.questions.map(q => ({ id: q.id, text: q.text, type: q.type })));
+      const posted = JSON.stringify(body.questions.map(q => ({ id: q.id, text: q.text, type: q.type })));
       const held = JSON.stringify(questions.map(q => ({ id: q.id, text: q.text, type: q.type })));
       if (posted !== held) {
         return res.status(409).json({
@@ -265,7 +281,7 @@ router.put('/onboarding/:id', requirePermission('onboarding.write'), async (req,
       }
     }
   } else {
-    const definition = await onboarding.normalizeDefinition(req.body, {
+    const definition = await onboarding.normalizeDefinition(body, {
       createdBy: req.admin.id,
       allowEmpty: wanted !== 'active'
     });
@@ -303,7 +319,7 @@ router.put('/onboarding/:id', requirePermission('onboarding.write'), async (req,
     JSON.stringify(questions),
     theme ? JSON.stringify(theme) : null,
     JSON.stringify(field_map),
-    JSON.stringify(await cohortsInCircle(req.body.cohort_ids, req.circleId)),
+    JSON.stringify(await cohortsInCircle(given('cohort_ids', held.cohort_ids), req.circleId)),
     wanted,
     JSON.stringify(origins),
     req.body.redirect_url ?? form.redirect_url,

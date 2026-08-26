@@ -7,6 +7,92 @@ const context = require('./context');
 let live;
 let isPostgres = false;
 
+// ─── Doing several writes as one ────────────────────────────
+// `db.transaction(fn)()` is better-sqlite3's, it takes a *synchronous* body,
+// and it is what migrations, the seeder and the test fixtures use. It stays
+// exactly as it was, because those all run against SQLite and a synchronous
+// body is genuinely atomic there.
+//
+// `db.atomic(fn)` is the one request handlers want. Its body is async and
+// awaits every statement, which is the only shape that can be correct on both
+// adapters now that Postgres statements return promises:
+//
+//   await db.atomic(async () => {
+//     await db.prepare('INSERT ...').run(...);
+//     await db.prepare('UPDATE ...').run(...);
+//   });
+//
+// On Postgres the block takes one pooled client, opens the transaction on it,
+// and binds it for the duration so every db.prepare inside lands on the same
+// connection — see db/context.js for why that binding is the whole fix. On
+// SQLite it is BEGIN IMMEDIATE and COMMIT on the one connection there is.
+//
+// One honest limitation, on SQLite only: an async body yields between
+// statements, and another request writing in that window would be swept into
+// this transaction and rolled back with it. The blocks are serialised against
+// each other so two of them cannot interleave, but a plain write elsewhere
+// still could. It is left standing rather than solved because of where SQLite
+// is actually used — one developer locally, and a test suite that runs its
+// requests one at a time. Postgres, which is what deployments run, has a
+// connection per transaction and none of this applies.
+function makeAtomic({ isPostgres, sqlite, pg }) {
+  // Serialises atomic blocks against one another. A promise chain rather than
+  // a lock: each block waits on the one before it and hands the next its own
+  // completion, so they queue in the order they were asked for.
+  let queue = Promise.resolve();
+
+  return function atomic(fn) {
+    // Already inside one. What a caller means by a transaction inside a
+    // transaction is one transaction, so the body simply runs in the open one:
+    // it commits with it and rolls back with it. Opening a second would be an
+    // error in SQLite and a warning in Postgres — and queueing behind the block
+    // we are *inside* would wait for something that is waiting for us.
+    if (context.txClient()) return Promise.resolve().then(fn);
+
+    const run = async () => {
+      if (isPostgres) {
+        const client = await pg.getPool().connect();
+        try {
+          await client.query('BEGIN');
+          const result = await context.runInTransaction(client, fn);
+          await client.query('COMMIT');
+          return result;
+        } catch (err) {
+          try { await client.query('ROLLBACK'); } catch { /* the client is going back to the pool either way */ }
+          throw err;
+        } finally {
+          client.release();
+        }
+      }
+
+      // IMMEDIATE takes the write lock up front. Without it SQLite starts the
+      // transaction as a reader and upgrades on the first write, which is the
+      // shape that produces SQLITE_BUSY on an upgrade it cannot get.
+      //
+      // The handle is bound into the context here too. Nothing on this side
+      // needs it to route a statement — there is one connection — but it is
+      // what makes the nesting check above true on both adapters.
+      const database = context.active() || sqlite;
+      database.exec('BEGIN IMMEDIATE');
+      try {
+        const result = await context.runInTransaction(database, fn);
+        database.exec('COMMIT');
+        return result;
+      } catch (err) {
+        try { database.exec('ROLLBACK'); } catch { /* nothing to roll back */ }
+        throw err;
+      }
+    };
+
+    // The caller waits on their own block; the queue waits on it too, and
+    // swallows the failure so one refused block does not poison the next.
+    const started = queue.then(run, run);
+    queue = started.catch(() => {});
+    return started;
+  };
+}
+
+
 // ─── Adapter selection ──────────────────────────────────────
 // SQLite is the default for local dev and tests (DEVCIRCLE_DB_PATH is set by
 // tests to a tmp file). When DATABASE_URL is present we use Postgres (Supabase).
@@ -146,6 +232,7 @@ if (config.isPostgres) {
   });
   // Attach helper to check adapter
   module.exports.isPostgres = true;
+  module.exports.atomic = makeAtomic({ isPostgres: true, pg });
 
 } else {
   // ─── SQLite path (default, used by tests and local dev) ──────
@@ -219,6 +306,7 @@ if (config.isPostgres) {
   });
   module.exports.isPostgres = false;
   module.exports.isSQLite = true;
+  module.exports.atomic = makeAtomic({ isPostgres: false, sqlite: sqliteLive });
   module.exports.ready = demoReady;
 }
 

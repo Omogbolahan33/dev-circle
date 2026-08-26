@@ -81,7 +81,12 @@
         <div class="page-actions">
           <a href="/admin/onboarding.html" class="btn btn-sm btn-secondary">Cancel</a>
           <a class="btn btn-sm btn-secondary" id="queueLink" style="display:none">Applications</a>
+          <button class="btn btn-sm btn-ghost hide" onclick="deleteForm()" id="deleteBtn">Delete</button>
           <button class="btn btn-sm btn-secondary" onclick="saveForm('draft')" id="draftBtn">Save draft</button>
+          <!-- Closing is how a form stops taking applications. Two other places
+               in this page tell an author to close a form; this is the button
+               they were being told about. -->
+          <button class="btn btn-sm btn-secondary hide" onclick="closeForm()" id="closeBtn">Close it</button>
           <button class="btn btn-sm btn-gold" onclick="saveForm('active')" id="publishBtn">Publish</button>
         </div>
       </div>
@@ -247,6 +252,8 @@
     circleTheme: null,
     cohortIds: [],
     locked: false,             // applications exist, so questions cannot change
+    status: 'draft',
+    counts: null,
     issues: [],
     openQuestion: 0
   };
@@ -416,12 +423,24 @@
       document.getElementById('pageTitle').textContent = `Edit: ${form.name}`;
       document.title = `Dev Circle — ${form.name}`;
       document.getElementById('publishBtn').textContent =
-        form.status === 'active' ? 'Save changes' : 'Publish';
+        form.status === 'active' ? 'Save changes' : form.status === 'closed' ? 'Reopen' : 'Publish';
+
+      const close = document.getElementById('closeBtn');
+      close.classList.toggle('hide', form.status !== 'active');
+      state.status = form.status;
+      state.counts = data.counts;
 
       const queue = document.getElementById('queueLink');
       queue.href = `/admin/onboarding-applications.html?form_id=${form.id}`;
       queue.style.display = '';
       queue.innerHTML = `Applications${data.counts.pending ? `<span class="count">${data.counts.pending}</span>` : ''}`;
+
+      // Deleting is offered only while there is nothing to lose. Once anybody
+      // has filled it in, closing is the operation and the button above is it.
+      if (!data.questions_locked) {
+        const remove = document.getElementById('deleteBtn');
+        remove.classList.remove('hide');
+      }
 
       showEmbed(data.embed_snippet, form);
       syncCohortChecks();
@@ -627,6 +646,10 @@
 
   async function saveForm(status) {
     const name = document.getElementById('fName').value.trim();
+    // Closing is a status change, not a publish. Running it through the
+    // readiness check below would refuse to close a form for the very reason
+    // somebody is closing it.
+    const publishing = status === 'active';
     if (!name) {
       showToast('Give the form a name', 'warning');
       document.querySelector('[data-step="where"]').click();
@@ -637,8 +660,8 @@
     // Checked here first so a refusal arrives against the question that caused
     // it rather than as a sentence at the top of the page. The server checks
     // the same thing again — this is not the guard, it is the explanation.
-    if (!state.locked) {
-      const check = SurveySchema.normalizeQuestions(state.questions, { allowEmpty: status !== 'active' });
+    if (!state.locked && publishing) {
+      const check = SurveySchema.normalizeQuestions(state.questions, { allowEmpty: false });
       state.issues = check.issues;
 
       if (check.issues.length) {
@@ -665,7 +688,9 @@
       status
     };
 
-    const button = document.getElementById(status === 'active' ? 'publishBtn' : 'draftBtn');
+    const button = document.getElementById(
+      status === 'active' ? 'publishBtn' : status === 'closed' ? 'closeBtn' : 'draftBtn'
+    );
     const label = button.textContent;
     button.disabled = true;
     button.textContent = 'Saving…';
@@ -681,21 +706,29 @@
       if (data.warnings?.length) {
         showToast(data.warnings[0].message, 'warning');
       } else {
-        showToast(status === 'active' ? 'Published — the form is live' : 'Draft saved');
+        showToast(
+          status === 'active' ? 'Published — the form is live'
+            : status === 'closed' ? 'Closed — its link and any embed of it now show nothing'
+            : 'Draft saved'
+        );
       }
+
+      state.status = data.form.status;
+      document.getElementById('closeBtn').classList.toggle('hide', data.form.status !== 'active');
 
       showEmbed(data.embed_snippet, data.form);
 
       // The address only exists once the form does, and it is the thing an
       // author came here for — so a first publish lands on it rather than
       // leaving them to go looking.
-      if (status === 'active') document.querySelector('[data-step="embed"]').click();
+      if (publishing) document.querySelector('[data-step="embed"]').click();
 
       renderQuestions();
       renderChecklist();
       history.replaceState(null, '', `/admin/onboarding-new.html?id=${state.id}`);
       document.getElementById('publishBtn').textContent =
-        data.form.status === 'active' ? 'Save changes' : 'Publish';
+        data.form.status === 'active' ? 'Save changes'
+          : data.form.status === 'closed' ? 'Reopen' : 'Publish';
     } catch (err) {
       // The server reports issues per question too, so they land in the same
       // place the local check would have put them.
@@ -708,6 +741,48 @@
     } finally {
       button.disabled = false;
       button.textContent = label;
+    }
+  }
+
+  // ─── Closing it ───────────────────────────────────────────
+  // A closed form is unreachable at its link and unframeable on any page — the
+  // API answers a closed token exactly as it answers one that never existed.
+  // The applications it already took stay where they are.
+  async function closeForm() {
+    const waiting = state.counts?.pending || 0;
+
+    const ok = await Shell.confirm({
+      title: 'Close this form?',
+      text: 'Its link stops working and any page embedding it shows nothing. Everything it has ' +
+            'already collected stays in the queue' +
+            (waiting ? `, including ${waiting} application${waiting === 1 ? '' : 's'} still waiting on a decision.` : '.') +
+            ' You can reopen it later.',
+      ok: 'Close it',
+      danger: true
+    });
+    if (!ok) return;
+
+    await saveForm('closed');
+  }
+
+  // Only offered for a form nobody has filled in. One somebody has is closed
+  // instead — deleting it would take their applications with it, and those are
+  // the record of what people were asked and what they were told.
+  async function deleteForm() {
+    const ok = await Shell.confirm({
+      title: 'Delete this form?',
+      text: 'Nobody has filled it in, so there is nothing to lose but the questions. This cannot be undone.',
+      ok: 'Delete',
+      danger: true
+    });
+    if (!ok) return;
+
+    try {
+      await api.del(`/admin/onboarding/${state.id}`);
+      showToast('Form deleted');
+      window.location.href = '/admin/onboarding.html';
+    } catch (err) {
+      showToast(err.message, 'error');
     }
   }
 

@@ -201,7 +201,15 @@
 
   function renderRail({ user: u, cohorts, consent }) {
     document.getElementById('details').innerHTML = `
-      <div class="kv-row"><span class="kv-key">Phone</span><span class="kv-val">${escapeHtml(u.phone || '—')}</span></div>
+      <div class="kv-row">
+        <span class="kv-key">Phone</span>
+        <span class="kv-val">
+          ${u.phone
+            ? escapeHtml(u.phone)
+            : '<span style="color:var(--rose-ink)">None — they cannot sign in</span>'}
+          <button class="btn btn-sm btn-ghost" onclick="editPhone()">${u.phone ? 'Change' : 'Add'}</button>
+        </span>
+      </div>
       <div class="kv-row"><span class="kv-key">Sector</span><span class="kv-val">${escapeHtml(u.work_sector || '—')}</span></div>
       <div class="kv-row"><span class="kv-key">State</span><span class="kv-val">${escapeHtml(u.location_state || '—')}</span></div>
       <div class="kv-row"><span class="kv-key">Products</span><span class="kv-val">${(u.api_products || []).length ? (u.api_products).map(p => escapeHtml(p)).join(', ') : '—'}</span></div>
@@ -343,12 +351,39 @@
     } catch (err) { showToast(err.message, 'error'); }
   }
 
-  // Members hold no password — they sign in with a one-time code — so the
-  // recovery action is ending their live sessions, not issuing a credential.
+  // ─── The number they sign in with ─────────────────────────
+  // Not an ordinary contact detail. A member signs in with their email address
+  // and the last six digits of this, so an account with no number on it is an
+  // account nobody can get into — and this is the only way to fix that.
+  //
+  // Members reach that state through four doors that have never required a
+  // number: Developer Hub SSO, the landing-page ingest, a spreadsheet import,
+  // and an administrator typing somebody in.
+  async function editPhone() {
+    const current = member?.user?.phone || '';
+    const given = window.prompt(
+      'Phone number for this member.\n\n' +
+      'Its last six digits are what they sign in with, alongside their email ' +
+      'address — so changing it changes their credential. Tell them.',
+      current
+    );
+    if (given === null) return;
+
+    try {
+      await api.put(`/admin/members/${memberId}`, { phone: given.trim() });
+      showToast(given.trim() ? 'Phone number saved — that is what they sign in with now' : 'Phone number cleared');
+      load();
+    } catch (err) { showToast(err.message, 'error'); }
+  }
+
+  // Members hold no password — they sign in with their address and the last six
+  // digits of their number — so the recovery action is ending their live
+  // sessions, not issuing a credential.
   async function signOutEverywhere() {
     const ok = await Shell.confirm({
       title: 'Sign this member out everywhere?',
-      text: 'Every device they are signed in on stops working immediately. They can sign back in with a new code sent to their email or phone.',
+      text: 'Every device they are signed in on stops working immediately. They can sign back in ' +
+            'with their email address and the last six digits of their phone number.',
       ok: 'Sign out'
     });
     if (!ok) return;

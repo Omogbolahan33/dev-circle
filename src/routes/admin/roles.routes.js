@@ -190,7 +190,7 @@ router.put('/admins/:id', requirePermission('roles.write'), async (req, res) => 
 // POST /api/admin/admins/:id/reset-password
 // Staff are the only people who hold a password, so they are the only people
 // who can be locked out of one. Members never need this — they sign in with a
-// one-time code.
+// address and the last six digits of their phone number.
 router.post('/admins/:id/reset-password', requirePermission('roles.write'), async (req, res) => {
   const target = await db.prepare('SELECT * FROM admin_users WHERE id = ?').get(req.params.id);
   if (!target) return res.status(404).json({ error: 'Admin not found' });

@@ -113,7 +113,7 @@ const schemas = {
     email: str('Sign-in address', { format: 'email', example: 'chidi@paystack.africa' }),
     name: str('Full name', { example: 'Chidi Nwosu' }),
     phone: str('As the member typed it', { nullable: true, example: '0803 555 0142' }),
-    phone_normalized: str('E.164 form a sign-in code is matched against', { nullable: true, example: '+2348035550142' }),
+    phone_normalized: str('E.164 form. The last six digits of this are half a participant\'s credential', { nullable: true, example: '+2348035550142' }),
     company: str('Employer or product they build on', { nullable: true, example: 'Paystack' }),
     work_sector: str('Industry they work in', { nullable: true, example: 'Fintech' }),
     dev_hub_user_id: str('Linked Developer Hub account, if any', { nullable: true }),

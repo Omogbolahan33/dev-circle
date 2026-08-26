@@ -41,7 +41,7 @@ request and response, and **Try it out** runs against this deployment using your
 
 There are three ways to hold a credential, and which one you use depends on who you are.
 
-### Members — a one-time code
+### Members — email and phone digits
 
 Developers hold no password at all, so there is none to leak, reset or reuse from another site.
 They sign in with their email address and the last six digits of the phone number on their
@@ -164,9 +164,10 @@ Fixed windows of one minute, applied per credential where there is one and per I
 | \`/api/integrations/*\` | 300 requests / minute |
 | Everything else under \`/api\` | 300 requests / minute |
 
-Sign-in has its own throttles on top: eight failed passwords for one address and IP pair
-locks that pair out for 15 minutes, and one identifier may request four sign-in codes per
-15 minutes.
+Sign-in has its own throttle on top: eight failed attempts for one address and IP pair
+locks that pair out for 15 minutes, whichever credential was being offered. That throttle
+is most of what makes a six-digit secret defensible — see the note beside it in the
+Authentication section.
 
 Every response carries \`RateLimit-Limit\`, \`RateLimit-Remaining\` and \`RateLimit-Reset\`.
 A 429 adds \`Retry-After\`. Back off on the header rather than on a fixed sleep.
@@ -190,7 +191,7 @@ changes to the same endpoint and the ticket is updated rather than duplicated.
 
 const tags = [
   { name: 'Health', description: 'Liveness, safe to poll.' },
-  { name: 'Authentication', description: 'One sign-in field, three ways to hold a credential: a one-time code for developers, a password for Credit Direct staff, and Developer Hub SSO.' },
+  { name: 'Authentication', description: 'One sign-in form, three ways to hold a credential: for developers their email address and the last six digits of their phone number, for Credit Direct staff a password, and Developer Hub SSO.' },
   { name: 'Member profile', description: 'The signed-in developer\'s own profile, memberships, consent and engagement history.' },
   { name: 'Member surveys', description: 'Surveys open to the signed-in developer, and how they answer them.' },
   { name: 'Open surveys', description: 'Answering a survey over its link, with no account and no sign-in. The token in the path is the whole of the authorisation and opens exactly one survey; nothing here identifies the person answering.' },

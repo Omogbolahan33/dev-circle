@@ -368,3 +368,51 @@ test('a Credit Direct address cannot be self-registered', async () => {
   const res = await h.post('/api/auth/register', { email: 'someone@creditdirect.ng', name: 'Someone' });
   assert.equal(res.status, 400);
 });
+
+// ─── Rescuing a member who cannot sign in ───────────────────
+// Members arrive through four doors that have never required a phone number:
+// Developer Hub SSO, the landing-page ingest, a spreadsheet import, and an
+// administrator typing one in. Every one of those produces an account that
+// cannot sign in until a number is on it, so there has to be a way to put one
+// there.
+
+test('an administrator can give a member the number they sign in with', async () => {
+  const user = h.makeUser({ email: 'ada@example.ng', phone: null });
+
+  const before = await h.post('/api/auth/login', { identifier: 'ada@example.ng', digits: '001234' });
+  assert.equal(before.status, 401, 'no number means no way in');
+
+  const roleId = h.makeRole('super', ['*']);
+  const admin = h.makeAdmin({ email: 'boss@creditdirect.ng', roleId });
+  const adminToken = await h.loginAdmin(admin.email, admin.password);
+
+  const set = await h.put(`/api/admin/members/${user.id}`, { phone: '0803 000 1234' }, { token: adminToken });
+  assert.equal(set.status, 200, JSON.stringify(set.body));
+
+  // Normalised on the way in, because the six digits are counted off the E.164
+  // form — otherwise what an admin typed and what the member types would have
+  // to match character for character.
+  const row = h.db.prepare('SELECT phone, phone_normalized FROM users WHERE id = ?').get(user.id);
+  assert.equal(row.phone_normalized, '+2348030001234');
+
+  const after = await h.post('/api/auth/login', { identifier: 'ada@example.ng', digits: '001234' });
+  assert.equal(after.status, 200, 'and now they are in');
+});
+
+test('a number an administrator cannot read is refused rather than stored', async () => {
+  const user = h.makeUser({ email: 'ada@example.ng' });
+  const roleId = h.makeRole('super', ['*']);
+  const admin = h.makeAdmin({ email: 'boss@creditdirect.ng', roleId });
+  const adminToken = await h.loginAdmin(admin.email, admin.password);
+
+  const held = h.db.prepare('SELECT phone_normalized FROM users WHERE id = ?').get(user.id).phone_normalized;
+
+  const refused = await h.put(`/api/admin/members/${user.id}`, { phone: 'call the office' }, { token: adminToken });
+  assert.equal(refused.status, 400);
+
+  assert.equal(
+    h.db.prepare('SELECT phone_normalized FROM users WHERE id = ?').get(user.id).phone_normalized,
+    held,
+    'a refusal must not have half-written the change'
+  );
+});

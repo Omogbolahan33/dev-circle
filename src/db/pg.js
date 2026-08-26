@@ -247,8 +247,10 @@ function prepare(sql) {
   const isMutating = /^\s*(INSERT|UPDATE|DELETE)/i.test(sql);
 
   async function execWith(params = []) {
-    const p = getPool();
-    const result = await p.query(translateSql(sql), params);
+    // Inside a transaction the statement has to go on the connection that
+    // opened it — see db/context.js. Outside one, any pooled connection will do.
+    const target = require('./context').txClient() || getPool();
+    const result = await target.query(translateSql(sql), params);
     return result;
   }
 
