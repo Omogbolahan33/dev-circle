@@ -122,12 +122,61 @@ if (config.isPostgres) {
 
   async function initPostgres() {
     try {
+      // ── 1. Every table and index the schema declares ──
+      // Idempotent throughout, so this is what creates an empty database and a
+      // no-op on one that is current.
       await pg.exec(SCHEMA_POSTGRES);
-      // For Postgres fresh DBs the comprehensive schema above already includes
-      // every table as of the latest migration, so we just ensure the
-      // migrations ledger exists and mark all known migrations as applied.
-      // Existing Postgres DBs that were created earlier will be brought forward
-      // via ALTER TABLE IF NOT EXISTS in the ledger step.
+
+      // ── 2. Bring an older database forward ──
+      // CREATE TABLE IF NOT EXISTS does nothing for a table that already
+      // exists, so a column added to the schema after that database was built
+      // never lands, and a constraint relaxed later stays as it was. These are
+      // the ALTERs that close that gap, derived from the schema itself — see
+      // db/reconcile.js.
+      //
+      // Best effort, one statement at a time: a repair that cannot apply is
+      // worth a line in the log and is not worth refusing to start over. What
+      // is worth refusing to start over is checked below.
+      const reconcile = require('./reconcile');
+      const repairs = reconcile.alterStatements(SCHEMA_POSTGRES);
+      let repaired = 0;
+
+      for (const statement of repairs) {
+        try {
+          await pg.query(statement);
+          repaired++;
+        } catch (err) {
+          logger.warn('Schema repair skipped', { statement, message: err.message });
+        }
+      }
+
+      // ── 3. Check it actually worked ──
+      // This exists because it did not, for two releases, in silence. Twenty
+      // three of the schema's statements were being discarded by the splitter
+      // in pg.exec, and the first anybody knew of it was a 500 from a table
+      // that had never been created. A missing table is not something to
+      // discover at request time.
+      const expected = reconcile.tablesIn(SCHEMA_POSTGRES).map(t => t.name);
+      const present = await pg.query(
+        `SELECT table_name FROM information_schema.tables
+         WHERE table_schema = current_schema() AND table_name = ANY($1)`,
+        [expected]
+      );
+      const found = new Set(present.rows.map(r => r.table_name));
+      const missing = expected.filter(name => !found.has(name));
+
+      if (missing.length) {
+        throw new Error(
+          `The schema did not apply: ${missing.length} table(s) missing after boot — ` +
+          `${missing.join(', ')}. Nothing that reads them can work, so this is fatal ` +
+          'rather than a warning.'
+        );
+      }
+
+      // ── 4. The ledger ──
+      // The JS migrations are SQLite's — they rebuild tables and speak PRAGMA —
+      // so on Postgres the schema above is what carries their effect, and they
+      // are recorded as applied rather than run.
       await pg.exec(`
         CREATE TABLE IF NOT EXISTS schema_migrations (
           id INTEGER PRIMARY KEY,
@@ -143,7 +192,11 @@ if (config.isPostgres) {
           [m.id, m.name]
         );
       }
-      logger.info('Postgres schema and migrations applied');
+      logger.info('Postgres schema applied', {
+        tables: expected.length,
+        repairs_applied: repaired,
+        migrations_recorded: defined.length
+      });
       const bootstrap = require('./bootstrap');
       const seeded = await bootstrap.ensureDemoAccounts(live);
       if (!seeded.skipped) {

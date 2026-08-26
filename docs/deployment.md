@@ -8,6 +8,58 @@ This app supports two durable options and one ephemeral demo option:
 
 The app switches automatically: if `DATABASE_URL` is set it uses `pg` + Postgres; otherwise it uses `better-sqlite3` + SQLite.
 
+## Schema changes on Postgres
+
+Worth understanding, because it does not work the way the SQLite side does.
+
+The numbered migrations in `src/db/migrations.js` are SQLite's — they rebuild
+tables and speak `PRAGMA`. On Postgres they are **recorded as applied and never
+run**. What carries their effect is `src/db/schema.postgres.js`, one
+comprehensive `CREATE TABLE IF NOT EXISTS` schema applied on every boot.
+
+That is enough for an empty database and not enough for one that already has
+tables: `IF NOT EXISTS` is a no-op the moment the table exists, so a column added
+to the schema afterwards never lands and a constraint relaxed afterwards stays as
+it was. `src/db/reconcile.js` closes that gap — it derives the `ALTER TABLE …`
+statements from the schema itself, so a column added to the schema is a column an
+old database gets with no second edit and no chance of the two disagreeing.
+
+Boot then **verifies** every declared table exists and refuses to start if any is
+missing. That check exists because it did not: a bug in the statement splitter
+was discarding twenty-three of the schema's ninety-five statements, and the first
+anybody knew of it was a 500 in production from a table that had never been
+created.
+
+### Repairing a running deployment
+
+A redeploy applies everything on boot. To do it without one, point the CLI at the
+database:
+
+```sh
+DATABASE_URL=postgres://... npm run migrate
+```
+
+It applies the schema, runs the reconcile, and reports what is still missing:
+
+```
+Schema reconciled: 504 statement(s) ran, 0 skipped.
+✓ all 29 tables present
+✓ Database is up to date (Postgres — comprehensive schema applied)
+```
+
+A non-zero exit and a list of missing tables means the schema did not apply —
+read the skipped statements it prints above that.
+
+### Testing against a real Postgres
+
+```sh
+docker compose up -d
+DATABASE_URL=postgres://devcircle:devcircle@localhost:5432/devcircle PGSSLMODE=disable npm run migrate
+```
+
+`PGSSLMODE=disable` is needed for a local container; hosted Postgres wants SSL and
+the default is correct there.
+
 ## Option A — Supabase Postgres (Recommended)
 
 Supabase gives you Postgres + Storage + a dashboard, and the app is ready for it out of the box (see `docs/supabase.md` for full guide).

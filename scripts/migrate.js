@@ -19,6 +19,53 @@ async function main() {
 
     // Ensure schema exists
     await pg.exec(SCHEMA_POSTGRES);
+
+    // Then bring an older database forward. CREATE TABLE IF NOT EXISTS does
+    // nothing for a table that already exists, so a column added to the schema
+    // afterwards never lands and a constraint relaxed afterwards stays as it
+    // was — see src/db/reconcile.js. The same step runs on boot; it is here so
+    // a deployment can be repaired without waiting for one.
+    const reconcile = require('../src/db/reconcile');
+    const repairs = reconcile.alterStatements(SCHEMA_POSTGRES);
+    const applied = [];
+    const skipped = [];
+
+    for (const statement of repairs) {
+      try {
+        await pg.query(statement);
+        applied.push(statement);
+      } catch (err) {
+        skipped.push({ statement, message: err.message });
+      }
+    }
+
+    // Only the ones that changed something are worth printing — the list is
+    // five hundred statements long and almost all of it is already true.
+    console.log(`Schema reconciled: ${applied.length} statement(s) ran, ${skipped.length} skipped.`);
+    if (skipped.length) {
+      console.log('\nSkipped:');
+      for (const s of skipped.slice(0, 10)) console.log(`  · ${s.statement}\n    ${s.message}`);
+      if (skipped.length > 10) console.log(`  … and ${skipped.length - 10} more`);
+    }
+
+    // And check it worked. A missing table is why this script exists.
+    const expected = reconcile.tablesIn(SCHEMA_POSTGRES).map(t => t.name);
+    const present = await pg.query(
+      `SELECT table_name FROM information_schema.tables
+       WHERE table_schema = current_schema() AND table_name = ANY($1)`,
+      [expected]
+    );
+    const found = new Set(present.rows.map(r => r.table_name));
+    const missing = expected.filter(name => !found.has(name));
+
+    if (missing.length) {
+      console.error(`\n✗ ${missing.length} table(s) still missing: ${missing.join(', ')}`);
+      process.exitCode = 1;
+      await pg.getPool().end();
+      return;
+    }
+    console.log(`✓ all ${expected.length} tables present\n`);
+
     await pg.exec(`
       CREATE TABLE IF NOT EXISTS schema_migrations (
         id INTEGER PRIMARY KEY,
