@@ -130,6 +130,7 @@ const Shell = {
     this._mountOverlays();
     this._bindKeys(true);
     this._loadCircles();
+    this._loadAttention();
   },
 
   // Member portal: top bar, no palette — four destinations do not need one.
@@ -189,8 +190,16 @@ const Shell = {
                 <span class="user-role">${escapeHtml(user.role || 'Administrator')}</span>
               </span>
             </button>
+            <!-- What is waiting on somebody. Hidden until there is something,
+                 because a bell that is always there and always empty is a bell
+                 nobody looks at. -->
+            <button class="icon-btn bell hide" id="attentionBell" aria-label="Waiting on you"
+                    onclick="Shell.toggleAttention(event)">
+              ${icon('bell', 18)}<span class="unread hide" id="attentionDot"></span>
+            </button>
             ${Theme.button()}
           </div>
+          <div class="attention-menu" id="attentionMenu"></div>
         </div>
       </aside>`;
   },
@@ -575,6 +584,71 @@ const Shell = {
       const data = await api.get('/users/notifications?limit=1');
       if (Number(data.unread_count || 0)) document.getElementById('bellUnread')?.classList.remove('hide');
     } catch { /* the bell simply stays quiet */ }
+  },
+
+  // ─── What is waiting on somebody ──────────────────────────
+  // The console's bell. It answers for the circle being worked in and only
+  // about work this role could actually do something about — a queue somebody
+  // cannot open is a badge they can never clear.
+  //
+  // Counts land on the nav items too. Those slots have been in the markup since
+  // the sidebar was written and have never been filled: "Onboarding 3" in the
+  // nav is the version of this you see without clicking anything.
+  async _loadAttention() {
+    let data;
+    try {
+      data = await api.get('/admin/attention');
+    } catch {
+      return;                    // the bell simply stays quiet
+    }
+
+    this._attention = data.items || [];
+
+    const bell = document.getElementById('attentionBell');
+    const dot = document.getElementById('attentionDot');
+    if (!bell) return;
+
+    bell.classList.toggle('hide', !data.total);
+    dot?.classList.toggle('hide', !data.total);
+    bell.setAttribute('aria-label', data.total
+      ? `${data.total} thing${data.total === 1 ? '' : 's'} waiting on you`
+      : 'Nothing waiting');
+
+    // The count beside the nav item it belongs to.
+    const NAV_FOR = { onboarding: 'onboarding', feedback: 'feedback', sessions: 'sessions' };
+    for (const item of this._attention) {
+      const slot = document.querySelector(`[data-count="${NAV_FOR[item.key] || item.key}"]`);
+      if (!slot) continue;
+      slot.textContent = item.count;
+      slot.classList.remove('hide');
+    }
+  },
+
+  toggleAttention(event) {
+    event?.stopPropagation();
+    const menu = document.getElementById('attentionMenu');
+    if (!menu) return;
+
+    if (menu.classList.contains('open')) { menu.classList.remove('open'); return; }
+
+    const items = this._attention || [];
+    menu.innerHTML = items.length
+      ? items.map(item => `
+          <a href="${item.href}">
+            <span class="attention-count">${item.count}</span>
+            <span class="attention-text">
+              <span class="attention-label">${escapeHtml(item.label)}</span>
+              <span class="attention-detail">${escapeHtml(item.detail)}</span>
+            </span>
+          </a>`).join('')
+      : '<div class="attention-empty">Nothing is waiting on you.</div>';
+
+    menu.classList.add('open');
+
+    // Closing on the next click anywhere, the way the other menus here do.
+    setTimeout(() => {
+      document.addEventListener('click', () => menu.classList.remove('open'), { once: true });
+    }, 0);
   }
 };
 

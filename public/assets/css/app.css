@@ -225,6 +225,57 @@
   z-index: var(--z-sidebar);
 }
 .user-menu.open { display: block; }
+
+/* ─── What is waiting on somebody ──────────────────────────
+   The console's bell opens this. Positioned like the account menu above it and
+   built from the same parts, because it is the same gesture in the same corner
+   — a second visual language for a second dropdown would be a second thing to
+   learn for no reason. */
+.attention-menu {
+  display: none;
+  position: absolute;
+  bottom: calc(100% + var(--sp-1));
+  left: var(--sp-3);
+  right: var(--sp-3);
+  background: var(--surface-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-lg);
+  padding: var(--sp-1);
+  z-index: var(--z-sidebar);
+}
+.attention-menu.open { display: block; }
+.attention-menu a {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  padding: var(--sp-3);
+  border-radius: var(--r-sm);
+  text-decoration: none;
+  color: var(--ink);
+}
+.attention-menu a:hover { background: var(--tint-2); text-decoration: none; }
+
+/* The number first, because it is what the bell was ringing about. */
+.attention-count {
+  flex-shrink: 0;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: var(--r-full);
+  background: var(--rose-dim);
+  color: var(--rose-ink);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.attention-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.attention-label { font-size: var(--fs-sm); font-weight: var(--fw-medium); }
+.attention-detail { font-size: var(--fs-xs); color: var(--ash-dim); line-height: var(--lh-loose); }
+.attention-empty { padding: var(--sp-4); font-size: var(--fs-sm); color: var(--ash-dim); text-align: center; }
 .user-menu button, .user-menu a {
   display: flex;
   align-items: center;

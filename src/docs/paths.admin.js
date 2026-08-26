@@ -31,6 +31,59 @@ const memberFilterParams = [
 const paths = {
 
   // ─── Dashboard ────────────────────────────────────────────
+  '/admin/attention': {
+    get: op({
+      tag: 'Admin · Dashboard',
+      operationId: 'getAttention',
+      permission: ['onboarding.read', 'feedback.read', 'sessions.read'],
+      summary: 'What is waiting on somebody',
+      description: [
+        'What the bell in the console reads. One request rather than one per kind of thing,',
+        'because it is polled from every admin page and the answer is almost always "nothing".',
+        '',
+        'Scoped to the circle being worked in, and filtered by what the caller could actually',
+        'act on — an item they hold no permission to open is not one they can clear, so counting',
+        'it at them is a badge that never goes away. Holding **any** of the three listed',
+        'permissions is enough to call it; each queue inside is filtered by its own.',
+        '',
+        'The rule for what belongs here is that somebody has to **decide** something. An',
+        'onboarding application is the shape of it: it sits there until it is approved or turned',
+        'down, and until then somebody is waiting on an answer. A count of members is a number,',
+        'not a queue, and is not here.'
+      ].join('\n'),
+      responses: {
+        200: json('Everything waiting, and nothing that is not.', object({
+          items: arrayOf(object({
+            key: str('Which queue — onboarding, feedback or sessions'),
+            count: int('How many are waiting'),
+            label: str('What they are, already singular or plural to match the count'),
+            detail: str('One line on why it is waiting'),
+            href: str('The screen that clears it')
+          }), 'One per queue that has anything in it. A queue at zero is left out entirely.'),
+          total: int('The sum, which is what the bell shows')
+        }), {
+          items: [
+            {
+              key: 'onboarding',
+              count: 3,
+              label: 'onboarding applications',
+              detail: 'Waiting on a decision. Nobody becomes a member until somebody approves them.',
+              href: '/admin/onboarding-applications.html'
+            },
+            {
+              key: 'feedback',
+              count: 12,
+              label: 'open pieces of feedback',
+              detail: 'Nobody has read these yet, or nobody has marked them read.',
+              href: '/admin/feedback.html?status=open'
+            }
+          ],
+          total: 15
+        })
+      }
+    })
+  },
+
   '/admin/dashboard': {
     get: op({
       tag: 'Admin · Dashboard',

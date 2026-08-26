@@ -150,13 +150,13 @@
           a.arrived_by === 'import' ? 'a spreadsheet'
             : a.source_origin ? escapeHtml(a.source_origin.replace(/^https?:\/\//, ''))
             : '<span class="dim">its own link</span>'}</td>
-        <td class="text-xs muted nowrap">${timeAgo(a.submitted_at || a.created_at)}</td>
+        <td class="text-xs muted nowrap">${formatDate(a.submitted_at || a.created_at)}</td>
         <td class="col-actions" onclick="event.stopPropagation()">
           <div class="row-actions">
             ${a.status === 'pending'
               ? `<button class="btn btn-sm btn-ghost" onclick="show('${a.id}')">Review</button>`
               : `<span class="text-xs dim">${escapeHtml(a.decided_by_name || 'system')}${
-                   a.decided_at ? ` · ${timeAgo(a.decided_at)}` : ''}</span>`}
+                   a.decided_at ? ` · ${formatDate(a.decided_at)}` : ''}</span>`}
           </div>
         </td>
       </tr>`).join('');
@@ -194,7 +194,7 @@
         ${a.status !== 'pending' ? `
           <div class="known">
             ${badge(a.status, a.status === 'approved' ? 'active' : 'inactive')}
-            by ${escapeHtml(a.decided_by_name || 'system')}${a.decided_at ? ` · ${timeAgo(a.decided_at)}` : ''}
+            by ${escapeHtml(a.decided_by_name || 'system')}${a.decided_at ? ` · ${formatDate(a.decided_at)}` : ''}
             ${a.decision_note ? `<div style="margin-top:var(--sp-2)">${escapeHtml(a.decision_note)}</div>` : ''}
           </div>` : ''}
 
@@ -218,9 +218,9 @@
 
         <p class="whence" style="margin-top:var(--sp-4)">
           ${a.arrived_by === 'import'
-            ? `Imported from a spreadsheet ${a.submitted_at ? timeAgo(a.submitted_at) : ''}${
+            ? `Imported from a spreadsheet ${a.submitted_at ? formatDate(a.submitted_at) : ''}${
                 a.external_ref ? `, as <span class="mono">${escapeHtml(a.external_ref)}</span>` : ''}.`
-            : `Sent in ${a.submitted_at ? timeAgo(a.submitted_at) : 'at some point'}${
+            : `Sent in ${a.submitted_at ? formatDate(a.submitted_at) : 'at some point'}${
                 a.source_page ? ` from ${escapeHtml(a.source_page)}` : ' at the form\'s own link'}.`}
         </p>`;
 

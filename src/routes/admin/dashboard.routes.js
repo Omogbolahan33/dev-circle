@@ -271,6 +271,94 @@ function presentDemography(rows) {
   };
 }
 
+// ─── What is waiting on somebody ────────────────────────────
+// The bell in the console reads this. One request rather than one per thing,
+// because it is polled from every admin page and the answer is almost always
+// "nothing" — a screen's worth of round-trips to say so is a screen's worth
+// wasted.
+//
+// It answers only for the circle being worked in, and only about work the
+// caller could actually do something about: an item they hold no permission to
+// see is not something they can clear, so counting it at them is a badge they
+// can never make go away.
+//
+// The rule for what belongs here: something a person has to *decide*. Not
+// "there are 40 members" — a number, not a queue. An onboarding application is
+// the shape of thing this is for: it sits there until somebody says yes or no,
+// and until then somebody is waiting on an answer.
+//
+// Gated on holding *any* of the permissions it reports against. A role with
+// none of them would get an empty list either way, so the gate changes nothing
+// it can see — what it buys is that no admin route is left without a declared
+// permission, which is the property that makes the catalogue worth reading.
+router.get('/attention',
+  requirePermission('onboarding.read', 'feedback.read', 'sessions.read'),
+  async (req, res) => {
+    const can = permission => (req.permissions || []).some(p => p === '*' || p === permission);
+    const items = [];
+
+    if (can('onboarding.read')) {
+      const waiting = (await db.prepare(`
+        SELECT COUNT(*) as n FROM onboarding_submissions
+        WHERE circle_id = ? AND status = 'pending'
+      `).get(req.circleId)).n;
+
+      if (Number(waiting) > 0) {
+        items.push({
+          key: 'onboarding',
+          count: Number(waiting),
+          label: waiting === 1 ? 'onboarding application' : 'onboarding applications',
+          detail: 'Waiting on a decision. Nobody becomes a member until somebody approves them.',
+          href: '/admin/onboarding-applications.html'
+        });
+      }
+    }
+
+    if (can('feedback.read')) {
+      const open = (await db.prepare(`
+        SELECT COUNT(*) as n FROM feedback
+        WHERE circle_id = ? AND status = 'open'
+      `).get(req.circleId)).n;
+
+      if (Number(open) > 0) {
+        items.push({
+          key: 'feedback',
+          count: Number(open),
+          label: open === 1 ? 'open piece of feedback' : 'open pieces of feedback',
+          detail: 'Nobody has read these yet, or nobody has marked them read.',
+          href: '/admin/feedback.html?status=open'
+        });
+      }
+    }
+
+    if (can('sessions.read')) {
+      // Sessions whose date has passed while they were still marked scheduled or
+      // announced.
+      // Not overdue work exactly — overdue *bookkeeping*, which is the thing that
+      // quietly makes every count on the sessions screen wrong.
+      const stale = (await db.prepare(`
+        SELECT COUNT(*) as n FROM scheduled_sessions
+        WHERE circle_id = ? AND status IN ('scheduled', 'announced')
+          AND scheduled_for < datetime('now')
+      `).get(req.circleId)).n;
+
+      if (Number(stale) > 0) {
+        items.push({
+          key: 'sessions',
+          count: Number(stale),
+          label: stale === 1 ? 'session past its date' : 'sessions past their date',
+          detail: 'Still marked scheduled after the day they were set for.',
+          href: '/admin/sessions.html'
+        });
+      }
+    }
+
+    res.json({
+      items,
+      total: items.reduce((sum, item) => sum + item.count, 0)
+    });
+  });
+
 router.get('/demography', requirePermission('members.read'), async (req, res) => {
   const { takePreload } = require('../../middleware/preload');
   res.json(presentDemography(await takePreload(req, () => loadDemography(req.circleId))));
