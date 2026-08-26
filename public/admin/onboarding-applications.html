@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dev Circle — Applications</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/css/tokens.css">
+  <link rel="stylesheet" href="/assets/css/app.css">
+  <script src="/assets/js/theme.js"></script>
+  <style>
+    /* An application is read before it is decided on, so the answers are the
+       body of the drawer rather than a summary line. Each one shows the
+       question in the words it was asked in — a reviewer judging a stranger
+       deserves the wording, not a field name. */
+    .qa { padding: var(--sp-4) 0; border-bottom: 1px solid var(--line-faint); }
+    .qa:last-child { border-bottom: none; }
+    .qa-ask { font-size: var(--fs-sm); color: var(--ash); margin-bottom: var(--sp-2); }
+    .qa-said { font-size: var(--fs-base); line-height: var(--lh-loose); }
+    .qa-said.blank { color: var(--ash-dim); font-style: italic; }
+    /* What this answer became. Only on the answers that are facts about the
+       person — the rest are just answers, and marking them all would say
+       nothing. */
+    .qa-field {
+      font-family: var(--font-mono);
+      font-size: var(--fs-xs);
+      color: var(--cd-blue);
+      margin-left: var(--sp-2);
+    }
+    .known {
+      padding: var(--sp-3) var(--sp-4);
+      border-radius: var(--r-md);
+      background: var(--amber-dim, var(--tint-2));
+      font-size: var(--fs-sm);
+      line-height: var(--lh-loose);
+      margin-bottom: var(--sp-4);
+    }
+    .whence { font-size: var(--fs-xs); color: var(--ash-dim); line-height: var(--lh-loose); }
+  </style>
+</head>
+<body>
+
+<div class="app">
+  <div class="app-main">
+
+    <header class="page-head">
+      <div class="page-head-row">
+        <div>
+          <h1 class="page-title">Applications</h1>
+          <p class="page-subtitle" id="subtitle">People who filled in an onboarding form. Approving one is what creates the account.</p>
+        </div>
+        <div class="page-actions">
+          <a href="/admin/onboarding.html" class="btn btn-sm btn-secondary">Forms</a>
+        </div>
+      </div>
+      <nav class="tabs" id="tabs">
+        <button class="tab active" data-status="pending">Waiting</button>
+        <button class="tab" data-status="approved">Approved</button>
+        <button class="tab" data-status="rejected">Turned down</button>
+        <button class="tab" data-status="withdrawn">Superseded</button>
+      </nav>
+    </header>
+
+    <div class="app-body">
+      <div class="table-shell">
+        <div class="table-scroll">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Applicant</th>
+                <th class="hide-sm">Form</th>
+                <th class="hide-sm">Came from</th>
+                <th>When</th>
+                <th class="col-actions"></th>
+              </tr>
+            </thead>
+            <tbody id="rows"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<aside class="drawer wide" id="oneDrawer">
+  <div class="drawer-head">
+    <div>
+      <div class="drawer-title" id="oneName">Application</div>
+      <div class="drawer-sub" id="oneSub"></div>
+    </div>
+    <button class="icon-btn" onclick="Shell.closeDrawer('oneDrawer')">×</button>
+  </div>
+  <div class="drawer-body" id="oneBody"></div>
+  <div class="drawer-foot" id="oneFoot"></div>
+</aside>
+
+<script src="/assets/js/api.js"></script>
+<script src="/assets/js/shell.js"></script>
+<script>
+  Shell.admin('onboarding');
+
+  let status = 'pending';
+  const formId = param('form_id');
+  let open = null;
+
+  async function load() {
+    document.getElementById('rows').innerHTML = skeletonRows(4, 5);
+    try {
+      const query = `?status=${status}${formId ? `&form_id=${encodeURIComponent(formId)}` : ''}`;
+      const data = await api.get(`/admin/onboarding-applications${query}`);
+      render(data);
+    } catch (err) {
+      document.getElementById('rows').innerHTML =
+        `<tr><td colspan="5">${emptyState({ title: 'Could not load applications', text: err.message })}</td></tr>`;
+    }
+  }
+
+  const EMPTY = {
+    pending:   { title: 'Nothing waiting', text: 'Every application has been decided on. New ones land here as they arrive.' },
+    approved:  { title: 'Nobody approved yet', text: 'Approving an application creates the member and joins them to this circle.' },
+    rejected:  { title: 'Nothing turned down', text: 'An application turned down keeps its answers, so a queue that was worked through can be read back.' },
+    withdrawn: { title: 'Nothing superseded', text: 'When somebody applies twice, the earlier application is filed here rather than deleted.' }
+  };
+
+  function render(data) {
+    const tbody = document.getElementById('rows');
+
+    if (formId) {
+      document.getElementById('subtitle').textContent =
+        `Applications to one form. ${data.pending} waiting across this circle.`;
+    }
+
+    if (!data.applications.length) {
+      tbody.innerHTML = `<tr><td colspan="5">${emptyState(EMPTY[status])}</td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = data.applications.map(a => `
+      <tr class="row-link" onclick="show('${a.id}')">
+        <td>
+          <div class="identity-meta">
+            <div class="identity-name">${escapeHtml(a.name || 'No name given')}</div>
+            <div class="identity-sub">${escapeHtml(a.email || '')}</div>
+          </div>
+        </td>
+        <td class="hide-sm text-xs muted">${escapeHtml(a.form_name)}</td>
+        <td class="hide-sm text-xs muted">${a.source_origin
+          ? escapeHtml(a.source_origin.replace(/^https?:\/\//, ''))
+          : '<span class="dim">its own link</span>'}</td>
+        <td class="text-xs muted nowrap">${timeAgo(a.submitted_at || a.created_at)}</td>
+        <td class="col-actions" onclick="event.stopPropagation()">
+          <div class="row-actions">
+            ${a.status === 'pending'
+              ? `<button class="btn btn-sm btn-ghost" onclick="show('${a.id}')">Review</button>`
+              : `<span class="text-xs dim">${escapeHtml(a.decided_by_name || 'system')}${
+                   a.decided_at ? ` · ${timeAgo(a.decided_at)}` : ''}</span>`}
+          </div>
+        </td>
+      </tr>`).join('');
+  }
+
+  // ─── Reading one ──────────────────────────────────────────
+  // Deciding whether to let a stranger into a workspace means reading what
+  // they actually said, so the drawer leads with the answers rather than with
+  // the two buttons.
+
+  async function show(id) {
+    document.getElementById('oneBody').innerHTML = '<div class="row"><span class="spinner"></span></div>';
+    document.getElementById('oneFoot').innerHTML = '';
+    Shell.openDrawer('oneDrawer');
+
+    try {
+      const data = await api.get(`/admin/onboarding-applications/${id}`);
+      open = data;
+      const a = data.application;
+
+      document.getElementById('oneName').textContent = a.name || 'Application';
+      document.getElementById('oneSub').textContent = `${a.email || 'no address'} · ${a.form_name}`;
+
+      const consent = a.consent_channels || [];
+
+      document.getElementById('oneBody').innerHTML = `
+        ${data.existing_member ? `
+          <div class="known">
+            <strong>${escapeHtml(data.existing_member.name)}</strong> already holds this address,
+            since ${escapeHtml(String(data.existing_member.created_at).slice(0, 10))}.
+            Approving this joins them to this circle rather than making a second account,
+            and fills in only what their profile does not already have.
+          </div>` : ''}
+
+        ${a.status !== 'pending' ? `
+          <div class="known">
+            ${badge(a.status, a.status === 'approved' ? 'active' : 'inactive')}
+            by ${escapeHtml(a.decided_by_name || 'system')}${a.decided_at ? ` · ${timeAgo(a.decided_at)}` : ''}
+            ${a.decision_note ? `<div style="margin-top:var(--sp-2)">${escapeHtml(a.decision_note)}</div>` : ''}
+          </div>` : ''}
+
+        ${data.asked.map(q => `
+          <div class="qa">
+            <div class="qa-ask">
+              ${escapeHtml(q.text)}
+              ${q.maps_to ? `<span class="qa-field">→ ${escapeHtml(q.maps_to)}</span>` : ''}
+            </div>
+            <div class="qa-said${q.answer_text ? '' : ' blank'}">${
+              q.answer_text ? escapeHtml(q.answer_text) : 'Left blank'}</div>
+          </div>`).join('')}
+
+        <div class="qa">
+          <div class="qa-ask">Consent to be contacted</div>
+          <div class="qa-said${consent.length ? '' : ' blank'}">${
+            consent.length
+              ? escapeHtml(consent.join(', '))
+              : 'Nothing ticked — so nothing may be sent on any channel'}</div>
+        </div>
+
+        <p class="whence" style="margin-top:var(--sp-4)">
+          Sent in ${a.submitted_at ? timeAgo(a.submitted_at) : 'at some point'}${
+            a.source_page ? ` from ${escapeHtml(a.source_page)}` : ' at the form\'s own link'}.
+        </p>`;
+
+      document.getElementById('oneFoot').innerHTML = a.status === 'pending'
+        ? `<button class="btn btn-secondary" onclick="decide('reject')">Turn down</button>
+           <button class="btn btn-primary" onclick="decide('approve')">
+             ${data.existing_member ? 'Join to this circle' : 'Approve and create the member'}
+           </button>`
+        : `<button class="btn btn-secondary" onclick="Shell.closeDrawer('oneDrawer')">Close</button>`;
+    } catch (err) {
+      document.getElementById('oneBody').innerHTML =
+        `<p class="hint" style="color:var(--rose-ink)">${escapeHtml(err.message)}</p>`;
+    }
+  }
+
+  async function decide(action) {
+    const a = open.application;
+
+    // Approving creates an account and joins somebody to this workspace. That
+    // is not something to do on a mis-click, and it cannot be undone by
+    // clicking again.
+    const ok = await Shell.confirm({
+      title: action === 'approve'
+        ? (open.existing_member ? 'Join them to this circle?' : 'Create this member?')
+        : 'Turn this application down?',
+      text: action === 'approve'
+        ? `${a.name || 'They'} will be a member of this circle, reachable on the channels they consented to. ` +
+          'They sign in with a one-time code sent to the address on the application.'
+        : 'Nothing is created and nothing is deleted. The application keeps its answers and carries the decision.',
+      ok: action === 'approve' ? 'Approve' : 'Turn down',
+      danger: action !== 'approve'
+    });
+    if (!ok) return;
+
+    try {
+      const res = await api.post(`/admin/onboarding-applications/${a.id}/${action}`, {});
+      showToast(res.message);
+      Shell.closeDrawer('oneDrawer');
+      load();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  }
+
+  document.getElementById('tabs').addEventListener('click', e => {
+    const tab = e.target.closest('.tab');
+    if (!tab) return;
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    status = tab.dataset.status;
+    load();
+  });
+
+  load();
+</script>
+</body>
+</html>

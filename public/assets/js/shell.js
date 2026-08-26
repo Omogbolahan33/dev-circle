@@ -19,6 +19,7 @@ const ICONS = {
   overview:   '<path d="M3 3h7v7H3zM14 3h7v4h-7zM14 11h7v10h-7zM3 14h7v7H3z"/>',
   analytics:  '<path d="M3 20h18M7 20v-7M12 20V5M17 20v-11"/>',
   members:    '<path d="M16 20v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 20v-2a4 4 0 0 0-3-3.87"/>',
+  onboarding: '<path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><path d="M10 17l5-5-5-5"/><path d="M15 12H3"/>',
   cohorts:    '<path d="M12 2 2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>',
   circles:    '<circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="9"/>',
   surveys:    '<path d="M9 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2h-4"/><rect x="9" y="1" width="6" height="4" rx="1"/><path d="M8 12h8M8 16h5"/>',
@@ -60,7 +61,11 @@ const ADMIN_NAV = [
   ]},
   { group: 'People', items: [
     { id: 'members', label: 'Members', icon: 'members', href: '/admin/members.html' },
-    { id: 'cohorts', label: 'Cohorts', icon: 'cohorts', href: '/admin/cohorts.html' }
+    { id: 'cohorts', label: 'Cohorts', icon: 'cohorts', href: '/admin/cohorts.html' },
+    // With the members it makes rather than with the surveys it is built like:
+    // an onboarding form is how somebody becomes a member, and filing it under
+    // Programs would read as a kind of survey, which is the one thing it is not.
+    { id: 'onboarding', label: 'Onboarding', icon: 'onboarding', href: '/admin/onboarding.html', permission: 'onboarding.read' }
   ]},
   { group: 'Programs', items: [
     { id: 'surveys',  label: 'Surveys',    icon: 'surveys',  href: '/admin/surveys.html' },

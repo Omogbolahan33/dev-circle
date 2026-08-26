@@ -1169,6 +1169,198 @@ function define(db) {
             WHERE external_response_id IS NOT NULL;
         `);
       }
+    },
+    {
+      id: 27,
+      name: 'onboarding_forms',
+      up() {
+        // People arrive before they are members. A partner puts a form on their
+        // own developer page, a circle runs a call for participants from a
+        // microsite, a conference stand wants a QR code — and until now the
+        // only ways in were an administrator typing someone in, a spreadsheet
+        // import, or the landing page calling /integrations/landing-page/ingest
+        // with a key. None of those is something a circle lead can set up on a
+        // Tuesday, and none of them can be put on a page we do not own.
+        //
+        // So a circle can publish an onboarding form: questions it writes
+        // itself, branded as it likes, embedded wherever it likes, and feeding
+        // one specific circle.
+        //
+        // Two things make this a different object from a survey rather than a
+        // flavour of one, and both are worth stating because the temptation to
+        // reuse the surveys table is real:
+        //
+        //   · A public survey promises anonymity — public.routes.js says so in
+        //     as many words, and forPublic() is built as an allowlist to keep
+        //     that promise. Onboarding is the opposite: the whole point is to
+        //     learn who someone is. Putting both behind one table would mean
+        //     one row's target_type deciding whether a submission is anonymous,
+        //     which is one typo away from filing named people as anonymous
+        //     respondents or the reverse.
+        //   · A survey response is evidence. An onboarding submission is an
+        //     application: it is reviewed, and it either becomes a member or it
+        //     does not. Nothing in survey_responses has a decision on it.
+        //
+        // What *is* shared is the part worth sharing — the question schema, the
+        // branching rules and the theme engine under public/assets/js, which
+        // both kinds of form load from the same files.
+
+        db.exec(`
+          CREATE TABLE IF NOT EXISTS onboarding_forms (
+            id TEXT PRIMARY KEY,
+
+            -- The circle a completed form onboards into. Not nullable and not
+            -- defaulted: a form that does not know where its people land is a
+            -- form that quietly puts them in whichever circle happens to be
+            -- first, and nobody notices until the wrong workspace has a
+            -- stranger in it.
+            circle_id TEXT NOT NULL REFERENCES circles(id) ON DELETE CASCADE,
+
+            name TEXT NOT NULL,
+            description TEXT,
+
+            -- Same shape, same rules and same file as surveys.questions
+            questions TEXT NOT NULL DEFAULT '[]',
+            theme TEXT,
+
+            -- Which answers are facts about the person rather than answers.
+            -- Held on the question itself (question.maps_to) so it survives a
+            -- reorder; mirrored here as slot id -> field for the queries that
+            -- want to ask "does this form collect an email?" without opening
+            -- the questions column.
+            field_map TEXT NOT NULL DEFAULT '{}',
+
+            -- Cohorts an approved member joins, on top of whatever the cohort
+            -- rules put them in. A form is usually run for a reason — a
+            -- programme, a partner, an event — and that reason is a cohort.
+            cohort_ids TEXT NOT NULL DEFAULT '[]',
+
+            status TEXT DEFAULT 'draft' CHECK(status IN ('draft','active','closed')),
+
+            -- The address the form is reached at, and the whole of its
+            -- security, exactly as a public survey's token is.
+            public_token TEXT UNIQUE,
+
+            -- Origins allowed to frame this form. An empty list means the form
+            -- is reachable at its own link but embeddable nowhere, which is the
+            -- safe thing for a form that has not been told where it belongs
+            -- yet. See middleware/security.js for what this turns into.
+            allowed_origins TEXT NOT NULL DEFAULT '[]',
+
+            -- Where to send them afterwards, and what to say if we are not
+            -- sending them anywhere.
+            redirect_url TEXT,
+            submitted_message TEXT,
+
+            -- What a second submission from the same address means. Forms get
+            -- posted in more than one place and people forget they applied.
+            duplicate_policy TEXT DEFAULT 'replace'
+              CHECK(duplicate_policy IN ('replace','reject','allow')),
+
+            created_by TEXT,
+            created_at TEXT DEFAULT (datetime('now')),
+            updated_at TEXT DEFAULT (datetime('now'))
+          );
+
+          CREATE INDEX IF NOT EXISTS idx_onboarding_forms_circle ON onboarding_forms(circle_id);
+          CREATE INDEX IF NOT EXISTS idx_onboarding_forms_token
+            ON onboarding_forms(public_token) WHERE public_token IS NOT NULL;
+        `);
+
+        // A submission is an application, not a member and not a response.
+        //
+        // It carries no user_id until somebody approves it, and that is the
+        // entire design: an unauthenticated, publicly embeddable endpoint that
+        // wrote rows into users would be a signup form for whoever found the
+        // snippet. Everything that counts members, mails members or exports
+        // members reads users and circle_members, so an application sitting
+        // here is invisible to all of it until a decision is made.
+        db.exec(`
+          CREATE TABLE IF NOT EXISTS onboarding_submissions (
+            id TEXT PRIMARY KEY,
+            form_id TEXT NOT NULL REFERENCES onboarding_forms(id) ON DELETE CASCADE,
+
+            -- Copied from the form at submission time rather than joined on
+            -- demand. A form that is later pointed at a different circle must
+            -- not retroactively move applications nobody has looked at yet.
+            circle_id TEXT NOT NULL,
+
+            answers TEXT NOT NULL DEFAULT '{}',
+
+            -- The mapped fields, resolved once when the form is submitted
+            -- against the questions as they were then. Resolving at approval
+            -- time instead would read today's mapping against yesterday's
+            -- answers, and an edited form would silently file someone's company
+            -- as their job title.
+            profile TEXT NOT NULL DEFAULT '{}',
+
+            -- Kept apart from profile because it is not a property of the
+            -- person: it is a permission they granted, and on approval it
+            -- becomes rows in consent rather than columns on users.
+            consent_channels TEXT NOT NULL DEFAULT '[]',
+
+            -- Lifted out of profile so the queue can be searched and a
+            -- duplicate can be found without opening every row's JSON.
+            email TEXT,
+            name TEXT,
+
+            -- How a half-finished form in a browser returns to itself. Hashed,
+            -- like every other bearer secret here.
+            session_key_hash TEXT,
+
+            status TEXT DEFAULT 'started'
+              CHECK(status IN ('started','pending','approved','rejected','withdrawn')),
+
+            -- Where it was filled in. An embed can be put on any allowed page,
+            -- and knowing which page a cohort of applicants came from is the
+            -- only way to tell a working placement from a broken one.
+            source_origin TEXT,
+            source_page TEXT,
+
+            decided_by TEXT REFERENCES admin_users(id) ON DELETE SET NULL,
+            decided_at TEXT,
+            decision_note TEXT,
+
+            -- Set on approval, and the only link between an application and a
+            -- person. ON DELETE SET NULL so removing a member leaves the record
+            -- that they applied rather than deleting the audit trail with them.
+            user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+
+            submitted_at TEXT,
+            created_at TEXT DEFAULT (datetime('now'))
+          );
+
+          CREATE INDEX IF NOT EXISTS idx_onboarding_submissions_form
+            ON onboarding_submissions(form_id, status);
+          CREATE INDEX IF NOT EXISTS idx_onboarding_submissions_circle
+            ON onboarding_submissions(circle_id, status);
+          CREATE INDEX IF NOT EXISTS idx_onboarding_submissions_email
+            ON onboarding_submissions(email) WHERE email IS NOT NULL;
+          CREATE INDEX IF NOT EXISTS idx_onboarding_submissions_key
+            ON onboarding_submissions(session_key_hash) WHERE session_key_hash IS NOT NULL;
+        `);
+
+        // Existing roles keep working. Whoever could already write surveys can
+        // write an onboarding form — it is the same builder over the same
+        // questions — but approving an application creates a member, so that
+        // is granted alongside the permission to edit members rather than
+        // handed to everyone who can author a form.
+        const roles = db.prepare('SELECT id, permissions FROM roles').all();
+        const update = db.prepare('UPDATE roles SET permissions = ? WHERE id = ?');
+
+        for (const role of roles) {
+          let held;
+          try { held = JSON.parse(role.permissions || '[]'); } catch { continue; }
+          if (!Array.isArray(held) || held.includes('*')) continue;
+
+          const add = new Set(held);
+          if (held.includes('surveys.read')) add.add('onboarding.read');
+          if (held.includes('surveys.write')) add.add('onboarding.write');
+          if (held.includes('members.write')) add.add('onboarding.approve');
+
+          if (add.size !== held.length) update.run(JSON.stringify([...add]), role.id);
+        }
+      }
     }
   ];
   return migrations;

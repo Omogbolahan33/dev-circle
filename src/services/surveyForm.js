@@ -41,7 +41,14 @@ const ANONYMOUS = 'anonymous';
 // Take what was posted and return the survey as it will be stored. Questions
 // come back normalized, themed and identified; issues come back as the reasons
 // it cannot be saved, phrased for the person who wrote it.
-function normalizeDefinition(body, { createdBy = null, allowEmpty = false } = {}) {
+// `identify` decides whether each answerable question also becomes a canonical
+// question — a row in `questions`, so that answers to it can be read together
+// whichever survey carried it. That is right for a survey and wrong for an
+// onboarding form: onboarding answers are profile facts and are never filed as
+// evidence, so the canonical row would carry nothing and would still be offered
+// to the next author as a question already asked. A promise the data does not
+// keep is worse than no row.
+function normalizeDefinition(body, { createdBy = null, allowEmpty = false, identify = true } = {}) {
   const { questions: normalized, issues } = schema.normalizeQuestions(body.questions, {
     makeId: slotId, allowEmpty
   });
@@ -52,6 +59,10 @@ function normalizeDefinition(body, { createdBy = null, allowEmpty = false } = {}
   }
 
   if (issues.length) return { questions: normalized, theme, issues, warnings };
+
+  // Slot ids are already assigned by normalizeQuestions, so a definition that
+  // is not being identified is complete as it stands.
+  if (!identify) return { questions: normalized, theme, issues: [], warnings };
 
   // Only what someone answers becomes a question in its own right — a section
   // heading is furniture. attachToSurvey may adopt the wording of a question

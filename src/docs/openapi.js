@@ -14,6 +14,9 @@ const { securitySchemes, schemas, responses, parameters } = require('./component
 
 const publicPaths = require('./paths.public');
 const adminPaths = require('./paths.admin');
+// Both halves of onboarding together: the public form and the admin queue are
+// only comprehensible read against each other.
+const onboardingPaths = require('./paths.onboarding');
 
 // ─── The guide ──────────────────────────────────────────────
 // Rendered above the endpoint list. It answers the things a developer asks
@@ -195,6 +198,7 @@ const tags = [
   { name: 'Member profile', description: 'The signed-in developer\'s own profile, memberships, consent and engagement history.' },
   { name: 'Member surveys', description: 'Surveys open to the signed-in developer, and how they answer them.' },
   { name: 'Open surveys', description: 'Answering a survey over its link, with no account and no sign-in. The token in the path is the whole of the authorisation and opens exactly one survey; nothing here identifies the person answering.' },
+  { name: 'Onboarding forms', description: 'Filling in an onboarding form, with no account and no sign-in, on a page this platform does not own. The token in the path is the whole of the authorisation. Nothing here creates an account: what a submission produces is an application somebody reviews.' },
   { name: 'Member rewards', description: 'The reward catalogue and claiming from it.' },
   { name: 'Member notifications', description: 'The portal inbox, notification categories and quiet hours.' },
   { name: 'Feedback', description: 'Feedback raised by the signed-in developer.' },
@@ -204,6 +208,7 @@ const tags = [
   { name: 'Admin · Cohorts', description: 'Saved segments — hand-picked lists, or rule sets that keep themselves current.' },
   { name: 'Admin · Circles', description: 'Nested engagement spaces, each with its own members, cohorts, surveys and messaging.' },
   { name: 'Admin · Surveys', description: 'Authoring surveys, resolving their audience, inviting and reminding, and reading the results.' },
+  { name: 'Admin · Onboarding', description: 'Publishing a form that collects people who are not members yet, and deciding on what it brings back. Approving is what creates the account — the form itself never does.' },
   { name: 'Admin · Sessions', description: 'Dated engagements with automated lead-up reminders and availability checking.' },
   { name: 'Admin · Broadcasts', description: 'Consent-aware messaging to a cohort, a circle or everyone, with a full delivery audit trail.' },
   { name: 'Admin · Rewards', description: 'The reward catalogue, its eligibility rules and fulfilment.' },
@@ -238,7 +243,7 @@ function build() {
     ],
     tags,
     security: [{ bearerAuth: [] }],
-    paths: { ...publicPaths, ...adminPaths },
+    paths: { ...publicPaths, ...onboardingPaths, ...adminPaths },
     components: { securitySchemes, schemas, responses, parameters }
   };
 }

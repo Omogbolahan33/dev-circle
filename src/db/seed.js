@@ -65,6 +65,7 @@ const roles = [
       'sessions.read', 'sessions.write',
       'surveys.read', 'surveys.write', 'surveys.invite',
       'blasts.send', 'feedback.read', 'feedback.write',
+      'onboarding.read', 'onboarding.write', 'onboarding.approve',
       'gifts.read', 'gifts.write', 'export.read', 'integrations.read'
     ]
   },
@@ -74,12 +75,16 @@ const roles = [
       'members.read', 'cohorts.read', 'circles.read',
       'sessions.read', 'sessions.write',
       'surveys.read', 'surveys.invite',
+      'onboarding.read',
       'feedback.read', 'feedback.write', 'gifts.read'
     ]
   },
   {
     id: uuid(), name: 'Read Only', description: 'View only access', is_system: 0,
-    permissions: ['members.read', 'cohorts.read', 'circles.read', 'sessions.read', 'surveys.read', 'feedback.read']
+    permissions: [
+      'members.read', 'cohorts.read', 'circles.read',
+      'sessions.read', 'surveys.read', 'onboarding.read', 'feedback.read'
+    ]
   }
 ];
 

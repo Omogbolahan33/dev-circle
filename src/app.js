@@ -5,7 +5,7 @@ const path = require('path');
 const config = require('./config');
 const { requestLogger } = require('./utils/logger');
 const { rateLimit } = require('./middleware/rateLimit');
-const { securityHeaders } = require('./middleware/security');
+const { securityHeaders, allowFraming } = require('./middleware/security');
 const {
   jsonSyntaxHandler, normalizeBody, errorHandler
 } = require('./middleware/errorHandler');
@@ -79,6 +79,26 @@ app.get('/uploads/:name', async (req, res) => {
 // is decided by the API.
 app.get('/s/:token', (req, res) => {
   res.sendFile(path.join(PUBLIC_DIR, 'member', 'survey.html'));
+});
+
+// An onboarding form, at its own address and inside somebody else's page.
+//
+// This is the one route that serves a page willing to be framed, and the only
+// place the decision can be made: which origins may frame it is a property of
+// the individual form, so it has to be read from the form the token opens
+// before the response goes out. Everything else about what the page shows is
+// still decided by the API — see routes/onboarding.routes.js.
+//
+// A token that never existed and one whose form has been closed both fall
+// through to the page with framing refused. The page then asks the API, is
+// told the same "not open" a closed form gives, and says so. Deciding it here
+// instead would make this route an oracle for which tokens are real.
+app.get('/o/:token', (req, res) => {
+  const onboarding = require('./services/onboarding');
+  const form = onboarding.byToken(req.params.token);
+  if (form) allowFraming(res, onboarding.frameAncestors(form));
+
+  res.sendFile(path.join(PUBLIC_DIR, 'onboarding', 'form.html'));
 });
 
 // Swagger UI ships as static assets in a package rather than in public/, and

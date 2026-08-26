@@ -78,6 +78,7 @@ function reset() {
     'login_codes',
     'session_dispatches', 'scheduled_sessions', 'message_deliveries', 'notifications',
     'user_gifts', 'gifts', 'consent', 'feedback', 'survey_responses', 'surveys', 'questions',
+    'onboarding_submissions', 'onboarding_forms',
     'engagement_history', 'circle_admins', 'circle_members', 'circles', 'user_cohorts', 'cohorts',
     'sessions', 'users', 'admin_users', 'roles', 'api_keys', 'message_blasts',
     'integration_events'

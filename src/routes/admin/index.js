@@ -25,6 +25,7 @@ router.use('/', require('./dashboard.routes'));
 router.use('/', require('./members.routes'));
 router.use('/', require('./cohorts.routes'));
 router.use('/', require('./surveys.routes'));
+router.use('/', require('./onboarding.routes'));
 router.use('/', require('./uploads.routes'));
 router.use('/', require('./blasts.routes'));
 router.use('/', require('./gifts.routes'));
