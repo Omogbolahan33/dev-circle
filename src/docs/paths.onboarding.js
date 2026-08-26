@@ -667,6 +667,88 @@ const paths = {
     })
   },
 
+  '/admin/onboarding-applications/decide': {
+    post: op({
+      tag: 'Admin · Onboarding',
+      operationId: 'decideOnboardingApplications',
+      permission: 'onboarding.approve',
+      summary: 'One decision, applied to many',
+      description: [
+        'A queue is worked through in passes — a stack of applicants from one partner\'s list are',
+        'all the same decision, and clicking through them one at a time is how a reviewer stops',
+        'reading them.',
+        '',
+        'Worked one at a time on the server rather than as a single UPDATE, on purpose. Approving',
+        'is not a status change: it creates an account, joins a circle and writes consent, and any',
+        'one row can legitimately refuse — a Credit Direct address, an application carrying no',
+        'usable email. A bulk update would either take the whole batch down with the first refusal',
+        'or hide it. This reports per row in `failed` and keeps going, which is the only shape',
+        'that makes a screenful of checkboxes safe to press.',
+        '',
+        'An id belonging to another circle is reported as not found rather than refused — the same',
+        'answer that circle\'s queue gives about ours. Two hundred at a time is the ceiling.'
+      ].join('\n'),
+      requestBody: jsonBody(object({
+        ids: arrayOf(str(), 'The applications to decide on'),
+        action: str('approve, reject or reopen', { enum: ['approve', 'reject', 'reopen'] }),
+        note: str('Why, recorded against every one of them')
+      }, { required: ['ids', 'action'] }), {
+        ids: ['sub_a91c', 'sub_b02d', 'sub_c14f'],
+        action: 'approve',
+        note: 'Partner programme intake'
+      }),
+      responses: {
+        200: json('What was done, and what could not be.', object({
+          decided: int('How many the action was applied to'),
+          created: int('Members created, when the action was approve'),
+          failed: arrayOf(object({
+            id: id('The application'),
+            error: str('Why that one could not be done')
+          }), 'One per row that refused. The rest still landed.'),
+          message: str('A sentence for a toast')
+        }), {
+          decided: 2, created: 2,
+          failed: [{
+            id: 'sub_c14f',
+            error: 'Credit Direct staff accounts are created by an administrator, not through a form'
+          }],
+          message: '2 of 3 done — 1 could not be'
+        }),
+        400: json('Nothing to decide on, an unknown action, or more than two hundred.', ref('Error'), {
+          error: 'action must be approve, reject or reopen'
+        })
+      }
+    })
+  },
+
+  '/admin/onboarding-applications/{id}/reopen': {
+    post: op({
+      tag: 'Admin · Onboarding',
+      operationId: 'reopenOnboardingApplication',
+      permission: 'onboarding.approve',
+      summary: 'Put a rejected application back in the queue',
+      description: [
+        'Undeciding. For somebody who wants a rejection off their desk without putting a yes on',
+        'it instead — a triage pass that turned out to need a second opinion. The decision, its',
+        'note and who made it are all cleared.',
+        '',
+        'Only a rejected application can be reopened. An approved one has a member behind it, and',
+        'clearing the paperwork would not undo that; removing them from the circle is the member',
+        'page\'s job. Reopening one that is already waiting answers 200 and changes nothing.'
+      ].join('\n'),
+      parameters: [path('id', 'Application id')],
+      responses: {
+        200: json('Back in the queue.', object({
+          message: str(), reopened: bool(), already: bool('It was already waiting')
+        }), { message: 'Back in the queue', reopened: true }),
+        404: json('No such application in this circle.', ref('Error'), { error: 'Application not found' }),
+        409: json('It cannot be reopened.', ref('Error'), {
+          error: 'This applicant is already a member, so there is nothing to put back in the queue.'
+        })
+      }
+    })
+  },
+
   '/admin/onboarding-applications/{id}/approve': {
     post: op({
       tag: 'Admin · Onboarding',
@@ -685,7 +767,12 @@ const paths = {
         'Where the address already belongs to a member — or, failing an address, the normalised',
         'phone number does — they are joined to the circle instead of getting a second account,',
         'and the application fills in only what their profile did not already have. A Credit',
-        'Direct address is refused: staff accounts are created by an administrator.'
+        'Direct address is refused: staff accounts are created by an administrator.',
+        '',
+        'A **rejected** application can be approved too. A rejection is a decision somebody made',
+        'in a minute about a person they had never heard of, and the reason to reconsider usually',
+        'arrives afterwards. What stops that being a way to approve twice is that an approved one',
+        'cannot be approved again.'
       ].join('\n'),
       parameters: [path('id', 'Application id')],
       requestBody: jsonBody(object({ note: str('Why, for the record') }), { note: 'Known from the partner programme' }, { required: false }),
@@ -712,7 +799,14 @@ const paths = {
       operationId: 'rejectOnboardingApplication',
       permission: 'onboarding.approve',
       summary: 'Turn an application down',
-      description: 'Nothing is created and nothing is deleted. The application keeps its answers and carries the decision, so a queue that was worked through can be read back.',
+      description: [
+        'Nothing is created and nothing is deleted. The application keeps its answers and carries',
+        'the decision, so a queue that was worked through can be read back — and it can still be',
+        'approved later, or put back in the queue with `POST …/reopen`.',
+        '',
+        'An **approved** application cannot be turned down: the account exists and marking the',
+        'paperwork rejected would say otherwise while changing none of it.'
+      ].join('\n'),
       parameters: [path('id', 'Application id')],
       requestBody: jsonBody(object({ note: str('Why, for the record') }), { note: 'Not a developer account' }, { required: false }),
       responses: {

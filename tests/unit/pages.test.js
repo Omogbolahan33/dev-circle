@@ -237,3 +237,29 @@ test('every function a page calls is one the page can reach', () => {
   assert.deepEqual(broken, [],
     '\nThese pages call something that is not defined and not loaded:\n' + broken.join('\n') + '\n');
 });
+
+test('no page declares the same function twice', () => {
+  // Two `function decide(…)` in one script is not an error anywhere — the later
+  // one silently wins, and every button wired to the earlier one starts doing
+  // something else. It happened on the applications queue the moment a bulk
+  // decide() was added beside the one the drawer already had, and nothing
+  // anywhere would have said so.
+  const clashes = [];
+
+  for (const file of pagesUnder(PUBLIC)) {
+    const html = fs.readFileSync(file, 'utf8');
+    const inline = [...html.matchAll(/<script(?![^>]*\ssrc=)[^>]*>([\s\S]*?)<\/script>/g)]
+      .map(m => m[1]).join('\n');
+
+    const seen = new Map();
+    for (const m of stripLiterals(inline).matchAll(/(?:^|\n)\s*(?:async\s+)?function\s+([A-Za-z_$][\w$]*)/g)) {
+      seen.set(m[1], (seen.get(m[1]) || 0) + 1);
+    }
+
+    const twice = [...seen].filter(([, count]) => count > 1).map(([name]) => name);
+    if (twice.length) clashes.push(`${path.relative(PUBLIC, file)}: ${twice.join(', ')}`);
+  }
+
+  assert.deepEqual(clashes, [],
+    '\nThese pages declare a function more than once — the later one wins:\n' + clashes.join('\n') + '\n');
+});

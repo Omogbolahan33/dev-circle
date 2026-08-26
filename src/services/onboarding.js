@@ -618,10 +618,21 @@ const CARRIED_LISTS = ['api_products', 'preferred_channels', 'preferred_days'];
 // account is a member of the circle that let them in". The rest — the
 // engagement entry, the cohort rules re-run — is idempotent and follows.
 
+// Turning somebody down is not final. A rejection is a decision somebody made
+// in a minute about a person they had never heard of, and the reason to
+// reconsider usually arrives afterwards — the partner vouches for them, the
+// address turns out to be the one from the conference list. So a rejected
+// application can still be approved, and what stops that being a way to
+// approve something twice is that an approved one cannot.
+//
+// `started` is different and stays refused: that is a form somebody opened and
+// abandoned. There is nothing in it to decide on.
+const DECIDABLE = new Set(['pending', 'rejected']);
+
 async function approve(submissionId, { adminId = null, note = null } = {}) {
   const submission = await db.prepare('SELECT * FROM onboarding_submissions WHERE id = ?').get(submissionId);
   if (!submission) throw new OnboardingError('No such application');
-  if (submission.status !== 'pending') {
+  if (!DECIDABLE.has(submission.status)) {
     throw new OnboardingError(
       submission.status === 'started'
         ? 'That form was never submitted'
@@ -793,8 +804,19 @@ async function approve(submissionId, { adminId = null, note = null } = {}) {
 async function reject(submissionId, { adminId = null, note = null } = {}) {
   const submission = await db.prepare('SELECT * FROM onboarding_submissions WHERE id = ?').get(submissionId);
   if (!submission) throw new OnboardingError('No such application');
-  if (submission.status !== 'pending') {
-    throw new OnboardingError(`This application has already been ${submission.status}`);
+
+  // Rejecting one already rejected is somebody changing the note, which is
+  // harmless. Rejecting one already approved is not: the account exists, they
+  // are in the circle, and marking the paperwork "rejected" would say otherwise
+  // while changing none of it. Removing a member is the members screen's job.
+  if (submission.status === 'approved') {
+    throw new OnboardingError(
+      'This applicant is already a member. Turning the application down now would not undo that — ' +
+      'remove them from the circle on their member page instead.'
+    );
+  }
+  if (!DECIDABLE.has(submission.status)) {
+    throw new OnboardingError('That form was never submitted');
   }
 
   await db.prepare(`
@@ -806,6 +828,31 @@ async function reject(submissionId, { adminId = null, note = null } = {}) {
   return { rejected: true };
 }
 
+// Undeciding. Puts a rejected application back where it was, for somebody who
+// wants it off their own desk without putting a yes or a no on it — a triage
+// pass that turned out to need a second opinion.
+async function reopen(submissionId, { adminId = null } = {}) {
+  const submission = await db.prepare('SELECT * FROM onboarding_submissions WHERE id = ?').get(submissionId);
+  if (!submission) throw new OnboardingError('No such application');
+
+  if (submission.status === 'pending') return { reopened: false, already: true };
+  if (submission.status !== 'rejected') {
+    throw new OnboardingError(
+      submission.status === 'approved'
+        ? 'This applicant is already a member, so there is nothing to put back in the queue.'
+        : 'That form was never submitted'
+    );
+  }
+
+  await db.prepare(`
+    UPDATE onboarding_submissions
+    SET status = 'pending', decided_by = NULL, decided_at = NULL, decision_note = NULL
+    WHERE id = ?
+  `).run(submissionId);
+
+  return { reopened: true };
+}
+
 module.exports = {
   FIELDS, FIELD_KEYS, DAYS,
   foldChannel, foldDay,
@@ -814,6 +861,6 @@ module.exports = {
   normalizeDefinition, canGoOut, advice,
   hydrate, forPublic, byToken,
   resolveProfile,
-  approve, reject,
+  approve, reject, reopen,
   OnboardingError
 };

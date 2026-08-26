@@ -112,4 +112,72 @@ describe('SQLite → Postgres SQL', () => {
     assert.doesNotMatch(sql, /julianday/i);
     assert.doesNotMatch(sql, /json_each\s*\(/);
   });
+
+  // ─── INSERT OR IGNORE ─────────────────────────────────────
+  // "Insert this, and if it is already there do nothing" is how every joining
+  // path in the codebase is written — adding somebody to a circle, to a cohort,
+  // to the members of a gift. Twenty-four statements depend on it.
+  //
+  // The translation for it was dead code. It stripped the OR IGNORE and then
+  // asked whether the *original* said `INSERT INTO` before adding ON CONFLICT —
+  // and the original says `INSERT OR IGNORE INTO`, so the answer was always no.
+  // Every one of those statements became a plain INSERT on Postgres, and the
+  // second time any ran for the same pair it raised a duplicate key error
+  // rather than doing nothing. Approving an onboarding applicant already in the
+  // "All Members" cohort is one such second time, and it 500'd in production.
+
+  test('INSERT OR IGNORE becomes ON CONFLICT DO NOTHING', () => {
+    assert.equal(
+      pgSql('INSERT OR IGNORE INTO user_cohorts (user_id, cohort_id) VALUES (?, ?)'),
+      'INSERT INTO user_cohorts (user_id, cohort_id) VALUES ($1, $2) ON CONFLICT DO NOTHING'
+    );
+  });
+
+  test('no INSERT OR IGNORE survives the translation as a plain insert', () => {
+    // The shape of the original bug: the OR IGNORE was removed and nothing put
+    // in its place, so the statement looked fine and behaved differently.
+    for (const sql of [
+      'INSERT OR IGNORE INTO circle_members (circle_id, user_id) VALUES (?, ?)',
+      'INSERT OR IGNORE INTO user_gifts (id, user_id, gift_id) VALUES (?, ?, ?)',
+      'insert or ignore into circle_admins (circle_id, admin_id) values (?, ?)'
+    ]) {
+      const out = pgSql(sql);
+      assert.doesNotMatch(out, /OR\s+IGNORE/i, 'the SQLite spelling must not reach Postgres');
+      assert.match(out, /ON CONFLICT DO NOTHING/, `${sql} lost its "do nothing"`);
+    }
+  });
+
+  test('it works on an insert fed by a select, not just by values', () => {
+    const out = pgSql('INSERT OR IGNORE INTO feedback (id, user_id) SELECT ?, id FROM users WHERE email = ?');
+    assert.match(out, /FROM users WHERE email = \$2 ON CONFLICT DO NOTHING$/);
+  });
+
+  test('ON CONFLICT lands before RETURNING, where Postgres will take it', () => {
+    // Appended blindly it would follow RETURNING, which is a syntax error —
+    // loud, unlike the bug this file is mostly about, but still wrong.
+    const out = pgSql('INSERT OR IGNORE INTO t (a) VALUES (?) RETURNING id');
+    assert.equal(out, 'INSERT INTO t (a) VALUES ($1) ON CONFLICT DO NOTHING RETURNING id');
+  });
+
+  test('a statement that already says ON CONFLICT is left alone', () => {
+    const sql = 'INSERT INTO t (a) VALUES (?) ON CONFLICT (a) DO UPDATE SET a = EXCLUDED.a';
+    assert.equal(pgSql(sql).match(/ON CONFLICT/g).length, 1, 'no second clause');
+  });
+
+  test('an ordinary insert is not given a conflict clause it never asked for', () => {
+    const out = pgSql('INSERT INTO consent (id, channel) VALUES (?, ?)');
+    assert.doesNotMatch(out, /ON CONFLICT/);
+  });
+
+  test('INSERT OR REPLACE refuses rather than silently becoming an insert', () => {
+    // It needs a conflict target and a column list, and neither can be read off
+    // the statement. Guessing is how the OR IGNORE bug happened; this says so
+    // instead. Nothing reaches it today — its one use is the sandbox, which is
+    // always SQLite.
+    assert.throws(
+      () => pgSql('INSERT OR REPLACE INTO sandbox_meta (key, value) VALUES (?, ?)'),
+      /no direct Postgres translation/
+    );
+  });
+
 });

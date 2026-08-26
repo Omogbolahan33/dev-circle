@@ -38,6 +38,22 @@
       margin-bottom: var(--sp-4);
     }
     .whence { font-size: var(--fs-xs); color: var(--ash-dim); line-height: var(--lh-loose); }
+
+    /* Picking several. The column is narrow and the click on it does not open
+       the row — a tick and a "show me this one" are different intentions and
+       the same pixel cannot mean both. */
+    .col-pick { width: 36px; }
+    .bulk-bar {
+      display: flex;
+      align-items: center;
+      gap: var(--sp-3);
+      padding: var(--sp-3) var(--sp-4);
+      margin-bottom: var(--sp-3);
+      background: var(--cd-blue-dim);
+      border: 1px solid var(--cd-blue-40);
+      border-radius: var(--r-md);
+    }
+    .bulk-count { font-size: var(--fs-sm); font-weight: var(--fw-medium); }
   </style>
 </head>
 <body>
@@ -64,11 +80,21 @@
     </header>
 
     <div class="app-body">
+      <!-- Only on screen once something is ticked. A bar of destructive buttons
+           sitting above an untouched table invites the mis-click it describes. -->
+      <div class="bulk-bar hide" id="bulkBar">
+        <span class="bulk-count" id="bulkCount"></span>
+        <button class="btn btn-sm btn-ghost" onclick="clearSelection()">Clear</button>
+        <span class="spacer"></span>
+        <span id="bulkActions"></span>
+      </div>
+
       <div class="table-shell">
         <div class="table-scroll">
           <table class="data-table">
             <thead>
               <tr>
+                <th class="col-pick"><span class="check" id="pickAll" onclick="toggleAll()">✓</span></th>
                 <th>Applicant</th>
                 <th class="hide-sm">Form</th>
                 <th class="hide-sm">Came from</th>
@@ -113,7 +139,7 @@
       render(data);
     } catch (err) {
       document.getElementById('rows').innerHTML =
-        `<tr><td colspan="5">${emptyState({ title: 'Could not load applications', text: err.message })}</td></tr>`;
+        `<tr><td colspan="6">${emptyState({ title: 'Could not load applications', text: err.message })}</td></tr>`;
     }
   }
 
@@ -133,12 +159,15 @@
     }
 
     if (!data.applications.length) {
-      tbody.innerHTML = `<tr><td colspan="5">${emptyState(EMPTY[status])}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="6">${emptyState(EMPTY[status])}</td></tr>`;
       return;
     }
 
     tbody.innerHTML = data.applications.map(a => `
-      <tr class="row-link" onclick="show('${a.id}')">
+      <tr class="row-link" onclick="show('${a.id}')" data-id="${a.id}">
+        <td class="col-pick" onclick="event.stopPropagation()">
+          <span class="check${selected.has(a.id) ? ' on' : ''}" data-pick="${a.id}"></span>
+        </td>
         <td>
           <div class="identity-meta">
             <div class="identity-name">${escapeHtml(a.name || 'No name given')}</div>
@@ -160,6 +189,144 @@
           </div>
         </td>
       </tr>`).join('');
+
+    tbody.querySelectorAll('[data-pick]').forEach(el => {
+      el.addEventListener('click', event => {
+        event.stopPropagation();
+        togglePick(el.dataset.pick);
+      });
+    });
+
+    // A selection made on one tab means nothing on another, and an id that has
+    // been decided on is no longer on screen to be decided on again.
+    const onScreen = new Set(data.applications.map(a => a.id));
+    selected = new Set([...selected].filter(id => onScreen.has(id)));
+    renderSelection();
+  }
+
+// ─── Picking several ──────────────────────────────────────
+  // A queue is worked through in passes: a stack of applicants from one
+  // partner's list are all the same decision, and clicking through them one at
+  // a time is how a reviewer stops reading them.
+  //
+  // The selection is held here rather than read back off the checkboxes,
+  // because the table is redrawn on every load and the ticks would go with it.
+
+  let selected = new Set();
+
+  function renderSelection() {
+    const bar = document.getElementById('bulkBar');
+    const count = selected.size;
+
+    bar.classList.toggle('hide', count === 0);
+    document.getElementById('bulkCount').textContent =
+      `${count} selected`;
+
+    // What can be done to them follows the tab you are on: an approved
+    // application has no decision left to make, and a rejected one can be
+    // reconsidered or put back.
+    const actions = {
+      pending: `
+        <button class="btn btn-sm btn-secondary" onclick="decideSelected('reject')">Turn down</button>
+        <button class="btn btn-sm btn-primary" onclick="decideSelected('approve')">Approve</button>`,
+      rejected: `
+        <button class="btn btn-sm btn-secondary" onclick="decideSelected('reopen')">Put back in the queue</button>
+        <button class="btn btn-sm btn-primary" onclick="decideSelected('approve')">Approve after all</button>`,
+      approved: '<span class="text-xs dim">Already members — nothing left to decide.</span>',
+      withdrawn: '<span class="text-xs dim">Superseded by a later application.</span>'
+    };
+    document.getElementById('bulkActions').innerHTML = actions[status] || '';
+
+    // The header tick reflects the rows actually on screen.
+    const rows = [...document.querySelectorAll('[data-pick]')];
+    const all = rows.length > 0 && rows.every(r => selected.has(r.dataset.pick));
+    document.getElementById('pickAll')?.classList.toggle('on', all);
+  }
+
+  function togglePick(id) {
+    if (selected.has(id)) selected.delete(id);
+    else selected.add(id);
+
+    document.querySelector(`[data-pick="${id}"]`)?.classList.toggle('on', selected.has(id));
+    renderSelection();
+  }
+
+  function toggleAll() {
+    const rows = [...document.querySelectorAll('[data-pick]')];
+    const all = rows.length > 0 && rows.every(r => selected.has(r.dataset.pick));
+
+    for (const row of rows) {
+      if (all) selected.delete(row.dataset.pick);
+      else selected.add(row.dataset.pick);
+      row.classList.toggle('on', !all);
+    }
+    renderSelection();
+  }
+
+  function clearSelection() {
+    selected = new Set();
+    document.querySelectorAll('[data-pick]').forEach(el => el.classList.remove('on'));
+    renderSelection();
+  }
+
+  const WORDING = {
+    approve: {
+      title: n => `Approve ${n} applicant${n === 1 ? '' : 's'}?`,
+      text: n => `${n === 1 ? 'They' : 'They all'} become members of this circle, reachable on the ` +
+        'channels they consented to, signing in with their email address and the last six digits ' +
+        'of their phone number. Any that cannot be approved are reported back rather than ' +
+        'stopping the rest.',
+      ok: 'Approve', danger: false
+    },
+    reject: {
+      title: n => `Turn down ${n} application${n === 1 ? '' : 's'}?`,
+      text: () => 'Nothing is created and nothing is deleted. They keep their answers and carry ' +
+        'the decision, and you can still change your mind afterwards.',
+      ok: 'Turn down', danger: true
+    },
+    reopen: {
+      title: n => `Put ${n} back in the queue?`,
+      text: () => 'The decision on them is cleared and they wait on a fresh one.',
+      ok: 'Put back', danger: false
+    }
+  };
+
+  async function decideSelected(action) {
+    const ids = [...selected];
+    if (!ids.length) return;
+
+    const words = WORDING[action];
+    const ok = await Shell.confirm({
+      title: words.title(ids.length),
+      text: words.text(ids.length),
+      ok: words.ok,
+      danger: words.danger
+    });
+    if (!ok) return;
+
+    try {
+      const res = await api.post('/admin/onboarding-applications/decide', { ids, action });
+      showToast(res.message, res.failed.length ? 'warning' : 'success');
+
+      // What could not be done stays selected, so the next thing on screen is
+      // the list of what still needs attention rather than an empty table and a
+      // number in a toast.
+      selected = new Set(res.failed.map(f => f.id));
+      if (res.failed.length) renderFailures(res.failed);
+
+      load();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  }
+
+  function renderFailures(failed) {
+    Shell.confirm({
+      title: `${failed.length} could not be done`,
+      text: failed.map(f => `· ${escapeHtml(f.error)}`).join('\n'),
+      ok: 'Close',
+      danger: false
+    });
   }
 
   // ─── Reading one ──────────────────────────────────────────
@@ -224,12 +391,23 @@
                 a.source_page ? ` from ${escapeHtml(a.source_page)}` : ' at the form\'s own link'}.`}
         </p>`;
 
-      document.getElementById('oneFoot').innerHTML = a.status === 'pending'
-        ? `<button class="btn btn-secondary" onclick="decide('reject')">Turn down</button>
-           <button class="btn btn-primary" onclick="decide('approve')">
-             ${data.existing_member ? 'Join to this circle' : 'Approve and create the member'}
-           </button>`
-        : `<button class="btn btn-secondary" onclick="Shell.closeDrawer('oneDrawer')">Close</button>`;
+      const approveLabel = data.existing_member ? 'Join to this circle' : 'Approve and create the member';
+
+      // A rejection is not final: the reason to reconsider usually turns up
+      // after the decision. An approval is, because the member exists.
+      const foot = {
+        pending: `
+          <button class="btn btn-secondary" onclick="decide('reject')">Turn down</button>
+          <button class="btn btn-primary" onclick="decide('approve')">${approveLabel}</button>`,
+        rejected: `
+          <button class="btn btn-secondary" onclick="decide('reopen')">Put back in the queue</button>
+          <button class="btn btn-primary" onclick="decide('approve')">Approve after all</button>`,
+        withdrawn: `
+          <button class="btn btn-secondary" onclick="Shell.closeDrawer('oneDrawer')">Close</button>`
+      };
+
+      document.getElementById('oneFoot').innerHTML = foot[a.status] ||
+        `<button class="btn btn-secondary" onclick="Shell.closeDrawer('oneDrawer')">Close</button>`;
     } catch (err) {
       document.getElementById('oneBody').innerHTML =
         `<p class="hint" style="color:var(--rose-ink)">${escapeHtml(err.message)}</p>`;
@@ -241,10 +419,11 @@
 
     // Approving creates an account and joins somebody to this workspace. That
     // is not something to do on a mis-click, and it cannot be undone by
-    // clicking again.
+    // clicking again — turning somebody down can.
     const ok = await Shell.confirm({
       title: action === 'approve'
         ? (open.existing_member ? 'Join them to this circle?' : 'Create this member?')
+        : action === 'reopen' ? 'Put this back in the queue?'
         : 'Turn this application down?',
       text: action === 'approve'
         ? `${a.name || 'They'} will be a member of this circle, reachable on the channels they ` +
@@ -253,9 +432,12 @@
           (open.application.profile?.phone ? '' :
             ' This application carries no phone number, so they will not be able to sign in ' +
             'until somebody adds one to their profile.')
-        : 'Nothing is created and nothing is deleted. The application keeps its answers and carries the decision.',
-      ok: action === 'approve' ? 'Approve' : 'Turn down',
-      danger: action !== 'approve'
+        : action === 'reopen'
+          ? 'The decision on it is cleared and it waits on a fresh one.'
+          : 'Nothing is created and nothing is deleted. The application keeps its answers and ' +
+            'carries the decision — and you can still change your mind afterwards.',
+      ok: action === 'approve' ? 'Approve' : action === 'reopen' ? 'Put back' : 'Turn down',
+      danger: action === 'reject'
     });
     if (!ok) return;
 
@@ -275,6 +457,7 @@
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
     tab.classList.add('active');
     status = tab.dataset.status;
+    selected = new Set();
     load();
   });
 

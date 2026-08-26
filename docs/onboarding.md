@@ -258,6 +258,47 @@ them, and which channels they consented to.
   answers and carries the decision, so a queue that was worked through can be
   read back.
 
+### Changing your mind
+
+A rejection is not final. It is a decision somebody made in a minute about a
+person they had never heard of, and the reason to reconsider — the partner
+vouches for them, the address turns out to be the one from the conference list —
+usually arrives afterwards.
+
+So a rejected application offers two things instead of a dead end:
+
+- **Approve after all** — the ordinary approval, from a no.
+- **Put back in the queue** — clears the decision and its note, for somebody who
+  wants it off their desk without putting a yes on it.
+
+An **approved** application is final, and that asymmetry is deliberate: the
+account exists, the person is in the circle, and marking the paperwork
+"rejected" would say otherwise while changing none of it. Removing a member is
+the member page's job.
+
+### Deciding in bulk
+
+Tick the rows and the bar above the table offers the decisions that make sense
+for the tab you are on. A stack of applicants from one partner's list are all
+the same decision, and clicking through them one at a time is how a reviewer
+stops reading them.
+
+Each row is decided separately on the server rather than in one statement.
+Approving is not a status change — it creates an account, joins a circle, writes
+consent — and any one row can legitimately refuse: a Credit Direct address, an
+application carrying no usable email. A single bulk update would either take the
+whole batch down with the first refusal or hide it. Instead the rest still land
+and the refusals come back named:
+
+```
+3 of 4 done — 1 could not be
+  · Credit Direct staff accounts are created by an administrator, not through a form
+```
+
+What could not be done stays selected, so the next thing on screen is the list
+of what still needs attention rather than an empty table and a number in a
+toast.
+
 An application is addressed to one workspace, so the queue is scoped to the
 circle being worked in. A lead for another circle has no business reading the
 personal details in it.

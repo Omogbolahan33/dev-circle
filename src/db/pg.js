@@ -165,26 +165,64 @@ function replaceFnCall(sql, name, replacer) {
   return out + sql.slice(last);
 }
 
+// Put ON CONFLICT DO NOTHING where Postgres will take it: after the values or
+// the select that feeds the insert, and before RETURNING if there is one.
+// Appending blindly to the end would put it after RETURNING, which is a syntax
+// error rather than a subtle one — but the subtle ones are what this file is
+// for, so it is handled rather than assumed away.
+function appendOnConflict(sql) {
+  if (/ON\s+CONFLICT/i.test(sql)) return sql;
+
+  const trailing = /;\s*$/.exec(sql);
+  const body = trailing ? sql.slice(0, trailing.index) : sql;
+  const tail = trailing ? trailing[0] : '';
+
+  const returning = /\sRETURNING\s/i.exec(body);
+  if (returning) {
+    return body.slice(0, returning.index) +
+      ' ON CONFLICT DO NOTHING' +
+      body.slice(returning.index) + tail;
+  }
+
+  return `${body.trimEnd()} ON CONFLICT DO NOTHING${tail}`;
+}
+
 function translateSqliteToPostgres(sql) {
   let out = sql;
   // SQLite → Postgres shims
-  // INSERT OR IGNORE → INSERT ... ON CONFLICT DO NOTHING
-  out = out.replace(/INSERT\s+OR\s+IGNORE\s+INTO/gi, 'INSERT INTO');
-  // Handle ON CONFLICT for the above: pg requires ON CONFLICT DO NOTHING after the INSERT
-  // We append it if the statement was originally INSERT OR IGNORE and doesn't already have ON CONFLICT
-  if (/INSERT\s+INTO/i.test(sql) && /OR\s+IGNORE/i.test(sql) && !/ON\s+CONFLICT/i.test(out)) {
-    // Append ON CONFLICT DO NOTHING before any RETURNING or at end of first statement segment
-    // Simple: replace VALUES (...) with VALUES (...) ON CONFLICT DO NOTHING where applicable
-    // For now, add after the VALUES clause if present, otherwise at end before semicolon
-    // This is heuristic; most OR IGNORE are simple inserts without complex logic.
-    out = out.replace(/(VALUES\s*\([^;]+\))/i, '$1 ON CONFLICT DO NOTHING');
-    if (!/ON\s+CONFLICT/i.test(out)) {
-      out = out.replace(/;\s*$/, ' ON CONFLICT DO NOTHING;');
-      if (!/ON\s+CONFLICT/i.test(out)) out += ' ON CONFLICT DO NOTHING';
-    }
+  // ── INSERT OR IGNORE → INSERT … ON CONFLICT DO NOTHING ──
+  //
+  // This was written as "strip the OR IGNORE, then add ON CONFLICT if the
+  // original said INSERT INTO and OR IGNORE" — and the original never says
+  // `INSERT INTO`, because at that point it still says `INSERT OR IGNORE INTO`.
+  // The guard was false every time, so the clause was never added and the
+  // branch was dead from the day it was written.
+  //
+  // What that cost: every INSERT OR IGNORE in the codebase became a plain
+  // INSERT on Postgres, and the twenty-four of them are the joining paths —
+  // adding somebody to a circle, to a cohort, to the members of a gift. The
+  // second time any of those ran for the same pair it raised a duplicate key
+  // error instead of doing nothing, which is precisely what OR IGNORE exists to
+  // avoid. Approving an onboarding applicant who was already in the "All
+  // Members" cohort is one such second time.
+  if (/INSERT\s+OR\s+IGNORE\s+INTO/i.test(out)) {
+    out = appendOnConflict(out.replace(/INSERT\s+OR\s+IGNORE\s+INTO/gi, 'INSERT INTO'));
   }
-  // INSERT OR REPLACE → INSERT ... ON CONFLICT DO UPDATE
-  out = out.replace(/INSERT\s+OR\s+REPLACE\s+INTO/gi, 'INSERT INTO');
+
+  // INSERT OR REPLACE has no honest one-line equivalent: ON CONFLICT DO UPDATE
+  // needs a conflict target and a column list, and neither can be read off the
+  // statement without knowing the table's keys. Rather than guess — and quietly
+  // turn a replace into a plain insert that fails on the second run, which is
+  // the mistake above — it says so.
+  //
+  // The one use of it is sandbox_meta, and the sandbox is always SQLite (see
+  // db/sandbox.js), so nothing reaches this today.
+  if (/INSERT\s+OR\s+REPLACE\s+INTO/i.test(out)) {
+    throw new Error(
+      'INSERT OR REPLACE has no direct Postgres translation — write it as ' +
+      'INSERT … ON CONFLICT (key) DO UPDATE SET … with the conflict target spelled out'
+    );
+  }
 
   // datetime('now', '-7 days') must keep the offset — replacing the whole
   // call with NOW() made "new this week" count every member.

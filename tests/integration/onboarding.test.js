@@ -481,9 +481,9 @@ test('turning one down creates nothing and deletes nothing', async () => {
   assert.equal(rejected.body.applications.length, 1);
   assert.equal(rejected.body.applications[0].decision_note, 'Not a developer');
 
-  // and it cannot then be approved
-  const late = await h.post(`/api/admin/onboarding-applications/${id}/approve`, {}, { token: adminToken });
-  assert.equal(late.status, 409);
+  // It keeps its answers, and it keeps being reconsiderable — see the test
+  // about changing your mind. What it does not do is create anything.
+  assert.ok(rejected.body.applications[0].email);
 });
 
 test('an application belongs to one workspace and is invisible from another', async () => {
@@ -950,4 +950,161 @@ test('an edit that does carry a field still replaces it', async () => {
   assert.equal(cleared.status, 200);
   assert.deepEqual(cleared.body.form.allowed_origins, [],
     'an empty list is a decision, not an omission');
+});
+
+// ─── Changing your mind, and deciding in bulk ───────────────
+
+// Several applications waiting, so a bulk decision has something to work on.
+async function severalWaiting(form, people) {
+  for (const [name, email, phone] of people) {
+    await fillIn(form, {
+      'What should we call you?': name,
+      'Which email should we use?': email,
+      'And your phone number?': phone
+    });
+  }
+  return (await queue()).body.applications;
+}
+
+const decide = (ids, action, note) =>
+  h.post('/api/admin/onboarding-applications/decide', { ids, action, note }, { token: adminToken });
+
+test('a rejected applicant can still be approved — a rejection is not final', async () => {
+  const form = await live();
+  await fillIn(form, WHO);
+  const id = (await queue()).body.applications[0].id;
+
+  await h.post(`/api/admin/onboarding-applications/${id}/reject`,
+    { note: 'Looked like a duplicate' }, { token: adminToken });
+  assert.equal((await queue('rejected')).body.applications.length, 1);
+
+  // The partner vouches for them, or the address turns out to be the one from
+  // the conference list. The reason to reconsider arrives afterwards.
+  const reconsidered = await h.post(`/api/admin/onboarding-applications/${id}/approve`,
+    { note: 'Partner confirmed' }, { token: adminToken });
+
+  assert.equal(reconsidered.status, 200, JSON.stringify(reconsidered.body));
+  assert.equal(reconsidered.body.created, true);
+  assert.ok(h.db.prepare('SELECT id FROM users WHERE email = ?').get('chidi@paystack.africa'));
+});
+
+test('a rejected applicant can be put back in the queue without deciding', async () => {
+  const form = await live();
+  await fillIn(form, WHO);
+  const id = (await queue()).body.applications[0].id;
+
+  await h.post(`/api/admin/onboarding-applications/${id}/reject`, {}, { token: adminToken });
+  const back = await h.post(`/api/admin/onboarding-applications/${id}/reopen`, {}, { token: adminToken });
+
+  assert.equal(back.status, 200);
+  const waiting = (await queue()).body.applications;
+  assert.equal(waiting.length, 1);
+  assert.equal(waiting[0].decision_note, null, 'the old decision goes with it');
+  assert.equal(waiting[0].decided_at, null);
+});
+
+test('an approved applicant cannot be un-approved, because the member exists', async () => {
+  const form = await live();
+  await fillIn(form, WHO);
+  const id = (await queue()).body.applications[0].id;
+  await h.post(`/api/admin/onboarding-applications/${id}/approve`, {}, { token: adminToken });
+
+  const undo = await h.post(`/api/admin/onboarding-applications/${id}/reject`, {}, { token: adminToken });
+  assert.equal(undo.status, 409);
+  assert.match(undo.body.error, /remove them from the circle/);
+
+  const back = await h.post(`/api/admin/onboarding-applications/${id}/reopen`, {}, { token: adminToken });
+  assert.equal(back.status, 409);
+
+  // …and the member is still there, which is the point
+  assert.ok(h.db.prepare('SELECT id FROM users WHERE email = ?').get('chidi@paystack.africa'));
+});
+
+test('a screenful of applicants can be approved at once', async () => {
+  const form = await live();
+  const waiting = await severalWaiting(form, [
+    ['Ada Obi', 'ada@zilla.ng', '08031112222'],
+    ['Tola Bello', 'tola@stitch.ng', '08033334444'],
+    ['Ngozi Eze', 'ngozi@kuda.ng', '08035556666']
+  ]);
+
+  const res = await decide(waiting.map(a => a.id), 'approve');
+
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.equal(res.body.decided, 3);
+  assert.equal(res.body.created, 3);
+  assert.deepEqual(res.body.failed, []);
+  assert.equal(h.db.prepare('SELECT COUNT(*) as n FROM users').get().n, 3);
+  assert.equal((await queue()).body.applications.length, 0);
+});
+
+test('one that cannot be approved is reported against itself, and the rest still land', async () => {
+  const form = await live();
+  const waiting = await severalWaiting(form, [
+    ['Ada Obi', 'ada@zilla.ng', '08031112222'],
+    // Staff accounts are created by an administrator, never through a form
+    ['Someone Internal', 'someone@creditdirect.ng', '08033334444'],
+    ['Ngozi Eze', 'ngozi@kuda.ng', '08035556666']
+  ]);
+
+  const res = await decide(waiting.map(a => a.id), 'approve');
+
+  assert.equal(res.body.decided, 2, 'the two that could be approved were');
+  assert.equal(res.body.failed.length, 1);
+  assert.match(res.body.failed[0].error, /created by an administrator/);
+  assert.match(res.body.message, /2 of 3 done/);
+
+  // The refused one is still waiting for somebody to look at it
+  assert.equal((await queue()).body.applications.length, 1);
+});
+
+test('a bulk decision cannot reach into another circle', async () => {
+  const form = await live();
+  const waiting = await severalWaiting(form, [['Ada Obi', 'ada@zilla.ng', '08031112222']]);
+  const other = h.makeCircle('Lending Circle', 'lending');
+
+  const res = await h.post('/api/admin/onboarding-applications/decide',
+    { ids: waiting.map(a => a.id), action: 'approve' },
+    { token: adminToken, headers: { 'X-Circle-Id': other } });
+
+  assert.equal(res.body.decided, 0);
+  assert.equal(res.body.failed[0].error, 'Application not found');
+  assert.equal(h.db.prepare('SELECT COUNT(*) as n FROM users').get().n, 0);
+});
+
+test('bulk rejecting, and then bulk reconsidering', async () => {
+  const form = await live();
+  const waiting = await severalWaiting(form, [
+    ['Ada Obi', 'ada@zilla.ng', '08031112222'],
+    ['Tola Bello', 'tola@stitch.ng', '08033334444']
+  ]);
+  const ids = waiting.map(a => a.id);
+
+  const turned = await decide(ids, 'reject', 'Wrong intake');
+  assert.equal(turned.body.decided, 2);
+  assert.equal((await queue('rejected')).body.applications.length, 2);
+
+  const back = await decide(ids, 'reopen');
+  assert.equal(back.body.decided, 2);
+  assert.equal((await queue()).body.applications.length, 2);
+});
+
+test('deciding in bulk is the same capability as deciding one at a time', async () => {
+  const form = await live();
+  const waiting = await severalWaiting(form, [['Ada Obi', 'ada@zilla.ng', '08031112222']]);
+
+  const authorRole = h.makeRole('Author', ['onboarding.read', 'onboarding.write']);
+  const author = h.makeAdmin({ email: 'author@creditdirect.ng', roleId: authorRole });
+  const token = await h.loginAdmin(author.email, author.password);
+
+  const res = await h.post('/api/admin/onboarding-applications/decide',
+    { ids: waiting.map(a => a.id), action: 'approve' }, { token });
+
+  assert.equal(res.status, 403, 'a checkbox is not a way around a permission');
+});
+
+test('a bulk decision refuses an action it does not have', async () => {
+  assert.equal((await decide(['x'], 'delete')).status, 400);
+  assert.equal((await decide([], 'approve')).status, 400);
+  assert.equal((await decide(Array.from({ length: 201 }, (_, i) => `id-${i}`), 'approve')).status, 400);
 });

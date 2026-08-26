@@ -643,6 +643,91 @@ async function pendingCount(circleId) {
   ).get(circleId)).n;
 }
 
+// POST /api/admin/onboarding-applications/decide
+// One decision, applied to many.
+//
+// Worked one at a time on purpose, rather than as a single UPDATE. Approving is
+// not a status change — it creates an account, joins a circle, writes consent —
+// and any one of them can legitimately refuse: a Credit Direct address, an
+// application carrying no usable email. A bulk update would either take the
+// whole batch down with the first refusal or hide it. This reports per row and
+// keeps going, which is the only shape that makes a screenful of checkboxes
+// safe to press.
+router.post('/onboarding-applications/decide', requirePermission('onboarding.approve'), async (req, res) => {
+  const { ids, action, note } = req.body;
+
+  if (!['approve', 'reject', 'reopen'].includes(action)) {
+    return res.status(400).json({ error: 'action must be approve, reject or reopen' });
+  }
+  if (!Array.isArray(ids) || !ids.length) {
+    return res.status(400).json({ error: 'Give the applications to decide on as ids' });
+  }
+  // A ceiling, because each one of these is a write and a screen cannot show
+  // more than a page of checkboxes anyway.
+  if (ids.length > 200) {
+    return res.status(400).json({ error: 'Two hundred at a time is as many as one decision can carry' });
+  }
+
+  // Scoped before anything happens: an id from another circle is not found
+  // rather than refused, which is the same answer that circle's own queue gives
+  // about ours.
+  const mine = new Set((await db.prepare(`
+    SELECT id FROM onboarding_submissions WHERE circle_id = ?
+  `).all(req.circleId)).map(row => row.id));
+
+  const results = { decided: 0, created: 0, failed: [] };
+
+  for (const id of ids) {
+    if (!mine.has(id)) {
+      results.failed.push({ id, error: 'Application not found' });
+      continue;
+    }
+
+    try {
+      if (action === 'approve') {
+        const outcome = await onboarding.approve(id, { adminId: req.admin.id, note });
+        if (outcome.created) results.created++;
+      } else if (action === 'reject') {
+        await onboarding.reject(id, { adminId: req.admin.id, note });
+      } else {
+        await onboarding.reopen(id, { adminId: req.admin.id });
+      }
+      results.decided++;
+    } catch (err) {
+      if (!(err instanceof onboarding.OnboardingError)) throw err;
+      results.failed.push({ id, error: err.message });
+    }
+  }
+
+  res.json({
+    ...results,
+    message: results.failed.length
+      ? `${results.decided} of ${ids.length} done — ${results.failed.length} could not be`
+      : `${results.decided} ${action === 'reopen' ? 'put back in the queue' : action + 'd'}`
+  });
+});
+
+// POST /api/admin/onboarding-applications/:id/reopen
+// Undeciding one. For somebody who wants a rejection off their desk without
+// putting a yes on it instead.
+router.post('/onboarding-applications/:id/reopen', requirePermission('onboarding.approve'), async (req, res) => {
+  const submission = await db.prepare(
+    'SELECT id FROM onboarding_submissions WHERE id = ? AND circle_id = ?'
+  ).get(req.params.id, req.circleId);
+  if (!submission) return res.status(404).json({ error: 'Application not found' });
+
+  try {
+    const result = await onboarding.reopen(submission.id, { adminId: req.admin.id });
+    res.json({
+      message: result.already ? 'It was already waiting on a decision' : 'Back in the queue',
+      ...result
+    });
+  } catch (err) {
+    if (err instanceof onboarding.OnboardingError) return res.status(409).json({ error: err.message });
+    throw err;
+  }
+});
+
 // One application, in full: what they were asked, what they answered, and what
 // of it the form understood as a fact about them. All three, because a
 // reviewer deciding whether to let somebody into a workspace is entitled to
