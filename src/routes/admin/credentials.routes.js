@@ -85,7 +85,7 @@ function providers() {
     {
       id: 'sms',
       name: 'SMS',
-      purpose: 'Direct SMS delivery, and one-time sign-in codes to a phone',
+      purpose: 'Direct SMS delivery for broadcasts, reminders and session invitations',
       configured: configured.sms,
       env: ['SMS_API_KEY'],
       degraded: 'SMS falls back to the Customer.io fan-out.'

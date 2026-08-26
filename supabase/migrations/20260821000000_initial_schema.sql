@@ -8,8 +8,12 @@
   -- Users (base + migrations 2,3,10,16, etc.)
   CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
+    -- email stays required: with the last six digits of the phone number it is
+    -- the whole of a participant's credential. name became nullable in
+    -- migration 28 — an onboarding form decides what it asks, and a circle
+    -- collecting an address and nothing else is not making a mistake.
     email TEXT UNIQUE NOT NULL,
-    name TEXT NOT NULL,
+    name TEXT,
     phone TEXT,
     phone_normalized TEXT,
     password_hash TEXT NOT NULL,
@@ -377,6 +381,63 @@
     applied_at TIMESTAMPTZ DEFAULT NOW()
   );
 
+  -- ─── Onboarding ──────────────────────────────────────────
+  -- A form a circle publishes to collect people who are not members yet, on
+  -- pages this platform does not own. See migration 27 in src/db/migrations.js
+  -- for why this is a different object from a survey rather than a flavour of
+  -- one — in short: a public survey promises anonymity and an onboarding form
+  -- exists to learn who somebody is, and a survey response is evidence where an
+  -- onboarding submission is an application that gets decided on.
+  CREATE TABLE IF NOT EXISTS onboarding_forms (
+    id TEXT PRIMARY KEY,
+    circle_id TEXT NOT NULL REFERENCES circles(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    description TEXT,
+    questions TEXT NOT NULL DEFAULT '[]',
+    theme TEXT,
+    field_map TEXT NOT NULL DEFAULT '{}',
+    cohort_ids TEXT NOT NULL DEFAULT '[]',
+    status TEXT DEFAULT 'draft' CHECK(status IN ('draft','active','closed')),
+    public_token TEXT UNIQUE,
+    allowed_origins TEXT NOT NULL DEFAULT '[]',
+    redirect_url TEXT,
+    submitted_message TEXT,
+    duplicate_policy TEXT DEFAULT 'replace' CHECK(duplicate_policy IN ('replace','reject','allow')),
+    created_by TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+  );
+
+  -- An application, not a member and not a response. It carries no user_id
+  -- until somebody approves it, which is what makes a publicly embeddable form
+  -- safe to publish: everything that counts, mails or exports members reads
+  -- users and circle_members, so an application here is invisible to all of it
+  -- until a decision is made.
+  CREATE TABLE IF NOT EXISTS onboarding_submissions (
+    id TEXT PRIMARY KEY,
+    form_id TEXT NOT NULL REFERENCES onboarding_forms(id) ON DELETE CASCADE,
+    circle_id TEXT NOT NULL,
+    answers TEXT NOT NULL DEFAULT '{}',
+    profile TEXT NOT NULL DEFAULT '{}',
+    consent_channels TEXT NOT NULL DEFAULT '[]',
+    email TEXT,
+    name TEXT,
+    session_key_hash TEXT,
+    status TEXT DEFAULT 'started' CHECK(status IN ('started','pending','approved','rejected','withdrawn')),
+    source_origin TEXT,
+    source_page TEXT,
+    decided_by TEXT REFERENCES admin_users(id) ON DELETE SET NULL,
+    decided_at TIMESTAMPTZ,
+    decision_note TEXT,
+    user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+    submitted_at TIMESTAMPTZ,
+    -- The other system's own id for this row, so re-running an upload an
+    -- operator is unsure about lands nothing the second time.
+    external_ref TEXT,
+    arrived_by TEXT DEFAULT 'form',
+    created_at TIMESTAMPTZ DEFAULT NOW()
+  );
+
   -- Sandbox meta (used by sandbox.js)
   CREATE TABLE IF NOT EXISTS sandbox_meta (
     key TEXT PRIMARY KEY,
@@ -442,3 +503,10 @@
   CREATE UNIQUE INDEX IF NOT EXISTS idx_feedback_verbatim_anon ON feedback(response_id, question_id) WHERE response_id IS NOT NULL AND question_id IS NOT NULL;
   CREATE UNIQUE INDEX IF NOT EXISTS idx_feedback_external_response ON feedback(source_system, external_response_id) WHERE external_response_id IS NOT NULL;
   CREATE UNIQUE INDEX IF NOT EXISTS idx_session_dispatch_once ON session_dispatches(session_id, offset_minutes);
+  CREATE INDEX IF NOT EXISTS idx_onboarding_forms_circle ON onboarding_forms(circle_id);
+  CREATE INDEX IF NOT EXISTS idx_onboarding_forms_token ON onboarding_forms(public_token) WHERE public_token IS NOT NULL;
+  CREATE INDEX IF NOT EXISTS idx_onboarding_submissions_form ON onboarding_submissions(form_id, status);
+  CREATE INDEX IF NOT EXISTS idx_onboarding_submissions_circle ON onboarding_submissions(circle_id, status);
+  CREATE INDEX IF NOT EXISTS idx_onboarding_submissions_email ON onboarding_submissions(email) WHERE email IS NOT NULL;
+  CREATE INDEX IF NOT EXISTS idx_onboarding_submissions_key ON onboarding_submissions(session_key_hash) WHERE session_key_hash IS NOT NULL;
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_onboarding_submissions_external ON onboarding_submissions(form_id, external_ref) WHERE external_ref IS NOT NULL;

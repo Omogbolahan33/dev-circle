@@ -14,6 +14,9 @@ const { securitySchemes, schemas, responses, parameters } = require('./component
 
 const publicPaths = require('./paths.public');
 const adminPaths = require('./paths.admin');
+// Both halves of onboarding together: the public form and the admin queue are
+// only comprehensible read against each other.
+const onboardingPaths = require('./paths.onboarding');
 
 // ─── The guide ──────────────────────────────────────────────
 // Rendered above the endpoint list. It answers the things a developer asks
@@ -38,25 +41,21 @@ request and response, and **Try it out** runs against this deployment using your
 
 There are three ways to hold a credential, and which one you use depends on who you are.
 
-### Members — a one-time code
+### Members — email and phone digits
 
 Developers hold no password at all, so there is none to leak, reset or reuse from another site.
-Signing in is two calls:
+They sign in with their email address and the last six digits of the phone number on their
+record — one call:
 
 \`\`\`bash
-# 1. Ask for a code. The answer is the same whether or not the account exists.
-curl -X POST https://your-deployment/api/auth/code/request \\
+curl -X POST https://your-deployment/api/auth/login \\
   -H 'Content-Type: application/json' \\
-  -d '{"identifier":"chidi@paystack.africa"}'
-
-# 2. Send it back for a session token.
-curl -X POST https://your-deployment/api/auth/code/verify \\
-  -H 'Content-Type: application/json' \\
-  -d '{"identifier":"chidi@paystack.africa","code":"418302"}'
+  -d '{"identifier":"chidi@paystack.africa","digits":"550142"}'
 \`\`\`
 
-Outside production the code comes back in the first response as \`dev_code\`, so a local
-environment is usable without mail credentials.
+A phone number is not accepted as the identifier: the secret is six digits of that very
+number. Six digits is a weak secret and is treated as one — eight failed attempts per
+address and IP are throttled for fifteen minutes.
 
 ### Credit Direct staff — a password
 
@@ -165,9 +164,10 @@ Fixed windows of one minute, applied per credential where there is one and per I
 | \`/api/integrations/*\` | 300 requests / minute |
 | Everything else under \`/api\` | 300 requests / minute |
 
-Sign-in has its own throttles on top: eight failed passwords for one address and IP pair
-locks that pair out for 15 minutes, and one identifier may request four sign-in codes per
-15 minutes.
+Sign-in has its own throttle on top: eight failed attempts for one address and IP pair
+locks that pair out for 15 minutes, whichever credential was being offered. That throttle
+is most of what makes a six-digit secret defensible — see the note beside it in the
+Authentication section.
 
 Every response carries \`RateLimit-Limit\`, \`RateLimit-Remaining\` and \`RateLimit-Reset\`.
 A 429 adds \`Retry-After\`. Back off on the header rather than on a fixed sleep.
@@ -191,10 +191,11 @@ changes to the same endpoint and the ticket is updated rather than duplicated.
 
 const tags = [
   { name: 'Health', description: 'Liveness, safe to poll.' },
-  { name: 'Authentication', description: 'One sign-in field, three ways to hold a credential: a one-time code for developers, a password for Credit Direct staff, and Developer Hub SSO.' },
+  { name: 'Authentication', description: 'One sign-in form, three ways to hold a credential: for developers their email address and the last six digits of their phone number, for Credit Direct staff a password, and Developer Hub SSO.' },
   { name: 'Member profile', description: 'The signed-in developer\'s own profile, memberships, consent and engagement history.' },
   { name: 'Member surveys', description: 'Surveys open to the signed-in developer, and how they answer them.' },
   { name: 'Open surveys', description: 'Answering a survey over its link, with no account and no sign-in. The token in the path is the whole of the authorisation and opens exactly one survey; nothing here identifies the person answering.' },
+  { name: 'Onboarding forms', description: 'Filling in an onboarding form, with no account and no sign-in, on a page this platform does not own. The token in the path is the whole of the authorisation. Nothing here creates an account: what a submission produces is an application somebody reviews.' },
   { name: 'Member rewards', description: 'The reward catalogue and claiming from it.' },
   { name: 'Member notifications', description: 'The portal inbox, notification categories and quiet hours.' },
   { name: 'Feedback', description: 'Feedback raised by the signed-in developer.' },
@@ -204,6 +205,7 @@ const tags = [
   { name: 'Admin · Cohorts', description: 'Saved segments — hand-picked lists, or rule sets that keep themselves current.' },
   { name: 'Admin · Circles', description: 'Nested engagement spaces, each with its own members, cohorts, surveys and messaging.' },
   { name: 'Admin · Surveys', description: 'Authoring surveys, resolving their audience, inviting and reminding, and reading the results.' },
+  { name: 'Admin · Onboarding', description: 'Publishing a form that collects people who are not members yet, and deciding on what it brings back. Approving is what creates the account — the form itself never does.' },
   { name: 'Admin · Sessions', description: 'Dated engagements with automated lead-up reminders and availability checking.' },
   { name: 'Admin · Broadcasts', description: 'Consent-aware messaging to a cohort, a circle or everyone, with a full delivery audit trail.' },
   { name: 'Admin · Rewards', description: 'The reward catalogue, its eligibility rules and fulfilment.' },
@@ -238,7 +240,7 @@ function build() {
     ],
     tags,
     security: [{ bearerAuth: [] }],
-    paths: { ...publicPaths, ...adminPaths },
+    paths: { ...publicPaths, ...onboardingPaths, ...adminPaths },
     components: { securitySchemes, schemas, responses, parameters }
   };
 }

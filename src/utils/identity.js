@@ -6,7 +6,9 @@
 // holds an account here.
 //
 // The rule: a Credit Direct email domain means staff, and staff use a
-// password. Everyone else is a participant, and participants never have one.
+// password. Everyone else is a participant, and a participant signs in with
+// their email address and the last six digits of the phone number they
+// registered — which is why an onboarding form is required to collect both.
 
 const config = require('../config');
 
@@ -34,6 +36,49 @@ function isStaffEmail(email) {
   const domain = emailDomain(normalizeEmail(email));
   if (!domain) return false;
   return config.staffEmailDomains.some(d => domain === d || domain.endsWith(`.${d}`));
+}
+
+// ─── The participant's secret ───────────────────────────────
+// The last six digits of the number they registered with.
+//
+// It is a weak secret and it is worth naming as one: six digits is a million
+// combinations, and a phone number is not private the way a password is —
+// anyone who has it can derive this. What stands in front of it is the login
+// throttle (eight failures per address per address-and-IP in fifteen minutes)
+// and the rate limit on /api/auth. That is enough to make guessing impractical
+// for one attacker and not enough to make this equivalent to a password, which
+// is the trade this scheme makes knowingly.
+//
+// Six is counted off the normalised E.164 form rather than off what they
+// typed, so 0803 555 0142, +234 803 555 0142 and 8035550142 all yield the same
+// six digits — otherwise the same person would have a different secret
+// depending on how they wrote their number the day they registered.
+
+const PHONE_DIGITS = 6;
+
+// The digits themselves, or null when there is no number on file or it is too
+// short to yield a secret. Null is never a match: a member with no phone number
+// cannot sign in, and that is reported as bad credentials rather than as a
+// missing phone, so the endpoint stays useless as a membership oracle.
+function phoneDigits(phoneNormalized) {
+  const digits = String(phoneNormalized || '').replace(/\D/g, '');
+  return digits.length >= PHONE_DIGITS ? digits.slice(-PHONE_DIGITS) : null;
+}
+
+// Whether what somebody typed matches the digits on file. Compared over the
+// full length in constant time so the answer cannot be found one digit at a
+// time from how long the comparison took.
+function checkPhoneDigits(phoneNormalized, given) {
+  const expected = phoneDigits(phoneNormalized);
+  const offered = String(given ?? '').replace(/\D/g, '');
+
+  if (!expected || offered.length !== PHONE_DIGITS) return false;
+
+  let differences = 0;
+  for (let i = 0; i < PHONE_DIGITS; i++) {
+    if (expected[i] !== offered[i]) differences++;
+  }
+  return differences === 0;
 }
 
 // ─── Phone numbers ──────────────────────────────────────────
@@ -86,15 +131,21 @@ function classify(raw) {
 
     return isStaffEmail(email)
       ? { type: 'email', value: email, audience: 'staff', method: 'password', channel: null }
-      : { type: 'email', value: email, audience: 'participant', method: 'code', channel: 'email' };
+      : { type: 'email', value: email, audience: 'participant', method: 'phone_digits', digits: PHONE_DIGITS, channel: null };
   }
 
   const phone = normalizePhone(input);
   if (!phone) return null;
 
-  // A phone number is never a staff credential: staff sign in with their
-  // work email and a password.
-  return { type: 'phone', value: phone, audience: 'participant', method: 'code', channel: 'sms' };
+  // A phone number is never a staff credential: staff sign in with their work
+  // email and a password.
+  //
+  // It is not a participant's identifier either, and that is a security
+  // property rather than a preference. The secret is the last six digits of
+  // this very number, so accepting the number as the thing you type in the
+  // first box would mean handing over the credential to get to the credential
+  // box. The sign-in page reads this and asks for their email instead.
+  return { type: 'phone', value: phone, audience: 'participant', method: 'email_required', digits: PHONE_DIGITS, channel: null };
 }
 
 // ─── Masking ────────────────────────────────────────────────
@@ -127,6 +178,9 @@ function mask(identity) {
 module.exports = {
   EMAIL_RE,
   NO_PASSWORD,
+  PHONE_DIGITS,
+  phoneDigits,
+  checkPhoneDigits,
   normalizeEmail,
   normalizePhone,
   emailDomain,

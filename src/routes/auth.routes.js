@@ -6,7 +6,6 @@ const { uuid } = require('../utils/helpers');
 const { logger } = require('../utils/logger');
 const identity = require('../utils/identity');
 const circles = require('../services/circles');
-const loginCodes = require('../services/loginCodes');
 const {
   createSession, destroySession, requireAuth,
   signSSOToken, verifySSOToken, permissionsFor, flagOn
@@ -16,13 +15,22 @@ const { rememberGet } = require('../middleware/cache');
 const router = express.Router();
 
 // ─── One way in ─────────────────────────────────────────────
-// There is a single sign-in form and a single field: the visitor types the
-// email or phone number they are known by, and the backend works out who they
-// are. Credit Direct staff — recognised by their work email domain — are asked
-// for a password. Everyone else is a participant: they receive a one-time code
-// on the email or number already on their record, or arrive through Developer
-// Hub SSO. Participants hold no password at all, so there is none to leak,
-// reset, or reuse from another site.
+// There is a single sign-in form: the visitor types the address they are known
+// by, and the backend works out who they are and what to ask for next.
+//
+// Credit Direct staff — recognised by their work email domain — are asked for a
+// password. Everyone else is a participant, and a participant gives the last
+// six digits of the phone number on their record, or arrives through Developer
+// Hub SSO. Participants still hold no password at all, so there is none to
+// leak, reset, or reuse from another site.
+//
+// This replaced a one-time code sent by email or SMS. The code was stronger and
+// it cost a delivery that had to arrive, be found, and be typed before it
+// expired — on a platform whose whole purpose is short, voluntary engagements,
+// that step was the one people abandoned at. The trade is deliberate and it is
+// written down in identity.js, next to what the new secret is actually worth.
+// services/loginCodes.js is left standing: the same machinery is what email
+// verification will be built on, and nothing else about it has changed.
 
 const { NO_PASSWORD } = identity;
 
@@ -60,6 +68,14 @@ function clearFailures(key) {
   attempts.delete(key);
 }
 
+// The counter is process-wide and outlives any one request, which is the point
+// of it — and which is why a test suite needs a way to put it back. Exported
+// alongside the router rather than through it, so nothing reachable over HTTP
+// can clear somebody else's failed attempts.
+function resetThrottle() {
+  attempts.clear();
+}
+
 function safeUser(row) {
   const { password_hash: _, ...rest } = row;
   return rest;
@@ -82,8 +98,12 @@ router.post('/identify', async (req, res) => {
     identifier: who.value,
     type: who.type,
     audience: who.audience,
-    method: who.method,                       // 'password' for staff, 'code' for participants
-    channel: who.channel,                     // where a code would go
+    // 'password' for staff, 'phone_digits' for participants, and
+    // 'email_required' for a participant who typed their phone number — see
+    // classify() for why that one cannot be accepted as an identifier.
+    method: who.method,
+    channel: who.channel,
+    digits: who.digits || null,
     masked: identity.mask(who),
     // Staff sign in with their Credit Direct password; the Developer Hub
     // handoff is for the people building on the APIs.
@@ -91,111 +111,77 @@ router.post('/identify', async (req, res) => {
   });
 });
 
-// ─── Participants: one-time code ────────────────────────────
+// ─── Signing in ─────────────────────────────────────────────
+// One endpoint, two audiences, because it is one form on one page.
+//
+// Staff give a password. A participant gives the last six digits of the phone
+// number they registered with — see identity.js for what that secret is worth
+// and what stands in front of it.
+//
+// Both halves answer failure identically and only check the account's status
+// after the credential has verified, so neither can be used to find out which
+// addresses have accounts here.
 
-// POST /api/auth/code/request
-// Answers the same way whether or not the account exists, so the endpoint
-// never becomes a membership oracle. Only a real member is actually sent
-// anything.
-router.post('/code/request', async (req, res) => {
-  const who = identity.classify(req.body.identifier || req.body.email);
-  if (!who) {
-    return res.status(400).json({ error: BAD_IDENTIFIER });
-  }
+const BAD_CREDENTIALS = 'That email address and those digits do not match an account.';
 
-  if (who.audience === 'staff') {
+async function participantLogin(req, res, who) {
+  const digits = req.body.digits ?? req.body.phone_digits ?? req.body.password;
+
+  if (who.method === 'email_required') {
     return res.status(400).json({
-      error: 'Credit Direct staff sign in with a password.',
-      method: 'password'
+      error: 'Sign in with the email address you registered with, not your phone number.',
+      method: 'email_required'
     });
   }
 
-  if (await loginCodes.throttled(who.value)) {
-    return res.status(429).json({
-      error: 'Too many codes requested. Wait a few minutes before trying again.'
+  if (!digits) {
+    return res.status(400).json({
+      error: `Enter the last ${identity.PHONE_DIGITS} digits of your phone number.`,
+      method: 'phone_digits',
+      digits: identity.PHONE_DIGITS
     });
   }
 
-  const answer = {
-    sent: true,
-    channel: who.channel,
-    masked: identity.mask(who),
-    expires_in_sec: loginCodes.TTL_SEC,
-    code_length: loginCodes.CODE_LENGTH
-  };
-
-  const user = await loginCodes.findParticipant(who);
-
-  if (user && user.status === 'active') {
-    const { code } = await loginCodes.issue(user, who);
-
-    try {
-      await loginCodes.deliver(user, who, code);
-    } catch (err) {
-      logger.error('Sign-in code delivery failed', { error: err.message });
-    }
-
-    // When nothing is actually delivered the code would otherwise be a dead
-    // end. Hand it back so the advertised demo developers can still sign in.
-    if (!config.delivery.enabled) answer.dev_code = code;
-  }
-
-  res.json(answer);
-});
-
-// POST /api/auth/code/verify
-router.post('/code/verify', async (req, res) => {
-  const who = identity.classify(req.body.identifier || req.body.email);
-  if (!who || who.audience !== 'participant') {
-    return res.status(400).json({ error: BAD_IDENTIFIER });
-  }
-
-  const key = throttleKey(req, 'code:' + who.value);
+  const key = throttleKey(req, 'participant:' + who.value);
   if (isThrottled(key)) {
-    return res.status(429).json({ error: 'Too many attempts. Try again in 15 minutes.' });
+    return res.status(429).json({ error: 'Too many failed attempts. Try again in 15 minutes.' });
   }
 
-  const result = await loginCodes.verify(who, req.body.code);
-  if (!result.ok) {
+  const user = await db.prepare('SELECT * FROM users WHERE lower(email) = ?').get(who.value);
+
+  // One refusal for four different reasons: no such address, an address that
+  // belongs to a staff account, a member with no phone number on file, and the
+  // wrong digits. Telling them apart is exactly what would turn this into a
+  // membership oracle — and the member with no number is the one that matters
+  // most to keep quiet about, since "this address exists but cannot sign in"
+  // is a fact worth nothing to them and something to an attacker.
+  if (!user || !identity.checkPhoneDigits(user.phone_normalized, digits)) {
     recordFailure(key);
-    return res.status(401).json({ error: result.error });
+    return res.status(401).json({ error: BAD_CREDENTIALS });
   }
 
-  // Checked only after the code verifies, so a suspended account is not
-  // revealed to somebody guessing addresses.
-  if (result.user.status !== 'active') {
-    return res.status(403).json({ error: 'Account is ' + result.user.status });
+  if (user.status !== 'active') {
+    return res.status(403).json({ error: 'Account is ' + user.status });
   }
 
   clearFailures(key);
-  await db.prepare("UPDATE users SET last_active_at = datetime('now') WHERE id = ?").run(result.user.id);
+  await db.prepare("UPDATE users SET last_active_at = datetime('now') WHERE id = ?").run(user.id);
 
-  const token = await createSession(result.user.id, false, {
-    issuedVia: `login_code_${who.channel}`,
+  const token = await createSession(user.id, false, {
+    issuedVia: 'phone_digits',
     userAgent: req.headers['user-agent']
   });
 
-  res.json({ token, user: safeUser(result.user), isAdmin: false });
-});
+  res.json({ token, user: safeUser(user), isAdmin: false });
+}
 
 // ─── Staff: password ────────────────────────────────────────
 
-// POST /api/auth/login          (and /api/auth/admin/login, kept for callers
-// written against the old split) — the password half of the single form.
-async function staffLogin(req, res) {
+async function staffLogin(req, res, who) {
   const { password } = req.body;
-  const who = identity.classify(req.body.identifier || req.body.email);
 
-  if (!who || !password) {
+  if (!password) {
     return res.status(400).json({ error: 'Email and password are required' });
-  }
-
-  if (who.audience !== 'staff') {
-    // Not a refusal to serve them — they simply have no password to give.
-    return res.status(400).json({
-      error: 'Sign in with a one-time code sent to your email or phone. Passwords are for Credit Direct staff.',
-      method: 'code'
-    });
   }
 
   const key = throttleKey(req, 'staff:' + who.value);
@@ -224,21 +210,43 @@ async function staffLogin(req, res) {
   res.json({ token, admin: safe, user: safe, isAdmin: true, permissions: await permissionsFor(admin) });
 }
 
-router.post('/login', staffLogin);
-router.post('/admin/login', staffLogin);
+// POST /api/auth/login          (and /api/auth/admin/login, kept for callers
+// written against the old split)
+async function login(req, res) {
+  const who = identity.classify(req.body.identifier || req.body.email);
+  if (!who) {
+    return res.status(400).json({ error: BAD_IDENTIFIER });
+  }
+
+  return who.audience === 'staff'
+    ? staffLogin(req, res, who)
+    : participantLogin(req, res, who);
+}
+
+router.post('/login', login);
+router.post('/admin/login', login);
 
 // ─── Registration ───────────────────────────────────────────
 
 // POST /api/auth/register
-// Creates a participant profile. No password is set — the account is claimed
-// by signing in with a one-time code, which is also what proves the address
-// belongs to whoever registered it.
+// Creates a participant profile. No password is set: the account is signed into
+// with this address and the last six digits of the number registered against
+// it, so both are required here — a profile with no number is one nobody can
+// ever sign in to.
 router.post('/register', async (req, res) => {
-  const { name, phone, company, work_sector } = req.body;
+  const { name, company, work_sector } = req.body;
   const email = identity.normalizeEmail(req.body.email);
+  const phone = identity.normalizePhone(req.body.phone);
 
   if (!email || !name) {
     return res.status(400).json({ error: 'A valid email and a name are required' });
+  }
+
+  if (!phone) {
+    return res.status(400).json({
+      error: 'A phone number is required — its last ' + identity.PHONE_DIGITS +
+             ' digits are what you sign in with.'
+    });
   }
 
   if (identity.isStaffEmail(email)) {
@@ -259,7 +267,7 @@ router.post('/register', async (req, res) => {
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id, email, name, NO_PASSWORD,
-    phone || null, identity.normalizePhone(phone), company || null, work_sector || null
+    req.body.phone, phone, company || null, work_sector || null
   );
 
   // Auto-assign to "All Members" cohort
@@ -278,10 +286,16 @@ router.post('/register', async (req, res) => {
 
   const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(id);
 
-  // No session yet: the code sent to this address is what proves it is theirs.
+  // No session yet. Signing in is a separate step, and the digits they already
+  // know are what they sign in with.
   res.status(201).json({
     user: safeUser(user),
-    next: { method: 'code', endpoint: '/api/auth/code/request', identifier: email }
+    next: {
+      method: 'phone_digits',
+      endpoint: '/api/auth/login',
+      identifier: email,
+      digits: identity.PHONE_DIGITS
+    }
   });
 });
 
@@ -419,3 +433,4 @@ router.post('/sso/link', requireAuth, async (req, res) => {
 });
 
 module.exports = router;
+module.exports.resetThrottle = resetThrottle;

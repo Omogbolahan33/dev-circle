@@ -1,0 +1,183 @@
+/* ─── The form builder ──────────────────────────────────────
+   The chrome a builder page is made of: the two-column composer, the question
+   cards, the type menu, the branching rows, the brand asset rows and the live
+   preview frame.
+
+   It is a stylesheet of its own rather than part of app.css because it is
+   worth nothing to any page that is not a builder — and it is not inline in a
+   page because there are two builders now, a survey's and an onboarding
+   form's, drawing the same cards out of the same module. A second copy of
+   these rules is how one builder quietly stops looking like the other. */
+
+/* Editor on the left, the member's view of it on the right. A survey is
+   written for someone else to answer, so their view stays on screen — and
+   it is the real control, not a drawing of one, so anything the author
+   sets can be tried immediately. */
+.composer { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: var(--sp-6); align-items: start; }
+@media (max-width: 1180px) { .composer { grid-template-columns: minmax(0, 1fr); } }
+
+.q-card {
+  background: var(--surface-2);
+  border: 1px solid var(--line-faint);
+  border-radius: var(--r-lg);
+  padding: var(--sp-5);
+  margin-bottom: var(--sp-3);
+  position: relative;
+}
+.q-card.invalid { border-color: var(--rose); }
+/* A question that has been answered is a record, not a draft */
+.q-card.locked .input { background: transparent; border-style: dashed; }
+
+/* Closed: what it asks and what kind it is, one line each */
+.q-card.closed { padding: var(--sp-3) var(--sp-4); cursor: pointer; }
+.q-card.closed:hover { border-color: var(--line-strong); }
+.q-card.closed .q-head { margin-bottom: 0; cursor: pointer; }
+.q-summary {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  color: var(--white);
+  font-size: var(--fs-sm);
+  padding: var(--sp-1) 0 0;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.q-flag {
+  font-size: 10px; color: var(--ash-dim);
+  border: 1px solid var(--line); border-radius: var(--r-sm); padding: 1px var(--sp-2);
+}
+
+.q-head { display: flex; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-4); flex-wrap: wrap; }
+.q-num { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--cd-blue); }
+.q-kind {
+  font-size: var(--fs-xs); color: var(--ash-dim);
+  text-transform: uppercase; letter-spacing: 0.08em;
+}
+.q-branching {
+  font-size: var(--fs-xs);
+  color: var(--gold-ink);
+  background: var(--gold-dim);
+  padding: 2px var(--sp-2);
+  border-radius: var(--r-sm);
+}
+
+.option-row { display: flex; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-2); }
+.option-row input { flex: 1; }
+.option-row .handle { color: var(--ash-dim); font-family: var(--font-mono); font-size: var(--fs-xs); width: 18px; }
+.exclusive-flag { font-size: 10px; padding: 2px var(--sp-2); border-radius: var(--r-sm); color: var(--ash-dim); border: 1px solid var(--line); }
+.exclusive-flag.on { color: var(--gold-ink); border-color: var(--cd-gold); background: var(--gold-dim); }
+
+/* Logic reads as a sentence, because that is how it will be explained to
+   whoever inherits the survey. */
+.logic {
+  border-top: 1px dashed var(--line);
+  margin-top: var(--sp-4);
+  padding-top: var(--sp-4);
+}
+.logic-rule { display: flex; gap: var(--sp-2); align-items: center; flex-wrap: wrap; margin-bottom: var(--sp-2); }
+.logic-rule .input { flex: 1; min-width: 120px; }
+.logic-lead { font-size: var(--fs-xs); color: var(--ash-dim); white-space: nowrap; }
+
+.type-menu {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: var(--sp-2);
+  padding: var(--sp-4);
+  background: var(--surface-2);
+  border: 1px solid var(--line-faint);
+  border-radius: var(--r-lg);
+}
+.type-option { text-align: left; padding: var(--sp-3); border: 1px solid var(--line); border-radius: var(--r-md); }
+.type-option:hover { border-color: var(--cd-blue); background: var(--cd-blue-dim); }
+.type-option-name { font-size: var(--fs-sm); font-weight: var(--fw-medium); display: block; }
+.type-option-hint { font-size: var(--fs-xs); color: var(--ash-dim); }
+
+/* The preview paints itself with the survey's own theme, so it is checked
+   in the colours it will go out in rather than the console's. */
+.preview-frame {
+  background: var(--surface-0);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  padding: var(--sp-5);
+  min-height: 240px;
+  max-height: 70vh;
+  overflow-y: auto;
+}
+.preview-frame .sv-ask { font-size: var(--fs-md); }
+.preview-frame .sv-rate-mark { width: 40px; height: 40px; font-size: var(--fs-sm); }
+.preview-frame .sv-option { min-height: 40px; padding: var(--sp-2) var(--sp-3); font-size: var(--fs-sm); }
+.pv-q + .pv-q { margin-top: var(--sp-6); padding-top: var(--sp-6); border-top: 1px solid var(--line-faint); }
+
+.swatches { display: flex; gap: var(--sp-2); flex-wrap: wrap; margin-top: var(--sp-2); }
+.swatch { width: 26px; height: 26px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; }
+.swatch.on { border-color: var(--white); }
+
+/* The contrast between the two brand colours, stated as a number while it
+   is being chosen rather than reported after saving. */
+.contrast {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+  padding: var(--sp-3);
+  border-radius: var(--r-md);
+  font-size: var(--fs-xs);
+  margin-bottom: var(--sp-4);
+}
+.contrast strong { font-family: var(--font-mono); font-size: var(--fs-sm); }
+.contrast.good { background: var(--green-dim, var(--tint-1)); color: var(--green-ink); }
+.contrast.warn { background: var(--gold-dim); color: var(--gold-ink); }
+.contrast.bad  { background: var(--rose-dim); color: var(--rose-ink); }
+
+/* An uploaded asset shows what was uploaded, not the path it landed at */
+.asset { display: flex; gap: var(--sp-3); align-items: center; }
+.asset.busy { opacity: 0.5; pointer-events: none; }
+.asset-thumb {
+  width: 46px; height: 46px;
+  border-radius: var(--r-md);
+  object-fit: contain;
+  background: var(--surface-0);
+  border: 1px solid var(--line);
+  flex-shrink: 0;
+}
+.asset-thumb.empty {
+  display: flex; align-items: center; justify-content: center;
+  color: var(--ash-dim); border-style: dashed; font-size: var(--fs-sm);
+}
+.asset-meta { min-width: 0; flex: 1; }
+.asset-name { font-size: var(--fs-xs); display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.asset label.btn { cursor: pointer; }
+
+/* The picker is set in whatever is selected, and a line of real wording
+   under it shows the choice at the size a question is actually read. */
+.font-select { font-size: var(--fs-base); }
+.font-preview {
+  margin-top: var(--sp-3);
+  font-size: var(--fs-md);
+  line-height: var(--lh-tight);
+  color: var(--white);
+}
+
+.theme-more { margin-bottom: var(--sp-4); }
+.theme-more summary { font-size: var(--fs-xs); color: var(--ash); cursor: pointer; padding: var(--sp-2) 0; }
+.theme-more summary:hover { color: var(--white); }
+
+.issue-list { margin-top: var(--sp-2); }
+.issue { font-size: var(--fs-xs); color: var(--rose-ink); }
+
+/* The link is the distribution for this audience, so it is given the
+   weight an invite button would have had. */
+.share {
+  border: 1px solid var(--blue-line, var(--line));
+  background: var(--blue-dim);
+  border-radius: var(--r-md);
+  padding: var(--sp-4);
+  margin-top: var(--sp-4);
+}
+.share-head { display: flex; gap: var(--sp-3); align-items: flex-start; margin-bottom: var(--sp-3); }
+.share-mark { font-size: var(--fs-md); }
+.share-title { font-size: var(--fs-sm); font-weight: var(--fw-medium); }
+.share-note { font-size: var(--fs-xs); color: var(--ash); line-height: var(--lh-loose); margin-top: 2px; }
+.share .input { font-size: var(--fs-xs); }

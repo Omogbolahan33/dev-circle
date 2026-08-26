@@ -1,0 +1,197 @@
+const test = require('node:test');
+const assert = require('node:assert');
+const path = require('path');
+
+// ─── The question editor ────────────────────────────────────
+// The editor moved out of survey-new.html so that the onboarding builder could
+// use it rather than carry a second copy. Two copies of a branching editor
+// drift within a release — and the copy that got there first had no test at
+// all, which is what made moving it feel risky.
+//
+// So this is the coverage that did not exist before: not the DOM wiring, which
+// needs a browser, but the part that decides what a card contains. A rating
+// question that stops offering a scale, a branching row that stops listing the
+// questions it can depend on, or an extension field that stops being drawn are
+// all silent failures on a page nobody has open.
+
+const SHARED = path.join(__dirname, '..', '..', 'public', 'assets', 'js');
+
+// The globals a builder page provides. Only what the module actually reaches
+// for — a fuller fake would be a fake of the browser rather than of the page.
+global.SurveySchema = require(path.join(SHARED, 'survey-schema.js'));
+global.SurveyTheme = require(path.join(SHARED, 'survey-theme.js'));
+global.SurveyRender = { mount() {}, heading: q => `<h2>${q.text}</h2>` };
+global.escapeHtml = value => String(value ?? '')
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;');
+global.CSS = { escape: v => v };
+global.Shell = { confirm: async () => true };
+
+// The preview declares a brand typeface into <head>, so the module reaches for
+// a document even when only its markup is under test.
+global.document = {
+  getElementById: () => null,
+  createElement: () => ({ id: '', textContent: '' }),
+  head: { appendChild() {} }
+};
+
+const QuestionBuilder = require(path.join(SHARED, 'question-builder.js'));
+
+// ─── A DOM the module can be driven against ─────────────────
+// render() writes HTML into a mount and then binds a listener per card. The
+// HTML is what is being asserted on, so the mount records it; the binding is
+// what needs a browser, so every lookup answers "nothing here" and the wiring
+// runs without doing anything.
+function element(childCount = 0) {
+  return {
+    _html: '',
+    set innerHTML(value) {
+      this._html = value;
+      this.children = Array.from({ length: (value.match(/class="q-card/g) || []).length }, () => element());
+    },
+    get innerHTML() { return this._html; },
+    children: Array.from({ length: childCount }, () => element()),
+    textContent: '',
+    classList: { toggle() {}, add() {}, remove() {}, contains: () => false },
+    querySelector: () => null,
+    querySelectorAll: () => [],
+    addEventListener() {},
+    setAttribute() {}, getAttribute: () => null,
+    style: { setProperty() {} }
+  };
+}
+
+const SCHEMA = {
+  types: SurveySchema.TYPES,
+  operators: SurveySchema.OPERATORS,
+  text_formats: Object.entries(SurveySchema.TEXT_FORMATS).map(([value, f]) => ({ value, label: f.label })),
+  rating_styles: SurveySchema.RATING_STYLES
+};
+
+function build(questions, extra = {}) {
+  const state = { questions, issues: [], locked: false, openQuestion: 0, theme: {}, circleTheme: null };
+  const el = { questions: element(), typeMenu: element(), preview: element(), count: element() };
+  const builder = QuestionBuilder.create({ schema: SCHEMA, state, el, title: () => 'A form', ...extra });
+  return { builder, state, el };
+}
+
+test('a card carries the settings its question type needs', () => {
+  const cases = [
+    ['rating',       ['data-set="scale"', 'data-set="label_low"', 'data-set="style"']],
+    ['nps',          ['data-set="label_low"', 'data-set="label_high"']],
+    ['text',         ['data-set="format"', 'data-set="max_length"', 'data-set-check="multiline"']],
+    ['multi_choice', ['data-add-option="options"', 'data-set="min_select"', 'data-set="max_select"']],
+    ['matrix',       ['data-add-option="rows"', 'data-add-option="columns"']],
+    ['number',       ['data-set="min"', 'data-set="max"', 'data-set="unit"']],
+    ['date',         ['data-set="min"', 'data-set="max"']],
+    ['boolean',      ['data-set="true_label"', 'data-set="false_label"']],
+    ['ranking',      ['data-add-option="options"']],
+    ['section',      ['data-set="description"']]
+  ];
+
+  for (const [type, expected] of cases) {
+    const { builder, state, el } = build([]);
+    builder.add(type);
+    builder.render();
+
+    for (const marker of expected) {
+      assert.ok(el.questions.innerHTML.includes(marker),
+        `a ${type} card is missing ${marker}`);
+    }
+    assert.equal(state.questions[0].type, type);
+  }
+});
+
+test('only one card is open at a time, and the closed ones show their wording', () => {
+  const { builder, state, el } = build([]);
+  builder.add('text');
+  builder.add('rating');
+  state.questions[0].text = 'What should we call you?';
+  builder.render();
+
+  const html = el.questions.innerHTML;
+  assert.equal((html.match(/class="q-card open/g) || []).length, 1);
+  assert.ok(html.includes('What should we call you?'), 'a closed card should still read as itself');
+});
+
+test('a card with something wrong opens regardless of which one was being edited', () => {
+  const { builder, state, el } = build([]);
+  builder.add('text');
+  builder.add('rating');
+  state.openQuestion = 1;
+  state.issues = [{ index: 0, message: 'A question needs wording' }];
+  builder.render();
+
+  const html = el.questions.innerHTML;
+  assert.ok(html.includes('class="q-card open invalid"'), 'the invalid card should be open');
+  assert.ok(html.includes('A question needs wording'));
+});
+
+test('branching can only be written against questions asked earlier', () => {
+  const questions = [
+    { id: 'q1', type: 'boolean', text: 'Have you reached production?', true_label: 'Yes', false_label: 'No' },
+    { id: 'q2', type: 'text', text: 'What is stopping you?', format: 'none' }
+  ];
+  const { builder, state, el } = build(questions);
+  // Only the open card draws its settings, so the one being asserted on is the
+  // one that has to be open.
+  state.openQuestion = 1;
+  builder.render();
+
+  // The second question can branch on the first
+  assert.ok(el.questions.innerHTML.includes('data-add-logic'),
+    'a later question should be able to branch');
+
+  // The first cannot branch on anything, because nothing came before it
+  const { builder: b2, el: el2 } = build([questions[0]]);
+  b2.render();
+  assert.ok(!el2.questions.innerHTML.includes('data-add-logic'),
+    'the first question has nothing to branch on');
+});
+
+test('a rule row offers the operators its source question actually accepts', () => {
+  const questions = [
+    { id: 'q1', type: 'boolean', text: 'Have you reached production?', true_label: 'Yes', false_label: 'No' },
+    {
+      id: 'q2', type: 'text', text: 'What is stopping you?', format: 'none',
+      visible_if: { match: 'all', rules: [{ question: 'q1', op: 'is', value: false }] }
+    }
+  ];
+  const { builder, state, el } = build(questions);
+  state.openQuestion = 1;
+  builder.render();
+  const html = el.questions.innerHTML;
+
+  assert.ok(html.includes('data-rule-question'), 'the rule names the question it depends on');
+  assert.ok(html.includes('data-rule-op'), 'the rule names a condition');
+  // A boolean is compared by is / is not, never by "more than"
+  for (const op of SurveySchema.operatorsFor('boolean')) {
+    assert.ok(SurveySchema.OPERATORS.some(o => o.op === op), `${op} is a real operator`);
+  }
+  assert.ok(!html.includes('>more than<'), 'a yes/no answer cannot be more than anything');
+});
+
+test('a form that tags its questions gets its extra field drawn on every card', () => {
+  // This is the whole reason the editor is shared rather than copied: onboarding
+  // adds one control to a card and changes nothing else about it.
+  const drawn = [];
+  const { builder, el } = build([], {
+    extraFields: (question, index) => {
+      drawn.push(index);
+      return `<div class="field"><select data-maps-to></select></div>`;
+    }
+  });
+
+  builder.add('text');
+  builder.render();
+
+  assert.ok(el.questions.innerHTML.includes('data-maps-to'), 'the tag control should be on the card');
+  assert.ok(drawn.length > 0, 'the extension should have been asked to draw');
+});
+
+test('the definition change hook fires when a question is added', () => {
+  let changes = 0;
+  const { builder } = build([], { onChange: () => { changes++; } });
+  builder.add('rating');
+  assert.equal(changes, 1, 'the page has to be told its form changed');
+});

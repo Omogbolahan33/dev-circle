@@ -245,12 +245,34 @@ router.get('/members/:id/timeline', requirePermission('members.read'), async (re
 
 // PUT /api/admin/members/:id
 router.put('/members/:id', requirePermission('members.write'), async (req, res) => {
-  const { status, api_status, kyb_completed, work_sector, api_products, location_state, gender } = req.body;
+  const {
+    status, api_status, kyb_completed, work_sector, api_products, location_state, gender, phone
+  } = req.body;
   const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
   if (!user) return res.status(404).json({ error: 'Member not found' });
 
   const updates = [];
   const params = [];
+
+  // The number is half of what a member signs in with — their address and its
+  // last six digits — so this is not an ordinary contact detail and it is the
+  // only way to rescue somebody who has none. Members arrive through four doors
+  // that never required one (SSO, the landing page, a spreadsheet, an
+  // administrator typing them in), and every one of those produces an account
+  // that cannot sign in until this is filled.
+  //
+  // Normalised on the way in for the same reason it is everywhere else: the six
+  // digits are counted off the E.164 form, so 0803… and +234803… have to become
+  // one number or the same person gets a different credential depending on how
+  // it was typed.
+  if (phone !== undefined) {
+    const normalized = identity.normalizePhone(phone);
+    if (phone && !normalized) {
+      return res.status(400).json({ error: 'That is not a phone number we can read.' });
+    }
+    updates.push('phone = ?'); params.push(phone || null);
+    updates.push('phone_normalized = ?'); params.push(normalized);
+  }
 
   if (status) {
     if (!['active', 'inactive', 'suspended'].includes(status)) {
@@ -289,7 +311,8 @@ router.put('/members/:id', requirePermission('members.write'), async (req, res) 
 });
 
 // POST /api/admin/members/:id/sign-out
-// Members have no password to reset — they sign in with a one-time code — so
+// Members have no password to reset — they sign in with their address and the
+// last six digits of their phone number — so
 // what an operator actually needs after a report of a lost or shared device is
 // to end that member's live sessions. The next code they request is their way
 // back in.
@@ -416,7 +439,11 @@ router.post('/import', requirePermission('members.import'), async (req, res) => 
   // generated from, so the two cannot describe different things.
   const normalise = row => importTemplates.normaliseRow('members', row);
 
-  const run = db.transaction(() => {
+  // Awaited inside db.atomic rather than better-sqlite3's synchronous
+  // transaction: on Postgres every statement below is a promise, and left
+  // unawaited they ran outside the transaction opened for them — and an
+  // engagement entry that failed did so as an unhandled rejection.
+  const run = () => db.atomic(async () => {
     for (const raw of rows) {
       const row = normalise(raw);
 
@@ -435,7 +462,7 @@ router.post('/import', requirePermission('members.import'), async (req, res) => 
         results.errors.push({ row: raw, error: `"${row.email}" is a Credit Direct address — add staff under Roles` });
         continue;
       }
-      if (existsStmt.get(row.email)) {
+      if (await existsStmt.get(row.email)) {
         results.skipped++;
         continue;
       }
@@ -449,17 +476,17 @@ router.post('/import', requirePermission('members.import'), async (req, res) => 
       const id = uuid();
 
       try {
-        insertStmt.run(
+        await insertStmt.run(
           id, row.email, row.name, row.phone, identity.normalizePhone(row.phone),
           row.company, row.work_sector, identity.NO_PASSWORD,
           row.date_of_birth, row.gender, row.location_state, JSON.stringify(row.api_products)
         );
-        if (allCohort) cohortStmt.run(id, allCohort.id);
-        if (cohort_id) cohortStmt.run(id, cohort_id);
+        if (allCohort) await cohortStmt.run(id, allCohort.id);
+        if (cohort_id) await cohortStmt.run(id, cohort_id);
         // Imported members join the circle being worked in
-        if (workingCircle) circleStmt.run(workingCircle.id, id);
-        if (targetCircle && targetCircle.id !== workingCircle?.id) circleStmt.run(targetCircle.id, id);
-        engagement.log(id, 'account_created', { metadata: { via: 'bulk_import' }, source: 'manual' });
+        if (workingCircle) await circleStmt.run(workingCircle.id, id);
+        if (targetCircle && targetCircle.id !== workingCircle?.id) await circleStmt.run(targetCircle.id, id);
+        await engagement.log(id, 'account_created', { metadata: { via: 'bulk_import' }, source: 'manual' });
         results.created++;
       } catch (e) {
         results.errors.push({ row: raw, error: e.message });
@@ -471,7 +498,7 @@ router.post('/import', requirePermission('members.import'), async (req, res) => 
   });
 
   try {
-    run();
+    await run();
   } catch (err) {
     if (!(err instanceof DryRun)) throw err;
   }

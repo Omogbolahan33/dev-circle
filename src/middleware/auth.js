@@ -95,6 +95,14 @@ const PERMISSIONS = [
   { key: 'surveys.write', label: 'Create and edit surveys', group: 'Surveys' },
   { key: 'surveys.invite', label: 'Send survey invitations', group: 'Surveys' },
   { key: 'blasts.send', label: 'Send message blasts', group: 'Messaging' },
+  // An onboarding form is authored with the survey builder over the same
+  // question schema, so writing one is the same skill. Approving an
+  // application is not: it creates a member account from something a stranger
+  // typed into a page we do not control, which is why it is its own key rather
+  // than part of onboarding.write.
+  { key: 'onboarding.read', label: 'View onboarding forms and applications', group: 'Onboarding' },
+  { key: 'onboarding.write', label: 'Create and edit onboarding forms', group: 'Onboarding' },
+  { key: 'onboarding.approve', label: 'Approve applicants into a circle', group: 'Onboarding' },
   { key: 'feedback.read', label: 'View feedback and complaints', group: 'Feedback' },
   { key: 'feedback.write', label: 'Update feedback status', group: 'Feedback' },
   { key: 'gifts.read', label: 'View gifts', group: 'Rewards' },

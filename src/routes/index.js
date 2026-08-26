@@ -14,6 +14,10 @@ router.use('/auth', require('./auth.routes'));
 // Answering a survey over its link. The only routes here that take no
 // credential at all — see the file for what that changes about them.
 router.use('/public', require('./public.routes'));
+// Filling in an onboarding form. Like /public it takes no credential, but it
+// is reachable from pages this platform does not own — see the file for what
+// that changes.
+router.use('/onboarding', require('./onboarding.routes'));
 router.use('/users', require('./users.routes'));
 router.use('/feedback', require('./feedback.routes'));
 router.use('/admin', require('./admin'));

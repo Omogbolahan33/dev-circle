@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dev Circle — Onboarding</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/css/tokens.css">
+  <link rel="stylesheet" href="/assets/css/app.css">
+  <script src="/assets/js/theme.js"></script>
+  <style>
+    .snippet {
+      font-family: var(--font-mono);
+      font-size: var(--fs-xs);
+      background: var(--surface-2);
+      border: 1px solid var(--line);
+      border-radius: var(--r-md);
+      padding: var(--sp-3);
+      white-space: pre-wrap;
+      word-break: break-all;
+      line-height: var(--lh-loose);
+      color: var(--ash);
+    }
+    .where { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-top: var(--sp-3); }
+    .where-tag {
+      font-family: var(--font-mono);
+      font-size: var(--fs-xs);
+      padding: 2px var(--sp-2);
+      border-radius: var(--r-sm);
+      background: var(--tint-2);
+      color: var(--ash);
+    }
+  </style>
+</head>
+<body>
+
+<div class="app">
+  <div class="app-main">
+
+    <header class="page-head">
+      <div class="page-head-row">
+        <div>
+          <h1 class="page-title">Onboarding</h1>
+          <p class="page-subtitle">Forms that collect people who are not members yet — on this site or on somebody else's.</p>
+        </div>
+        <div class="page-actions">
+          <a href="/admin/onboarding-applications.html" class="btn btn-sm btn-secondary" id="queueLink">Applications</a>
+          <a href="/admin/onboarding-new.html" class="btn btn-sm btn-primary">New form</a>
+        </div>
+      </div>
+      <nav class="tabs" id="tabs">
+        <button class="tab active" data-status="">All</button>
+        <button class="tab" data-status="active">Live</button>
+        <button class="tab" data-status="draft">Draft</button>
+        <button class="tab" data-status="closed">Closed</button>
+      </nav>
+    </header>
+
+    <div class="app-body">
+      <div class="table-shell">
+        <div class="table-scroll">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Form</th>
+                <th>Status</th>
+                <th class="hide-sm">Embedded on</th>
+                <th>Waiting</th>
+                <th class="hide-sm">Members made</th>
+                <th class="col-actions"></th>
+              </tr>
+            </thead>
+            <tbody id="rows"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ─── How to put it on a page ────────────────────────── -->
+<!-- Shown rather than described. The snippet is assembled by the server, so
+     the address in it is the one this deployment actually answers on — a
+     staging form cannot hand out a production link. -->
+<aside class="drawer" id="embedDrawer">
+  <div class="drawer-head">
+    <div>
+      <div class="drawer-title">Share this form</div>
+      <div class="drawer-sub" id="embedFor"></div>
+    </div>
+    <button class="icon-btn" onclick="Shell.closeDrawer('embedDrawer')">×</button>
+  </div>
+  <div class="drawer-body" id="embedBody"></div>
+  <div class="drawer-foot">
+    <button class="btn btn-secondary" onclick="Shell.closeDrawer('embedDrawer')">Close</button>
+    <button class="btn btn-primary" onclick="copyOwnLink()">Copy the link</button>
+  </div>
+</aside>
+
+<!-- ─── A sheet of people ──────────────────────────────────── -->
+<!-- The other way a form gets filled in: not one person at a time on a page,
+     but a list handed over by a partner or a page of names off a stand. One row
+     or five hundred — the mechanism does not care, which is what makes "add
+     this one person" and "add these two hundred" the same feature. -->
+<aside class="drawer wide" id="importDrawer">
+  <div class="drawer-head">
+    <div>
+      <div class="drawer-title">Onboard from a spreadsheet</div>
+      <div class="drawer-sub" id="importFor"></div>
+    </div>
+    <button class="icon-btn" onclick="Shell.closeDrawer('importDrawer')">×</button>
+  </div>
+  <div class="drawer-body" id="importBody"></div>
+  <div class="drawer-foot" id="importFoot"></div>
+</aside>
+
+<script src="/assets/js/api.js"></script>
+<script src="/assets/js/shell.js"></script>
+<script>
+  Shell.admin('onboarding');
+
+  let forms = [];
+  let statusFilter = '';
+  let showing = null;
+
+  async function load() {
+    document.getElementById('rows').innerHTML = skeletonRows(4, 6);
+    try {
+      const data = await api.get('/admin/onboarding');
+      forms = data.forms;
+      render();
+    } catch (err) {
+      document.getElementById('rows').innerHTML =
+        `<tr><td colspan="6">${emptyState({ title: 'Could not load onboarding forms', text: err.message })}</td></tr>`;
+    }
+  }
+
+  function render() {
+    const list = forms.filter(f => !statusFilter || f.status === statusFilter);
+    const tbody = document.getElementById('rows');
+
+    document.querySelectorAll('.tab[data-status]').forEach(tab => {
+      const n = tab.dataset.status ? forms.filter(f => f.status === tab.dataset.status).length : forms.length;
+      const label = { '': 'All', active: 'Live', draft: 'Draft', closed: 'Closed' }[tab.dataset.status];
+      tab.innerHTML = `${label}<span class="count">${n}</span>`;
+    });
+
+    // How many people are waiting on somebody, across every form. It belongs
+    // on the button that goes to them rather than buried in a column.
+    const waiting = forms.reduce((n, f) => n + (f.pending_count || 0), 0);
+    document.getElementById('queueLink').innerHTML =
+      `Applications${waiting ? `<span class="count">${waiting}</span>` : ''}`;
+
+    if (!list.length) {
+      tbody.innerHTML = `<tr><td colspan="6">${emptyState({
+        title: statusFilter ? `No ${statusFilter === 'active' ? 'live' : statusFilter} forms` : 'No onboarding forms yet',
+        text: 'An onboarding form asks whatever this circle needs to know, in its own words and its own branding, and can be embedded on a page this platform does not own — a partner\'s developer docs, a campaign microsite, a conference stand. What comes back is an application: nobody becomes a member until somebody here approves them.',
+        action: '<a href="/admin/onboarding-new.html" class="btn btn-sm btn-primary">Write the first one</a>'
+      })}</td></tr>`;
+      return;
+    }
+
+    // A section heading is not a question, so counting it would overstate what
+    // the form asks.
+    const questionCount = f => (f.questions || []).filter(q => q.type !== 'section').length;
+
+    tbody.innerHTML = list.map(f => {
+      const origins = f.allowed_origins || [];
+      const where = origins.length
+        ? origins.slice(0, 2).map(o => escapeHtml(o.replace(/^https?:\/\//, ''))).join(', ') +
+          (origins.length > 2 ? ` +${origins.length - 2}` : '')
+        : '<span class="dim">its own link only</span>';
+
+      return `
+        <tr class="row-link" onclick="window.location.href='/admin/onboarding-new.html?id=${f.id}'">
+          <td>
+            <div class="identity-meta">
+              <div class="identity-name">${escapeHtml(f.name)}</div>
+              <div class="identity-sub">${questionCount(f)} question${questionCount(f) === 1 ? '' : 's'}${
+                (f.questions || []).some(q => q.visible_if) ? ' · branching' : ''}${
+                (f.cohort_ids || []).length ? ` · joins ${f.cohort_ids.length} cohort${f.cohort_ids.length === 1 ? '' : 's'}` : ''}</div>
+            </div>
+          </td>
+          <td>${badge(f.status === 'active' ? 'live' : f.status,
+            f.status === 'active' ? 'active' : f.status === 'draft' ? 'warn' : 'inactive')}</td>
+          <td class="hide-sm text-xs muted">${where}</td>
+          <td class="nowrap">
+            ${f.pending_count
+              ? `<a class="mono tnum" href="/admin/onboarding-applications.html?form_id=${f.id}"
+                    onclick="event.stopPropagation()">${f.pending_count}</a>`
+              : '<span class="dim">—</span>'}
+          </td>
+          <td class="hide-sm mono tnum">${f.approved_count || 0}</td>
+          <td class="col-actions" onclick="event.stopPropagation()">
+            <div class="row-actions">
+              ${f.status === 'active'
+                ? `<button class="btn btn-sm btn-ghost" onclick="showShare('${f.id}')">Share</button>` : ''}
+              <button class="btn btn-sm btn-ghost" onclick="showImport('${f.id}')">Import</button>
+              <a class="btn btn-sm btn-ghost" href="/admin/onboarding-new.html?id=${f.id}">Edit</a>
+              <button class="btn btn-sm btn-ghost" onclick="duplicate('${f.id}', this)">Duplicate</button>
+              <a class="btn btn-sm btn-ghost" href="/admin/onboarding-applications.html?form_id=${f.id}">Applications</a>
+            </div>
+          </td>
+        </tr>`;
+    }).join('');
+  }
+
+  // ─── The embed ────────────────────────────────────────────
+  // Two things to hand over: where the form lives, and the snippet that puts
+  // it on a page. Both are shown, because which one somebody needs depends on
+  // whether they own the page it is going on.
+
+  async function showShare(id) {
+    showing = forms.find(f => f.id === id);
+    document.getElementById('embedFor').textContent = showing.name;
+    document.getElementById('embedBody').innerHTML = '<div class="row"><span class="spinner"></span></div>';
+    Shell.openDrawer('embedDrawer');
+
+    try {
+      const data = await api.get(`/admin/onboarding/${id}`);
+      showing = { ...showing, ...data.form, embed_snippet: data.embed_snippet };
+      const origins = showing.allowed_origins || [];
+
+      document.getElementById('embedBody').innerHTML = `
+        <div class="field">
+          <label class="label">Send people a link</label>
+          <div class="row" style="gap:var(--sp-2)">
+            <input class="input mono" id="ownLink" readonly value="${location.origin}${escapeHtml(showing.public_path || '')}">
+            <button class="btn btn-sm btn-secondary" onclick="copyOwnLink()">Copy</button>
+          </div>
+          <p class="hint">
+            The simplest way to hand this out: paste it into an email, a WhatsApp group, a post,
+            or turn it into a QR code for a stand. It opens the same form the embed shows, and
+            nobody needs an account to fill it in.
+          </p>
+        </div>
+
+        <div class="field">
+          <label class="label">On somebody else's page</label>
+          <div class="snippet" id="snippet">${escapeHtml(showing.embed_snippet || '')}</div>
+          <p class="hint">Paste both lines where the form should appear. The frame sizes itself to the
+          questions as they branch, so it needs no height set.</p>
+        </div>
+
+        <div class="field">
+          <label class="label">Sites allowed to embed it</label>
+          ${origins.length
+            ? `<div class="where">${origins.map(o => `<span class="where-tag">${escapeHtml(o)}</span>`).join('')}</div>
+               <p class="hint">Any other site is refused by the browser before the form loads.</p>`
+            : `<p class="hint">None yet — so the form opens at its own address but is embedded nowhere.
+               A site has to be named before its page can frame it, which is what stops somebody
+               else wrapping this form in a page of their own.
+               <a href="/admin/onboarding-new.html?id=${showing.id}">Name one</a>.</p>`}
+        </div>
+
+        <div class="field" style="margin-bottom:0">
+          <label class="label">When somebody sends it in</label>
+          <p class="hint">
+            The host page is told, so it can hide the form or show its own confirmation:
+            listen for <span class="mono">devcircle:onboarding:submitted</span> on the placeholder element.
+            ${showing.redirect_url
+              ? `It then sends them to <span class="mono">${escapeHtml(showing.redirect_url)}</span>.`
+              : 'Nothing else happens automatically.'}
+          </p>
+        </div>`;
+    } catch (err) {
+      document.getElementById('embedBody').innerHTML =
+        `<p class="hint" style="color:var(--rose-ink)">${escapeHtml(err.message)}</p>`;
+    }
+  }
+
+  async function copySnippet() {
+    const text = document.getElementById('snippet')?.textContent;
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      showToast('Snippet copied');
+    } catch {
+      showToast('Select the snippet and press ⌘C', 'warning');
+    }
+  }
+
+  async function copyOwnLink() {
+    const field = document.getElementById('ownLink');
+    try {
+      await navigator.clipboard.writeText(field.value);
+      showToast('Link copied');
+    } catch {
+      field.select();
+      showToast('Press ⌘C to copy', 'warning');
+    }
+  }
+
+// ─── Onboarding from a spreadsheet ────────────────────────
+  // Three steps and they are deliberately in this order: take the template,
+  // check the file, then land it. The check is the part that earns its place —
+  // an operator with a two-hundred-row sheet wants to know what is wrong with
+  // it before any of it lands, and a refusal per line is what makes a sheet
+  // fixable in one pass rather than one row at a time.
+
+  let importing = null;
+  let staged = null;      // { name, csv } — the file chosen, not yet sent
+
+  async function showImport(id) {
+    importing = forms.find(f => f.id === id);
+    staged = null;
+    document.getElementById('importFor').textContent = importing.name;
+    document.getElementById('importBody').innerHTML = '<div class="row"><span class="spinner"></span></div>';
+    document.getElementById('importFoot').innerHTML = '';
+    Shell.openDrawer('importDrawer');
+
+    try {
+      const spec = await api.get(`/admin/onboarding/${id}/import/columns`);
+      renderImport(spec);
+    } catch (err) {
+      document.getElementById('importBody').innerHTML =
+        `<p class="hint" style="color:var(--rose-ink)">${escapeHtml(err.message)}</p>`;
+    }
+  }
+
+  function renderImport(spec) {
+    const base = `/api/admin/onboarding/${importing.id}/import/template`;
+
+    document.getElementById('importBody').innerHTML = `
+      <div class="field">
+        <label class="label">1 · Take the template</label>
+        <p class="hint" style="margin-bottom:var(--sp-3)">
+          Built from this form's own questions, with a worked example row showing exactly what
+          each column accepts. Delete that row before you import.
+        </p>
+        <div class="row" style="gap:var(--sp-2)">
+          <button class="btn btn-sm btn-secondary" onclick="downloadTemplate('xlsx')">Excel</button>
+          <button class="btn btn-sm btn-secondary" onclick="downloadTemplate('csv')">CSV</button>
+        </div>
+      </div>
+
+      <div class="field">
+        <label class="label">2 · Choose your file</label>
+        <label class="btn btn-sm btn-secondary">
+          Choose a CSV file
+          <input type="file" accept=".csv,text/csv" hidden onchange="stageFile(this)">
+        </label>
+        <p class="hint" id="stagedName">Nothing chosen yet.</p>
+      </div>
+
+      <div class="field">
+        <label class="label">What this form expects</label>
+        <div class="table-shell">
+          <div class="table-scroll" style="max-height:260px">
+            <table class="data-table">
+              <thead><tr><th>Column</th><th>Required</th><th>Accepts</th></tr></thead>
+              <tbody>
+                ${spec.columns.filter(c => c.in_template).map(c => `
+                  <tr>
+                    <td class="text-xs mono">${escapeHtml(c.label)}${
+                      c.maps_to ? ` <span class="dim">→ ${escapeHtml(c.maps_to)}</span>` : ''}</td>
+                    <td class="text-xs">${c.required ? 'Required' : '<span class="dim">Optional</span>'}</td>
+                    <td class="text-xs muted">${escapeHtml(c.accepts || '')}</td>
+                  </tr>`).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="field" style="margin-bottom:0">
+        <label class="label">Notes</label>
+        <ul class="hint" style="padding-left:var(--sp-4)">
+          ${spec.guidance.map(line => `<li style="margin-bottom:4px">${escapeHtml(line)}</li>`).join('')}
+        </ul>
+      </div>
+
+      <div id="importResult"></div>`;
+
+    document.getElementById('importFoot').innerHTML = `
+      ${Auth.can('onboarding.approve') ? `
+        <label class="row-tight text-sm" style="cursor:pointer;gap:var(--sp-2);margin-right:auto">
+          <span class="check" id="approveOnImport">✓</span> Approve as they land
+        </label>` : ''}
+      <button class="btn btn-secondary" id="checkBtn" onclick="runImport(true)" disabled>Check the file</button>
+      <button class="btn btn-primary" id="importBtn" onclick="runImport(false)" disabled>Import</button>`;
+
+    document.getElementById('approveOnImport')?.addEventListener('click', e => {
+      e.currentTarget.classList.toggle('on');
+    });
+  }
+
+  // Served as an attachment behind the admin's bearer token, so it is fetched
+  // rather than linked: a plain href carries no Authorization header and would
+  // download a 401 as a file.
+  async function downloadTemplate(format) {
+    try {
+      const res = await fetch(
+        `${API_BASE}/admin/onboarding/${importing.id}/import/template?format=${format}`,
+        { headers: Auth.headers() }
+      );
+      if (!res.ok) throw new Error((await res.json()).error || 'Could not build the template');
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${importing.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-applicants.${format}`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  }
+
+  function stageFile(input) {
+    const file = input.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      // The BOM our own template carries would otherwise become part of the
+      // first heading, and that heading would match nothing.
+      staged = { name: file.name, csv: String(reader.result).replace(/^﻿/, '') };
+      document.getElementById('stagedName').textContent = `${file.name} — ready to check.`;
+      document.getElementById('checkBtn').disabled = false;
+      document.getElementById('importBtn').disabled = false;
+      document.getElementById('importResult').innerHTML = '';
+    };
+    reader.onerror = () => showToast('That file could not be read', 'error');
+    reader.readAsText(file);
+  }
+
+  async function runImport(dryRun) {
+    if (!staged) return;
+
+    const button = document.getElementById(dryRun ? 'checkBtn' : 'importBtn');
+    const label = button.textContent;
+    button.disabled = true;
+    button.textContent = dryRun ? 'Checking…' : 'Importing…';
+
+    try {
+      const result = await api.post(`/admin/onboarding/${importing.id}/import`, {
+        csv: staged.csv,
+        dry_run: dryRun,
+        approve: document.getElementById('approveOnImport')?.classList.contains('on') || false
+      });
+      renderImportResult(result, dryRun);
+      if (!dryRun) load();
+    } catch (err) {
+      document.getElementById('importResult').innerHTML =
+        `<p class="hint" style="color:var(--rose-ink)">${escapeHtml(err.message)}</p>`;
+    } finally {
+      button.disabled = false;
+      button.textContent = label;
+    }
+  }
+
+  function renderImportResult(result, dryRun) {
+    const lines = [
+      dryRun
+        ? `${result.created} row${result.created === 1 ? '' : 's'} would land`
+        : `${result.created} application${result.created === 1 ? '' : 's'} created`,
+      result.approved ? `${result.approved} approved into the circle` : null,
+      result.skipped ? `${result.skipped} already held, skipped` : null,
+      result.errors.length ? `${result.errors.length} refused` : null
+    ].filter(Boolean);
+
+    document.getElementById('importResult').innerHTML = `
+      <div class="card mt-4">
+        <div class="card-title mb-3">${dryRun ? 'What would happen' : 'What landed'}</div>
+        <p class="text-sm">${escapeHtml(lines.join(' · '))}</p>
+
+        ${result.unmatched_columns.length ? `
+          <p class="hint" style="margin-top:var(--sp-3)">
+            Columns this form has nowhere to put:
+            <span class="mono">${result.unmatched_columns.map(escapeHtml).join(', ')}</span>.
+            Nothing in them was kept — a blank answer and a column that did not line up look
+            identical afterwards, so it is said here or not at all.
+          </p>` : ''}
+
+        ${result.errors.length ? `
+          <div class="table-shell mt-3">
+            <div class="table-scroll" style="max-height:220px">
+              <table class="data-table">
+                <thead><tr><th>Line</th><th>Why</th></tr></thead>
+                <tbody>
+                  ${result.errors.map(e => `
+                    <tr>
+                      <td class="mono tnum">${e.line}</td>
+                      <td class="text-xs">${escapeHtml(e.error)}</td>
+                    </tr>`).join('')}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <p class="hint" style="margin-top:var(--sp-2)">
+            Line numbers count the headings as line 1, so they match what the spreadsheet shows.
+          </p>` : ''}
+      </div>`;
+  }
+
+  // Running the same intake again means starting from the last one. The copy
+  // opens in the builder as a draft, because it wants a name and a home before
+  // it goes anywhere.
+  async function duplicate(id, button) {
+    const label = button.textContent;
+    button.disabled = true;
+    button.textContent = 'Copying…';
+    try {
+      const data = await api.post(`/admin/onboarding/${id}/duplicate`, {});
+      window.location.href = `/admin/onboarding-new.html?id=${data.form.id}`;
+    } catch (err) {
+      button.disabled = false;
+      button.textContent = label;
+      showToast(err.message, 'error');
+    }
+  }
+
+  document.getElementById('tabs').addEventListener('click', e => {
+    const tab = e.target.closest('.tab');
+    if (!tab) return;
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    statusFilter = tab.dataset.status;
+    render();
+  });
+
+  load();
+</script>
+</body>
+</html>

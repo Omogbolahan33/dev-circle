@@ -1,0 +1,805 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dev Circle — New onboarding form</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/css/tokens.css">
+  <link rel="stylesheet" href="/assets/css/app.css">
+  <link rel="stylesheet" href="/assets/css/fonts.css">
+  <link rel="stylesheet" href="/assets/css/builder.css">
+  <script src="/assets/js/theme.js"></script>
+  <style>
+    /* ─── The tag on a question ───────────────────────────
+       What separates this from a survey: an answer can be a fact about the
+       person rather than an opinion. The control sits under the question's own
+       settings and above its branching, because it is a property of the
+       question and not of the form. */
+    .maps {
+      margin-top: var(--sp-4);
+      padding-top: var(--sp-4);
+      border-top: 1px dashed var(--line-faint);
+    }
+    .maps-lead { font-size: var(--fs-xs); color: var(--ash-dim); margin-bottom: var(--sp-2); }
+    .maps-note { font-size: var(--fs-xs); color: var(--ash-dim); margin-top: var(--sp-2); line-height: var(--lh-loose); }
+    .q-maps {
+      font-family: var(--font-mono);
+      font-size: var(--fs-xs);
+      color: var(--cd-blue);
+      background: var(--cd-blue-dim);
+      padding: 1px var(--sp-2);
+      border-radius: var(--r-sm);
+    }
+
+    /* The origins a form may be framed on. One per line, because a comma in a
+       list of URLs is a typo waiting to happen. */
+    .origins { min-height: 92px; font-family: var(--font-mono); font-size: var(--fs-xs); }
+
+    .snippet {
+      font-family: var(--font-mono);
+      font-size: var(--fs-xs);
+      background: var(--surface-2);
+      border: 1px solid var(--line);
+      border-radius: var(--r-md);
+      padding: var(--sp-3);
+      white-space: pre-wrap;
+      word-break: break-all;
+      line-height: var(--lh-loose);
+      color: var(--ash);
+    }
+
+    .checklist { list-style: none; margin: 0; padding: 0; }
+    .checklist li {
+      display: flex; gap: var(--sp-2); align-items: flex-start;
+      font-size: var(--fs-sm); padding: var(--sp-2) 0; color: var(--ash);
+    }
+    .checklist .ok { color: var(--emerald); }
+    .checklist .todo { color: var(--amber-ink, var(--ash-dim)); }
+    /* Worth knowing, never blocking — drawn quieter than the two that are. */
+    .checklist .advisory { color: var(--ash-dim); }
+  </style>
+</head>
+<body>
+
+<div class="app">
+  <div class="app-main">
+
+    <header class="page-head">
+      <div class="breadcrumb">
+        <a href="/admin/onboarding.html">Onboarding</a>
+        <span class="sep">/</span>
+        <span id="crumb">New form</span>
+      </div>
+      <div class="page-head-row">
+        <div>
+          <h1 class="page-title" id="pageTitle">New onboarding form</h1>
+          <p class="page-subtitle">Ask what this circle needs to know. Tag the answers that are facts about the person, and the form can turn what comes back into a member.</p>
+        </div>
+        <div class="page-actions">
+          <a href="/admin/onboarding.html" class="btn btn-sm btn-secondary">Cancel</a>
+          <a class="btn btn-sm btn-secondary" id="queueLink" style="display:none">Applications</a>
+          <button class="btn btn-sm btn-ghost hide" onclick="deleteForm()" id="deleteBtn">Delete</button>
+          <button class="btn btn-sm btn-secondary" onclick="saveForm('draft')" id="draftBtn">Save draft</button>
+          <!-- Closing is how a form stops taking applications. Two other places
+               in this page tell an author to close a form; this is the button
+               they were being told about. -->
+          <button class="btn btn-sm btn-secondary hide" onclick="closeForm()" id="closeBtn">Close it</button>
+          <button class="btn btn-sm btn-gold" onclick="saveForm('active')" id="publishBtn">Publish</button>
+        </div>
+      </div>
+
+      <nav class="tabs">
+        <button class="tab active" data-step="questions">Questions <span class="count" id="stepQCount">0</span></button>
+        <button class="tab" data-step="where">Where it goes</button>
+        <button class="tab" data-step="embed">Embed</button>
+        <button class="tab" data-step="look">Look</button>
+      </nav>
+    </header>
+
+    <div class="app-body">
+      <div class="composer">
+
+        <div class="stack">
+          <section class="step" id="step-questions">
+            <div class="hide" id="lockNotice"></div>
+            <div id="questions"></div>
+
+            <button class="btn btn-sm btn-secondary mt-3" id="addToggle" onclick="toggleTypeMenu()">+ Add a question</button>
+            <div class="type-menu hide mt-3" id="typeMenu"></div>
+          </section>
+
+          <section class="step hide" id="step-where">
+            <div class="card">
+              <div class="card-title mb-4">About this form</div>
+              <div class="field">
+                <label class="label">Name</label>
+                <input type="text" class="input" id="fName" placeholder="e.g. Partner developer intake">
+                <p class="hint">For you, in the list. What the person filling it in sees is its opening screen.</p>
+              </div>
+              <div class="field" style="margin-bottom:0">
+                <label class="label">Description</label>
+                <textarea class="input" id="fDesc" placeholder="One line on who this is for."></textarea>
+              </div>
+            </div>
+
+            <div class="card mt-4">
+              <div class="card-title mb-4">Where they land</div>
+              <!-- The circle is not a choice on this page. A form belongs to the
+                   workspace it was written in, and its applicants join that one —
+                   letting an author point a form at another circle would move
+                   people between workspaces from a dropdown. -->
+              <div class="field">
+                <label class="label">Circle</label>
+                <input type="text" class="input" id="fCircle" readonly>
+                <p class="hint">Approved applicants become members of this circle. Switch workspace to write a form for another one.</p>
+              </div>
+
+              <div class="field">
+                <label class="label">Cohorts they join</label>
+                <div id="cohortList"></div>
+                <p class="hint">On top of whatever the cohort rules put them in. A form is usually run for a reason — a programme, a partner, an event — and that reason is a cohort.</p>
+              </div>
+
+              <div class="field" style="margin-bottom:0">
+                <label class="label">If the same address applies twice</label>
+                <select class="input" id="fDuplicate">
+                  <option value="replace">Keep the newer one, supersede the earlier</option>
+                  <option value="reject">Refuse the second, tell them we have it</option>
+                  <option value="allow">Keep both in the queue</option>
+                </select>
+                <p class="hint">Forms get posted in more than one place, and people forget they applied. Somebody who is already a member is always told so, whichever this is set to.</p>
+              </div>
+            </div>
+
+            <div class="card mt-4">
+              <div class="card-title mb-4">When they have sent it in</div>
+              <div class="field">
+                <label class="label">What to say</label>
+                <textarea class="input" id="fMessage" placeholder="Thanks — we will be in touch once someone has looked at this."></textarea>
+                <p class="hint">Nobody is a member yet at this point, so this should not promise access. It should say somebody will read it.</p>
+              </div>
+              <div class="field" style="margin-bottom:0">
+                <label class="label">Then send them to (optional)</label>
+                <input type="text" class="input mono" id="fRedirect" placeholder="https://developers.partner.com/thanks">
+                <p class="hint">Embedded, the host page does the navigating — the form is in a frame and cannot move the page around it.</p>
+              </div>
+            </div>
+          </section>
+
+          <section class="step hide" id="step-embed">
+            <div class="card">
+              <div class="card-title mb-4">Sites allowed to embed it</div>
+              <div class="field">
+                <label class="label">One address per line</label>
+                <textarea class="input origins" id="fOrigins" placeholder="https://developers.partner.com&#10;https://*.creditdirect.ng"></textarea>
+                <p class="hint">
+                  The site, not the page — an embed is allowed by origin. A leading <span class="mono">*.</span>
+                  matches subdomains. Anything not listed is refused by the browser before the form loads,
+                  which is what stops somebody else wrapping this form in a page of their own.
+                </p>
+              </div>
+            </div>
+
+            <div class="card mt-4">
+              <div class="card-title mb-4">The snippet</div>
+              <div id="embedBox">
+                <p class="hint">Save the form and its snippet appears here.</p>
+              </div>
+            </div>
+
+            <div class="card mt-4">
+              <div class="card-title mb-4">What the host page can do</div>
+              <p class="hint">
+                The frame reports its height as questions branch, so it never needs one set.
+                When somebody sends the form in, the placeholder element is given a
+                <span class="mono">devcircle:onboarding:submitted</span> event — enough to hide the
+                section, show a confirmation of the host's own, or send an analytics event.
+                Nothing else crosses between the two pages: what is typed into the form is
+                readable only by this platform, which is the point of it being a frame.
+              </p>
+            </div>
+          </section>
+
+          <section class="step hide" id="step-look">
+            <div class="card" id="rail-theme"></div>
+          </section>
+        </div>
+
+        <aside class="rail">
+          <section class="card">
+            <div class="card-title mb-4">Before it can go out</div>
+            <ul class="checklist" id="checklist"></ul>
+          </section>
+          <section class="card mt-4">
+            <div class="card-title mb-4">What they see</div>
+            <div class="preview-frame" id="preview"></div>
+            <p class="hint">This is the real control — try answering it to see where the branching goes.</p>
+          </section>
+        </aside>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/assets/js/api.js"></script>
+<script src="/assets/js/shell.js"></script>
+<script src="/assets/js/survey-schema.js"></script>
+<script src="/assets/js/survey-theme.js"></script>
+<script src="/assets/js/survey-render.js"></script>
+<script src="/assets/js/question-builder.js"></script>
+<script src="/assets/js/theme-panel.js"></script>
+<script>
+  Shell.admin('onboarding');
+
+  // ─── State ────────────────────────────────────────────────
+  // The same shape the survey builder holds, and for the same reason: the
+  // questions live here rather than in the DOM, because branching points at
+  // question ids and a rule has to survive a card being edited or moved.
+  //
+  // What is added is `maps_to` on a question — which profile field its answer
+  // fills in. It is held on the question rather than in a map beside it so
+  // that moving, copying or branching around a question carries the meaning
+  // with it.
+
+  const state = {
+    id: param('id'),
+    questions: [],
+    theme: {},
+    circleTheme: null,
+    cohortIds: [],
+    locked: false,             // applications exist, so questions cannot change
+    status: 'draft',
+    counts: null,
+    issues: [],
+    openQuestion: 0
+  };
+
+  let schema = null;
+  let fields = [];             // what a question can be tagged as collecting
+  let builder = null;
+  let themePanel = null;
+
+  function renderQuestions()     { builder?.render(); }
+  function renderPreview()       { builder?.preview(); }
+  function renderTypeMenu()      { builder?.renderTypeMenu(); }
+  function toggleTypeMenu(force) { builder?.toggleTypeMenu(force); }
+  function addQuestion(type)     { builder?.add(type); }
+  function renderThemePanel()    { themePanel?.render(); }
+
+  // ─── Loading ──────────────────────────────────────────────
+
+  async function load() {
+    try {
+      schema = await api.get('/admin/onboarding/schema');
+      fields = schema.fields;
+      state.circleTheme = schema.theme.circle;
+    } catch (err) {
+      showToast('Could not load the question types: ' + err.message, 'error');
+      return;
+    }
+
+    builder = QuestionBuilder.create({
+      schema,
+      state,
+      el: {
+        questions: document.getElementById('questions'),
+        typeMenu:  document.getElementById('typeMenu'),
+        preview:   document.getElementById('preview'),
+        count:     document.getElementById('stepQCount')
+      },
+      title: () => document.getElementById('fName').value.trim() || 'Untitled form',
+      // Tagging changes what a question means but not what it looks like, so
+      // the checklist is redrawn on every edit and the card is not.
+      onChange: renderChecklist,
+      extraFields: mapsField,
+      bindExtra: bindMapsField,
+      // Which field a question collects, on the card's header — so it is still
+      // readable when eight questions are collapsed, which is when it matters.
+      cardFlags: question => question.maps_to
+        ? `<span class="q-maps">${escapeHtml(question.maps_to)}</span>`
+        : ''
+    });
+
+    themePanel = ThemePanel.create({
+      schema,
+      state,
+      mount: document.getElementById('rail-theme'),
+      noun: 'form',
+      onChange: () => renderPreview(),
+      onReset: () => builder?.resetPreview()
+    });
+
+    renderTypeMenu();
+    renderThemePanel();
+    await loadCircle();
+    await loadCohorts();
+
+    if (state.id) await loadExisting();
+    else seed();
+
+    renderQuestions();
+    renderPreview();
+    renderChecklist();
+  }
+
+  // A new form opens on the questions every form has to ask, already tagged and
+  // already required. Starting from an empty page means every author writes
+  // "What is your email address?" from scratch, half of them forget to tag it,
+  // and all of them meet the same refusal at publish time.
+  //
+  // The wording is a starting point, not a fixture — rewrite it, reorder it,
+  // brand it. What cannot change is that the two halves of the credential are
+  // asked of everybody.
+  function seed() {
+    const start = [
+      { text: 'What should we call you?', maps_to: 'name', format: 'none' },
+      { text: 'Which email address should we reach you on?', maps_to: 'email', format: 'email' },
+      { text: 'And your phone number?', maps_to: 'phone', format: 'phone' }
+    ];
+
+    for (const spec of start) {
+      addQuestion('text');
+      Object.assign(state.questions[state.questions.length - 1], {
+        ...spec,
+        required: true,
+        multiline: false
+      });
+    }
+    state.openQuestion = 0;
+  }
+
+  async function loadCircle() {
+    try {
+      const data = await api.get('/admin/circles');
+      const id = Auth.getCircle();
+      const circle = data.circles.find(c => c.id === id) || data.circles[0];
+      document.getElementById('fCircle').value = circle ? circle.name : 'This workspace';
+    } catch {
+      document.getElementById('fCircle').value = 'This workspace';
+    }
+  }
+
+  async function loadCohorts() {
+    try {
+      const data = await api.get('/admin/cohorts');
+      const holder = document.getElementById('cohortList');
+
+      if (!data.cohorts.length) {
+        holder.innerHTML = '<p class="hint">No cohorts in this circle yet.</p>';
+        return;
+      }
+
+      holder.innerHTML = data.cohorts.map(c => `
+        <label class="row-tight text-sm" style="cursor:pointer;gap:var(--sp-2);padding:var(--sp-1) 0">
+          <span class="check" data-cohort="${c.id}">✓</span>
+          ${escapeHtml(c.name)} <span class="dim text-xs">${c.member_count}</span>
+        </label>`).join('');
+
+      holder.querySelectorAll('[data-cohort]').forEach(check => {
+        check.addEventListener('click', () => {
+          const id = check.dataset.cohort;
+          state.cohortIds = state.cohortIds.includes(id)
+            ? state.cohortIds.filter(c => c !== id)
+            : state.cohortIds.concat(id);
+          check.classList.toggle('on', state.cohortIds.includes(id));
+        });
+      });
+
+      syncCohortChecks();
+    } catch {
+      document.getElementById('cohortList').innerHTML = '<p class="hint">Cohorts could not be loaded.</p>';
+    }
+  }
+
+  function syncCohortChecks() {
+    document.querySelectorAll('[data-cohort]').forEach(check => {
+      check.classList.toggle('on', state.cohortIds.includes(check.dataset.cohort));
+    });
+  }
+
+  async function loadExisting() {
+    try {
+      const data = await api.get(`/admin/onboarding/${state.id}`);
+      const form = data.form;
+
+      state.questions = form.questions || [];
+      state.theme = form.theme || {};
+      state.cohortIds = form.cohort_ids || [];
+      state.locked = data.questions_locked;
+      if (data.circle_theme) state.circleTheme = data.circle_theme;
+
+      document.getElementById('fName').value = form.name || '';
+      document.getElementById('fDesc').value = form.description || '';
+      document.getElementById('fMessage').value = form.submitted_message || '';
+      document.getElementById('fRedirect').value = form.redirect_url || '';
+      document.getElementById('fDuplicate').value = form.duplicate_policy || 'replace';
+      document.getElementById('fOrigins').value = (form.allowed_origins || []).join('\n');
+
+      document.getElementById('crumb').textContent = form.name;
+      document.getElementById('pageTitle').textContent = `Edit: ${form.name}`;
+      document.title = `Dev Circle — ${form.name}`;
+      document.getElementById('publishBtn').textContent =
+        form.status === 'active' ? 'Save changes' : form.status === 'closed' ? 'Reopen' : 'Publish';
+
+      const close = document.getElementById('closeBtn');
+      close.classList.toggle('hide', form.status !== 'active');
+      state.status = form.status;
+      state.counts = data.counts;
+
+      const queue = document.getElementById('queueLink');
+      queue.href = `/admin/onboarding-applications.html?form_id=${form.id}`;
+      queue.style.display = '';
+      queue.innerHTML = `Applications${data.counts.pending ? `<span class="count">${data.counts.pending}</span>` : ''}`;
+
+      // Deleting is offered only while there is nothing to lose. Once anybody
+      // has filled it in, closing is the operation and the button above is it.
+      if (!data.questions_locked) {
+        const remove = document.getElementById('deleteBtn');
+        remove.classList.remove('hide');
+      }
+
+      showEmbed(data.embed_snippet, form);
+      syncCohortChecks();
+
+      if (state.locked) {
+        // Rewriting a question that somebody has answered would leave their
+        // details filed under wording nobody was shown — and here those
+        // answers are a person's name, address and employer.
+        const decided = data.counts.pending + data.counts.approved + data.counts.rejected;
+        document.getElementById('lockNotice').className = 'card mb-4';
+        document.getElementById('lockNotice').innerHTML = `
+          <div class="row" style="gap:var(--sp-3);align-items:flex-start">
+            <span>🔒</span>
+            <div>
+              <div class="text-sm" style="font-weight:var(--fw-medium)">
+                ${decided} ${decided === 1 ? 'person has' : 'people have'} filled this in
+              </div>
+              <p class="hint" style="margin-top:2px">
+                The questions are fixed now — changing them would leave those answers attached to
+                wording nobody was shown. Close this form and write a new one to ask differently.
+                Its look, where it may be embedded and where it sends people can all still change.
+              </p>
+            </div>
+          </div>`;
+        document.getElementById('addToggle').classList.add('hide');
+      }
+
+      renderThemePanel();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  }
+
+  // ─── Tagging a question ───────────────────────────────────
+  // The one thing a card carries here that it does not in the survey builder.
+  // Everything else about the card comes from the shared editor.
+
+  function mapsField(question, index) {
+    if (!SurveySchema.isAnswerable(question)) return '';
+
+    // Only fields this type of question could actually carry. Offering a date
+    // of birth against a rating is offering a mistake.
+    const usable = fields.filter(f => f.types.includes(question.type));
+    if (!usable.length) {
+      return `<div class="maps"><p class="maps-lead">Nothing on a profile can be collected with a ${escapeHtml(question.type.replace('_', ' '))} question.</p></div>`;
+    }
+
+    // A field another question already collects is not offered twice: two
+    // questions filling one column means the second silently wins, and which
+    // one is second is a matter of what order they were dragged into.
+    const taken = new Set(state.questions
+      .filter((q, i) => i !== index && q.maps_to)
+      .map(q => q.maps_to));
+
+    const chosen = fields.find(f => f.value === question.maps_to);
+
+    return `
+      <div class="maps">
+        <p class="maps-lead">This answer is…</p>
+        <select class="input" data-maps-to>
+          <option value="">just an answer</option>
+          ${usable.map(f => `
+            <option value="${f.value}"${f.value === question.maps_to ? ' selected' : ''}${
+              taken.has(f.value) ? ' disabled' : ''}>
+              ${escapeHtml(f.label)}${f.required ? ' — required by every form' : f.recommended ? ' — recommended' : ''}${
+                taken.has(f.value) ? ' (already collected)' : ''}
+            </option>`).join('')}
+        </select>
+        ${chosen?.hint ? `<p class="maps-note">${escapeHtml(chosen.hint)}</p>` : ''}
+        ${chosen?.channels ? `<p class="maps-note">
+          Options have to name a channel we can message on: ${chosen.channels.join(', ').replace(/_/g, '-')}.
+          An option that names none is refused when the form is saved, rather than losing somebody's
+          consent quietly.</p>` : ''}
+        ${chosen?.days ? `<p class="maps-note">Options have to be days of the week.</p>` : ''}
+        ${question.maps_to === 'email' && question.format !== 'email'
+          ? '<p class="maps-note" style="color:var(--rose-ink)">Set the answer format to “Email address” — an address we cannot mail is an application nobody can act on.</p>' : ''}
+        ${question.maps_to === 'phone' && question.format !== 'phone'
+          ? '<p class="maps-note" style="color:var(--rose-ink)">Set the answer format to “Phone number”.</p>' : ''}
+        ${question.maps_to === 'phone' && question.format === 'phone'
+          ? '<p class="maps-note">Its last six digits are what they sign in with, so it is worth saying on the form why you are asking.</p>' : ''}
+      </div>`;
+  }
+
+  function bindMapsField(cardEl, question, index, { redraw }) {
+    cardEl.querySelector('[data-maps-to]')?.addEventListener('change', e => {
+      const value = e.target.value;
+      if (value) question.maps_to = value;
+      else delete question.maps_to;
+
+      // A required field has to be asked of everybody, so tagging one sets the
+      // two things that make that true rather than leaving an author to
+      // discover the refusal at publish time.
+      const field = fields.find(f => f.value === value);
+      if (field?.required) question.required = true;
+      if (value === 'email') question.format = 'email';
+      if (value === 'phone') question.format = 'phone';
+
+      redraw();
+    });
+  }
+
+  // ─── What still has to be true ────────────────────────────
+  // The refusals a publish would give, shown while there is still something to
+  // do about them. The server checks all of this again — this is the version
+  // that is visible before you press the button.
+
+  function renderChecklist() {
+    const list = document.getElementById('checklist');
+    if (!list) return;
+
+    const items = [];
+
+    // The credential first, because it is the only thing that blocks a publish.
+    for (const field of fields.filter(f => f.required)) {
+      const question = state.questions.find(q => q.maps_to === field.value);
+      const ok = !!question && question.required && !question.visible_if;
+      items.push({
+        ok,
+        blocking: true,
+        text: !question ? `Tag a question as the ${field.label.toLowerCase()}`
+          : question.visible_if ? `The ${field.label.toLowerCase()} is behind a branch, so it can be skipped`
+          : !question.required ? `An answer to the ${field.label.toLowerCase()} has to be required`
+          : `${field.label} is collected`
+      });
+    }
+
+    // Then what is merely worth knowing. Everything else a form asks is the
+    // circle's to choose, and a form that skips it publishes fine.
+    for (const field of fields.filter(f => f.recommended)) {
+      const question = state.questions.find(q => q.maps_to === field.value);
+      const ok = !!question && question.required && !question.visible_if;
+      items.push({
+        ok,
+        blocking: false,
+        text: ok
+          ? `${field.label} is collected`
+          : !question
+            ? `No question collects the ${field.label.toLowerCase()} — members will show as unnamed`
+            : `The ${field.label.toLowerCase()} can be skipped, so some members will be unnamed`
+      });
+    }
+
+    const answerable = state.questions.filter(SurveySchema.isAnswerable).length;
+    items.push({ ok: answerable > 0, text: answerable ? `${answerable} question${answerable === 1 ? '' : 's'} asked` : 'Ask at least one question' });
+
+    const origins = readOrigins();
+    items.push({
+      ok: origins.length > 0,
+      text: origins.length
+        ? `Embeddable on ${origins.length} site${origins.length === 1 ? '' : 's'}`
+        : 'No site named yet — it will open at its own link only'
+    });
+
+    list.innerHTML = items.map(i => `
+      <li>
+        <span class="${i.ok ? 'ok' : i.blocking ? 'todo' : 'advisory'}">${
+          i.ok ? '✓' : i.blocking ? '○' : '·'}</span>
+        ${escapeHtml(i.text)}
+      </li>`).join('');
+  }
+
+  const readOrigins = () => document.getElementById('fOrigins').value
+    .split(/[\s,]+/).map(o => o.trim()).filter(Boolean);
+
+  // ─── The embed ────────────────────────────────────────────
+
+  function showEmbed(snippet, form) {
+    const box = document.getElementById('embedBox');
+    if (!snippet) return;
+
+    box.innerHTML = `
+      <div class="field">
+        <label class="label">Paste both lines where the form should appear</label>
+        <div class="snippet" id="snippet">${escapeHtml(snippet)}</div>
+        <button class="btn btn-sm btn-secondary mt-3" onclick="copySnippet()">Copy</button>
+      </div>
+      <div class="field" style="margin-bottom:0">
+        <label class="label">Or hand out its own address</label>
+        <div class="row" style="gap:var(--sp-2)">
+          <input class="input mono" id="ownLink" readonly value="${location.origin}${escapeHtml(form.public_path || '')}">
+          <button class="btn btn-sm btn-secondary" onclick="copyOwnLink()">Copy</button>
+        </div>
+        <p class="hint">A QR code on a stand, a link in an email, a post. No account needed to open it.</p>
+      </div>`;
+  }
+
+  async function copySnippet() {
+    try {
+      await navigator.clipboard.writeText(document.getElementById('snippet').textContent);
+      showToast('Snippet copied');
+    } catch { showToast('Select the snippet and press ⌘C', 'warning'); }
+  }
+
+  async function copyOwnLink() {
+    const field = document.getElementById('ownLink');
+    try {
+      await navigator.clipboard.writeText(field.value);
+      showToast('Link copied');
+    } catch { field.select(); showToast('Press ⌘C to copy', 'warning'); }
+  }
+
+  // ─── Saving ───────────────────────────────────────────────
+
+  async function saveForm(status) {
+    const name = document.getElementById('fName').value.trim();
+    // Closing is a status change, not a publish. Running it through the
+    // readiness check below would refuse to close a form for the very reason
+    // somebody is closing it.
+    const publishing = status === 'active';
+    if (!name) {
+      showToast('Give the form a name', 'warning');
+      document.querySelector('[data-step="where"]').click();
+      document.getElementById('fName').focus();
+      return;
+    }
+
+    // Checked here first so a refusal arrives against the question that caused
+    // it rather than as a sentence at the top of the page. The server checks
+    // the same thing again — this is not the guard, it is the explanation.
+    if (!state.locked && publishing) {
+      const check = SurveySchema.normalizeQuestions(state.questions, { allowEmpty: false });
+      state.issues = check.issues;
+
+      if (check.issues.length) {
+        renderQuestions();
+        const general = check.issues.find(i => i.index === -1);
+        showToast(general ? general.message : `Question ${check.issues[0].number}: ${check.issues[0].message}`, 'warning');
+        document.querySelector('[data-step="questions"]').click();
+        document.querySelector('.q-card.invalid')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return;
+      }
+      state.issues = [];
+    }
+
+    const body = {
+      name,
+      description: document.getElementById('fDesc').value.trim() || null,
+      questions: state.questions,
+      theme: state.theme,
+      cohort_ids: state.cohortIds,
+      allowed_origins: readOrigins(),
+      redirect_url: document.getElementById('fRedirect').value.trim() || null,
+      submitted_message: document.getElementById('fMessage').value.trim() || null,
+      duplicate_policy: document.getElementById('fDuplicate').value,
+      status
+    };
+
+    const button = document.getElementById(
+      status === 'active' ? 'publishBtn' : status === 'closed' ? 'closeBtn' : 'draftBtn'
+    );
+    const label = button.textContent;
+    button.disabled = true;
+    button.textContent = 'Saving…';
+
+    try {
+      const data = state.id
+        ? await api.put(`/admin/onboarding/${state.id}`, body)
+        : await api.post('/admin/onboarding', body);
+
+      state.id = data.form.id;
+      state.questions = data.form.questions;
+
+      if (data.warnings?.length) {
+        showToast(data.warnings[0].message, 'warning');
+      } else {
+        showToast(
+          status === 'active' ? 'Published — the form is live'
+            : status === 'closed' ? 'Closed — its link and any embed of it now show nothing'
+            : 'Draft saved'
+        );
+      }
+
+      state.status = data.form.status;
+      document.getElementById('closeBtn').classList.toggle('hide', data.form.status !== 'active');
+
+      showEmbed(data.embed_snippet, data.form);
+
+      // The address only exists once the form does, and it is the thing an
+      // author came here for — so a first publish lands on it rather than
+      // leaving them to go looking.
+      if (publishing) document.querySelector('[data-step="embed"]').click();
+
+      renderQuestions();
+      renderChecklist();
+      history.replaceState(null, '', `/admin/onboarding-new.html?id=${state.id}`);
+      document.getElementById('publishBtn').textContent =
+        data.form.status === 'active' ? 'Save changes'
+          : data.form.status === 'closed' ? 'Reopen' : 'Publish';
+    } catch (err) {
+      // The server reports issues per question too, so they land in the same
+      // place the local check would have put them.
+      if (err.body && Array.isArray(err.body.issues)) {
+        state.issues = err.body.issues;
+        renderQuestions();
+        document.querySelector('.q-card.invalid')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+      showToast(err.message, 'error');
+    } finally {
+      button.disabled = false;
+      button.textContent = label;
+    }
+  }
+
+  // ─── Closing it ───────────────────────────────────────────
+  // A closed form is unreachable at its link and unframeable on any page — the
+  // API answers a closed token exactly as it answers one that never existed.
+  // The applications it already took stay where they are.
+  async function closeForm() {
+    const waiting = state.counts?.pending || 0;
+
+    const ok = await Shell.confirm({
+      title: 'Close this form?',
+      text: 'Its link stops working and any page embedding it shows nothing. Everything it has ' +
+            'already collected stays in the queue' +
+            (waiting ? `, including ${waiting} application${waiting === 1 ? '' : 's'} still waiting on a decision.` : '.') +
+            ' You can reopen it later.',
+      ok: 'Close it',
+      danger: true
+    });
+    if (!ok) return;
+
+    await saveForm('closed');
+  }
+
+  // Only offered for a form nobody has filled in. One somebody has is closed
+  // instead — deleting it would take their applications with it, and those are
+  // the record of what people were asked and what they were told.
+  async function deleteForm() {
+    const ok = await Shell.confirm({
+      title: 'Delete this form?',
+      text: 'Nobody has filled it in, so there is nothing to lose but the questions. This cannot be undone.',
+      ok: 'Delete',
+      danger: true
+    });
+    if (!ok) return;
+
+    try {
+      await api.del(`/admin/onboarding/${state.id}`);
+      showToast('Form deleted');
+      window.location.href = '/admin/onboarding.html';
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  }
+
+  document.querySelectorAll('[data-step]').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('[data-step]').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      document.querySelectorAll('.step').forEach(section => {
+        section.classList.toggle('hide', section.id !== `step-${tab.dataset.step}`);
+      });
+    });
+  });
+
+  document.getElementById('fName').addEventListener('input', renderPreview);
+  document.getElementById('fOrigins').addEventListener('input', renderChecklist);
+
+  load();
+</script>
+</body>
+</html>

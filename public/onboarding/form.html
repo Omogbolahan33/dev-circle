@@ -1,0 +1,670 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Join</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/css/tokens.css">
+  <link rel="stylesheet" href="/assets/css/app.css">
+  <link rel="stylesheet" href="/assets/css/fonts.css">
+  <script src="/assets/js/theme.js"></script>
+  <style>
+    /* ─── Two shapes, one page ──────────────────────────────
+       Standalone, this is a page: it fills the window and centres what is
+       being asked, the way the survey runner does. Embedded, it is a
+       component in somebody else's layout — so it takes the height of its
+       content and reports it out, and nothing is pinned to a viewport that
+       belongs to the host page rather than to us.
+
+       Everything colourable reads from the custom properties the form's theme
+       writes onto <html>, so a themed form needs no rules of its own. */
+
+    body {
+      display: flex;
+      flex-direction: column;
+      background: var(--surface-0);
+    }
+    :root:not(.embedded) body { min-height: 100vh; }
+
+    /* The brand's canvas. Fixed behind everything standalone; inside an embed
+       it is bounded to the form, because a fixed layer in an iframe would
+       cover only the visible slice and tile oddly as the frame grows. */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background: var(--survey-canvas, transparent);
+      pointer-events: none;
+      z-index: 0;
+    }
+    .embedded body::before { position: absolute; }
+
+    .form-bar, .progress-strip, main, .form-foot { position: relative; z-index: 1; }
+
+    .form-bar {
+      display: flex;
+      align-items: center;
+      gap: var(--sp-4);
+      padding: 0 var(--sp-6);
+      height: var(--topbar-h);
+      border-bottom: 1px solid var(--line-faint);
+      flex-shrink: 0;
+    }
+    /* Embedded, the host page has already said whose form this is — its own
+       header is above us. A second wordmark is clutter, so the bar carries
+       only the form's own logo if it has one, and nothing if it does not. */
+    .embedded .form-bar { border-bottom: none; height: auto; padding: var(--sp-5) var(--sp-6) 0; }
+    .embedded .brand-mark { display: none; }
+    .form-name { font-size: var(--fs-sm); color: var(--ash); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+    .form-logo { max-height: 28px; max-width: 160px; object-fit: contain; }
+
+    .progress-strip { padding: var(--sp-4) var(--sp-6) 0; max-width: 640px; margin: 0 auto; width: 100%; }
+    .progress-meta { display: flex; justify-content: space-between; font-size: var(--fs-xs); color: var(--ash-dim); margin-top: var(--sp-2); }
+    .steps { display: flex; gap: 4px; }
+    .step { flex: 1; height: 3px; border-radius: 2px; background: var(--line); transition: background var(--duration-fast) var(--ease-out); }
+    .step.done { background: var(--cd-blue); }
+    .step.here { background: var(--cd-blue-40); }
+
+    main {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: var(--sp-8) var(--sp-6);
+    }
+    main.scrolling { align-items: flex-start; }
+    .embedded main { align-items: flex-start; padding: var(--sp-6); }
+
+    .question-wrap {
+      max-width: 640px;
+      width: 100%;
+      font-size: calc(1rem * var(--survey-scale, 1));
+    }
+    .question-wrap .sv-ask { font-size: calc(var(--fs-xl) * var(--survey-scale, 1)); }
+    .question-wrap .sv-option,
+    .question-wrap .sv-rank-text,
+    .question-wrap .sv-note { font-size: calc(var(--fs-base) * var(--survey-scale, 1)); }
+    .question-wrap .input { font-size: calc(var(--fs-sm) * var(--survey-scale, 1)); }
+
+    .legend { font-size: var(--fs-xs); color: var(--ash-dim); margin-bottom: var(--sp-6); }
+    .stack-q { padding-bottom: var(--sp-10); border-bottom: 1px solid var(--line-faint); margin-bottom: var(--sp-10); }
+    .stack-q:last-of-type { border-bottom: none; }
+
+    .form-foot {
+      display: flex;
+      justify-content: space-between;
+      gap: var(--sp-3);
+      padding: var(--sp-4) var(--sp-6);
+      border-top: 1px solid var(--line-faint);
+      max-width: 640px;
+      margin: 0 auto;
+      width: 100%;
+      flex-shrink: 0;
+    }
+    .embedded .form-foot { border-top: none; padding-top: 0; }
+
+    .done { max-width: 480px; text-align: center; margin: 0 auto; }
+    .done-mark {
+      width: 56px; height: 56px;
+      border-radius: 50%;
+      background: var(--emerald-dim);
+      color: var(--emerald);
+      display: flex; align-items: center; justify-content: center;
+      font-size: var(--fs-lg);
+      margin: 0 auto var(--sp-5);
+    }
+    .done-title { font-family: var(--font-display); font-weight: var(--fw-bold); font-size: var(--fs-xl); margin-bottom: var(--sp-3); }
+    .done-text { color: var(--ash); font-size: var(--fs-sm); line-height: var(--lh-loose); margin-bottom: var(--sp-2); }
+    .done-meta { font-size: var(--fs-xs); color: var(--ash-dim); margin-bottom: var(--sp-6); }
+
+    .intro { max-width: 520px; }
+    .intro-logo { max-height: 44px; margin-bottom: var(--sp-6); }
+    .intro-header { width: 100%; max-height: 200px; object-fit: cover; border-radius: var(--r-lg); margin-bottom: var(--sp-6); display: block; }
+    .intro-title { font-family: var(--font-display); font-weight: var(--fw-bold); font-size: var(--fs-2xl); letter-spacing: -0.02em; margin-bottom: var(--sp-4); }
+    .intro-body { color: var(--ash); font-size: var(--fs-base); line-height: var(--lh-loose); margin-bottom: var(--sp-6); }
+    .intro-facts { display: flex; gap: var(--sp-5); font-size: var(--fs-xs); color: var(--ash-dim); margin-bottom: var(--sp-8); }
+
+    /* Said once, at the end, and small: the person filling this in is handing
+       over their details, and they are owed a plain sentence about what
+       happens to them rather than a wall of policy nobody reads. */
+    .fine-print { font-size: var(--fs-xs); color: var(--ash-dim); line-height: var(--lh-loose); margin-top: var(--sp-6); }
+  </style>
+</head>
+<body>
+
+  <div class="form-bar">
+    <span class="brand-mark" id="brand">dev<span>.</span>circle</span>
+    <span class="form-name" id="formName"></span>
+    <span class="spacer"></span>
+    <span class="text-xs dim hide" id="saveState"></span>
+  </div>
+
+  <div class="progress-strip hide" id="progressStrip">
+    <div id="progressTrack"></div>
+    <div class="progress-meta">
+      <span id="progressText"></span>
+    </div>
+  </div>
+
+  <main id="stage">
+    <div class="row"><span class="spinner"></span></div>
+  </main>
+
+  <div class="form-foot hide" id="foot">
+    <button class="btn btn-secondary" id="prevBtn" onclick="goBack()">← Back</button>
+    <button class="btn btn-primary" id="nextBtn" onclick="goNext()">Next →</button>
+  </div>
+
+<script src="/assets/js/api.js"></script>
+<script src="/assets/js/shell.js"></script>
+<script src="/assets/js/survey-schema.js"></script>
+<script src="/assets/js/survey-theme.js"></script>
+<script src="/assets/js/survey-render.js"></script>
+<script>
+  // ─── An onboarding form, wherever it is running ───────────
+  // The same page serves its own link and an embed on somebody else's site.
+  // One page rather than two, for the same reason the survey runner is one
+  // page: a second copy is where branching, required answers and theming
+  // quietly stop matching.
+  //
+  // What it never becomes is a sign-in. Nobody filling this in has an account
+  // — that is the point of it — so there is no Auth check here and nothing on
+  // this page reads a session.
+
+  const token = (location.pathname.match(/^\/o\/([A-Za-z0-9_-]+)$/) || [])[1] || null;
+
+  // ─── Talking to the page around us ───────────────────────
+  // Embedded, this document is a component of a page we did not write and
+  // cannot reach into. Two things have to cross that boundary: how tall the
+  // form currently is, so the host can size its frame, and the fact that it
+  // has been sent in, so the host can react.
+  //
+  // The origin to post to comes from the loader, in the frame's own URL. It is
+  // untrusted, and it does not need to be trusted: postMessage refuses to
+  // deliver to an origin that is not actually the parent's, so naming the
+  // wrong one delivers nothing rather than delivering somewhere else. What
+  // crosses is a height and a lifecycle event — never an answer.
+  const embedded = window.self !== window.top;
+  const host = new URLSearchParams(location.search).get('parent') || null;
+
+  document.documentElement.classList.toggle('embedded', embedded);
+
+  function tellHost(type, detail = {}) {
+    if (!embedded || !host) return;
+    try { window.parent.postMessage({ source: 'devcircle-onboarding', type, ...detail }, host); } catch {}
+  }
+
+  // Reported after the browser has laid the page out, and only when it has
+  // actually changed — a frame told to resize to the height it already has is
+  // a resize loop in every browser that fires ResizeObserver on its own
+  // consequences.
+  let lastHeight = 0;
+  function reportHeight() {
+    if (!embedded) return;
+    requestAnimationFrame(() => {
+      const height = Math.ceil(document.documentElement.getBoundingClientRect().height);
+      if (height && Math.abs(height - lastHeight) > 1) {
+        lastHeight = height;
+        tellHost('height', { height });
+      }
+    });
+  }
+
+  if (embedded && window.ResizeObserver) {
+    new ResizeObserver(reportHeight).observe(document.documentElement);
+  }
+
+  // ─── What is being filled in ─────────────────────────────
+
+  // The key is kept for this tab only. It is the sole way back to this
+  // half-finished application, and it is deliberately not in localStorage: a
+  // shared machine should not leave the last person's details reachable by
+  // whoever opens the page next.
+  const KEY_STORE = `devcircle_onboarding_${token}`;
+  let sessionKey = sessionStorage.getItem(KEY_STORE);
+
+  let form = null;
+  let questions = [];
+  let answers = {};
+  let theme = SurveyTheme.DEFAULTS;
+  let cursor = 0;
+  let errors = {};
+  let saveTimer = null;
+  let dirty = false;
+
+  const asked = () => SurveySchema.visible(questions, answers);
+  const answerable = () => asked().filter(SurveySchema.isAnswerable);
+
+  async function init() {
+    if (!token) return fail('This page needs a form link.');
+
+    try {
+      const data = await api.post(`/onboarding/${token}/start`, {
+        session_key: sessionKey,
+        // Where this embed is running. Recorded only if it names an origin the
+        // form allows to be framed on, so a made-up value records nothing.
+        embedded_on: embedded ? (host || document.referrer || null) : null
+      });
+
+      form = data.form;
+      questions = form.questions || [];
+      answers = data.answers || {};
+      theme = SurveyTheme.resolve(form.theme);
+
+      if (data.session_key) {
+        sessionKey = data.session_key;
+        sessionStorage.setItem(KEY_STORE, sessionKey);
+      }
+
+      applyTheme();
+
+      document.getElementById('formName').textContent = form.name;
+      document.title = form.name;
+
+      if (theme.logo_url) {
+        document.getElementById('brand').outerHTML =
+          `<img src="${escapeHtml(theme.logo_url)}" alt="" class="form-logo">`;
+      }
+
+      tellHost('ready');
+
+      if (theme.intro && (theme.intro.headline || theme.intro.body)) showIntro();
+      else begin();
+    } catch (err) {
+      // Somebody who followed a link has no home here to be sent back to, and
+      // an already-sent application is a reason rather than an error.
+      fail(err.message);
+    }
+  }
+
+  function fail(message) {
+    document.getElementById('stage').innerHTML = `
+      <div class="done"><p class="done-text" style="color:var(--rose-ink)">${escapeHtml(message)}</p></div>`;
+    document.getElementById('foot').classList.add('hide');
+    document.getElementById('progressStrip').classList.add('hide');
+    reportHeight();
+  }
+
+  // The form's colours, type and shape, written as custom properties on the
+  // document. Everything else in the page already reads from these.
+  function applyTheme() {
+    for (const [name, value] of Object.entries(SurveyTheme.toCSS(theme))) {
+      document.documentElement.style.setProperty(name, value);
+    }
+
+    const face = SurveyTheme.fontFace(theme);
+    if (face) {
+      const style = document.createElement('style');
+      style.textContent = face;
+      document.head.appendChild(style);
+    }
+
+    // A form that names its own canvas looks the same either way, which is
+    // usually the point of naming it. Embedded, there is a further reason to
+    // pin it: the host page has its own light or dark, and a form that follows
+    // the visitor's system setting instead can land as a dark block in the
+    // middle of a white page.
+    const branded = !!theme.background_color;
+    if (theme.mode !== 'auto' || branded) {
+      const mode = branded
+        ? (SurveyTheme.luminance(SurveyTheme.normalizeHex(theme.background_color)) < 0.2 ? 'dark' : 'light')
+        : theme.mode;
+      document.documentElement.setAttribute('data-theme', mode);
+    }
+  }
+
+  function showIntro() {
+    const count = answerable().length;
+    const about = questions.some(q => q.visible_if) ? 'About ' : '';
+    document.getElementById('stage').innerHTML = `
+      <div class="intro">
+        ${theme.header_image ? `<img src="${escapeHtml(theme.header_image)}" alt="" class="intro-header">` : ''}
+        ${theme.logo_url ? `<img src="${escapeHtml(theme.logo_url)}" alt="" class="intro-logo">` : ''}
+        <h1 class="intro-title">${escapeHtml(theme.intro.headline || form.name)}</h1>
+        ${theme.intro.body ? `<p class="intro-body">${escapeHtml(theme.intro.body)}</p>`
+          : form.description ? `<p class="intro-body">${escapeHtml(form.description)}</p>` : ''}
+        <div class="intro-facts">
+          <span>${about}${count} question${count === 1 && !about ? '' : 's'}</span>
+          ${Object.keys(answers).length ? '<span>Your earlier answers are saved</span>' : ''}
+        </div>
+        <button class="btn btn-primary btn-lg" onclick="begin()">
+          ${escapeHtml(theme.intro.button || (Object.keys(answers).length ? 'Pick up where you left off' : 'Start'))}
+        </button>
+      </div>`;
+    reportHeight();
+  }
+
+  function begin() {
+    document.getElementById('foot').classList.remove('hide');
+    if (theme.progress !== 'none') document.getElementById('progressStrip').classList.remove('hide');
+
+    const list = asked();
+    const firstUnanswered = list.findIndex(q =>
+      SurveySchema.isAnswerable(q) && !SurveySchema.isAnswered(q, answers[q.id]));
+    cursor = firstUnanswered === -1 ? 0 : firstUnanswered;
+
+    render();
+  }
+
+  // ─── Drawing ─────────────────────────────────────────────
+  // Identical to the survey runner's, because it is the same definition being
+  // drawn by the same renderer. Where this differs is only in what happens at
+  // the end.
+
+  function render() {
+    if (theme.layout === 'all_at_once') renderAll();
+    else renderOne();
+    reportHeight();
+  }
+
+  function renderOne() {
+    const list = asked();
+    if (cursor >= list.length) cursor = Math.max(0, list.length - 1);
+
+    const question = list[cursor];
+    const stage = document.getElementById('stage');
+    stage.classList.remove('scrolling');
+
+    const number = list.slice(0, cursor + 1).filter(SurveySchema.isAnswerable).length;
+
+    stage.innerHTML = `
+      <div class="question-wrap">
+        ${SurveySchema.isAnswerable(question)
+          ? SurveyRender.heading(question, { number })
+          : `<div class="sv-section-mark">Section</div>
+             <h2 class="sv-ask">${escapeHtml(question.text)}</h2>
+             ${question.description ? `<p class="sv-note">${escapeHtml(question.description)}</p>` : ''}`}
+        <div class="sv-control" id="control"></div>
+        <div id="questionError"></div>
+      </div>`;
+
+    if (SurveySchema.isAnswerable(question)) {
+      SurveyRender.mount(document.getElementById('control'), question, {
+        value: answers[question.id],
+        seed: form.id,
+        onChange: value => answer(question, value)
+      });
+    }
+
+    showError(question);
+    updateProgress();
+
+    document.getElementById('prevBtn').disabled = cursor === 0;
+    document.getElementById('nextBtn').textContent = isLast() ? 'Send' : 'Next →';
+
+    // Only when this page owns the whole window. Stealing focus inside an
+    // embed scrolls the host page to us the moment it loads, which is the
+    // rudest thing a widget can do to somebody's landing page.
+    if (question.type === 'text' && !embedded) {
+      setTimeout(() => stage.querySelector('.sv-input')?.focus(), 60);
+    }
+  }
+
+  function renderAll() {
+    const list = asked();
+    const stage = document.getElementById('stage');
+    stage.classList.add('scrolling');
+
+    let number = 0;
+    stage.innerHTML = `
+      <div class="question-wrap">
+        <h1 class="sv-ask" style="font-size:var(--fs-2xl)">${escapeHtml(form.name)}</h1>
+        ${form.description ? `<p class="sv-note">${escapeHtml(form.description)}</p>` : ''}
+        ${list.some(q => q.required)
+          ? '<p class="legend"><span class="sv-required">*</span> Answering is required</p>' : ''}
+        ${list.map(question => {
+          const isAnswerable = SurveySchema.isAnswerable(question);
+          if (isAnswerable) number++;
+          return `
+            <div class="stack-q" data-question="${question.id}">
+              ${isAnswerable
+                ? SurveyRender.heading(question, { number })
+                : `<div class="sv-section-mark">Section</div>
+                   <h2 class="sv-ask">${escapeHtml(question.text)}</h2>`}
+              ${isAnswerable ? `<div class="sv-control" data-control="${question.id}"></div>` : ''}
+              <div data-error="${question.id}"></div>
+            </div>`;
+        }).join('')}
+      </div>`;
+
+    for (const question of list) {
+      const holder = stage.querySelector(`[data-control="${CSS.escape(question.id)}"]`);
+      if (!holder) continue;
+      SurveyRender.mount(holder, question, {
+        value: answers[question.id],
+        seed: form.id,
+        onChange: value => answer(question, value)
+      });
+      showError(question);
+    }
+
+    updateProgress();
+    document.getElementById('prevBtn').classList.add('hide');
+    document.getElementById('nextBtn').textContent = 'Send';
+  }
+
+  function answer(question, value) {
+    const before = asked().map(q => q.id).join('|');
+    answers[question.id] = value;
+    delete errors[question.id];
+    dirty = true;
+
+    const after = asked().map(q => q.id).join('|');
+
+    if (after !== before) {
+      if (theme.layout === 'all_at_once') { renderAll(); reportHeight(); return; }
+      updateProgress();
+    } else if (theme.layout !== 'all_at_once') {
+      updateProgress();
+      if (question.type === 'ranking') renderOne();
+    }
+
+    showError(question);
+    scheduleSave();
+    reportHeight();
+  }
+
+  function showError(question) {
+    const holder = theme.layout === 'all_at_once'
+      ? document.querySelector(`[data-error="${CSS.escape(question.id)}"]`)
+      : document.getElementById('questionError');
+    if (!holder) return;
+    holder.innerHTML = errors[question.id]
+      ? `<p class="sv-error" role="alert">⚠ ${escapeHtml(errors[question.id])}</p>` : '';
+  }
+
+  function updateProgress() {
+    if (theme.progress === 'none') return;
+
+    const list = answerable();
+    const done = list.filter(q => SurveySchema.isAnswered(q, answers[q.id])).length;
+    const position = Math.min(list.length, asked().slice(0, cursor + 1).filter(SurveySchema.isAnswerable).length);
+    const track = document.getElementById('progressTrack');
+
+    if (theme.progress === 'steps' && list.length <= 20) {
+      track.innerHTML = `<div class="steps">${list.map((q, i) => {
+        const answered = SurveySchema.isAnswered(q, answers[q.id]);
+        return `<span class="step${answered ? ' done' : i === position - 1 ? ' here' : ''}"></span>`;
+      }).join('')}</div>`;
+    } else if (theme.progress === 'count') {
+      track.innerHTML = '';
+    } else {
+      track.innerHTML = `<div class="progress"><div class="fill" style="width:${
+        list.length ? (done / list.length) * 100 : 0}%"></div></div>`;
+    }
+
+    // "of ~7" rather than "of 7": with branching, how many questions remain
+    // genuinely depends on answers not yet given.
+    const branching = questions.some(q => q.visible_if);
+    document.getElementById('progressText').textContent = theme.layout === 'all_at_once'
+      ? `${done} of ${branching ? '~' : ''}${list.length} answered`
+      : `Question ${position} of ${branching ? '~' : ''}${list.length}`;
+  }
+
+  // ─── Moving through ──────────────────────────────────────
+
+  const isLast = () => cursor >= asked().length - 1;
+
+  function goNext() {
+    const list = asked();
+    const question = list[cursor];
+
+    if (question && SurveySchema.isAnswerable(question)) {
+      const result = SurveySchema.validateAnswer(question, answers[question.id]);
+      if (!result.ok) {
+        errors[question.id] = result.error;
+        showError(question);
+        reportHeight();
+        return;
+      }
+    }
+
+    if (isLast()) return submit();
+    cursor++;
+    render();
+    // Standalone, the window scrolls back to the question. Embedded, scrolling
+    // is the host page's business — the frame grows and shrinks under them, and
+    // yanking their scroll position is not ours to do.
+    if (!embedded) window.scrollTo({ top: 0 });
+  }
+
+  function goBack() {
+    if (cursor === 0) return;
+    cursor--;
+    render();
+  }
+
+  // ─── Keeping what has been typed ─────────────────────────
+
+  function scheduleSave() {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(save, 1200);
+  }
+
+  async function save() {
+    if (!dirty || !form || !sessionKey) return;
+    const badge = document.getElementById('saveState');
+    try {
+      await api.patch(`/onboarding/${token}/progress`, { answers, session_key: sessionKey });
+      dirty = false;
+      badge.textContent = 'Saved';
+      badge.classList.remove('hide');
+      setTimeout(() => badge.classList.add('hide'), 2000);
+    } catch {
+      // Losing a progress save is not worth interrupting anyone over; the
+      // answers are still in the page and the next save will carry them.
+    }
+  }
+
+  async function submit() {
+    // Everything at once, so somebody on the last question is not walked back
+    // through the form one refusal at a time.
+    const checked = SurveySchema.checkResponse(questions, answers);
+    if (!checked.ok) {
+      errors = checked.errors;
+      const list = asked();
+      const first = list.findIndex(q => errors[q.id]);
+
+      if (theme.layout === 'all_at_once') {
+        renderAll();
+        document.querySelector(`[data-question="${CSS.escape(list[first].id)}"]`)
+          ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      } else {
+        cursor = first === -1 ? cursor : first;
+        render();
+      }
+      showToast(
+        checked.missing.length === 1 ? 'One question still needs an answer'
+          : checked.missing.length ? `${checked.missing.length} questions still need an answer`
+          : 'Some answers need another look',
+        'warning'
+      );
+      return;
+    }
+
+    const button = document.getElementById('nextBtn');
+    button.disabled = true;
+
+    try {
+      const result = await api.post(`/onboarding/${token}/submit`, { answers, session_key: sessionKey });
+
+      clearTimeout(saveTimer);
+      dirty = false;
+      sessionStorage.removeItem(KEY_STORE);
+
+      document.getElementById('progressStrip').classList.add('hide');
+      document.getElementById('foot').classList.add('hide');
+
+      const closing = theme.thank_you || {};
+      const firstName = String(answers[questions.find(q => q.maps_to === 'name')?.id] || '')
+        .trim().split(' ')[0];
+
+      document.getElementById('stage').innerHTML = `
+        <div class="done">
+          <div class="done-mark">✓</div>
+          <div class="done-title">${escapeHtml(closing.headline ||
+            (firstName ? `Thank you, ${firstName}` : 'Thank you'))}</div>
+          <p class="done-text">${escapeHtml(
+            result.submitted_message || closing.body ||
+            'We have your details. Someone will review this and you will hear from us at the address you gave.')}</p>
+          <p class="fine-print">
+            Your answers are held by Credit Direct while this is reviewed. Nothing is sent to you
+            on a channel you did not agree to.
+          </p>
+        </div>`;
+      reportHeight();
+
+      // The host page decides what a completed form means for the rest of its
+      // layout — hiding a section, showing its own confirmation, sending an
+      // analytics event. A redirect goes through it too: this document is in a
+      // frame, and navigating the frame would leave the visitor looking at a
+      // page inside a box.
+      tellHost('submitted', { redirect: result.redirect_url || null });
+
+      if (!embedded && result.redirect_url) {
+        setTimeout(() => { location.href = result.redirect_url; }, 1500);
+      }
+    } catch (err) {
+      button.disabled = false;
+      // The server checked the same definition, so a refusal here means the
+      // page and the form disagreed. Show it against the questions rather than
+      // as a sentence with no home.
+      if (err.body && err.body.errors) {
+        errors = err.body.errors;
+        render();
+      }
+      showToast(err.message, 'error');
+      reportHeight();
+    }
+  }
+
+  // Closing the tab, switching apps, or locking a phone mid-question.
+  // keepalive is what lets the request outlive the page.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'hidden' || !dirty || !form || !sessionKey) return;
+    clearTimeout(saveTimer);
+    fetch(`${API_BASE}/onboarding/${token}/progress`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ answers, session_key: sessionKey }),
+      keepalive: true
+    }).then(() => { dirty = false; }).catch(() => {});
+  });
+
+  document.addEventListener('keydown', e => {
+    if (['TEXTAREA', 'INPUT', 'SELECT'].includes(e.target.tagName)) return;
+    if (!questions.length || theme.layout === 'all_at_once') return;
+    if (e.key === 'ArrowRight' || e.key === 'Enter') goNext();
+    if (e.key === 'ArrowLeft') goBack();
+  });
+
+  // Overlay furniture (scrim, toasts) without the portal chrome.
+  Shell._mountOverlays();
+
+  init();
+</script>
+</body>
+</html>
