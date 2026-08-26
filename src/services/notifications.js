@@ -67,19 +67,19 @@ function inQuietHours(user, at = minutesNowWAT()) {
 
 // ─── Channel resolution ─────────────────────────────────────
 
-function grantedChannels(userId) {
-  const rows = db.prepare("SELECT channel FROM consent WHERE user_id = ? AND status = 'granted'").all(userId);
+async function grantedChannels(userId) {
+  const rows = await db.prepare("SELECT channel FROM consent WHERE user_id = ? AND status = 'granted'").all(userId);
   return new Set(rows.map(r => r.channel));
 }
 
 // Decide which channels a message may actually use for this member, and why
 // each requested channel was dropped.
-function resolveChannels(user, requested, category) {
+async function resolveChannels(user, requested, category) {
   const wanted = (requested && requested.length ? requested : ['in_portal'])
     .flatMap(c => (c === 'all' ? CHANNELS : [c]))
     .filter(c => CHANNELS.includes(c));
 
-  const consented = grantedChannels(user.id);
+  const consented = await grantedChannels(user.id);
   const preferred = parseJSON(user.preferred_channels, []) || [];
   const quiet = inQuietHours(user);
 
@@ -206,13 +206,13 @@ async function notify(user, {
 }) {
   if (!title) throw new Error('notify() requires a title');
 
-  const { allowed, skipped } = resolveChannels(user, channels, category);
+  const { allowed, skipped } = await resolveChannels(user, channels, category);
   const results = [];
 
   let notificationId = null;
   if (allowed.includes('in_portal')) {
     notificationId = uuid();
-    insertNotification().run(notificationId, user.id, category, title, body, actionUrl, sourceType, sourceId);
+    await insertNotification().run(notificationId, user.id, category, title, body, actionUrl, sourceType, sourceId);
   }
 
   const message = { category, title, body, action_url: actionUrl, notification_id: notificationId };
@@ -225,7 +225,7 @@ async function notify(user, {
       outcome = { status: 'failed', ref: null, error: err.message };
     }
 
-    insertDelivery().run(
+    await insertDelivery().run(
       uuid(), sourceType, sourceId, user.id, channel,
       outcome.status, outcome.error || null, outcome.ref || null,
       ['sent', 'simulated'].includes(outcome.status) ? new Date().toISOString().replace('T', ' ').slice(0, 19) : null
@@ -234,7 +234,7 @@ async function notify(user, {
   }
 
   for (const { channel, reason, deferred } of skipped) {
-    insertDelivery().run(
+    await insertDelivery().run(
       uuid(), sourceType, sourceId, user.id, channel,
       deferred ? 'queued' : 'skipped', reason, null, null
     );
@@ -269,7 +269,7 @@ async function sendDirect(user, {
     outcome = { status: 'failed', ref: null, error: err.message };
   }
 
-  insertDelivery().run(
+  await insertDelivery().run(
     uuid(), sourceType, sourceId, user.id, channel,
     outcome.status, outcome.error || null, outcome.ref || null,
     ['sent', 'simulated'].includes(outcome.status)
@@ -342,7 +342,7 @@ async function notifyMany(users, message) {
 // so "deferred" genuinely means later rather than never.
 
 async function drainDeferred() {
-  const pending = db.prepare(`
+  const pending = await db.prepare(`
     SELECT d.*, u.id as uid FROM message_deliveries d
     JOIN users u ON u.id = d.user_id
     WHERE d.status = 'queued' AND d.reason = 'quiet_hours'
@@ -353,13 +353,13 @@ async function drainDeferred() {
   let released = 0;
 
   for (const row of pending) {
-    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(row.user_id);
+    const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(row.user_id);
     if (!user || user.status !== 'active') continue;
     if (inQuietHours(user)) continue;
 
     // Reuse the original notification's content where we have it
     const source = row.source_id
-      ? db.prepare('SELECT * FROM notifications WHERE source_id = ? AND user_id = ? ORDER BY created_at DESC LIMIT 1')
+      ? await db.prepare('SELECT * FROM notifications WHERE source_id = ? AND user_id = ? ORDER BY created_at DESC LIMIT 1')
           .get(row.source_id, row.user_id)
       : null;
 
@@ -371,7 +371,7 @@ async function drainDeferred() {
       notification_id: source?.id || null
     });
 
-    db.prepare(`
+    await db.prepare(`
       UPDATE message_deliveries
       SET status = ?, reason = ?, provider_ref = ?, sent_at = datetime('now')
       WHERE id = ?
@@ -387,29 +387,35 @@ let drainTimer = null;
 function startDrain(intervalMs = 15 * 60 * 1000) {
   if (drainTimer) return;
   drainTimer = setInterval(() => {
-    drainDeferred().catch(err => console.error('Deferred delivery drain failed:', err.message));
+    drainDeferred().catch(async err => console.error('Deferred delivery drain failed:', err.message));
   }, intervalMs);
   drainTimer.unref();
 }
 
 // ─── Inbox reads ────────────────────────────────────────────
 
-function inbox(userId, { unreadOnly = false, limit = 50 } = {}) {
-  const rows = db.prepare(`
-    SELECT * FROM notifications
-    WHERE user_id = ? ${unreadOnly ? 'AND read_at IS NULL' : ''}
-    ORDER BY created_at DESC
-    LIMIT ?
-  `).all(userId, limit);
+async function inbox(userId, { unreadOnly = false, limit = 50 } = {}) {
+  const [rows, unreadRow] = await Promise.all([
+    db.prepare(`
+      SELECT n.* FROM notifications n
+      WHERE n.user_id = ? ${unreadOnly ? 'AND n.read_at IS NULL' : ''}
+      ORDER BY n.created_at DESC
+      LIMIT ?
+    `).all(userId, limit),
+    db.prepare(`
+      SELECT COUNT(*) as c FROM notifications
+      WHERE user_id = ? AND read_at IS NULL
+    `).get(userId)
+  ]);
 
-  const unread = db.prepare('SELECT COUNT(*) as c FROM notifications WHERE user_id = ? AND read_at IS NULL')
-    .get(userId).c;
-
-  return { notifications: rows, unread_count: unread };
+  return {
+    notifications: rows || [],
+    unread_count: Number(unreadRow?.c || 0)
+  };
 }
 
-function markRead(userId, notificationId) {
-  const result = db.prepare(`
+async function markRead(userId, notificationId) {
+  const result = await db.prepare(`
     UPDATE notifications SET read_at = datetime('now')
     WHERE id = ? AND user_id = ? AND read_at IS NULL
   `).run(notificationId, userId);
@@ -420,11 +426,11 @@ function markRead(userId, notificationId) {
   return result.changes > 0;
 }
 
-function markAllRead(userId) {
-  return db.prepare(`
+async function markAllRead(userId) {
+  return Number((await db.prepare(`
     UPDATE notifications SET read_at = datetime('now')
     WHERE user_id = ? AND read_at IS NULL
-  `).run(userId).changes;
+  `).run(userId))?.changes || 0);
 }
 
 module.exports = {

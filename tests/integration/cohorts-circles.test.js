@@ -185,7 +185,7 @@ test('one account, several workspaces', async () => {
   const merchant = await h.post('/api/admin/circles', { name: 'Merchant Circle' }, { token });
   await h.post(`/api/admin/circles/${merchant.body.circle.id}/members`, { user_ids: [user.id] }, { token });
 
-  const circles = require('../../src/services/circles').forUser(user.id);
+  const circles = await require('../../src/services/circles').forUser(user.id);
   assert.equal(circles.length, 2, 'the same person, in two workspaces');
 });
 
@@ -196,7 +196,7 @@ test('leaving one workspace has no bearing on the others', async () => {
 
   await h.del(`/api/admin/circles/${merchant.body.circle.id}/members/${user.id}`, { token });
 
-  const circles = require('../../src/services/circles').forUser(user.id);
+  const circles = await require('../../src/services/circles').forUser(user.id);
   assert.equal(circles.length, 1);
   assert.equal(circles[0].id, rootCircle, 'still in the circle they started in');
 });
@@ -266,8 +266,8 @@ test('naming a circle you cannot reach is refused, not quietly answered', async 
 test('a survey belongs to one workspace and is invisible outside it', async () => {
   const inside = h.makeUser();
   const outside = h.makeUser();
-  circles.join(inside.id);
-  circles.join(outside.id);
+  await circles.join(inside.id);
+  await circles.join(outside.id);
 
   const other = await h.post('/api/admin/circles', { name: 'Merchant Circle' }, { token });
   await h.post(`/api/admin/circles/${other.body.circle.id}/members`, { user_ids: [inside.id] }, { token });

@@ -48,7 +48,7 @@ const ANONYMOUS = 'anonymous';
 // evidence, so the canonical row would carry nothing and would still be offered
 // to the next author as a question already asked. A promise the data does not
 // keep is worse than no row.
-function normalizeDefinition(body, { createdBy = null, allowEmpty = false, identify = true } = {}) {
+async function normalizeDefinition(body, { createdBy = null, allowEmpty = false, identify = true } = {}) {
   const { questions: normalized, issues } = schema.normalizeQuestions(body.questions, {
     makeId: slotId, allowEmpty
   });
@@ -67,7 +67,7 @@ function normalizeDefinition(body, { createdBy = null, allowEmpty = false, ident
   // Only what someone answers becomes a question in its own right — a section
   // heading is furniture. attachToSurvey may adopt the wording of a question
   // being continued, so what it returns is what gets stored.
-  const identified = questions.attachToSurvey(normalized, {
+  const identified = await questions.attachToSurvey(normalized, {
     createdBy,
     identifies: schema.isAnswerable
   });

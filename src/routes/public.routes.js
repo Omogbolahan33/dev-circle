@@ -37,10 +37,10 @@ const writing = rateLimit({ name: 'public-answer', windowMs: 60_000, max: 60 });
 // same way: a token that never existed, one whose survey has been closed, and
 // one that has expired are indistinguishable from outside, so the endpoint
 // cannot be used to learn which tokens are real.
-function openSurvey(token) {
+async function openSurvey(token) {
   if (!token || typeof token !== 'string' || token.length < 16) return null;
 
-  const survey = db.prepare(`
+  const survey = await db.prepare(`
     SELECT * FROM surveys
     WHERE public_token = ? AND target_type = ? AND status = 'active'
   `).get(token, surveyForm.ANONYMOUS);
@@ -50,24 +50,24 @@ function openSurvey(token) {
   return survey;
 }
 
-const gone = res => res.status(404).json({
+const gone = async res => res.status(404).json({
   error: 'This survey is not open. The link may have expired, or it may have closed.'
 });
 
 // The response a key belongs to. Looked up by the hash, so the key itself is
 // never stored — a copy of this database does not hand over the ability to
 // alter anyone's answers.
-function responseFor(survey, key) {
+async function responseFor(survey, key) {
   if (!key) return null;
-  return db.prepare(`
+  return await db.prepare(`
     SELECT * FROM survey_responses
     WHERE survey_id = ? AND anonymous_key_hash = ? AND respondent_kind = 'anonymous'
   `).get(survey.id, surveyForm.hashKey(key));
 }
 
 // GET /api/public/surveys/:token — what the link opens
-router.get('/surveys/:token', opening, (req, res) => {
-  const survey = openSurvey(req.params.token);
+router.get('/surveys/:token', opening, async (req, res) => {
+  const survey = await openSurvey(req.params.token);
   if (!survey) return gone(res);
 
   res.json({
@@ -77,7 +77,7 @@ router.get('/surveys/:token', opening, (req, res) => {
       // answering it needs no idea that a circle exists
       theme: surveyForm.themes.resolve(
         surveyForm.hydrate(survey).theme,
-        parseJSON(circles.byId(survey.circle_id)?.survey_theme, null)
+        parseJSON((await circles.byId(survey.circle_id))?.survey_theme, null)
       )
     }
   });
@@ -87,11 +87,11 @@ router.get('/surveys/:token', opening, (req, res) => {
 // Begins a submission and hands back the key that owns it. A caller that
 // already holds a key gets its answers back instead of a second blank
 // submission, so a refreshed tab is not a new respondent.
-router.post('/surveys/:token/start', writing, (req, res) => {
-  const survey = openSurvey(req.params.token);
+router.post('/surveys/:token/start', writing, async (req, res) => {
+  const survey = await openSurvey(req.params.token);
   if (!survey) return gone(res);
 
-  const existing = responseFor(survey, req.body?.response_key);
+  const existing = await responseFor(survey, req.body?.response_key);
   if (existing) {
     if (existing.completed_at) {
       return res.status(409).json({ error: 'You have already answered this one. Thank you.' });
@@ -104,7 +104,7 @@ router.post('/surveys/:token/start', writing, (req, res) => {
   }
 
   const key = surveyForm.responseKey();
-  db.prepare(`
+  await db.prepare(`
     INSERT INTO survey_responses (id, survey_id, user_id, respondent_kind, anonymous_key_hash, triggered_by)
     VALUES (?, ?, NULL, 'anonymous', ?, 'link')
   `).run(uuid(), survey.id, surveyForm.hashKey(key));
@@ -124,11 +124,11 @@ router.post('/surveys/:token/start', writing, (req, res) => {
 });
 
 // PATCH /api/public/surveys/:token/progress — keep what has been answered
-router.patch('/surveys/:token/progress', writing, (req, res) => {
-  const survey = openSurvey(req.params.token);
+router.patch('/surveys/:token/progress', writing, async (req, res) => {
+  const survey = await openSurvey(req.params.token);
   if (!survey) return gone(res);
 
-  const response = responseFor(survey, req.body?.response_key);
+  const response = await responseFor(survey, req.body?.response_key);
   if (!response) return res.status(404).json({ error: 'Start the survey first' });
   if (response.completed_at) return res.status(409).json({ error: 'Already completed' });
 
@@ -147,16 +147,16 @@ router.patch('/surveys/:token/progress', writing, (req, res) => {
     return res.status(413).json({ error: 'That is more than a survey in progress can hold' });
   }
 
-  db.prepare('UPDATE survey_responses SET answers = ? WHERE id = ?').run(serialized, response.id);
+  await db.prepare('UPDATE survey_responses SET answers = ? WHERE id = ?').run(serialized, response.id);
   res.json({ saved: Object.keys(kept).length });
 });
 
 // POST /api/public/surveys/:token/respond — submit
-router.post('/surveys/:token/respond', writing, (req, res) => {
-  const survey = openSurvey(req.params.token);
+router.post('/surveys/:token/respond', writing, async (req, res) => {
+  const survey = await openSurvey(req.params.token);
   if (!survey) return gone(res);
 
-  const response = responseFor(survey, req.body?.response_key);
+  const response = await responseFor(survey, req.body?.response_key);
   if (!response) return res.status(404).json({ error: 'Start the survey first' });
   if (response.completed_at) return res.status(409).json({ error: 'Already completed' });
 
@@ -185,7 +185,7 @@ router.post('/surveys/:token/respond', writing, (req, res) => {
     });
   }
 
-  db.prepare(`
+  await db.prepare(`
     UPDATE survey_responses SET answers = ?, completed_at = datetime('now') WHERE id = ?
   `).run(JSON.stringify(checked.answers), response.id);
 
@@ -193,7 +193,7 @@ router.post('/surveys/:token/respond', writing, (req, res) => {
   // alternative — dropping them because there is no account to file them
   // against — would lose exactly the words this whole feature exists to
   // collect.
-  const { filed } = verbatims.record(null, survey, checked.answers, { responseId: response.id });
+  const { filed } = await verbatims.record(null, survey, checked.answers, { responseId: response.id });
 
   res.json({
     message: 'Survey completed',

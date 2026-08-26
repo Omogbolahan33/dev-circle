@@ -48,9 +48,9 @@ const gone = res => res.status(404).json({
 // The application a session key owns. Looked up by hash, so the key itself is
 // never stored — a copy of this database does not hand over the ability to
 // alter what somebody submitted.
-function submissionFor(form, key) {
+async function submissionFor(form, key) {
   if (!key) return null;
-  return db.prepare(
+  return await db.prepare(
     'SELECT * FROM onboarding_submissions WHERE form_id = ? AND session_key_hash = ?'
   ).get(form.id, onboarding.hashKey(key));
 }
@@ -80,8 +80,8 @@ function placement(req, form) {
 }
 
 // GET /api/onboarding/:token — what the form asks
-router.get('/:token', opening, (req, res) => {
-  const form = onboarding.byToken(req.params.token);
+router.get('/:token', opening, async (req, res) => {
+  const form = await onboarding.byToken(req.params.token);
   if (!form) return gone(res);
 
   res.json({
@@ -91,7 +91,7 @@ router.get('/:token', opening, (req, res) => {
       // it in needs no idea that a circle exists or that it carries a default.
       theme: surveyForm.themes.resolve(
         onboarding.hydrate(form).theme,
-        parseJSON(circles.byId(form.circle_id)?.survey_theme, null)
+        parseJSON((await circles.byId(form.circle_id))?.survey_theme, null)
       )
     }
   });
@@ -101,11 +101,11 @@ router.get('/:token', opening, (req, res) => {
 // Begins an application and hands back the key that owns it. A caller holding
 // a key gets their answers back instead of a second blank application, so a
 // refreshed tab is not a second applicant.
-router.post('/:token/start', filling, (req, res) => {
-  const form = onboarding.byToken(req.params.token);
+router.post('/:token/start', filling, async (req, res) => {
+  const form = await onboarding.byToken(req.params.token);
   if (!form) return gone(res);
 
-  const existing = submissionFor(form, req.body?.session_key);
+  const existing = await submissionFor(form, req.body?.session_key);
   if (existing) {
     if (existing.status !== 'started') {
       return res.status(409).json({
@@ -123,7 +123,7 @@ router.post('/:token/start', filling, (req, res) => {
   const key = onboarding.sessionKey();
   const where = placement(req, form);
 
-  db.prepare(`
+  await db.prepare(`
     INSERT INTO onboarding_submissions (id, form_id, circle_id, session_key_hash, source_origin, source_page)
     VALUES (?, ?, ?, ?, ?, ?)
   `).run(uuid(), form.id, form.circle_id, onboarding.hashKey(key), where.origin, where.page);
@@ -140,11 +140,11 @@ router.post('/:token/start', filling, (req, res) => {
 // PATCH /api/onboarding/:token/progress — keep what has been filled in
 // A form long enough to need branching is long enough to be abandoned halfway
 // on a phone, and starting again is how it stays abandoned.
-router.patch('/:token/progress', filling, (req, res) => {
-  const form = onboarding.byToken(req.params.token);
+router.patch('/:token/progress', filling, async (req, res) => {
+  const form = await onboarding.byToken(req.params.token);
   if (!form) return gone(res);
 
-  const submission = submissionFor(form, req.body?.session_key);
+  const submission = await submissionFor(form, req.body?.session_key);
   if (!submission) return res.status(404).json({ error: 'Start the form first' });
   if (submission.status !== 'started') return res.status(409).json({ error: 'Already sent in' });
 
@@ -161,16 +161,16 @@ router.patch('/:token/progress', filling, (req, res) => {
     return res.status(413).json({ error: 'That is more than a form in progress can hold' });
   }
 
-  db.prepare('UPDATE onboarding_submissions SET answers = ? WHERE id = ?').run(serialized, submission.id);
+  await db.prepare('UPDATE onboarding_submissions SET answers = ? WHERE id = ?').run(serialized, submission.id);
   res.json({ saved: Object.keys(kept).length });
 });
 
 // POST /api/onboarding/:token/submit — send it in
-router.post('/:token/submit', submitting, (req, res) => {
-  const form = onboarding.byToken(req.params.token);
+router.post('/:token/submit', submitting, async (req, res) => {
+  const form = await onboarding.byToken(req.params.token);
   if (!form) return gone(res);
 
-  const submission = submissionFor(form, req.body?.session_key);
+  const submission = await submissionFor(form, req.body?.session_key);
   if (!submission) return res.status(404).json({ error: 'Start the form first' });
   if (submission.status !== 'started') {
     return res.status(409).json({ error: 'You have already sent this in. We will be in touch.' });
@@ -217,7 +217,7 @@ router.post('/:token/submit', submitting, (req, res) => {
   // because it depends on where it has been posted. A form on one partner's
   // page wants the newer answers; an open call wants to know somebody applied
   // twice.
-  const prior = db.prepare(`
+  const prior = await db.prepare(`
     SELECT id, status FROM onboarding_submissions
     WHERE form_id = ? AND email = ? AND status IN ('pending','approved') AND id != ?
     ORDER BY submitted_at DESC
@@ -227,7 +227,7 @@ router.post('/:token/submit', submitting, (req, res) => {
     const policy = form.duplicate_policy || 'replace';
 
     if (policy === 'reject' || prior.some(p => p.status === 'approved')) {
-      db.prepare("UPDATE onboarding_submissions SET status = 'withdrawn' WHERE id = ?").run(submission.id);
+      await db.prepare("UPDATE onboarding_submissions SET status = 'withdrawn' WHERE id = ?").run(submission.id);
       return res.status(409).json({
         error: prior.some(p => p.status === 'approved')
           ? 'That address is already a member here.'
@@ -242,11 +242,11 @@ router.post('/:token/submit', submitting, (req, res) => {
       const withdraw = db.prepare(
         "UPDATE onboarding_submissions SET status = 'withdrawn' WHERE id = ? AND status = 'pending'"
       );
-      for (const earlier of prior) withdraw.run(earlier.id);
+      for (const earlier of prior) await withdraw.run(earlier.id);
     }
   }
 
-  db.prepare(`
+  await db.prepare(`
     UPDATE onboarding_submissions
     SET answers = ?, profile = ?, consent_channels = ?, email = ?, name = ?,
         status = 'pending', submitted_at = datetime('now')

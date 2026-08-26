@@ -61,13 +61,73 @@ function ensureDir() {
   fs.mkdirSync(config.uploadDir, { recursive: true });
 }
 
-// ─── Core store (async, handles both backends) ─────────────
-// When Supabase Storage is configured (SUPABASE_SERVICE_ROLE_KEY set and
-// UPLOAD_BACKEND=supabase or auto) files go to the Supabase bucket instead
-// of local disk. The returned path is still /uploads/<name> so themes and
-// the /uploads/:name route are unchanged.
+// A stored object is either the original 32-hex name or a sanitised stem from
+// the file the author picked, plus a short hex so two "logo.png"s do not
+// collide. The extension is always the one the bytes decided — never the one
+// the uploader claimed.
+const FILE_NAME = /^(?:[a-f0-9]{32}|[a-z0-9]+(?:-[a-z0-9]+)*-[a-f0-9]{12})\.(png|jpg|gif|webp|woff2|woff|ttf|otf)$/;
+const FOLDER = /^[a-z0-9_-]+$/;
+const PATH_IN_THEME = /\/uploads\/(?:[a-z0-9_-]+\/)*(?:[a-f0-9]{32}|[a-z0-9]+(?:-[a-z0-9]+)*-[a-f0-9]{12})\.[a-z0-9]+/g;
 
-async function storeAsync(base64, { kind = 'image', by = null } = {}) {
+function decodeKey(name) {
+  const raw = String(name || '');
+  try { return decodeURIComponent(raw); } catch { return raw; }
+}
+
+// The only names we will read back. Folders are allowed only so a Storage
+// `data.path` that includes a prefix can still be fetched under the same key
+// the theme stored — never `..`, never anything that is not ours.
+function parseStoredKey(name) {
+  const raw = decodeKey(name).replace(/^\/+/, '');
+  if (!raw || raw.includes('\\') || raw.includes('\0') || raw.includes('..')) return null;
+  const parts = raw.split('/').filter(Boolean);
+  if (!parts.length || parts.length > 4) return null;
+  const file = parts.pop();
+  if (!FILE_NAME.test(file)) return null;
+  if (parts.some(segment => !FOLDER.test(segment))) return null;
+  return parts.length ? `${parts.join('/')}/${file}` : file;
+}
+
+function slugStem(originalName) {
+  if (!originalName || typeof originalName !== 'string') return '';
+  const base = originalName.split(/[/\\]/).pop() || '';
+  const stem = base.replace(/\.[^.]+$/, '');
+  return stem
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 40)
+    .replace(/-+$/g, '');
+}
+
+function makeStoredName(ext, originalName) {
+  const id = crypto.randomBytes(16).toString('hex');
+  const stem = slugStem(originalName);
+  return stem ? `${stem}-${id.slice(0, 12)}.${ext}` : `${id}.${ext}`;
+}
+
+// After a Storage upload, the key Storage reports is what we keep. The name
+// we sent is only a fallback for an empty or unexpected response.
+function objectKeyFromUpload(data, intended) {
+  const reported = data && typeof data.path === 'string' ? data.path : '';
+  return parseStoredKey(reported) || parseStoredKey(intended) || intended;
+}
+
+function assetResult(key, signature, buffer, by, backend) {
+  return {
+    path: `/uploads/${key}`,
+    name: key.split('/').pop(),
+    kind: signature.kind,
+    mime: signature.mime,
+    bytes: buffer.length,
+    uploaded_by: by,
+    backend
+  };
+}
+
+function prepare(base64, { kind = 'image', filename = null } = {}) {
   if (typeof base64 !== 'string' || !base64.trim()) {
     throw new UploadError('No file was sent');
   }
@@ -104,21 +164,25 @@ async function storeAsync(base64, { kind = 'image', by = null } = {}) {
     );
   }
 
-  const id = crypto.randomBytes(16).toString('hex');
-  const name = `${id}.${signature.ext}`;
+  return { buffer, signature, name: makeStoredName(signature.ext, filename) };
+}
+
+// ─── Core store (async, handles both backends) ─────────────
+// When Supabase Storage is configured (SUPABASE_SERVICE_ROLE_KEY set and
+// UPLOAD_BACKEND=supabase or auto) files go to the Supabase bucket instead
+// of local disk. The returned path is /uploads/<object key>, and that key
+// is whatever Storage stored — so the theme, the /uploads route and the
+// object in the bucket name the same file.
+
+async function storeAsync(base64, opts = {}) {
+  const { buffer, signature, name } = prepare(base64, opts);
+  const by = opts.by || null;
 
   if (config.uploads.backend === 'supabase' && config.supabase.hasServiceRole) {
     try {
       const supabase = require('../db/supabase');
-      await supabase.uploadToSupabase(name, buffer, signature.mime);
-      return {
-        path: `/uploads/${name}`,
-        kind: signature.kind,
-        mime: signature.mime,
-        bytes: buffer.length,
-        uploaded_by: by,
-        backend: 'supabase'
-      };
+      const data = await supabase.uploadToSupabase(name, buffer, signature.mime);
+      return assetResult(objectKeyFromUpload(data, name), signature, buffer, by, 'supabase');
     } catch (err) {
       try { require('../utils/logger').logger.warn('Supabase upload failed, falling back to disk', { message: err.message }); } catch {}
     }
@@ -126,15 +190,7 @@ async function storeAsync(base64, { kind = 'image', by = null } = {}) {
 
   ensureDir();
   fs.writeFileSync(path.join(config.uploadDir, name), buffer);
-
-  return {
-    path: `/uploads/${name}`,
-    kind: signature.kind,
-    mime: signature.mime,
-    bytes: buffer.length,
-    uploaded_by: by,
-    backend: 'local'
-  };
+  return assetResult(name, signature, buffer, by, 'local');
 }
 
 // Synchronous wrapper for existing call sites (SQLite/local disk).
@@ -143,39 +199,28 @@ function store(base64, opts = {}) {
   if (config.uploads.backend === 'supabase' && config.supabase.hasServiceRole) {
     throw new Error('Supabase storage requires async upload: use `await uploads.store(...)`');
   }
-  // For local disk we can do it synchronously — share validation with async version
-  if (typeof base64 !== 'string' || !base64.trim()) throw new UploadError('No file was sent');
-  const payload = base64.includes(',') && base64.slice(0, 64).includes('base64,')
-    ? base64.slice(base64.indexOf(',') + 1) : base64;
-  let buffer;
-  try { buffer = Buffer.from(payload, 'base64'); } catch { throw new UploadError('That file could not be read'); }
-  if (!buffer.length) throw new UploadError('That file is empty');
-  if (buffer.length > config.maxUploadBytes) throw new UploadError(`Files are limited to ${Math.round(config.maxUploadBytes / 1024 / 1024)}MB`, 413);
-  const kind = opts.kind || 'image';
-  const signature = identify(buffer);
-  if (!signature) throw new UploadError(kind === 'font' ? 'That is not a font file. Upload a .woff2, .woff, .ttf or .otf.' : 'That is not an image we can use. Upload a PNG, JPEG, GIF or WebP — not an SVG, which can carry scripts.');
-  if (signature.kind !== kind) throw new UploadError(kind === 'font' ? 'That is an image, not a font' : 'That is a font, not an image');
+  const { buffer, signature, name } = prepare(base64, opts);
   ensureDir();
-  const id = crypto.randomBytes(16).toString('hex');
-  const name = `${id}.${signature.ext}`;
   fs.writeFileSync(path.join(config.uploadDir, name), buffer);
-  return { path: `/uploads/${name}`, kind: signature.kind, mime: signature.mime, bytes: buffer.length, uploaded_by: opts.by, backend: 'local' };
+  return assetResult(name, signature, buffer, opts.by, 'local');
 }
 
 // Read one back for serving. The name is checked rather than trusted: it must
 // be exactly the shape store() generates, which is what stops "../../.env"
 // from ever being joined onto the upload directory.
-const STORED_NAME = /^[a-f0-9]{32}\.(png|jpg|gif|webp|woff2|woff|ttf|otf)$/;
+const STORED_NAME = FILE_NAME;
 
 function read(name) {
-  if (!STORED_NAME.test(String(name || ''))) return null;
+  const key = parseStoredKey(name);
+  // Local disk is a flat directory — a Storage prefix is not a local path.
+  if (!key || key.includes('/')) return null;
 
   // If Supabase backend is active, try to fetch from Supabase first.
   // This is sync for the Express route; for Supabase we do a sync fallback
   // by checking local disk. The async Supabase fetch is handled by the
   // /uploads/:name route when it awaits. For backward compatibility we keep
   // this sync path for local files.
-  const file = path.join(config.uploadDir, name);
+  const file = path.join(config.uploadDir, key);
   if (!file.startsWith(path.resolve(config.uploadDir) + path.sep) &&
       path.dirname(file) !== path.resolve(config.uploadDir)) {
     return null;
@@ -192,12 +237,13 @@ function read(name) {
 
 // Async read that tries Supabase Storage when configured, then falls back to disk.
 async function readAsync(name) {
-  if (!STORED_NAME.test(String(name || ''))) return null;
+  const key = parseStoredKey(name);
+  if (!key) return null;
 
   if (config.uploads.backend === 'supabase' && config.supabase.hasServiceRole) {
     try {
       const supabase = require('../db/supabase');
-      const buffer = await supabase.downloadFromSupabase(name);
+      const buffer = await supabase.downloadFromSupabase(key);
       const signature = identify(buffer);
       if (!signature) return null;
       return { buffer, mime: signature.mime, backend: 'supabase' };
@@ -206,12 +252,16 @@ async function readAsync(name) {
     }
   }
 
-  return read(name);
+  return read(key);
 }
 
 // Whether a path in a theme is one of ours. Used to tell an uploaded asset
 // from an address someone typed, which are held to different rules.
-const isStored = value => /^\/uploads\/[a-f0-9]{32}\.[a-z0-9]+$/.test(String(value || ''));
+const isStored = value => {
+  const s = String(value || '');
+  if (!s.startsWith('/uploads/')) return false;
+  return Boolean(parseStoredKey(s.slice('/uploads/'.length)));
+};
 
 // ─── Sweeping up ────────────────────────────────────────────
 // Replacing a logo leaves the old one on disk, and a file uploaded in a
@@ -230,32 +280,32 @@ const GRACE_MS = 24 * 60 * 60 * 1000;
 // Every asset path any theme mentions. Themes are JSON, so this reads them as
 // text rather than parsing every shape — a path is a path wherever in the
 // theme it sits, and a field added later is covered without being listed here.
-function referenced(db) {
+async function referenced(db) {
   const paths = new Set();
   const collect = row => {
     for (const value of Object.values(row)) {
       if (typeof value !== 'string') continue;
-      for (const match of value.matchAll(/\/uploads\/[a-f0-9]{32}\.[a-z0-9]+/g)) {
+      for (const match of value.matchAll(PATH_IN_THEME)) {
         paths.add(match[0]);
       }
     }
   };
 
-  for (const row of db.prepare('SELECT theme FROM surveys WHERE theme IS NOT NULL').all()) collect(row);
-  for (const row of db.prepare('SELECT survey_theme FROM circles WHERE survey_theme IS NOT NULL').all()) collect(row);
+  for (const row of await db.prepare('SELECT theme FROM surveys WHERE theme IS NOT NULL').all()) collect(row);
+  for (const row of await db.prepare('SELECT survey_theme FROM circles WHERE survey_theme IS NOT NULL').all()) collect(row);
 
   return paths;
 }
 
-function sweep(db, { graceMs = GRACE_MS, now = Date.now(), dryRun = false } = {}) {
+async function sweep(db, { graceMs = GRACE_MS, now = Date.now(), dryRun = false } = {}) {
   let files;
   try { files = fs.readdirSync(config.uploadDir); } catch { return { removed: 0, kept: 0, bytes: 0 }; }
 
-  const inUse = referenced(db);
+  const inUse = await referenced(db);
   const result = { removed: 0, kept: 0, bytes: 0, files: [] };
 
   for (const name of files) {
-    if (!STORED_NAME.test(name)) { result.kept++; continue; }
+    if (!parseStoredKey(name)) { result.kept++; continue; }
 
     const full = path.join(config.uploadDir, name);
     let stat;
@@ -275,4 +325,8 @@ function sweep(db, { graceMs = GRACE_MS, now = Date.now(), dryRun = false } = {}
   return result;
 }
 
-module.exports = { store, storeAsync, read, readAsync, identify, isStored, sweep, referenced, UploadError, SIGNATURES, GRACE_MS };
+module.exports = {
+  store, storeAsync, read, readAsync, identify, isStored, sweep, referenced,
+  UploadError, SIGNATURES, GRACE_MS,
+  parseStoredKey, objectKeyFromUpload, makeStoredName
+};

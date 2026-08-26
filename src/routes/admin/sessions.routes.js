@@ -21,44 +21,56 @@ function hydrate(session) {
 }
 
 // GET /api/admin/sessions
-router.get('/', requirePermission('sessions.read'), (req, res) => {
+router.get('/', requirePermission('sessions.read'), async (req, res) => {
   const { status, upcoming } = req.query;
   const where = ['1=1'];
-  const params = [];
+  // First bind is the scoped dispatch aggregate in the JOIN.
+  const params = [req.circleId];
 
   // Sessions belong to the circle that scheduled them
   where.push('s.circle_id = ?'); params.push(req.circleId);
   if (status) { where.push('s.status = ?'); params.push(status); }
   if (upcoming === 'true') { where.push("s.scheduled_for > datetime('now')"); }
 
-  const sessions = db.prepare(`
+  const sessions = await db.prepare(`
     SELECT s.*, c.name as circle_name, sv.title as survey_title,
-      (SELECT COUNT(*) FROM session_dispatches d WHERE d.session_id = s.id) as dispatches_sent
+      COALESCE(d.n, 0) as dispatches_sent
     FROM scheduled_sessions s
     LEFT JOIN circles c ON c.id = s.circle_id
     LEFT JOIN surveys sv ON sv.id = s.survey_id
+    LEFT JOIN (
+      SELECT sd.session_id, COUNT(*) as n
+      FROM session_dispatches sd
+      JOIN scheduled_sessions sx ON sx.id = sd.session_id AND sx.circle_id = ?
+      GROUP BY sd.session_id
+    ) d ON d.session_id = s.id
     WHERE ${where.join(' AND ')}
     ORDER BY s.scheduled_for ASC
   `).all(...params);
 
-  res.json({ sessions: sessions.map(hydrate) });
+  res.json({ sessions: (sessions || []).map(hydrate) });
 });
 
 // GET /api/admin/sessions/:id
-router.get('/:id', requirePermission('sessions.read'), (req, res) => {
-  const session = db.prepare('SELECT * FROM scheduled_sessions WHERE id = ?').get(req.params.id);
+router.get('/:id', requirePermission('sessions.read'), async (req, res) => {
+  const session = await db.prepare('SELECT * FROM scheduled_sessions WHERE id = ?').get(req.params.id);
   if (!session) return res.status(404).json({ error: 'Session not found' });
 
-  res.json({
-    session: hydrate(session),
-    dispatches: db.prepare('SELECT * FROM session_dispatches WHERE session_id = ? ORDER BY offset_minutes DESC')
+  const [dispatches, deliveries] = await Promise.all([
+    db.prepare('SELECT * FROM session_dispatches WHERE session_id = ? ORDER BY offset_minutes DESC')
       .all(session.id),
-    deliveries: db.prepare(`
+    db.prepare(`
       SELECT d.channel, d.status, d.reason, COUNT(*) as count
       FROM message_deliveries d
       WHERE d.source_id = ? AND d.source_type IN ('session_invite','session_reminder')
       GROUP BY d.channel, d.status, d.reason
     `).all(session.id)
+  ]);
+
+  res.json({
+    session: hydrate(session),
+    dispatches,
+    deliveries
   });
 });
 
@@ -83,7 +95,7 @@ function validate(body) {
 }
 
 // POST /api/admin/sessions
-router.post('/', requirePermission('sessions.write'), (req, res) => {
+router.post('/', requirePermission('sessions.write'), async (req, res) => {
   const invalid = validate(req.body);
   if (invalid) return res.status(400).json({ error: invalid });
 
@@ -96,15 +108,15 @@ router.post('/', requirePermission('sessions.write'), (req, res) => {
   if (type === 'survey' && !survey_id) {
     return res.status(400).json({ error: 'A survey session needs a survey_id' });
   }
-  if (survey_id && !db.prepare('SELECT 1 FROM surveys WHERE id = ?').get(survey_id)) {
+  if (survey_id && !(await db.prepare('SELECT 1 FROM surveys WHERE id = ?').get(survey_id))) {
     return res.status(400).json({ error: 'Unknown survey_id' });
   }
 
-  const circle = circle_id ? circles.byId(circle_id) : req.circle;
+  const circle = circle_id ? await circles.byId(circle_id) : req.circle;
   if (!circle) return res.status(400).json({ error: 'Unknown circle_id' });
 
   const id = uuid();
-  db.prepare(`
+  await db.prepare(`
     INSERT INTO scheduled_sessions (
       id, title, description, type, survey_id, circle_id, target_type, target_ids,
       scheduled_for, duration_min, location, channels, reminder_offsets, status, created_by
@@ -117,20 +129,20 @@ router.post('/', requirePermission('sessions.write'), (req, res) => {
     req.admin.id
   );
 
-  const session = db.prepare('SELECT * FROM scheduled_sessions WHERE id = ?').get(id);
+  const session = await db.prepare('SELECT * FROM scheduled_sessions WHERE id = ?').get(id);
 
   // Return the availability picture with the session, so a clash is visible
   // at the moment of scheduling rather than after the invites go out.
-  res.status(201).json({ session: hydrate(session), preview: scheduler.preview(session) });
+  res.status(201).json({ session: hydrate(session), preview: await scheduler.preview(session) });
 });
 
 // GET /api/admin/sessions/:id/preview — who can attend, who is unavailable
-router.get('/:id/preview', requirePermission('sessions.read'), (req, res) => {
-  const session = db.prepare('SELECT * FROM scheduled_sessions WHERE id = ?').get(req.params.id);
+router.get('/:id/preview', requirePermission('sessions.read'), async (req, res) => {
+  const session = await db.prepare('SELECT * FROM scheduled_sessions WHERE id = ?').get(req.params.id);
   if (!session) return res.status(404).json({ error: 'Session not found' });
 
   try {
-    res.json(scheduler.preview(session));
+    res.json(await scheduler.preview(session));
   } catch (err) {
     if (err instanceof scheduler.SessionError) return res.status(400).json({ error: err.message });
     throw err;
@@ -138,12 +150,12 @@ router.get('/:id/preview', requirePermission('sessions.read'), (req, res) => {
 });
 
 // POST /api/admin/sessions/preview — check a slot before creating anything
-router.post('/preview', requirePermission('sessions.read'), (req, res) => {
+router.post('/preview', requirePermission('sessions.read'), async (req, res) => {
   const invalid = validate({ ...req.body, title: req.body.title || 'draft' });
   if (invalid) return res.status(400).json({ error: invalid });
 
   try {
-    res.json(scheduler.preview({
+    res.json(await scheduler.preview({
       title: req.body.title || 'Draft session',
       scheduled_for: req.body.scheduled_for,
       circle_id: req.body.circle_id || req.circleId,
@@ -158,8 +170,8 @@ router.post('/preview', requirePermission('sessions.read'), (req, res) => {
 });
 
 // PUT /api/admin/sessions/:id
-router.put('/:id', requirePermission('sessions.write'), (req, res) => {
-  const session = db.prepare('SELECT * FROM scheduled_sessions WHERE id = ?').get(req.params.id);
+router.put('/:id', requirePermission('sessions.write'), async (req, res) => {
+  const session = await db.prepare('SELECT * FROM scheduled_sessions WHERE id = ?').get(req.params.id);
   if (!session) return res.status(404).json({ error: 'Session not found' });
 
   const invalid = validate({ ...hydrate(session), ...req.body });
@@ -188,15 +200,15 @@ router.put('/:id', requirePermission('sessions.write'), (req, res) => {
   if (!updates.length) return res.status(400).json({ error: 'No fields to update' });
 
   params.push(session.id);
-  db.prepare(`UPDATE scheduled_sessions SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+  await db.prepare(`UPDATE scheduled_sessions SET ${updates.join(', ')} WHERE id = ?`).run(...params);
 
   // Moving a session invalidates reminders that were already sent for the old
   // time, so clear the dispatch log and let them fire again against the new one.
   if (req.body.scheduled_for && req.body.scheduled_for !== session.scheduled_for) {
-    db.prepare('DELETE FROM session_dispatches WHERE session_id = ? AND offset_minutes >= 0').run(session.id);
+    await db.prepare('DELETE FROM session_dispatches WHERE session_id = ? AND offset_minutes >= 0').run(session.id);
   }
 
-  res.json({ session: hydrate(db.prepare('SELECT * FROM scheduled_sessions WHERE id = ?').get(session.id)) });
+  res.json({ session: hydrate(await db.prepare('SELECT * FROM scheduled_sessions WHERE id = ?').get(session.id)) });
 });
 
 // POST /api/admin/sessions/:id/announce — send the invitation now
@@ -213,7 +225,7 @@ router.post('/:id/announce', requirePermission('sessions.write'), async (req, re
 
 // POST /api/admin/sessions/:id/remind — send an ad-hoc reminder now
 router.post('/:id/remind', requirePermission('sessions.write'), async (req, res) => {
-  const session = db.prepare('SELECT * FROM scheduled_sessions WHERE id = ?').get(req.params.id);
+  const session = await db.prepare('SELECT * FROM scheduled_sessions WHERE id = ?').get(req.params.id);
   if (!session) return res.status(404).json({ error: 'Session not found' });
 
   const when = scheduler.parseWhen(session.scheduled_for);
@@ -231,17 +243,17 @@ router.post('/:id/remind', requirePermission('sessions.write'), async (req, res)
 
 // DELETE /api/admin/sessions/:id — cancel and tell everyone
 router.delete('/:id', requirePermission('sessions.write'), async (req, res) => {
-  const session = db.prepare('SELECT * FROM scheduled_sessions WHERE id = ?').get(req.params.id);
+  const session = await db.prepare('SELECT * FROM scheduled_sessions WHERE id = ?').get(req.params.id);
   if (!session) return res.status(404).json({ error: 'Session not found' });
   if (session.status === 'cancelled') return res.status(409).json({ error: 'Already cancelled' });
 
   const wasAnnounced = session.status === 'announced';
-  db.prepare("UPDATE scheduled_sessions SET status = 'cancelled' WHERE id = ?").run(session.id);
+  await db.prepare("UPDATE scheduled_sessions SET status = 'cancelled' WHERE id = ?").run(session.id);
 
   // Members who were told it was happening deserve to be told it is not
   let notified = 0;
   if (wasAnnounced) {
-    for (const user of scheduler.audienceFor(session)) {
+    for (const user of await scheduler.audienceFor(session)) {
       const result = await notifications.notify(user, {
         category: 'platform_updates',
         title: `Cancelled: ${session.title}`,

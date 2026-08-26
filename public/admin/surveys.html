@@ -118,12 +118,9 @@
       return;
     }
 
-    // A section heading is not a question, and counting it makes the time
-    // estimate a promise the survey does not keep
-    const questionCount = s => s.questions.filter(q => q.type !== 'section').length;
-
     tbody.innerHTML = list.map(s => {
       const rate = s.response_count ? Math.round((s.completed_count / s.response_count) * 100) : 0;
+      const nq = Number(s.question_count || 0);
       const audience = s.target_type === 'all' ? 'Everyone'
         : s.target_type === 'anonymous' ? 'Anyone with the link'
         : s.target_type === 'cohort' ? `${s.target_ids.length} cohort${s.target_ids.length === 1 ? '' : 's'}`
@@ -134,8 +131,8 @@
           <td>
             <div class="identity-meta">
               <div class="identity-name">${escapeHtml(s.title)}</div>
-              <div class="identity-sub">${questionCount(s)} question${questionCount(s) === 1 ? '' : 's'} · ~${s.time_estimate_min} min${
-                s.questions.some(q => q.visible_if) ? ' · branching' : ''}</div>
+              <div class="identity-sub">${nq} question${nq === 1 ? '' : 's'} · ~${s.time_estimate_min} min${
+                s.has_branching ? ' · branching' : ''}</div>
             </div>
           </td>
           <td>${badge(s.status, s.status === 'active' ? 'active' : s.status === 'draft' ? 'warn' : 'inactive')}</td>

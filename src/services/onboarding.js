@@ -287,8 +287,8 @@ function originAllowed(form, origin) {
 // Questions, branching and theme are normalized by exactly the code that
 // normalizes a survey's; what is added is the mapping, which the shared schema
 // knows nothing about and should not.
-function normalizeDefinition(body, { createdBy = null, allowEmpty = false } = {}) {
-  const { questions, theme, issues, warnings } = surveyForm.normalizeDefinition(body, {
+async function normalizeDefinition(body, { createdBy = null, allowEmpty = false } = {}) {
+  const { questions, theme, issues, warnings } = await surveyForm.normalizeDefinition(body, {
     createdBy,
     allowEmpty,
     // Not registered as canonical questions. "What should we call you?" is not
@@ -464,9 +464,9 @@ function forPublic(form) {
   };
 }
 
-function byToken(token) {
+async function byToken(token) {
   if (!token || typeof token !== 'string' || token.length < 16) return null;
-  return db.prepare(
+  return await db.prepare(
     "SELECT * FROM onboarding_forms WHERE public_token = ? AND status = 'active'"
   ).get(token) || null;
 }
@@ -517,25 +517,30 @@ function resolveProfile(questions, answers) {
   return { profile, consent };
 }
 
-// ─── Approving ──────────────────────────────────────────────
-// The only place in the onboarding path that writes to users, and it is
-// reached only from an authenticated admin route holding onboarding.approve.
-
 class OnboardingError extends Error {}
 
 // Columns are filled from the application, but never over something already
-// there. Somebody who applies through a partner's form having been a member
-// for a year should not have the company on their profile replaced because
-// they typed it differently this time — what the application adds is what we
-// did not know.
+// there — see the update branch of approve() for why.
 const CARRIED = [
   'phone', 'company', 'work_sector', 'location_state',
   'gender', 'date_of_birth', 'dev_hub_user_id'
 ];
 const CARRIED_LISTS = ['api_products', 'preferred_channels', 'preferred_days'];
 
-function approve(submissionId, { adminId = null, note = null } = {}) {
-  const submission = db.prepare('SELECT * FROM onboarding_submissions WHERE id = ?').get(submissionId);
+// ─── Approving ──────────────────────────────────────────────
+// The only place in the onboarding path that writes to users, and it is
+// reached only from an authenticated admin route holding onboarding.approve.
+//
+// Shaped the way every write path here is now shaped: reads are awaited up
+// front, and the writes that must stand or fall together go into one
+// synchronous transaction block. That is why the circle membership is inserted
+// directly rather than through circles.join — join is async, and the one
+// pairing that genuinely must be atomic is "this account exists" with "this
+// account is a member of the circle that let them in". The rest — the
+// engagement entry, the cohort rules re-run — is idempotent and follows.
+
+async function approve(submissionId, { adminId = null, note = null } = {}) {
+  const submission = await db.prepare('SELECT * FROM onboarding_submissions WHERE id = ?').get(submissionId);
   if (!submission) throw new OnboardingError('No such application');
   if (submission.status !== 'pending') {
     throw new OnboardingError(
@@ -545,56 +550,92 @@ function approve(submissionId, { adminId = null, note = null } = {}) {
     );
   }
 
-  const form = db.prepare('SELECT * FROM onboarding_forms WHERE id = ?').get(submission.form_id);
+  const form = await db.prepare('SELECT * FROM onboarding_forms WHERE id = ?').get(submission.form_id);
   const profile = parseJSON(submission.profile, {});
-  const consent = parseJSON(submission.consent_channels || '[]', []);
+  const consent = parseJSON(submission.consent_channels, []);
 
   const email = identity.normalizeEmail(profile.email);
-  const name = String(profile.name || '').trim();
+  const phone = identity.normalizePhone(profile.phone);
+  const name = String(profile.name || '').trim() || null;
 
-  if (!email) throw new OnboardingError('This application carries no usable email address');
-  if (!name) throw new OnboardingError('This application carries no name');
-
-  // The same rule the landing page ingest holds: a Credit Direct address is a
-  // staff account, created by an administrator and signing in with a password.
-  // Approving one here would make a participant profile nobody can ever sign
-  // in to.
-  if (identity.isStaffEmail(email)) {
+  // A Credit Direct address is a staff account, created by an administrator and
+  // signing in with a password. Approving one here would make a participant
+  // profile nobody can ever sign in to. Only checked when there is an address:
+  // an application may carry none at all.
+  if (email && identity.isStaffEmail(email)) {
     throw new OnboardingError('Credit Direct staff accounts are created by an administrator, not through a form');
   }
 
-  const circleId = submission.circle_id || form?.circle_id;
-  let userId;
-  let created = false;
+  const circle = (await circles.byId(submission.circle_id || form?.circle_id)) || await circles.fallback();
+  if (!circle) throw new OnboardingError('This application belongs to no circle that still exists');
+  const circleId = circle.id;
+
+  // ─── Who this is, if we already know them ─────────────────
+  // Keyed on the email, and on the normalised phone number when there is no
+  // email — since a form may ask for neither, or for only one. An application
+  // carrying neither is somebody new every time, which is the honest answer:
+  // there is nothing to recognise them by.
+  let existing = null;
+  if (email) {
+    existing = await db.prepare('SELECT * FROM users WHERE lower(email) = ?').get(email) || null;
+  }
+  if (!existing && phone) {
+    existing = await db.prepare('SELECT * FROM users WHERE phone_normalized = ?').get(phone) || null;
+  }
+
+  const created = !existing;
+  const userId = existing ? existing.id : uuid();
+
+  // Read before the writes, so the transaction body stays synchronous.
+  const allCohort = await db.prepare(
+    "SELECT id FROM cohorts WHERE name = 'All Members' AND circle_id = ?"
+  ).get(circleId);
+
+  const joining = [];
+  for (const cohortId of parseJSON(form?.cohort_ids, [])) {
+    const cohort = await db.prepare('SELECT id FROM cohorts WHERE id = ? AND circle_id = ?')
+      .get(cohortId, circleId);
+    if (cohort) joining.push(cohort.id);
+  }
+
+  const held = new Set(existing
+    ? (await db.prepare("SELECT channel FROM consent WHERE user_id = ? AND status = 'granted'").all(userId))
+      .map(row => row.channel)
+    : []);
+
+  const granting = consent.filter(channel => notifications.CHANNELS.includes(channel) && !held.has(channel));
 
   db.transaction(() => {
-    const existing = db.prepare('SELECT * FROM users WHERE lower(email) = ?').get(email);
-
     if (existing) {
-      userId = existing.id;
-
+      // Columns are filled from the application, but never over something
+      // already there. Somebody who applies through a partner's form having
+      // been a member for a year should not have the company on their profile
+      // replaced because they typed it differently this time — what the
+      // application adds is what we did not know.
       const sets = [];
       const values = [];
+
+      if (email && !existing.email) { sets.push('email = ?'); values.push(email); }
+      if (name && !existing.name) { sets.push('name = ?'); values.push(name); }
+
       for (const key of CARRIED) {
         if (profile[key] && !existing[key]) { sets.push(`${key} = ?`); values.push(profile[key]); }
       }
       for (const key of CARRIED_LISTS) {
-        const held = parseJSON(existing[key], []);
-        if (profile[key]?.length && !held.length) {
+        const alreadyHeld = parseJSON(existing[key], []);
+        if (profile[key]?.length && !alreadyHeld.length) {
           sets.push(`${key} = ?`);
           values.push(JSON.stringify(profile[key]));
         }
       }
-      if (profile.phone && !existing.phone_normalized) {
+      if (phone && !existing.phone_normalized) {
         sets.push('phone_normalized = ?');
-        values.push(identity.normalizePhone(profile.phone));
+        values.push(phone);
       }
       if (sets.length) {
         db.prepare(`UPDATE users SET ${sets.join(', ')} WHERE id = ?`).run(...values, userId);
       }
     } else {
-      userId = uuid();
-      created = true;
       db.prepare(`
         INSERT INTO users (id, email, name, phone, phone_normalized, company, work_sector,
                            password_hash, date_of_birth, gender, location_state, api_products,
@@ -602,10 +643,10 @@ function approve(submissionId, { adminId = null, note = null } = {}) {
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         userId, email, name,
-        profile.phone || null, identity.normalizePhone(profile.phone),
+        profile.phone || null, phone,
         profile.company || null, profile.work_sector || null,
         // Participants hold no password — they sign in with a one-time code
-        // sent to the address they just gave us.
+        // sent to the address or number they gave us.
         identity.NO_PASSWORD,
         profile.date_of_birth || null, profile.gender || null, profile.location_state || null,
         JSON.stringify(profile.api_products || []),
@@ -618,18 +659,12 @@ function approve(submissionId, { adminId = null, note = null } = {}) {
     // The circle this form onboards into — the answer to "which workspace am I
     // joining?", decided by the form rather than by whichever circle the
     // approving admin happens to be looking at.
-    circles.join(userId, circleId);
+    db.prepare('INSERT OR IGNORE INTO circle_members (circle_id, user_id) VALUES (?, ?)')
+      .run(circleId, userId);
 
-    const allCohort = db.prepare(
-      "SELECT id FROM cohorts WHERE name = 'All Members' AND circle_id = ?"
-    ).get(circleId);
     const addCohort = db.prepare('INSERT OR IGNORE INTO user_cohorts (user_id, cohort_id) VALUES (?, ?)');
     if (allCohort) addCohort.run(userId, allCohort.id);
-
-    for (const cohortId of parseJSON(form?.cohort_ids, [])) {
-      const cohort = db.prepare('SELECT id FROM cohorts WHERE id = ? AND circle_id = ?').get(cohortId, circleId);
-      if (cohort) addCohort.run(userId, cohort.id);
-    }
+    for (const cohortId of joining) addCohort.run(userId, cohortId);
 
     // Consent is a record of permission, so it is written from what they
     // actually ticked and nothing is assumed from silence.
@@ -637,17 +672,7 @@ function approve(submissionId, { adminId = null, note = null } = {}) {
       INSERT INTO consent (id, user_id, channel, status, granted_at)
       VALUES (?, ?, ?, 'granted', datetime('now'))
     `);
-    const held = new Set(
-      db.prepare("SELECT channel FROM consent WHERE user_id = ? AND status = 'granted'")
-        .all(userId).map(row => row.channel)
-    );
-    for (const channel of consent) {
-      if (!notifications.CHANNELS.includes(channel) || held.has(channel)) continue;
-      grant.run(uuid(), userId, channel);
-      engagement.log(userId, 'consent_granted', {
-        metadata: { channel, via: 'onboarding_form' }, source: 'landing_page'
-      });
-    }
+    for (const channel of granting) grant.run(uuid(), userId, channel);
 
     db.prepare(`
       UPDATE onboarding_submissions
@@ -656,8 +681,14 @@ function approve(submissionId, { adminId = null, note = null } = {}) {
     `).run(userId, adminId, note || null, submissionId);
   })();
 
+  for (const channel of granting) {
+    await engagement.log(userId, 'consent_granted', {
+      metadata: { channel, via: 'onboarding_form' }, source: 'landing_page'
+    });
+  }
+
   if (created) {
-    engagement.log(userId, 'account_created', {
+    await engagement.log(userId, 'account_created', {
       referenceId: submission.form_id,
       metadata: { source: 'onboarding_form', form: form?.name || null, submission: submissionId },
       source: 'landing_page'
@@ -666,19 +697,28 @@ function approve(submissionId, { adminId = null, note = null } = {}) {
 
   // Rules-based cohorts are worked out from a member's properties, and this
   // member did not exist when they last ran.
-  try { cohortRules.syncAll(); } catch { /* membership catches up on the next sync */ }
+  try { await cohortRules.syncAll(); } catch { /* membership catches up on the next sync */ }
 
-  return { user_id: userId, created, circle_id: circleId };
+  return {
+    user_id: userId,
+    created,
+    circle_id: circleId,
+    // Said out loud rather than refused. A member with neither an address nor a
+    // number cannot be sent a one-time code, so they can never sign in — which
+    // is a legitimate thing for a roster collected at a stand to be, and a
+    // surprise for anybody who did not mean it.
+    can_sign_in: !!(email || phone)
+  };
 }
 
-function reject(submissionId, { adminId = null, note = null } = {}) {
-  const submission = db.prepare('SELECT * FROM onboarding_submissions WHERE id = ?').get(submissionId);
+async function reject(submissionId, { adminId = null, note = null } = {}) {
+  const submission = await db.prepare('SELECT * FROM onboarding_submissions WHERE id = ?').get(submissionId);
   if (!submission) throw new OnboardingError('No such application');
   if (submission.status !== 'pending') {
     throw new OnboardingError(`This application has already been ${submission.status}`);
   }
 
-  db.prepare(`
+  await db.prepare(`
     UPDATE onboarding_submissions
     SET status = 'rejected', decided_by = ?, decided_at = datetime('now'), decision_note = ?
     WHERE id = ?

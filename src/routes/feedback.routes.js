@@ -9,7 +9,7 @@ const router = express.Router();
 const CATEGORIES = ['documentation', 'api', 'sandbox', 'support', 'billing', 'feature_request', 'other'];
 
 // POST /api/feedback
-router.post('/', requireAuth, (req, res) => {
+router.post('/', requireAuth, async (req, res) => {
   const { content, category, rating, survey_id } = req.body;
 
   if (!content || !String(content).trim()) {
@@ -31,11 +31,11 @@ router.post('/', requireAuth, (req, res) => {
   const id = uuid();
   // Filed in the circle they belong to. A member of several has this recorded
   // against the one the feedback was raised in.
-  const circleId = db.prepare(
+  const circleId = await db.prepare(
     'SELECT circle_id FROM circle_members WHERE user_id = ? ORDER BY added_at LIMIT 1'
   ).get(req.user.id)?.circle_id || null;
 
-  db.prepare(`
+  await db.prepare(`
     INSERT INTO feedback (id, user_id, type, content, category, rating, source, survey_id, circle_id)
     VALUES (?, ?, ?, ?, ?, ?, 'dev_circle', ?, ?)
   `).run(
@@ -45,19 +45,19 @@ router.post('/', requireAuth, (req, res) => {
   );
 
   // Submitting feedback counts toward the engagement streak
-  const { streak } = engagement.record(req.user.id, 'feedback_submitted', {
+  const { streak } = await engagement.record(req.user.id, 'feedback_submitted', {
     referenceId: id,
     metadata: { category, rating }
   });
 
   res.status(201).json({
-    feedback: db.prepare('SELECT * FROM feedback WHERE id = ?').get(id),
+    feedback: await db.prepare('SELECT * FROM feedback WHERE id = ?').get(id),
     streak: streak ? streak.streak : null
   });
 });
 
 // GET /api/feedback — the caller's own feedback only
-router.get('/', requireAuth, (req, res) => {
+router.get('/', requireAuth, async (req, res) => {
   const { status, limit = 50 } = req.query;
   let query = 'SELECT * FROM feedback WHERE user_id = ?';
   const params = [req.user.id];
@@ -70,12 +70,12 @@ router.get('/', requireAuth, (req, res) => {
   query += ' ORDER BY created_at DESC LIMIT ?';
   params.push(Math.min(200, parseInt(limit, 10) || 50));
 
-  res.json({ feedback: db.prepare(query).all(...params), categories: CATEGORIES });
+  res.json({ feedback: await db.prepare(query).all(...params), categories: CATEGORIES });
 });
 
 // GET /api/feedback/:id
-router.get('/:id', requireAuth, (req, res) => {
-  const feedback = db.prepare('SELECT * FROM feedback WHERE id = ? AND user_id = ?')
+router.get('/:id', requireAuth, async (req, res) => {
+  const feedback = await db.prepare('SELECT * FROM feedback WHERE id = ? AND user_id = ?')
     .get(req.params.id, req.user.id);
   if (!feedback) return res.status(404).json({ error: 'Feedback not found' });
   res.json({ feedback });

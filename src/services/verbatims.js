@@ -99,7 +99,7 @@ function extract(survey, answers) {
 // same evidence — only what the row says about where they came from, which is
 // the difference between "a developer told us this" and "a developer told us
 // this, in the Google Form we ran in March".
-function record(userId, survey, answers, {
+async function record(userId, survey, answers, {
   at = null, responseId = null, sourceSystem = null, externalResponseId = null
 } = {}) {
   const verbatims = extract(survey, answers);
@@ -108,16 +108,15 @@ function record(userId, survey, answers, {
   // A verbatim belongs to the circle whose survey drew it out. If the survey
   // carries none, fall back to the member's own — evidence filed against no
   // workspace would be invisible everywhere, which is worse than approximate.
-  const circleId = survey.circle_id || (userId ? db.prepare(
+  const circleId = survey.circle_id || (userId ? (await db.prepare(
     'SELECT circle_id FROM circle_members WHERE user_id = ? ORDER BY added_at LIMIT 1'
-  ).get(userId)?.circle_id : null) || null;
+  ).get(userId))?.circle_id : null) || null;
 
-  const write = db.transaction(rows => {
-    let filed = 0;
-    for (const row of rows) {
+  let filed = 0;
+  for (const row of verbatims) {
       // The survey title is the closest thing to a category the member gave
       // us, and it is what makes a list of verbatims readable at a glance.
-      const result = insert().run(
+      const result = await insert().run(
         uuid(), userId || null, row.content, survey.title || null,
         // 'survey' has always meant "a survey run in Dev Circle". Answers
         // collected elsewhere are the same kind of thing arriving another way,
@@ -133,19 +132,19 @@ function record(userId, survey, answers, {
         externalResponseId ? `${externalResponseId}:${row.question_id}` : null,
         at
       );
-      filed += result.changes;
-    }
-    return filed;
-  });
+      filed += Number(result?.changes || 0);
+  }
 
-  return { filed: write(verbatims), verbatims };
+  return { filed, verbatims };
 }
 
 // Everything a member has told us, from every source, newest first. This is
 // the query the whole change exists to make possible.
-function forUser(userId, { limit = 100 } = {}) {
-  return db.prepare(`
-    SELECT f.*, s.title as survey_title
+async function forUser(userId, { limit = 100 } = {}) {
+  return await db.prepare(`
+    SELECT f.id, f.content, f.prompt, f.source, f.category, f.status,
+           f.created_at, f.external_ticket_id, f.canonical_question_id,
+           s.title as survey_title
     FROM feedback f
     LEFT JOIN surveys s ON s.id = f.survey_id
     WHERE f.user_id = ?

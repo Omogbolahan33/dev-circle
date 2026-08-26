@@ -33,8 +33,8 @@ function nextWatSlot(weekday, watHour) {
 test('a session on a day the member did not pick is flagged as unavailable', async () => {
   const free = h.makeUser({ preferred_days: ['Mon', 'Wed'], preferred_time_start: '09:00', preferred_time_end: '17:00' });
   const busy = h.makeUser({ preferred_days: ['Tue'], preferred_time_start: '09:00', preferred_time_end: '17:00' });
-  circles.join(free.id);
-  circles.join(busy.id);
+  await circles.join(free.id);
+  await circles.join(busy.id);
 
   const res = await h.post('/api/admin/sessions', {
     title: 'Monday review', scheduled_for: nextWatSlot('Mon', 11), target_type: 'all'
@@ -49,7 +49,7 @@ test('a session on a day the member did not pick is flagged as unavailable', asy
 
 test('a session outside the member time window is flagged', async () => {
   const user = h.makeUser({ preferred_days: [], preferred_time_start: '09:00', preferred_time_end: '12:00' });
-  circles.join(user.id);
+  await circles.join(user.id);
 
   const res = await h.post('/api/admin/sessions', {
     title: 'Late session', scheduled_for: nextWatSlot('Wed', 20), target_type: 'all'
@@ -61,7 +61,7 @@ test('a session outside the member time window is flagged', async () => {
 
 test('a member with no stated availability is treated as available', async () => {
   const user = h.makeUser({ preferred_days: [], preferred_time_start: '00:00', preferred_time_end: '23:59' });
-  circles.join(user.id);
+  await circles.join(user.id);
 
   const res = await h.post('/api/admin/sessions', {
     title: 'Anytime', scheduled_for: nextWatSlot('Sat', 15), target_type: 'all'
@@ -74,7 +74,7 @@ test('a member with no stated availability is treated as available', async () =>
 
 test('announcing a session reaches its audience once', async () => {
   const user = h.makeUser();
-  circles.join(user.id);
+  await circles.join(user.id);
 
   const session = await h.post('/api/admin/sessions', {
     title: 'Roadmap', scheduled_for: nextWatSlot('Wed', 11),
@@ -93,7 +93,7 @@ test('announcing a session reaches its audience once', async () => {
 
 test('a due reminder fires exactly once however often the scheduler ticks', async () => {
   const user = h.makeUser();
-  circles.join(user.id);
+  await circles.join(user.id);
 
   // 30 minutes out with a 45-minute reminder: the window is already open
   const when = new Date(Date.now() + 30 * 60 * 1000).toISOString().replace('T', ' ').slice(0, 19);
@@ -112,7 +112,7 @@ test('a due reminder fires exactly once however often the scheduler ticks', asyn
 
 test('a reminder whose window closed long ago is not sent late', async () => {
   const user = h.makeUser();
-  circles.join(user.id);
+  await circles.join(user.id);
 
   // Session is 10 minutes out, reminder was due a day before it — that moment
   // passed hours ago and a late reminder is worse than none
@@ -128,7 +128,7 @@ test('a reminder whose window closed long ago is not sent late', async () => {
 
 test('moving a session lets its reminders fire again against the new time', async () => {
   const user = h.makeUser();
-  circles.join(user.id);
+  await circles.join(user.id);
 
   const when = new Date(Date.now() + 30 * 60 * 1000).toISOString().replace('T', ' ').slice(0, 19);
   const session = await h.post('/api/admin/sessions', {
@@ -149,7 +149,7 @@ test('moving a session lets its reminders fire again against the new time', asyn
 
 test('cancelling an announced session tells the people who were invited', async () => {
   const user = h.makeUser();
-  circles.join(user.id);
+  await circles.join(user.id);
 
   const session = await h.post('/api/admin/sessions', {
     title: 'Doomed', scheduled_for: nextWatSlot('Wed', 11),
@@ -168,8 +168,8 @@ test('cancelling an announced session tells the people who were invited', async 
 test('a session scoped to a sub-circle only reaches that circle', async () => {
   const inside = h.makeUser();
   const outside = h.makeUser();
-  circles.join(inside.id);
-  circles.join(outside.id);
+  await circles.join(inside.id);
+  await circles.join(outside.id);
 
   const sub = await h.post('/api/admin/circles', { name: 'Early Access' }, { token });
   await h.post(`/api/admin/circles/${sub.body.circle.id}/members`, { user_ids: [inside.id] }, { token });
@@ -187,7 +187,7 @@ test('a session scoped to a sub-circle only reaches that circle', async () => {
 
 test('a member sees their upcoming sessions with clashes flagged', async () => {
   const user = h.makeUser({ preferred_days: ['Mon'] });
-  circles.join(user.id);
+  await circles.join(user.id);
 
   await h.post('/api/admin/sessions', {
     title: 'Thursday thing', scheduled_for: nextWatSlot('Thu', 11), target_type: 'all'
@@ -209,8 +209,8 @@ test('an invalid schedule is refused', async () => {
 test('a survey reminder nudges only members who have not responded, once', async () => {
   const pending = h.makeUser();
   const responded = h.makeUser();
-  circles.join(pending.id);
-  circles.join(responded.id);
+  await circles.join(pending.id);
+  await circles.join(responded.id);
 
   const survey = await h.post('/api/admin/surveys', {
     title: 'Docs feedback', questions: [{ type: 'text', text: 'thoughts?' }],
@@ -244,6 +244,6 @@ test('sessions that have finished are closed out', async () => {
     VALUES (?, 'Done', 'info', ?, 30, 'announced')
   `).run(h.uuid(), past);
 
-  assert.equal(scheduler.closePastSessions(), 1);
+  assert.equal(await scheduler.closePastSessions(), 1);
   assert.equal(h.db.prepare('SELECT status FROM scheduled_sessions').get().status, 'completed');
 });

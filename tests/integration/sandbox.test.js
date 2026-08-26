@@ -55,6 +55,70 @@ test('a request without the header is never sandboxed', async () => {
   assert.equal(res.headers.get('x-devcircle-sandbox'), null);
 });
 
+// The API docs send the sandbox header on every Try-it-out, including
+// GET /health. Liveness must not depend on mirroring a session.
+test('health stays up when the sandbox header is on', async () => {
+  const withToken = await h.get('/api/health', sandbox({ token: superToken }));
+  assert.equal(withToken.status, 200);
+  assert.equal(withToken.body.status, 'ok');
+  assert.equal(withToken.headers.get('x-devcircle-sandbox'), null);
+
+  const anonymous = await h.get('/api/health', { sandbox: true });
+  assert.equal(anonymous.status, 200);
+});
+
+// The console stamps every admin call with the live workspace id. That row
+// is not in the sandbox, so a naive check 403s reset and every Try-it-out.
+test('a live circle header does not 403 a sandboxed admin call', async () => {
+  const liveCircle = h.db.prepare('SELECT id FROM circles LIMIT 1').get().id;
+  const res = await h.get('/api/admin/sandbox', sandbox({
+    token: superToken,
+    headers: { 'X-Circle-Id': liveCircle }
+  }));
+
+  assert.equal(res.status, 200);
+  assert.equal(res.body.active, true);
+});
+
+test('resetting the sandbox ignores the live circle header', async () => {
+  const liveCircle = h.db.prepare('SELECT id FROM circles LIMIT 1').get().id;
+  const res = await h.post('/api/admin/sandbox/reset', {}, sandbox({
+    token: superToken,
+    headers: { 'X-Circle-Id': liveCircle }
+  }));
+
+  assert.equal(res.status, 200);
+  assert.ok(res.body.counts.users >= 5);
+});
+
+// Live Postgres hands Dates and booleans to better-sqlite3. The mirror has
+// to reduce them before bind, or every sandboxed request 500s.
+test('a Postgres-shaped session can be mirrored into the sqlite sandbox', () => {
+  const { mirrorAccess, db } = require('../../src/db/sandbox');
+  const admin = h.db.prepare('SELECT * FROM admin_users WHERE email = ?').get('boss@creditdirect.ng');
+  const role = h.db.prepare('SELECT * FROM roles WHERE id = ?').get(admin.role_id);
+  const session = h.db.prepare('SELECT * FROM sessions WHERE subject_id = ?').get(admin.id);
+
+  assert.doesNotThrow(() => {
+    mirrorAccess(db(), {
+      admin,
+      role: { ...role, is_system: true },
+      session: {
+        ...session,
+        is_admin: true,
+        expires_at: new Date(Date.now() + 86400000),
+        user_agent: undefined,
+        scope: undefined
+      }
+    });
+  });
+
+  const mirrored = db().prepare('SELECT * FROM sessions WHERE token_hash = ?').get(session.token_hash);
+  assert.ok(mirrored);
+  assert.equal(mirrored.is_admin, 1);
+  assert.equal(mirrored.scope, 'full');
+});
+
 test('a sandboxed response says so', async () => {
   const res = await h.get('/api/admin/sandbox', sandbox({ token: superToken }));
 

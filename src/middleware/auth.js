@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const db = require('../db');
 const config = require('../config');
+const cache = require('./cache');
 
 // ─── Sessions ───────────────────────────────────────────────
 // Tokens are random 32-byte values handed to the client; only their SHA-256
@@ -23,12 +24,12 @@ const PASSWORD_CHANGE_ALLOWED = new Set([
   '/api/auth/logout'
 ]);
 
-function createSession(subjectId, isAdmin = false, meta = {}) {
+async function createSession(subjectId, isAdmin = false, meta = {}) {
   const token = crypto.randomBytes(32).toString('hex');
   const expiresAt = new Date(Date.now() + config.sessionTtlMs)
     .toISOString().replace('T', ' ').slice(0, 19);
 
-  db.prepare(`
+  await db.prepare(`
     INSERT INTO sessions (token_hash, subject_id, is_admin, issued_via, user_agent, expires_at, scope)
     VALUES (?, ?, ?, ?, ?, ?, ?)
   `).run(
@@ -41,11 +42,14 @@ function createSession(subjectId, isAdmin = false, meta = {}) {
     meta.scope || 'full'
   );
 
+  // Fill the principal cache before the client asks for /me, so the
+  // first authenticated GET does not wait on the session JOIN.
+  await resolvePrincipal(hashToken(token)).catch(() => {});
   return token;
 }
 
-function getSession(token) {
-  const row = db.prepare(`
+async function getSession(token) {
+  const row = await db.prepare(`
     SELECT * FROM sessions
     WHERE token_hash = ? AND expires_at > datetime('now')
   `).get(hashToken(token));
@@ -53,23 +57,23 @@ function getSession(token) {
   if (!row) return null;
   return {
     userId: row.subject_id,
-    isAdmin: row.is_admin === 1,
+    isAdmin: row.is_admin === 1 || row.is_admin === true,
     issuedVia: row.issued_via,
     scope: row.scope || 'full'
   };
 }
 
-function destroySession(token) {
-  db.prepare('DELETE FROM sessions WHERE token_hash = ?').run(hashToken(token));
+async function destroySession(token) {
+  await db.prepare('DELETE FROM sessions WHERE token_hash = ?').run(hashToken(token));
 }
 
-function destroyAllSessionsFor(subjectId) {
-  db.prepare('DELETE FROM sessions WHERE subject_id = ?').run(subjectId);
+async function destroyAllSessionsFor(subjectId) {
+  await db.prepare('DELETE FROM sessions WHERE subject_id = ?').run(subjectId);
 }
 
 // Sweep expired rows hourly so the table does not grow without bound
-const sweeper = setInterval(() => {
-  db.prepare("DELETE FROM sessions WHERE expires_at <= datetime('now')").run();
+const sweeper = setInterval(async () => {
+  await db.prepare("DELETE FROM sessions WHERE expires_at <= datetime('now')").run();
 }, 60 * 60 * 1000);
 sweeper.unref();
 
@@ -125,11 +129,18 @@ const PERMISSIONS = [
 
 const PERMISSION_KEYS = new Set(PERMISSIONS.map(p => p.key));
 
-function permissionsFor(admin) {
+function parsePermissions(raw) {
+  if (raw == null || raw === '') return [];
+  if (Array.isArray(raw)) return raw;
+  try { return JSON.parse(raw); } catch { return []; }
+}
+
+async function permissionsFor(admin) {
   if (!admin || !admin.role_id) return [];
-  const role = db.prepare('SELECT permissions FROM roles WHERE id = ?').get(admin.role_id);
+  if (admin.role_permissions !== undefined) return parsePermissions(admin.role_permissions);
+  const role = await db.prepare('SELECT permissions FROM roles WHERE id = ?').get(admin.role_id);
   if (!role) return [];
-  try { return JSON.parse(role.permissions || '[]'); } catch { return []; }
+  return parsePermissions(role.permissions);
 }
 
 function hasPermission(perms, permission) {
@@ -138,51 +149,256 @@ function hasPermission(perms, permission) {
 
 // ─── Middleware ─────────────────────────────────────────────
 
-function requireAuth(req, res, next) {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'Authentication required' });
-  }
+function flagOn(value) {
+  return value === 1 || value === true || value === '1' || value === 't' || value === 'true';
+}
 
-  const session = getSession(authHeader.slice(7));
-  if (!session) {
-    return res.status(401).json({ error: 'Invalid or expired token' });
-  }
+function userFromAccessRow(row) {
+  if (!row.user_id) return null;
+  return {
+    id: row.user_id,
+    email: row.member_email,
+    name: row.member_name,
+    phone: row.member_phone,
+    phone_normalized: row.member_phone_normalized,
+    password_hash: row.member_password_hash,
+    company: row.member_company,
+    work_sector: row.member_work_sector,
+    dev_hub_user_id: row.member_dev_hub_user_id,
+    status: row.user_status,
+    api_status: row.member_api_status,
+    kyb_completed: row.member_kyb_completed,
+    preferred_channels: row.member_preferred_channels,
+    preferred_days: row.member_preferred_days,
+    preferred_time_start: row.member_preferred_time_start,
+    preferred_time_end: row.member_preferred_time_end,
+    engagement_streak: row.member_engagement_streak,
+    best_streak: row.member_best_streak,
+    last_active_at: row.member_last_active_at,
+    created_at: row.member_created_at,
+    updated_at: row.member_updated_at,
+    date_of_birth: row.member_date_of_birth,
+    gender: row.member_gender,
+    location_state: row.member_location_state,
+    country: row.member_country,
+    api_products: row.member_api_products,
+    notification_prefs: row.member_notification_prefs,
+    quiet_hours_start: row.member_quiet_hours_start,
+    quiet_hours_end: row.member_quiet_hours_end,
+    last_engagement_at: row.member_last_engagement_at
+  };
+}
 
-  // Checked before the account is even loaded: a temporary password gets you
-  // to the "choose a password" screen and nowhere else.
-  if (session.scope === PASSWORD_CHANGE_SCOPE) {
-    const path = req.originalUrl.split('?')[0].replace(/\/+$/, '') || '/';
-    if (!PASSWORD_CHANGE_ALLOWED.has(path)) {
-      return res.status(403).json({
-        error: 'Set your own password before going any further.',
-        must_change_password: true
-      });
-    }
+function circlesFromAccessRows(rows, admin) {
+  const global = flagOn(admin.is_global);
+  const seen = new Set();
+  const circles = [];
+  for (const row of rows) {
+    if (!row.circle_id || seen.has(row.circle_id)) continue;
+    seen.add(row.circle_id);
+    circles.push({
+      id: row.circle_id,
+      name: row.circle_name,
+      slug: row.circle_slug,
+      description: row.circle_description,
+      color: row.circle_color,
+      status: row.circle_status,
+      created_at: row.circle_created_at,
+      role_id: global ? admin.role_id : row.circle_role_id,
+      global,
+      role_permissions: global ? row.role_permissions : row.circle_role_permissions
+    });
   }
+  return circles;
+}
+
+async function resolvePrincipal(hash) {
+  const cached = cache.principals.get(cache.authKey(hash));
+  if (cached !== undefined) return cached;
+  const principal = await loadPrincipal(hash);
+  cache.principals.set(cache.authKey(hash), principal);
+  return principal;
+}
+
+async function loadPrincipal(hash) {
+  // Session, staff, role and the circles they may work in — one plan. A
+  // second query in circleContext was another RTT on every admin page.
+  const rows = await db.prepare(`
+    SELECT
+      s.subject_id, s.is_admin, s.issued_via, s.scope,
+      a.id as admin_id, a.email as admin_email, a.name as admin_name,
+      a.password_hash as admin_password_hash, a.role_id as admin_role_id,
+      a.status as admin_status, a.is_global as admin_is_global,
+      a.must_change_password as admin_must_change_password,
+      a.invited_by as admin_invited_by, a.invited_at as admin_invited_at,
+      a.created_at as admin_created_at,
+      r.id as joined_role_id, r.name as role_name, r.description as role_description,
+      r.permissions as role_permissions, r.is_system as role_is_system,
+      r.created_at as role_created_at,
+      u.id as user_id, u.status as user_status,
+      u.email as member_email, u.name as member_name,
+      u.phone as member_phone, u.phone_normalized as member_phone_normalized,
+      u.password_hash as member_password_hash, u.company as member_company,
+      u.work_sector as member_work_sector, u.dev_hub_user_id as member_dev_hub_user_id,
+      u.api_status as member_api_status, u.kyb_completed as member_kyb_completed,
+      u.preferred_channels as member_preferred_channels,
+      u.preferred_days as member_preferred_days,
+      u.preferred_time_start as member_preferred_time_start,
+      u.preferred_time_end as member_preferred_time_end,
+      u.engagement_streak as member_engagement_streak,
+      u.best_streak as member_best_streak,
+      u.last_active_at as member_last_active_at,
+      u.created_at as member_created_at, u.updated_at as member_updated_at,
+      u.date_of_birth as member_date_of_birth, u.gender as member_gender,
+      u.location_state as member_location_state, u.country as member_country,
+      u.api_products as member_api_products,
+      u.notification_prefs as member_notification_prefs,
+      u.quiet_hours_start as member_quiet_hours_start,
+      u.quiet_hours_end as member_quiet_hours_end,
+      u.last_engagement_at as member_last_engagement_at,
+      c.id as circle_id, c.name as circle_name, c.slug as circle_slug,
+      c.description as circle_description, c.color as circle_color,
+      c.status as circle_status, c.created_at as circle_created_at,
+      ca.role_id as circle_role_id,
+      cr.permissions as circle_role_permissions
+    FROM sessions s
+    LEFT JOIN admin_users a ON a.id = s.subject_id
+    LEFT JOIN roles r ON r.id = a.role_id
+    LEFT JOIN users u ON u.id = s.subject_id
+      AND CAST(s.is_admin AS TEXT) NOT IN ('1', 'true', 't')
+    LEFT JOIN circle_admins ca0 ON ca0.admin_id = a.id
+      AND CAST(s.is_admin AS TEXT) IN ('1', 'true', 't')
+      AND CAST(a.is_global AS TEXT) NOT IN ('1', 'true', 't')
+    LEFT JOIN circles c ON CAST(s.is_admin AS TEXT) IN ('1', 'true', 't')
+      AND c.status = 'active'
+      AND (
+        CAST(a.is_global AS TEXT) IN ('1', 'true', 't')
+        OR c.id = ca0.circle_id
+      )
+    LEFT JOIN circle_admins ca ON ca.admin_id = a.id AND ca.circle_id = c.id
+    LEFT JOIN roles cr ON cr.id = ca.role_id
+    WHERE s.token_hash = ? AND s.expires_at > datetime('now')
+    ORDER BY c.created_at
+  `).all(hash);
+
+  const row = rows && rows[0];
+  if (!row) return null;
+
+  const session = {
+    userId: row.subject_id,
+    isAdmin: flagOn(row.is_admin),
+    issuedVia: row.issued_via,
+    scope: row.scope || 'full'
+  };
 
   if (session.isAdmin) {
-    const admin = db.prepare('SELECT * FROM admin_users WHERE id = ?').get(session.userId);
-    if (!admin || admin.status !== 'active') {
-      return res.status(401).json({ error: 'Admin account inactive' });
+    if (!row.admin_id || row.admin_status !== 'active') {
+      return { error: 'inactive', message: 'Admin account inactive' };
     }
-    req.admin = admin;
-    req.isAdmin = true;
-    // A provisional value: a role is held within a circle, so circleContext
-    // replaces this with the permissions that apply where they are working
-    req.permissions = permissionsFor(admin);
-  } else {
-    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(session.userId);
-    if (!user || user.status !== 'active') {
-      return res.status(401).json({ error: 'User account inactive' });
-    }
-    req.user = user;
-    req.isAdmin = false;
-    req.permissions = [];
+    const principal = {
+      session,
+      isAdmin: true,
+      admin: {
+        id: row.admin_id,
+        email: row.admin_email,
+        name: row.admin_name,
+        password_hash: row.admin_password_hash,
+        role_id: row.admin_role_id,
+        status: row.admin_status,
+        is_global: row.admin_is_global,
+        must_change_password: row.admin_must_change_password,
+        invited_by: row.admin_invited_by,
+        invited_at: row.admin_invited_at,
+        created_at: row.admin_created_at
+      },
+      permissions: parsePermissions(row.role_permissions),
+      role: row.joined_role_id ? {
+        id: row.joined_role_id,
+        name: row.role_name,
+        description: row.role_description,
+        permissions: row.role_permissions,
+        is_system: row.role_is_system,
+        created_at: row.role_created_at
+      } : null,
+      user: null,
+      circles: circlesFromAccessRows(rows, {
+        role_id: row.admin_role_id,
+        is_global: row.admin_is_global
+      })
+    };
+    return principal;
   }
 
-  req.session = session;
+  const user = userFromAccessRow(row);
+  if (!user || user.status !== 'active') {
+    return { error: 'inactive', message: 'User account inactive' };
+  }
+  const principal = {
+    session,
+    isAdmin: false,
+    admin: null,
+    permissions: [],
+    user
+  };
+  return principal;
+}
+
+// Kick the session lookup before later middleware awaits it, so a page GET
+// can start its own query on a second pool connection in the same RTT.
+function beginAuth(req, res, next) {
+  if (req._authPromise) return next();
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    req._authPromise = resolvePrincipal(hashToken(authHeader.slice(7)));
+  }
   next();
+}
+
+async function requireAuth(req, res, next) {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    const hash = hashToken(authHeader.slice(7));
+    const principal = await (req._authPromise || (req._authPromise = resolvePrincipal(hash)));
+
+    if (!principal) {
+      return res.status(401).json({ error: 'Invalid or expired token' });
+    }
+    if (principal.error === 'inactive') {
+      return res.status(401).json({ error: principal.message });
+    }
+
+    const session = principal.session;
+
+    // Checked before the account is even loaded: a temporary password gets you
+    // to the "choose a password" screen and nowhere else.
+    if (session.scope === PASSWORD_CHANGE_SCOPE) {
+      const path = req.originalUrl.split('?')[0].replace(/\/+$/, '') || '/';
+      if (!PASSWORD_CHANGE_ALLOWED.has(path)) {
+        return res.status(403).json({
+          error: 'Set your own password before going any further.',
+          must_change_password: true
+        });
+      }
+    }
+
+    req.session = session;
+    req.isAdmin = principal.isAdmin;
+    req.permissions = principal.permissions;
+    if (principal.isAdmin) {
+      req.admin = principal.admin;
+      req.role = principal.role || null;
+      req.availableCircles = principal.circles || [];
+    } else {
+      req.user = principal.user;
+    }
+    next();
+  } catch (err) {
+    next(err);
+  }
 }
 
 function requireAdmin(req, res, next) {
@@ -202,7 +418,7 @@ function requirePermission(...required) {
     }
   }
 
-  return (req, res, next) => {
+  return async (req, res, next) => {
     if (!req.isAdmin) {
       return res.status(403).json({ error: 'Admin access required' });
     }
@@ -234,7 +450,7 @@ function hashApiKey(key) {
 function requireApiKey(...scopes) {
   const wanted = scopes.flat();
 
-  return (req, res, next) => {
+  return async (req, res, next) => {
     const header = req.headers['x-api-key'] ||
       (req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.slice(7) : null);
 
@@ -242,7 +458,7 @@ function requireApiKey(...scopes) {
       return res.status(401).json({ error: 'API key required' });
     }
 
-    const record = db.prepare(`
+    const record = await db.prepare(`
       SELECT * FROM api_keys
       WHERE key_hash = ?
         AND revoked_at IS NULL
@@ -260,7 +476,7 @@ function requireApiKey(...scopes) {
       return res.status(403).json({ error: 'API key lacks the required scope', required: wanted });
     }
 
-    db.prepare("UPDATE api_keys SET last_used_at = datetime('now') WHERE id = ?").run(record.id);
+    await db.prepare("UPDATE api_keys SET last_used_at = datetime('now') WHERE id = ?").run(record.id);
     req.apiKey = record;
     next();
   };
@@ -321,6 +537,7 @@ module.exports = {
   getSession,
   destroySession,
   destroyAllSessionsFor,
+  beginAuth,
   requireAuth,
   requireAdmin,
   requirePermission,
@@ -330,8 +547,10 @@ module.exports = {
   signSSOToken,
   verifySSOToken,
   permissionsFor,
+  parsePermissions,
   hasPermission,
   PERMISSIONS,
   PERMISSION_KEYS,
-  PASSWORD_CHANGE_SCOPE
+  PASSWORD_CHANGE_SCOPE,
+  flagOn
 };

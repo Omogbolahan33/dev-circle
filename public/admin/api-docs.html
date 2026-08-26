@@ -798,7 +798,11 @@ print(response.json())`
         const token = Auth.getToken();
         const hasAuth = request.headers.Authorization || request.headers.authorization;
         if (token && !hasAuth) request.headers.Authorization = 'Bearer ' + token;
-        if (mode === 'sandbox') request.headers[SANDBOX_HEADER] = '1';
+        // Health is a liveness probe, not a sandbox operation. Sending the
+        // header made Try-it-out 500 while the live session was mirrored.
+        const url = String(request.url || '');
+        const health = /\/api\/health\/?(?:\?|$)/.test(url) || /\/health\/?(?:\?|$)/.test(url);
+        if (mode === 'sandbox' && !health) request.headers[SANDBOX_HEADER] = '1';
         return request;
       }
     });

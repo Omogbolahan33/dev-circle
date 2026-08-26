@@ -2,7 +2,7 @@ const express = require('express');
 const db = require('../../db');
 const { uuid, now, parseJSON, toCSV, parseCSV } = require('../../utils/helpers');
 const { requirePermission } = require('../../middleware/auth');
-const { resolveAudience } = require('../../services/audience');
+const { resolveAudience, USER_NOTIFY_COLS } = require('../../services/audience');
 const engagement = require('../../services/engagement');
 const notifications = require('../../services/notifications');
 const circles = require('../../services/circles');
@@ -16,18 +16,50 @@ const router = express.Router();
 
 // ─── Surveys ────────────────────────────────────────────────
 
-// GET /api/admin/surveys
-router.get('/surveys', requirePermission('surveys.read'), (req, res) => {
-  // A survey belongs to the circle that ran it
-  const surveys = db.prepare(`
-    SELECT s.*,
-      (SELECT COUNT(*) FROM survey_responses sr WHERE sr.survey_id = s.id) as response_count,
-      (SELECT COUNT(*) FROM survey_responses sr
-        WHERE sr.survey_id = s.id AND sr.completed_at IS NOT NULL) as completed_count
-    FROM surveys s WHERE s.circle_id = ? ORDER BY s.created_at DESC
-  `).all(req.circleId);
+async function loadSurveyList(circleId) {
+  // The list never renders the definition. Pulling questions and theme on
+  // every row was a megabyte of JSON for a table of titles and counts.
+  return db.prepare(`
+    SELECT s.id, s.title, s.description, s.status, s.target_type, s.target_ids,
+           s.engagement_mode, s.time_estimate_min, s.expires_at, s.trigger_event,
+           s.reminder_after_days, s.circle_id, s.public_token, s.created_by, s.created_at,
+           COALESCE(sr.response_count, 0) as response_count,
+           COALESCE(sr.completed_count, 0) as completed_count,
+           COALESCE(json_array_length(s.questions), 0) as question_count,
+           CASE WHEN s.questions LIKE '%visible_if%' THEN 1 ELSE 0 END as has_branching
+    FROM surveys s
+    LEFT JOIN (
+      SELECT sr.survey_id,
+             COUNT(*) as response_count,
+             SUM(CASE WHEN sr.completed_at IS NOT NULL THEN 1 ELSE 0 END) as completed_count
+      FROM survey_responses sr
+      JOIN surveys sx ON sx.id = sr.survey_id AND sx.circle_id = ?
+      GROUP BY sr.survey_id
+    ) sr ON sr.survey_id = s.id
+    WHERE s.circle_id = ?
+    ORDER BY s.created_at DESC
+  `).all(circleId, circleId);
+}
 
-  res.json({ surveys: surveys.map(surveyForm.hydrate) });
+function presentSurveyList(surveys) {
+  return {
+    surveys: (surveys || []).map(row => {
+      const survey = surveyForm.hydrate({ ...row, questions: '[]' });
+      return {
+        ...survey,
+        question_count: Number(row.question_count || 0),
+        has_branching: Number(row.has_branching) === 1,
+        response_count: Number(row.response_count || 0),
+        completed_count: Number(row.completed_count || 0)
+      };
+    })
+  };
+}
+
+// GET /api/admin/surveys
+router.get('/surveys', requirePermission('surveys.read'), async (req, res) => {
+  const { takePreload } = require('../../middleware/preload');
+  res.json(presentSurveyList(await takePreload(req, () => loadSurveyList(req.circleId))));
 });
 
 // GET /api/admin/surveys/schema
@@ -35,7 +67,7 @@ router.get('/surveys', requirePermission('surveys.read'), (req, res) => {
 // the conditions branching can be written from. The builder draws itself from
 // this rather than carrying its own copy — the same reason the criteria
 // builder asks the server which fields exist.
-router.get('/surveys/schema', requirePermission('surveys.read'), (req, res) => {
+router.get('/surveys/schema', requirePermission('surveys.read'), async (req, res) => {
   res.json({
     types: surveyForm.TYPES,
     operators: surveyForm.OPERATORS,
@@ -66,25 +98,35 @@ router.get('/surveys/schema', requirePermission('surveys.read'), (req, res) => {
       contrast: { floor: surveyForm.themes.FLOOR, comfortable: surveyForm.themes.AA },
       // What this circle's surveys start from, so the builder opens on the
       // workspace's look rather than the product's
-      circle: parseJSON(req.circle?.survey_theme, null)
+      circle: parseJSON(
+        req.circle?.survey_theme != null
+          ? req.circle.survey_theme
+          : (await db.prepare('SELECT survey_theme FROM circles WHERE id = ?').get(req.circleId))?.survey_theme,
+        null
+      )
     }
   });
 });
 
 // GET /api/admin/surveys/:id — one survey, for editing or reviewing
-router.get('/surveys/:id', requirePermission('surveys.read'), (req, res) => {
-  const survey = db.prepare('SELECT * FROM surveys WHERE id = ?').get(req.params.id);
+router.get('/surveys/:id', requirePermission('surveys.read'), async (req, res) => {
+  const survey = await db.prepare(`
+    SELECT s.*,
+           c.survey_theme as circle_theme,
+           (SELECT COUNT(*) FROM survey_responses sr
+             WHERE sr.survey_id = s.id AND sr.completed_at IS NOT NULL) as completed_count
+    FROM surveys s
+    LEFT JOIN circles c ON c.id = s.circle_id
+    WHERE s.id = ?
+  `).get(req.params.id);
   if (!survey) return res.status(404).json({ error: 'Survey not found' });
 
-  // Questions can only be rewritten while no answers depend on them, and the
-  // builder needs to know that before it lets someone start editing.
-  const completed = db.prepare(
-    'SELECT COUNT(*) as c FROM survey_responses WHERE survey_id = ? AND completed_at IS NOT NULL'
-  ).get(survey.id).c;
+  const { circle_theme, completed_count, ...row } = survey;
+  const completed = Number(completed_count || 0);
 
   res.json({
-    survey: surveyForm.hydrate(survey),
-    circle_theme: parseJSON(circles.byId(survey.circle_id)?.survey_theme, null),
+    survey: surveyForm.hydrate(row),
+    circle_theme: parseJSON(circle_theme, null),
     completed_count: completed,
     questions_locked: completed > 0
   });
@@ -95,19 +137,24 @@ router.get('/surveys/:id', requirePermission('surveys.read'), (req, res) => {
 // GET /api/admin/surveys/:id/audience
 // "See eligible cohorts of users according to their cohorts for surveys" —
 // who this survey would reach, and who is already excluded.
-router.get('/surveys/:id/audience', requirePermission('surveys.read'), (req, res) => {
-  const survey = db.prepare('SELECT * FROM surveys WHERE id = ?').get(req.params.id);
+router.get('/surveys/:id/audience', requirePermission('surveys.read'), async (req, res) => {
+  const survey = await db.prepare(`
+    SELECT id, title, engagement_mode, target_type, target_ids, circle_id
+    FROM surveys WHERE id = ?
+  `).get(req.params.id);
   if (!survey) return res.status(404).json({ error: 'Survey not found' });
 
-  const audience = resolveAudience(survey);
+  const [audience, progress] = await Promise.all([
+    resolveAudience(survey),
+    db.prepare('SELECT user_id, completed_at FROM survey_responses WHERE survey_id = ?').all(survey.id)
+  ]);
 
-  const alreadyInvited = new Set(
-    db.prepare('SELECT user_id FROM survey_responses WHERE survey_id = ?').all(survey.id).map(r => r.user_id)
-  );
-  const completed = new Set(
-    db.prepare('SELECT user_id FROM survey_responses WHERE survey_id = ? AND completed_at IS NOT NULL')
-      .all(survey.id).map(r => r.user_id)
-  );
+  const alreadyInvited = new Set();
+  const completed = new Set();
+  for (const row of progress || []) {
+    alreadyInvited.add(row.user_id);
+    if (row.completed_at) completed.add(row.user_id);
+  }
 
   const mode = survey.engagement_mode;
   const reachable = [];
@@ -116,7 +163,7 @@ router.get('/surveys/:id/audience', requirePermission('surveys.read'), (req, res
 
   for (const user of audience) {
     if (completed.has(user.id)) { completedInAudience++; continue; }
-    const { allowed, skipped } = notifications.resolveChannels(
+    const { allowed, skipped } = await notifications.resolveChannels(
       user,
       mode === 'in_portal' || mode === '1-on-1' ? ['in_portal'] : ['in_portal', mode],
       'survey_invites'
@@ -143,7 +190,7 @@ router.get('/surveys/:id/audience', requirePermission('surveys.read'), (req, res
 });
 
 // POST /api/admin/surveys
-router.post('/surveys', requirePermission('surveys.write'), (req, res) => {
+router.post('/surveys', requirePermission('surveys.write'), async (req, res) => {
   const {
     title, description, questions, target_type, target_ids,
     engagement_mode, time_estimate_min, expires_at, trigger_event, reminder_after_days,
@@ -153,7 +200,7 @@ router.post('/surveys', requirePermission('surveys.write'), (req, res) => {
   if (!title || !questions) return res.status(400).json({ error: 'title and questions required' });
   if (!Array.isArray(questions)) return res.status(400).json({ error: 'questions must be an array' });
 
-  const circle = circle_id ? circles.byId(circle_id) : req.circle;
+  const circle = circle_id ? await circles.byId(circle_id) : req.circle;
   if (!circle) return res.status(400).json({ error: 'Unknown circle_id' });
 
   // Publishing was the one thing this endpoint ignored: the status arrived,
@@ -165,7 +212,7 @@ router.post('/surveys', requirePermission('surveys.write'), (req, res) => {
   // once, each against the question it belongs to, because fixing five
   // problems one refusal at a time is how a builder gets abandoned. A draft
   // may still be empty — it is being written.
-  const definition = surveyForm.normalizeDefinition(req.body, {
+  const definition = await surveyForm.normalizeDefinition(req.body, {
     createdBy: req.admin.id,
     allowEmpty: opening !== 'active'
   });
@@ -182,7 +229,7 @@ router.post('/surveys', requirePermission('surveys.write'), (req, res) => {
   }
 
   const id = uuid();
-  db.prepare(`
+  await db.prepare(`
     INSERT INTO surveys (id, title, description, questions, theme, target_type, target_ids,
                          engagement_mode, time_estimate_min, expires_at, trigger_event,
                          reminder_after_days, circle_id, created_by, status, public_token)
@@ -201,7 +248,7 @@ router.post('/surveys', requirePermission('surveys.write'), (req, res) => {
   );
 
   res.status(201).json({
-    survey: surveyForm.hydrate(db.prepare('SELECT * FROM surveys WHERE id = ?').get(id)),
+    survey: surveyForm.hydrate(await db.prepare('SELECT * FROM surveys WHERE id = ?').get(id)),
     // Saved, but worth a second look — a brand combination that is legible
     // rather than comfortable
     ...(definition.warnings?.length ? { warnings: definition.warnings } : {})
@@ -209,8 +256,8 @@ router.post('/surveys', requirePermission('surveys.write'), (req, res) => {
 });
 
 // PUT /api/admin/surveys/:id
-router.put('/surveys/:id', requirePermission('surveys.write'), (req, res) => {
-  const survey = db.prepare('SELECT * FROM surveys WHERE id = ?').get(req.params.id);
+router.put('/surveys/:id', requirePermission('surveys.write'), async (req, res) => {
+  const survey = await db.prepare('SELECT * FROM surveys WHERE id = ?').get(req.params.id);
   if (!survey) return res.status(404).json({ error: 'Survey not found' });
 
   const {
@@ -231,16 +278,16 @@ router.put('/surveys/:id', requirePermission('surveys.write'), (req, res) => {
   if (questions) {
     if (!Array.isArray(questions)) return res.status(400).json({ error: 'questions must be an array' });
     // Editing questions after responses exist would orphan collected answers
-    const responded = db.prepare(
+    const responded = Number((await db.prepare(
       'SELECT COUNT(*) as c FROM survey_responses WHERE survey_id = ? AND completed_at IS NOT NULL'
-    ).get(survey.id).c;
+    ).get(survey.id))?.c || 0);
     if (responded > 0) {
       return res.status(409).json({
         error: `Cannot change questions — ${responded} member(s) have already responded. Close this survey and create a new version.`
       });
     }
 
-    const definition = surveyForm.normalizeDefinition(req.body, {
+    const definition = await surveyForm.normalizeDefinition(req.body, {
       createdBy: req.admin.id,
       allowEmpty: (status || survey.status) !== 'active'
     });
@@ -313,10 +360,10 @@ router.put('/surveys/:id', requirePermission('surveys.write'), (req, res) => {
   if (updates.length === 0) return res.status(400).json({ error: 'No fields to update' });
 
   params.push(survey.id);
-  db.prepare(`UPDATE surveys SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+  await db.prepare(`UPDATE surveys SET ${updates.join(', ')} WHERE id = ?`).run(...params);
 
   res.json({
-    survey: surveyForm.hydrate(db.prepare('SELECT * FROM surveys WHERE id = ?').get(survey.id)),
+    survey: surveyForm.hydrate(await db.prepare('SELECT * FROM surveys WHERE id = ?').get(survey.id)),
     ...(warnings.length ? { warnings } : {})
   });
 });
@@ -331,15 +378,15 @@ router.put('/surveys/:id', requirePermission('surveys.write'), (req, res) => {
 // run of it. No responses, no completions, no status — the copy opens as a
 // draft, because a duplicate that published itself to the original's audience
 // would be the most expensive kind of accident this screen can produce.
-router.post('/surveys/:id/duplicate', requirePermission('surveys.write'), (req, res) => {
-  const survey = db.prepare('SELECT * FROM surveys WHERE id = ?').get(req.params.id);
+router.post('/surveys/:id/duplicate', requirePermission('surveys.write'), async (req, res) => {
+  const survey = await db.prepare('SELECT * FROM surveys WHERE id = ?').get(req.params.id);
   if (!survey) return res.status(404).json({ error: 'Survey not found' });
 
   const hydrated = surveyForm.hydrate(survey);
 
   // A copy can be lifted into another workspace, which is how a round that
   // worked for one circle gets run by another
-  const circle = req.body.circle_id ? circles.byId(req.body.circle_id) : circles.byId(survey.circle_id);
+  const circle = req.body.circle_id ? await circles.byId(req.body.circle_id) : await circles.byId(survey.circle_id);
   if (!circle) return res.status(400).json({ error: 'Unknown circle_id' });
 
   const title = String(req.body.title || `${survey.title} (copy)`).trim().slice(0, 200);
@@ -348,7 +395,7 @@ router.post('/surveys/:id/duplicate', requirePermission('surveys.write'), (req, 
   // Run through the same normalisation a hand-written survey gets. The
   // original was valid when it was saved, but the schema is where a question
   // acquires its identity, and a copy has to acquire its own.
-  const definition = surveyForm.normalizeDefinition({
+  const definition = await surveyForm.normalizeDefinition({
     questions: surveyForm.copyQuestions(hydrated.questions),
     theme: hydrated.theme
   }, { createdBy: req.admin.id, allowEmpty: true });
@@ -366,7 +413,7 @@ router.post('/surveys/:id/duplicate', requirePermission('surveys.write'), (req, 
     new Date(String(survey.expires_at).replace(' ', 'T')) > new Date() ? survey.expires_at : null;
 
   const id = uuid();
-  db.prepare(`
+  await db.prepare(`
     INSERT INTO surveys (id, title, description, questions, theme, target_type, target_ids,
                          engagement_mode, time_estimate_min, expires_at, trigger_event,
                          reminder_after_days, circle_id, created_by, status, public_token)
@@ -385,7 +432,7 @@ router.post('/surveys/:id/duplicate', requirePermission('surveys.write'), (req, 
   );
 
   res.status(201).json({
-    survey: surveyForm.hydrate(db.prepare('SELECT * FROM surveys WHERE id = ?').get(id)),
+    survey: surveyForm.hydrate(await db.prepare('SELECT * FROM surveys WHERE id = ?').get(id)),
     copied_from: survey.id,
     questions: definition.questions.length,
     ...(definition.warnings?.length ? { warnings: definition.warnings } : {})
@@ -396,7 +443,7 @@ router.post('/surveys/:id/duplicate', requirePermission('surveys.write'), (req, 
 // Sends the invitation over the survey's engagement mode. Previously the mode
 // was stored and no invitation was ever sent.
 router.post('/surveys/:id/invite', requirePermission('surveys.invite'), async (req, res) => {
-  const survey = db.prepare('SELECT * FROM surveys WHERE id = ?').get(req.params.id);
+  const survey = await db.prepare('SELECT * FROM surveys WHERE id = ?').get(req.params.id);
   if (!survey) return res.status(404).json({ error: 'Survey not found' });
   if (survey.status !== 'active') {
     return res.status(409).json({ error: 'Activate the survey before inviting members' });
@@ -411,15 +458,17 @@ router.post('/surveys/:id/invite', requirePermission('surveys.invite'), async (r
   }
 
   const { resend = false } = req.body;
-  const audience = resolveAudience(survey);
+  const [audience, progress] = await Promise.all([
+    resolveAudience(survey),
+    db.prepare('SELECT user_id, completed_at FROM survey_responses WHERE survey_id = ?').all(survey.id)
+  ]);
 
-  const invited = new Set(
-    db.prepare('SELECT user_id FROM survey_responses WHERE survey_id = ?').all(survey.id).map(r => r.user_id)
-  );
-  const completed = new Set(
-    db.prepare('SELECT user_id FROM survey_responses WHERE survey_id = ? AND completed_at IS NOT NULL')
-      .all(survey.id).map(r => r.user_id)
-  );
+  const invited = new Set();
+  const completed = new Set();
+  for (const row of progress || []) {
+    invited.add(row.user_id);
+    if (row.completed_at) completed.add(row.user_id);
+  }
 
   const mode = survey.engagement_mode;
   const channels = mode === 'in_portal' || mode === '1-on-1' ? ['in_portal'] : ['in_portal', mode];
@@ -434,7 +483,7 @@ router.post('/surveys/:id/invite', requirePermission('surveys.invite'), async (r
 
   for (const user of recipients) {
     if (!invited.has(user.id)) {
-      insertResponse.run(uuid(), survey.id, user.id);
+      await insertResponse.run(uuid(), survey.id, user.id);
       invited.add(user.id);
     }
 
@@ -475,11 +524,12 @@ router.post('/surveys/:id/invite', requirePermission('surveys.invite'), async (r
 
 // POST /api/admin/surveys/:id/remind — nudge members who haven't responded
 router.post('/surveys/:id/remind', requirePermission('surveys.invite'), async (req, res) => {
-  const survey = db.prepare('SELECT * FROM surveys WHERE id = ?').get(req.params.id);
+  const survey = await db.prepare('SELECT * FROM surveys WHERE id = ?').get(req.params.id);
   if (!survey) return res.status(404).json({ error: 'Survey not found' });
 
-  const pending = db.prepare(`
-    SELECT u.* FROM survey_responses sr
+  const pending = await db.prepare(`
+    SELECT ${USER_NOTIFY_COLS}
+    FROM survey_responses sr
     JOIN users u ON u.id = sr.user_id
     WHERE sr.survey_id = ? AND sr.completed_at IS NULL AND u.status = 'active'
   `).all(survey.id);
@@ -506,11 +556,11 @@ router.post('/surveys/:id/remind', requirePermission('surveys.invite'), async (r
 });
 
 // GET /api/admin/surveys/:id/responses
-router.get('/surveys/:id/responses', requirePermission('surveys.read'), (req, res) => {
-  const survey = db.prepare('SELECT * FROM surveys WHERE id = ?').get(req.params.id);
+router.get('/surveys/:id/responses', requirePermission('surveys.read'), async (req, res) => {
+  const survey = await db.prepare('SELECT * FROM surveys WHERE id = ?').get(req.params.id);
   if (!survey) return res.status(404).json({ error: 'Survey not found' });
 
-  const responses = db.prepare(`
+  const responses = await db.prepare(`
     SELECT sr.*, u.name as user_name, u.email as user_email
     FROM survey_responses sr
     LEFT JOIN users u ON u.id = sr.user_id
@@ -552,8 +602,8 @@ router.get('/surveys/:id/responses', requirePermission('surveys.read'), (req, re
 // a fixed template like the member import's — the columns *are* the questions,
 // so a survey that gains a question gains a column without anybody
 // remembering to update a file.
-router.get('/surveys/:id/responses/template', requirePermission('surveys.read'), (req, res) => {
-  const survey = db.prepare('SELECT * FROM surveys WHERE id = ?').get(req.params.id);
+router.get('/surveys/:id/responses/template', requirePermission('surveys.read'), async (req, res) => {
+  const survey = await db.prepare('SELECT * FROM surveys WHERE id = ?').get(req.params.id);
   if (!survey) return res.status(404).json({ error: 'Survey not found' });
 
   const format = String(req.query.format || 'xlsx').toLowerCase();
@@ -581,8 +631,8 @@ router.get('/surveys/:id/responses/template', requirePermission('surveys.read'),
 // GET /api/admin/surveys/:id/responses/columns
 // The spec behind the template, so a screen can describe the upload without
 // keeping a second copy of the column list that drifts from the parser's.
-router.get('/surveys/:id/responses/columns', requirePermission('surveys.read'), (req, res) => {
-  const survey = db.prepare('SELECT * FROM surveys WHERE id = ?').get(req.params.id);
+router.get('/surveys/:id/responses/columns', requirePermission('surveys.read'), async (req, res) => {
+  const survey = await db.prepare('SELECT * FROM surveys WHERE id = ?').get(req.params.id);
   if (!survey) return res.status(404).json({ error: 'Survey not found' });
 
   res.json({
@@ -619,8 +669,8 @@ router.get('/surveys/:id/responses/columns', requirePermission('surveys.read'), 
 // survey whose stored responses do not satisfy the rules it states about
 // itself, and then every count drawn from it means something slightly
 // different depending on which door the answer came in by.
-router.post('/surveys/:id/responses/import', requirePermission('surveys.write'), (req, res) => {
-  const survey = db.prepare('SELECT * FROM surveys WHERE id = ?').get(req.params.id);
+router.post('/surveys/:id/responses/import', requirePermission('surveys.write'), async (req, res) => {
+  const survey = await db.prepare('SELECT * FROM surveys WHERE id = ?').get(req.params.id);
   if (!survey) return res.status(404).json({ error: 'Survey not found' });
 
   const { csv, xlsx_base64, rows: given, dry_run = false, create_missing = true } = req.body;
@@ -679,17 +729,17 @@ router.post('/surveys/:id/responses/import', requirePermission('surveys.write'),
   // Ids already spoken for, so a sheet that repeats a reference is caught here
   // with a sentence rather than by a unique index with a constraint error
   const seenExternal = new Set(
-    db.prepare(`
+    ((await db.prepare(`
       SELECT external_response_id FROM survey_responses
       WHERE survey_id = ? AND external_response_id IS NOT NULL
-    `).all(survey.id).map(r => r.external_response_id)
+    `).all(survey.id) || []) || []).map(r => r.external_response_id)
   );
 
   const completedBy = new Set(
-    db.prepare(`
+    (await db.prepare(`
       SELECT user_id FROM survey_responses
       WHERE survey_id = ? AND user_id IS NOT NULL AND completed_at IS NOT NULL
-    `).all(survey.id).map(r => r.user_id)
+    `).all(survey.id) || []).map(r => r.user_id)
   );
 
   // Scoped to the workspace that owns the survey, exactly as its audience is.
@@ -700,13 +750,13 @@ router.post('/surveys/:id/responses/import', requirePermission('surveys.write'),
   const findMember = survey.circle_id
     ? db.prepare(`
         SELECT u.id, u.name, u.email FROM users u
+        JOIN circle_members cm ON cm.user_id = u.id AND cm.circle_id = ?
         WHERE u.email = ?
-          AND u.id IN (SELECT user_id FROM circle_members WHERE circle_id = ?)
       `)
     : db.prepare('SELECT id, name, email FROM users WHERE email = ?');
   const lookup = email => (survey.circle_id
-    ? findMember.get(email, survey.circle_id)
-    : findMember.get(email));
+    ? findMember.get(survey.circle_id, email)
+    : findMember.get(email)); // awaited at call sites
 
   // Only consulted to tell two failures apart. "We have never heard of them"
   // and "they are in another workspace" need different things done about them,
@@ -728,12 +778,12 @@ router.post('/surveys/:id/responses/import', requirePermission('surveys.write'),
   const joinCohort = db.prepare(
     'INSERT OR IGNORE INTO user_cohorts (user_id, cohort_id) VALUES (?, ?)'
   );
-  const allMembers = db.prepare("SELECT id FROM cohorts WHERE name = 'All Members'").get();
+  const allMembers = await db.prepare("SELECT id FROM cohorts WHERE name = 'All Members'").get();
 
   // Bring one respondent into this workspace: either somebody new, or somebody
   // who exists elsewhere and is being recorded as part of this survey's
   // audience. Returns the member, or the reason there is not one.
-  function admit(meta) {
+  async function admit(meta) {
     if (!identity.EMAIL_RE.test(meta.email)) {
       return { ok: false, error: `"${meta.email}" is not a valid email address` };
     }
@@ -748,7 +798,7 @@ router.post('/surveys/:id/responses/import', requirePermission('surveys.write'),
       };
     }
 
-    const existing = findAnywhere.get(meta.email);
+    const existing = await findAnywhere.get(meta.email);
 
     if (existing) {
       // Known here, but not in this workspace. Importing a response is an
@@ -762,7 +812,7 @@ router.post('/surveys/:id/responses/import', requirePermission('surveys.write'),
                  'put to them'
         };
       }
-      if (survey.circle_id) joinCircle.run(survey.circle_id, existing.id);
+      if (!dry_run && survey.circle_id) await joinCircle.run(survey.circle_id, existing.id);
       results.added_to_circle++;
       return { ok: true, member: existing };
     }
@@ -776,16 +826,18 @@ router.post('/surveys/:id/responses/import', requirePermission('surveys.write'),
     }
 
     const id = uuid();
-    insertMember.run(id, meta.email, meta.name || meta.email.split('@')[0],
-      meta.company || null, identity.NO_PASSWORD);
+    if (!dry_run) {
+      await insertMember.run(id, meta.email, meta.name || meta.email.split('@')[0],
+        meta.company || null, identity.NO_PASSWORD);
 
-    if (survey.circle_id) joinCircle.run(survey.circle_id, id);
-    if (allMembers) joinCohort.run(id, allMembers.id);
+      if (survey.circle_id) await joinCircle.run(survey.circle_id, id);
+      if (allMembers) await joinCohort.run(id, allMembers.id);
 
-    engagement.log(id, 'account_created', {
-      metadata: { via: 'survey_response_import', survey_id: survey.id, source_system: sourceSystem },
-      source: 'manual'
-    });
+      await engagement.log(id, 'account_created', {
+        metadata: { via: 'survey_response_import', survey_id: survey.id, source_system: sourceSystem },
+        source: 'manual'
+      });
+    }
 
     results.created_members++;
     created.add(meta.email);
@@ -818,11 +870,7 @@ router.post('/surveys/:id/responses/import', requirePermission('surveys.write'),
     WHERE id = ?
   `);
 
-  // Thrown to roll the transaction back once a dry run has counted everything
-  class DryRun extends Error {}
-
-  const run = db.transaction(() => {
-    rows.forEach((raw, index) => {
+  for (const [index, raw] of rows.entries()) {
       const line = index + 2;                 // the heading row is line 1 in the sheet
       const fail = error => results.errors.push({ line, error });
 
@@ -831,7 +879,7 @@ router.post('/surveys/:id/responses/import', requirePermission('surveys.write'),
 
       if (!Object.keys(answers).length) {
         fail('No column in this row matched a question in the survey');
-        return;
+        continue;
       }
 
       // An email that names nobody here is refused rather than quietly
@@ -841,17 +889,17 @@ router.post('/surveys/:id/responses/import', requirePermission('surveys.write'),
       let member = null;
 
       if (meta.email) {
-        member = lookup(meta.email);
+        member = await lookup(meta.email);
 
         if (!member) {
-          const admitted = admit(meta);
-          if (!admitted.ok) { fail(admitted.error); return; }
+          const admitted = await admit(meta);
+          if (!admitted.ok) { fail(admitted.error); continue; }
           member = admitted.member;
         }
 
         if (completedBy.has(member.id)) {
           results.skipped++;
-          return;
+          continue;
         }
       } else if (!anonymousExpected) {
         // Flagged, not refused: the answers are real either way, and a row
@@ -869,7 +917,7 @@ router.post('/surveys/:id/responses/import', requirePermission('surveys.write'),
       if (meta.externalId) {
         if (seenExternal.has(meta.externalId)) {
           results.skipped++;
-          return;
+          continue;
         }
       }
 
@@ -883,7 +931,7 @@ router.post('/surveys/:id/responses/import', requirePermission('surveys.write'),
           return `${question ? question.text : id} — ${message}`;
         });
         fail(named.join('; '));
-        return;
+        continue;
       }
 
       results.discarded += checked.dropped.length;
@@ -905,19 +953,19 @@ router.post('/surveys/:id/responses/import', requirePermission('surveys.write'),
             submitted_at: meta.submittedAt
           });
         }
-        return;
+        continue;
       }
 
       const at = meta.submittedAt || now();
       const serialized = JSON.stringify(checked.answers);
 
-      const pending = member ? findPending.get(survey.id, member.id) : null;
+      const pending = member ? await findPending.get(survey.id, member.id) : null;
       const responseId = pending ? pending.id : uuid();
 
       if (pending) {
-        completeResponse.run(serialized, at, sourceSystem, meta.externalId || null, responseId);
+        await completeResponse.run(serialized, at, sourceSystem, meta.externalId || null, responseId);
       } else {
-        insertResponse.run(
+        await insertResponse.run(
           responseId, survey.id, member ? member.id : null, serialized, at,
           // Not 'anonymous': nobody answered this under a promise of
           // anonymity. It is a response with no account behind it, which is a
@@ -933,7 +981,7 @@ router.post('/surveys/:id/responses/import', requirePermission('surveys.write'),
 
       // What was written in a sheet is what a developer told us, on the same
       // terms as anything typed in here
-      const { filed } = verbatims.record(member ? member.id : null, survey, checked.answers, {
+      const { filed } = await verbatims.record(member ? member.id : null, survey, checked.answers, {
         at, responseId, sourceSystem, externalResponseId: meta.externalId || null
       });
       results.verbatims += filed;
@@ -943,7 +991,7 @@ router.post('/surveys/:id/responses/import', requirePermission('surveys.write'),
         // lately, and a response transcribed today from a form they filled in
         // last March is not activity today. The history gains the event; the
         // counter is left alone.
-        engagement.log(member.id, 'survey_completed', {
+        await engagement.log(member.id, 'survey_completed', {
           referenceId: survey.id,
           metadata: { survey_title: survey.title, via: 'import', source_system: sourceSystem },
           source: 'manual'
@@ -951,15 +999,6 @@ router.post('/surveys/:id/responses/import', requirePermission('surveys.write'),
       }
 
       results.imported++;
-    });
-
-    if (dry_run) throw new DryRun();
-  });
-
-  try {
-    run();
-  } catch (err) {
-    if (!(err instanceof DryRun)) throw err;
   }
 
   results.unmatched_columns = [...unmatchedColumns];
@@ -984,14 +1023,14 @@ router.post('/surveys/:id/responses/import', requirePermission('surveys.write'),
 });
 
 // GET /api/admin/surveys/:id/export
-router.get('/surveys/:id/export', requirePermission('export.read'), (req, res) => {
-  const survey = db.prepare('SELECT * FROM surveys WHERE id = ?').get(req.params.id);
+router.get('/surveys/:id/export', requirePermission('export.read'), async (req, res) => {
+  const survey = await db.prepare('SELECT * FROM surveys WHERE id = ?').get(req.params.id);
   if (!survey) return res.status(404).json({ error: 'Survey not found' });
 
   // Sections hold no answer, so they hold no column
   const questions = surveyForm.hydrate(survey).questions.filter(surveyForm.isAnswerable);
 
-  const responses = db.prepare(`
+  const responses = await db.prepare(`
     SELECT sr.*, u.name as user_name, u.email as user_email, u.company as user_company
     FROM survey_responses sr
     LEFT JOIN users u ON u.id = sr.user_id
@@ -1031,3 +1070,5 @@ router.get('/surveys/:id/export', requirePermission('export.read'), (req, res) =
 });
 
 module.exports = router;
+module.exports.loadSurveyList = loadSurveyList;
+module.exports.presentSurveyList = presentSurveyList;

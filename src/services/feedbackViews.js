@@ -91,8 +91,8 @@ const GROUPINGS = {
   month: {
     label: 'Month',
     describe: 'How what we hear changes over time',
-    key: 'substr(f.created_at, 1, 7)',
-    name: 'substr(f.created_at, 1, 7)',
+    key: 'substr(CAST(f.created_at AS TEXT), 1, 7)',
+    name: 'substr(CAST(f.created_at AS TEXT), 1, 7)',
     filter: 'month'
   },
   status: {
@@ -133,7 +133,9 @@ function conditions(query = {}) {
 
   // Scoped to one workspace. A developer in two circles has what they said in
   // one stay there — the same person, two separate bodies of evidence.
-  if (query.circle_id) { where.push('f.circle_id = ?'); params.push(query.circle_id); }
+  // Rows filed before a circle was set still belong to that workspace's
+  // evidence. Dropping them with `=` hid every NULL-circle verbatim.
+  if (query.circle_id) { where.push('(f.circle_id = ? OR f.circle_id IS NULL)'); params.push(query.circle_id); }
 
   const direct = {
     status: 'f.status', source: 'f.source', source_system: 'f.source_system',
@@ -150,7 +152,7 @@ function conditions(query = {}) {
     where.push('COALESCE(f.survey_id, f.source_system) = ?');
     params.push(query.survey_id);
   }
-  if (query.month) { where.push('substr(f.created_at, 1, 7) = ?'); params.push(query.month); }
+  if (query.month) { where.push('substr(CAST(f.created_at AS TEXT), 1, 7) = ?'); params.push(query.month); }
   if (query.since) { where.push('f.created_at >= ?'); params.push(query.since); }
   if (query.prompted === 'false') where.push('f.canonical_question_id IS NULL');
   if (query.prompted === 'true') where.push('f.canonical_question_id IS NOT NULL');
@@ -161,7 +163,7 @@ function conditions(query = {}) {
     params.push(like, like, like);
   }
   if (query.cohort_id) {
-    where.push('f.user_id IN (SELECT user_id FROM user_cohorts WHERE cohort_id = ?)');
+    where.push('EXISTS (SELECT 1 FROM user_cohorts uc WHERE uc.user_id = f.user_id AND uc.cohort_id = ?)');
     params.push(query.cohort_id);
   }
   return { where: where.join(' AND '), params };
@@ -170,12 +172,12 @@ function conditions(query = {}) {
 // The groups themselves. Developers rather than answers is the headline number
 // throughout: five people saying a thing once is not one person saying it five
 // times, and a single total renders them identically.
-function group(axis, query = {}) {
+async function group(axis, query = {}) {
   const { where, params } = conditions(query);
 
   if (MEMBERSHIP_GROUPINGS[axis]) {
     const g = MEMBERSHIP_GROUPINGS[axis];
-    return db.prepare(`
+    return await db.prepare(`
       SELECT m.${g.column} as key, n.name as label, NULL as context,
              COUNT(f.id) as answer_count,
              COUNT(DISTINCT COALESCE(f.user_id, 'anon:' || COALESCE(f.response_id, f.id))) as developer_count,
@@ -184,7 +186,7 @@ function group(axis, query = {}) {
       JOIN ${g.table} m ON m.user_id = f.user_id
       JOIN ${g.names} n ON n.id = m.${g.column}
       WHERE ${where}
-      GROUP BY m.${g.column}
+      GROUP BY m.${g.column}, n.name
       ORDER BY developer_count DESC, last_at DESC
     `).all(...params);
   }
@@ -192,23 +194,25 @@ function group(axis, query = {}) {
   const g = GROUPINGS[axis];
   if (!g) return null;
 
-  return db.prepare(`
+  const groupBy = [g.key, g.name, g.context].filter(Boolean).join(', ');
+
+  return await db.prepare(`
     SELECT ${g.key} as key, ${g.name} as label, ${g.context || 'NULL'} as context,
            COUNT(f.id) as answer_count,
            COUNT(DISTINCT COALESCE(f.user_id, 'anon:' || COALESCE(f.response_id, f.id))) as developer_count,
            MAX(f.created_at) as last_at
     ${FROM}
     WHERE ${where} ${g.having ? `AND ${g.having}` : ''} AND ${g.key} IS NOT NULL
-    GROUP BY ${g.key}
+    GROUP BY ${groupBy}
     ORDER BY developer_count DESC, last_at DESC
   `).all(...params);
 }
 
 // The verbatims themselves, in whatever the filters leave
-function items(query = {}, { limit = 500 } = {}) {
+async function items(query = {}, { limit = 500 } = {}) {
   const { where, params } = conditions(query);
 
-  return db.prepare(`
+  return await db.prepare(`
     SELECT f.id, f.content, f.created_at, f.source, f.source_system, f.status,
            f.category, f.external_ticket_id, f.canonical_question_id,
            COALESCE(q.text, f.prompt) as question,
@@ -222,9 +226,9 @@ function items(query = {}, { limit = 500 } = {}) {
   `).all(...params, limit);
 }
 
-function summarise(query = {}) {
+async function summarise(query = {}) {
   const { where, params } = conditions(query);
-  return db.prepare(`
+  return await db.prepare(`
     SELECT COUNT(f.id) as answers,
            COUNT(DISTINCT COALESCE(f.user_id, 'anon:' || COALESCE(f.response_id, f.id))) as developers,
            COUNT(DISTINCT f.canonical_question_id) as questions

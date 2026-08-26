@@ -13,17 +13,18 @@ const router = express.Router();
 
 // POST /api/admin/uploads
 router.post('/uploads', requirePermission('surveys.write'), async (req, res) => {
-  const { file, kind = 'image' } = req.body;
+  const { file, kind = 'image', filename } = req.body;
 
   if (!['image', 'font'].includes(kind)) {
     return res.status(400).json({ error: 'kind must be image or font' });
   }
 
   try {
+    const opts = { kind, by: req.admin.id, filename };
     // Prefer async path (handles Supabase); fall back to sync for local disk
     const stored = config.uploads.backend === 'supabase' && config.supabase.hasServiceRole
-      ? await uploads.storeAsync(file, { kind, by: req.admin.id })
-      : uploads.store(file, { kind, by: req.admin.id });
+      ? await uploads.storeAsync(file, opts)
+      : uploads.store(file, opts);
     res.status(201).json({ asset: stored });
   } catch (err) {
     if (err instanceof uploads.UploadError) {

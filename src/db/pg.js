@@ -94,12 +94,20 @@ function getPool() {
     max: config.database.pgPool.max,
     idleTimeoutMillis: config.database.pgPool.idleTimeoutMillis,
     connectionTimeoutMillis: config.database.pgPool.connectionTimeoutMillis,
+    keepAlive: true,
     ssl: config.database.pgPool.ssl || undefined
   });
 
   pool.on('error', err => {
     logger.error('Postgres pool error', { message: err.message });
   });
+
+  // Hold a live connection so the next request is not an SSL handshake.
+  // Not a result cache — just keep the socket warm.
+  const keepAlive = setInterval(() => {
+    pool.query('SELECT 1').catch(() => {});
+  }, 20_000);
+  if (typeof keepAlive.unref === 'function') keepAlive.unref();
 
   return pool;
 }
@@ -115,6 +123,46 @@ function getPool() {
 function translatePlaceholders(sql) {
   let idx = 0;
   return sql.replace(/\?/g, () => `$${++idx}`);
+}
+
+// The same statement is prepared on every request. Translating it once is
+// what stops the dialect shim from running on the hot path.
+const translatedCache = new Map();
+const TRANSLATE_CACHE_MAX = 400;
+
+function translateSql(sql) {
+  const hit = translatedCache.get(sql);
+  if (hit) return hit;
+  const translated = translateSqliteToPostgres(translatePlaceholders(sql));
+  if (translatedCache.size >= TRANSLATE_CACHE_MAX) translatedCache.clear();
+  translatedCache.set(sql, translated);
+  return translated;
+}
+
+// Replace name(...) even when the argument list nests parentheses
+// (julianday(COALESCE(a, b)) is the case the naive [^)]+ regex drops).
+function replaceFnCall(sql, name, replacer) {
+  const re = new RegExp(`\\b${name}\\s*\\(`, 'gi');
+  let out = '';
+  let last = 0;
+  let match;
+  while ((match = re.exec(sql))) {
+    const open = match.index + match[0].length - 1;
+    let depth = 0;
+    let close = -1;
+    for (let i = open; i < sql.length; i++) {
+      if (sql[i] === '(') depth++;
+      else if (sql[i] === ')') {
+        depth--;
+        if (depth === 0) { close = i; break; }
+      }
+    }
+    if (close < 0) break;
+    out += sql.slice(last, match.index) + replacer(sql.slice(open + 1, close).trim());
+    last = close + 1;
+    re.lastIndex = last;
+  }
+  return out + sql.slice(last);
 }
 
 function translateSqliteToPostgres(sql) {
@@ -138,15 +186,53 @@ function translateSqliteToPostgres(sql) {
   // INSERT OR REPLACE → INSERT ... ON CONFLICT DO UPDATE
   out = out.replace(/INSERT\s+OR\s+REPLACE\s+INTO/gi, 'INSERT INTO');
 
-  // datetime('now') variations
-  out = out.replace(/datetime\s*\(\s*'now'\s*,\s*'[^']*'\s*\)/gi, 'NOW()');
+  // datetime('now', '-7 days') must keep the offset — replacing the whole
+  // call with NOW() made "new this week" count every member.
+  out = out.replace(
+    /datetime\s*\(\s*'now'\s*,\s*'([^']+)'\s*\)/gi,
+    (_, mod) => `(NOW() + INTERVAL '${mod.replace(/'/g, "''")}')`
+  );
+  out = out.replace(
+    /datetime\s*\(\s*'now'\s*,\s*(\$\d+)\s*\)/gi,
+    (_, p) => `(NOW() + (${p})::interval)`
+  );
   out = out.replace(/datetime\s*\(\s*'now'\s*\)/gi, 'NOW()');
+
+  out = out.replace(
+    /date\s*\(\s*'now'\s*,\s*'([^']+)'\s*\)/gi,
+    (_, mod) => `(CURRENT_DATE + INTERVAL '${mod.replace(/'/g, "''")}')`
+  );
+  out = out.replace(/date\s*\(\s*'now'\s*\)/gi, 'CURRENT_DATE');
+
+  out = replaceFnCall(out, 'julianday', args => {
+    if (/^'now'$/i.test(args)) return '(EXTRACT(EPOCH FROM NOW()) / 86400.0)';
+    return `(EXTRACT(EPOCH FROM (${args})::timestamptz) / 86400.0)`;
+  });
+
+  out = replaceFnCall(out, 'json_array_length', args => {
+    const expr = args.split(',')[0].trim();
+    return `jsonb_array_length(COALESCE(NULLIF(TRIM((${expr})::text), ''), '[]')::jsonb)`;
+  });
+
+  // json_each(col) → a set of text values aliased json_each, so `.value`
+  // in the original SQL still resolves.
+  out = replaceFnCall(out, 'json_each', args => {
+    const expr = args.split(',')[0].trim();
+    return `LATERAL jsonb_array_elements_text(COALESCE(NULLIF(TRIM(${expr}::text), ''), '[]')::jsonb) AS json_each`;
+  });
 
   // SQLite uses `AUTOINCREMENT` not needed in Postgres
   out = out.replace(/\bAUTOINCREMENT\b/gi, '');
 
   // SQLite PRAGMA handling — will be caught elsewhere, but strip to avoid pg errors
   if (/^\s*PRAGMA/i.test(out)) return '-- PRAGMA ignored on Postgres';
+
+  // Member export concatenates related names. Postgres has no GROUP_CONCAT.
+  out = out.replace(
+    /GROUP_CONCAT\s*\(\s*([^,()]+)\s*,\s*('(?:[^']|'')*')\s*\)/gi,
+    'string_agg($1, $2)'
+  );
+  out = out.replace(/GROUP_CONCAT\s*\(\s*([^()]+)\s*\)/gi, "string_agg($1, ',')");
 
   return out;
 }
@@ -162,10 +248,7 @@ function prepare(sql) {
 
   async function execWith(params = []) {
     const p = getPool();
-    const translated = translatePlaceholders(sql);
-    // Basic datetime translation
-    const finalSql = translateSqliteToPostgres(translated);
-    const result = await p.query(finalSql, params);
+    const result = await p.query(translateSql(sql), params);
     return result;
   }
 
@@ -180,6 +263,9 @@ function prepare(sql) {
     },
     run: async (...params) => {
       const res = await execWith(params);
+      if (isMutating && res.rowCount > 0) {
+        require('../middleware/cache').noteWrite(sql);
+      }
       // Mimic better-sqlite3 RunResult
       return {
         changes: res.rowCount,
@@ -202,14 +288,13 @@ async function exec(sql) {
     .filter(Boolean);
   for (const stmt of statements) {
     const final = translateSqliteToPostgres(stmt);
-    if (final) await p.query(final);
+    if (final && !/^--/.test(final)) await p.query(final);
   }
 }
 
 async function query(sql, params = []) {
   const p = getPool();
-  const final = translateSqliteToPostgres(translatePlaceholders(sql));
-  const res = await p.query(final, params);
+  const res = await p.query(translateSql(sql), params);
   return res;
 }
 
@@ -226,8 +311,7 @@ function transaction(fn) {
       await client.query('BEGIN');
       // Provide a client-bound query helper inside the transaction
       const txQuery = async (sql, params = []) => {
-        const final = translateSqliteToPostgres(translatePlaceholders(sql));
-        return client.query(final, params);
+        return client.query(translateSql(sql), params);
       };
       const result = await fn(txQuery, ...args);
       await client.query('COMMIT');
@@ -265,6 +349,8 @@ module.exports = {
   close,
   translatePlaceholders,
   translateSqliteToPostgres,
+  translateSql,
+  replaceFnCall,
   parseDnsResultOrder,
   applyDnsResultOrder,
   diagnoseConnectionError

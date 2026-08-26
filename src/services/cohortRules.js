@@ -20,16 +20,16 @@ const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 // Values already present in the member base. Filtering by a value nobody holds
 // returns nothing, so the list is drawn from the data rather than guessed.
-const distinct = column => db => db.prepare(
+const distinct = column => async database => ((await database.prepare(
   `SELECT DISTINCT ${column} AS value FROM users
    WHERE COALESCE(${column}, '') != '' ORDER BY value`
-).all().map(r => r.value);
+).all()) || []).map(r => r.value);
 
 // Same, for the JSON array columns
-const distinctInArray = column => db => db.prepare(
+const distinctInArray = column => async database => ((await database.prepare(
   `SELECT DISTINCT json_each.value AS value FROM users, json_each(users.${column})
    WHERE COALESCE(json_each.value, '') != '' ORDER BY value`
-).all().map(r => r.value);
+).all()) || []).map(r => r.value);
 
 // Free text a member typed. A dropdown of everything anyone has ever written
 // would be unusable, so these stay open and lean on "contains".
@@ -86,15 +86,18 @@ const FIELDS = {
     type: 'number', label: 'Age', unit: 'years'
   },
   surveys_completed: {
-    sql: '(SELECT COUNT(*) FROM survey_responses sr WHERE sr.user_id = u.id AND sr.completed_at IS NOT NULL)',
+    sql: 'COALESCE(_sr.n, 0)',
+    join: 'LEFT JOIN (SELECT user_id, COUNT(*) as n FROM survey_responses WHERE completed_at IS NOT NULL GROUP BY user_id) _sr ON _sr.user_id = u.id',
     type: 'number', label: 'Surveys completed'
   },
   feedback_submitted: {
-    sql: "(SELECT COUNT(*) FROM feedback f WHERE f.user_id = u.id)",
+    sql: 'COALESCE(_fb.n, 0)',
+    join: 'LEFT JOIN (SELECT user_id, COUNT(*) as n FROM feedback GROUP BY user_id) _fb ON _fb.user_id = u.id',
     type: 'number', label: 'Feedback submitted'
   },
   gifts_claimed: {
-    sql: '(SELECT COUNT(*) FROM user_gifts ug WHERE ug.user_id = u.id)',
+    sql: 'COALESCE(_ug.n, 0)',
+    join: 'LEFT JOIN (SELECT user_id, COUNT(*) as n FROM user_gifts GROUP BY user_id) _ug ON _ug.user_id = u.id',
     type: 'number', label: 'Gifts claimed'
   },
   days_since_active: {
@@ -107,13 +110,13 @@ const FIELDS = {
   },
   cohort_id: {
     type: 'membership', label: 'Member of cohort',
-    subquery: 'SELECT user_id FROM user_cohorts WHERE cohort_id = ?',
-    values: db => db.prepare('SELECT id AS value, name AS label FROM cohorts ORDER BY name').all()
+    exists: 'SELECT 1 FROM user_cohorts WHERE cohort_id = ? AND user_id = u.id',
+    values: async db => await db.prepare('SELECT id AS value, name AS label FROM cohorts ORDER BY name').all()
   },
   circle_id: {
     type: 'membership', label: 'Member of circle',
-    subquery: 'SELECT user_id FROM circle_members WHERE circle_id = ?',
-    values: db => db.prepare(
+    exists: 'SELECT 1 FROM circle_members WHERE circle_id = ? AND user_id = u.id',
+    values: async db => await db.prepare(
       "SELECT id AS value, name AS label FROM circles WHERE status = 'active' ORDER BY created_at"
     ).all()
   },
@@ -121,7 +124,7 @@ const FIELDS = {
   // whether a segment is reachable at all
   consent_channel: {
     type: 'membership', label: 'Consented to channel',
-    subquery: "SELECT user_id FROM consent WHERE channel = ? AND status = 'granted'",
+    exists: "SELECT 1 FROM consent WHERE channel = ? AND status = 'granted' AND user_id = u.id",
     values: CHANNELS
   },
   has_phone: {
@@ -129,8 +132,8 @@ const FIELDS = {
     type: 'bool', label: 'Has a phone number'
   },
   has_responded: {
-    sql: `(SELECT COUNT(*) FROM survey_responses sr
-           WHERE sr.user_id = u.id AND sr.completed_at IS NOT NULL) > 0`,
+    sql: `EXISTS (SELECT 1 FROM survey_responses sr
+           WHERE sr.user_id = u.id AND sr.completed_at IS NOT NULL)`,
     type: 'bool', label: 'Has ever responded to a survey'
   }
 };
@@ -167,12 +170,12 @@ function buildClause(rule) {
   const op = rule.op || 'eq';
 
   // Membership fields ask whether the member appears in some join table.
-  // "is not" has to become NOT IN rather than a negated equality, or it would
-  // only exclude the row that matched instead of the member.
+  // EXISTS stops at the first matching row; IN (SELECT …) materialises the
+  // whole membership list per candidate.
   if (field.type === 'membership') {
     const negate = op === 'neq';
     return {
-      sql: `u.id ${negate ? 'NOT IN' : 'IN'} (${field.subquery})`,
+      sql: `${negate ? 'NOT ' : ''}EXISTS (${field.exists})`,
       params: [String(rule.value)]
     };
   }
@@ -220,9 +223,16 @@ function buildQuery(definition, { activeOnly = true, circleId = null } = {}) {
 
   const ruleClauses = [];
   const ruleParams = [];
+  const joins = [];
+  const seenJoins = new Set();
 
   for (const rule of rules) {
     if (rule.value === undefined || rule.value === null || rule.value === '') continue;
+    const field = FIELDS[rule.field];
+    if (field?.join && !seenJoins.has(field.join)) {
+      seenJoins.add(field.join);
+      joins.push(field.join);
+    }
     const built = buildClause(rule);
     ruleClauses.push(built.sql);
     ruleParams.push(...built.params);
@@ -239,7 +249,7 @@ function buildQuery(definition, { activeOnly = true, circleId = null } = {}) {
   // A cohort belonging to a sub-circle can only ever contain that circle's
   // members, however broad its rules are.
   if (circleId) {
-    conditions.push('u.id IN (SELECT user_id FROM circle_members WHERE circle_id = ?)');
+    conditions.push('EXISTS (SELECT 1 FROM circle_members cmr WHERE cmr.user_id = u.id AND cmr.circle_id = ?)');
     params.push(circleId);
   }
 
@@ -250,41 +260,43 @@ function buildQuery(definition, { activeOnly = true, circleId = null } = {}) {
 
   return {
     where: conditions.length ? conditions.join(' AND ') : '1=1',
+    from: `users u${joins.length ? ' ' + joins.join(' ') : ''}`,
     params,
     ruleCount: ruleClauses.length
   };
 }
 
 // Resolve a rule definition to matching member rows
-function evaluate(definition, { limit = null, activeOnly = true, circleId = null } = {}) {
-  const { where, params, ruleCount } = buildQuery(definition, { activeOnly, circleId });
+async function evaluate(definition, { limit = null, activeOnly = true, circleId = null } = {}) {
+  const { where, from, params, ruleCount } = buildQuery(definition, { activeOnly, circleId });
 
-  const total = db.prepare(`SELECT COUNT(*) as c FROM users u WHERE ${where}`).get(...params).c;
-
-  const members = db.prepare(`
-    SELECT u.id, u.name, u.email, u.company, u.work_sector, u.api_status, u.engagement_streak
-    FROM users u WHERE ${where}
+  const rows = await db.prepare(`
+    SELECT u.id, u.name, u.email, u.company, u.work_sector, u.api_status, u.engagement_streak,
+           COUNT(*) OVER() as _total
+    FROM ${from} WHERE ${where}
     ORDER BY u.created_at DESC
     ${limit ? 'LIMIT ?' : ''}
   `).all(...params, ...(limit ? [limit] : []));
+  const total = (rows && rows.length) ? Number(rows[0]._total || 0) : 0;
+  const members = (rows || []).map(({ _total, ...row }) => row);
 
   return { total, members, rule_count: ruleCount };
 }
 
 // Reconcile a cohort's membership with its rules. Returns what changed so the
 // caller can report it rather than guessing.
-function sync(cohortId) {
-  const cohort = db.prepare('SELECT * FROM cohorts WHERE id = ?').get(cohortId);
+async function sync(cohortId) {
+  const cohort = await db.prepare('SELECT * FROM cohorts WHERE id = ?').get(cohortId);
   if (!cohort) throw new RuleError('Cohort not found');
   if (!cohort.filter_rules) return { added: 0, removed: 0, total: 0, rule_based: false };
 
   // A cohort slices the members of the circle it belongs to, never beyond it
-  const { where, params } = buildQuery(cohort.filter_rules, { circleId: cohort.circle_id });
-  const matching = db.prepare(`SELECT u.id FROM users u WHERE ${where}`).all(...params).map(r => r.id);
+  const { where, from, params } = buildQuery(cohort.filter_rules, { circleId: cohort.circle_id });
+  const matching = ((await db.prepare(`SELECT u.id FROM ${from} WHERE ${where}`).all(...params) || []) || []).map(r => r.id);
   const matchingSet = new Set(matching);
 
-  const current = db.prepare('SELECT user_id FROM user_cohorts WHERE cohort_id = ?')
-    .all(cohortId).map(r => r.user_id);
+  const current = ((await db.prepare('SELECT user_id FROM user_cohorts WHERE cohort_id = ?')
+    .all(cohortId)) || []).map(r => r.user_id);
   const currentSet = new Set(current);
 
   const toAdd = matching.filter(id => !currentSet.has(id));
@@ -293,15 +305,13 @@ function sync(cohortId) {
   const addStmt = db.prepare('INSERT OR IGNORE INTO user_cohorts (user_id, cohort_id) VALUES (?, ?)');
   const removeStmt = db.prepare('DELETE FROM user_cohorts WHERE user_id = ? AND cohort_id = ?');
 
-  db.transaction(() => {
-    for (const id of toAdd) addStmt.run(id, cohortId);
-    // Only prune members the rules no longer match when the cohort is set to
-    // auto-sync; otherwise manual additions would be silently undone.
-    if (cohort.auto_sync) {
-      for (const id of toRemove) removeStmt.run(id, cohortId);
-    }
-    db.prepare("UPDATE cohorts SET last_synced_at = datetime('now') WHERE id = ?").run(cohortId);
-  })();
+  for (const id of toAdd) await addStmt.run(id, cohortId);
+  // Only prune members the rules no longer match when the cohort is set to
+  // auto-sync; otherwise manual additions would be silently undone.
+  if (cohort.auto_sync) {
+    for (const id of toRemove) await removeStmt.run(id, cohortId);
+  }
+  await db.prepare("UPDATE cohorts SET last_synced_at = datetime('now') WHERE id = ?").run(cohortId);
 
   return {
     added: toAdd.length,
@@ -313,12 +323,12 @@ function sync(cohortId) {
 
 // Re-run every auto-sync cohort. Called after events that change the inputs
 // (KYB completion, production go-live, survey completion).
-function syncAll() {
-  const cohorts = db.prepare('SELECT id FROM cohorts WHERE auto_sync = 1 AND filter_rules IS NOT NULL').all();
+async function syncAll() {
+  const cohorts = await db.prepare('SELECT id FROM cohorts WHERE auto_sync = 1 AND filter_rules IS NOT NULL').all();
   const results = [];
   for (const c of cohorts) {
     try {
-      results.push({ cohort_id: c.id, ...sync(c.id) });
+      results.push({ cohort_id: c.id, ...(await sync(c.id)) });
     } catch (err) {
       results.push({ cohort_id: c.id, error: err.message });
     }
@@ -345,23 +355,25 @@ function operatorsFor(field) {
 
 // Normalise every value source to { value, label } so the UI has one shape to
 // render, whether it came from a constant, a distinct query, or a join table.
-function resolveValues(field) {
+async function resolveValues(field) {
   if (field.type === 'bool') {
     return [{ value: 'yes', label: 'Yes' }, { value: 'no', label: 'No' }];
   }
   if (!field.values) return null;
 
-  const raw = typeof field.values === 'function' ? field.values(db) : field.values;
-  return raw
+  const raw = typeof field.values === 'function' ? await field.values(db) : field.values;
+  return (raw || [])
     .filter(v => v !== null && v !== undefined && v !== '')
     .map(v => (typeof v === 'object'
       ? { value: String(v.value), label: String(v.label ?? v.value) }
       : { value: String(v), label: String(v) }));
 }
 
-function catalogue() {
-  return Object.entries(FIELDS).map(([key, field]) => {
-    const values = resolveValues(field);
+async function catalogue() {
+  const keys = Object.entries(FIELDS);
+  const resolved = await Promise.all(keys.map(([, field]) => resolveValues(field)));
+  return keys.map(([key, field], i) => {
+    const values = resolved[i];
     return {
       field: key,
       label: field.label,

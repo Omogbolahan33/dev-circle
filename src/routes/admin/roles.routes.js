@@ -11,7 +11,7 @@ const router = express.Router();
 // ─── Roles, Permissions & Admin Users ───────────────────────
 
 // GET /api/admin/permissions — the catalogue the roles UI builds from
-router.get('/permissions', requirePermission('roles.read'), (req, res) => {
+router.get('/permissions', requirePermission('roles.read'), async (req, res) => {
   const grouped = {};
   for (const p of PERMISSIONS) {
     (grouped[p.group] = grouped[p.group] || []).push(p);
@@ -20,12 +20,16 @@ router.get('/permissions', requirePermission('roles.read'), (req, res) => {
 });
 
 // GET /api/admin/roles
-router.get('/roles', requirePermission('roles.read'), (req, res) => {
-  const roles = db.prepare(`
-    SELECT r.*, (SELECT COUNT(*) FROM admin_users a WHERE a.role_id = r.id) as admin_count
-    FROM roles r ORDER BY r.is_system DESC, r.created_at DESC
-  `).all();
-  res.json({ roles: roles.map(r => ({ ...r, permissions: parseJSON(r.permissions, []) })) });
+router.get('/roles', requirePermission('roles.read'), async (req, res) => {
+  const { takePreload } = require('../../middleware/preload');
+  const roles = await takePreload(req, () => db.prepare(`
+    SELECT r.*, COALESCE(a.n, 0) as admin_count
+    FROM roles r
+    LEFT JOIN (SELECT role_id, COUNT(*) as n FROM admin_users GROUP BY role_id) a
+      ON a.role_id = r.id
+    ORDER BY r.is_system DESC, r.created_at DESC
+  `).all());
+  res.json({ roles: (roles || []).map(r => ({ ...r, permissions: parseJSON(r.permissions, []) })) });
 });
 
 function validatePermissions(permissions) {
@@ -37,28 +41,28 @@ function validatePermissions(permissions) {
 }
 
 // POST /api/admin/roles
-router.post('/roles', requirePermission('roles.write'), (req, res) => {
+router.post('/roles', requirePermission('roles.write'), async (req, res) => {
   const { name, description, permissions } = req.body;
   if (!name || !permissions) return res.status(400).json({ error: 'name and permissions required' });
 
   const invalid = validatePermissions(permissions);
   if (invalid) return res.status(400).json({ error: invalid });
 
-  if (db.prepare('SELECT id FROM roles WHERE name = ?').get(name)) {
+  if (await db.prepare('SELECT id FROM roles WHERE name = ?').get(name)) {
     return res.status(409).json({ error: 'A role with that name already exists' });
   }
 
   const id = uuid();
-  db.prepare('INSERT INTO roles (id, name, description, permissions) VALUES (?, ?, ?, ?)')
+  await db.prepare('INSERT INTO roles (id, name, description, permissions) VALUES (?, ?, ?, ?)')
     .run(id, name, description || null, JSON.stringify(permissions));
 
-  const role = db.prepare('SELECT * FROM roles WHERE id = ?').get(id);
+  const role = await db.prepare('SELECT * FROM roles WHERE id = ?').get(id);
   res.status(201).json({ role: { ...role, permissions: parseJSON(role.permissions, []) } });
 });
 
 // PUT /api/admin/roles/:id
-router.put('/roles/:id', requirePermission('roles.write'), (req, res) => {
-  const role = db.prepare('SELECT * FROM roles WHERE id = ?').get(req.params.id);
+router.put('/roles/:id', requirePermission('roles.write'), async (req, res) => {
+  const role = await db.prepare('SELECT * FROM roles WHERE id = ?').get(req.params.id);
   if (!role) return res.status(404).json({ error: 'Role not found' });
   if (role.is_system) return res.status(400).json({ error: 'System roles cannot be edited' });
 
@@ -77,39 +81,40 @@ router.put('/roles/:id', requirePermission('roles.write'), (req, res) => {
   if (!updates.length) return res.status(400).json({ error: 'No fields to update' });
 
   params.push(role.id);
-  db.prepare(`UPDATE roles SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+  await db.prepare(`UPDATE roles SET ${updates.join(', ')} WHERE id = ?`).run(...params);
 
-  const updated = db.prepare('SELECT * FROM roles WHERE id = ?').get(role.id);
+  const updated = await db.prepare('SELECT * FROM roles WHERE id = ?').get(role.id);
   res.json({ role: { ...updated, permissions: parseJSON(updated.permissions, []) } });
 });
 
 // DELETE /api/admin/roles/:id
-router.delete('/roles/:id', requirePermission('roles.write'), (req, res) => {
-  const role = db.prepare('SELECT * FROM roles WHERE id = ?').get(req.params.id);
+router.delete('/roles/:id', requirePermission('roles.write'), async (req, res) => {
+  const role = await db.prepare('SELECT * FROM roles WHERE id = ?').get(req.params.id);
   if (!role) return res.status(404).json({ error: 'Role not found' });
   if (role.is_system) return res.status(400).json({ error: 'System roles cannot be deleted' });
 
-  const inUse = db.prepare('SELECT COUNT(*) as c FROM admin_users WHERE role_id = ?').get(role.id).c;
+  const inUse = Number((await db.prepare('SELECT COUNT(*) as c FROM admin_users WHERE role_id = ?').get(role.id))?.c || 0);
   if (inUse > 0) {
     return res.status(409).json({ error: `${inUse} admin user(s) still have this role. Reassign them first.` });
   }
 
-  db.prepare('DELETE FROM roles WHERE id = ?').run(role.id);
+  await db.prepare('DELETE FROM roles WHERE id = ?').run(role.id);
   res.json({ message: 'Role deleted' });
 });
 
 // GET /api/admin/admins
-router.get('/admins', requirePermission('roles.read'), (req, res) => {
-  const admins = db.prepare(`
+router.get('/admins', requirePermission('roles.read'), async (req, res) => {
+  const { takePreload } = require('../../middleware/preload');
+  const admins = await takePreload(req, () => db.prepare(`
     SELECT a.id, a.email, a.name, a.status, a.created_at, a.role_id, r.name as role_name
     FROM admin_users a LEFT JOIN roles r ON r.id = a.role_id
     ORDER BY a.created_at DESC
-  `).all();
-  res.json({ admins });
+  `).all());
+  res.json({ admins: admins || [] });
 });
 
 // POST /api/admin/admins — create an internal user and assign a role
-router.post('/admins', requirePermission('roles.write'), (req, res) => {
+router.post('/admins', requirePermission('roles.write'), async (req, res) => {
   const { name, password, role_id } = req.body;
   const email = identity.normalizeEmail(req.body.email);
 
@@ -128,25 +133,25 @@ router.post('/admins', requirePermission('roles.write'), (req, res) => {
   if (String(password).length < 10) {
     return res.status(400).json({ error: 'Admin passwords must be at least 10 characters' });
   }
-  if (!db.prepare('SELECT id FROM roles WHERE id = ?').get(role_id)) {
+  if (!await db.prepare('SELECT id FROM roles WHERE id = ?').get(role_id)) {
     return res.status(400).json({ error: 'Unknown role_id' });
   }
-  if (db.prepare('SELECT id FROM admin_users WHERE email = ?').get(email)) {
+  if (await db.prepare('SELECT id FROM admin_users WHERE email = ?').get(email)) {
     return res.status(409).json({ error: 'An admin with that email already exists' });
   }
 
   const id = uuid();
-  db.prepare(`
+  await db.prepare(`
     INSERT INTO admin_users (id, email, name, password_hash, role_id) VALUES (?, ?, ?, ?, ?)
   `).run(id, email, name, bcrypt.hashSync(password, 10), role_id);
 
-  const admin = db.prepare('SELECT id, email, name, status, role_id, created_at FROM admin_users WHERE id = ?').get(id);
+  const admin = await db.prepare('SELECT id, email, name, status, role_id, created_at FROM admin_users WHERE id = ?').get(id);
   res.status(201).json({ admin });
 });
 
 // PUT /api/admin/admins/:id — change role or status
-router.put('/admins/:id', requirePermission('roles.write'), (req, res) => {
-  const target = db.prepare('SELECT * FROM admin_users WHERE id = ?').get(req.params.id);
+router.put('/admins/:id', requirePermission('roles.write'), async (req, res) => {
+  const target = await db.prepare('SELECT * FROM admin_users WHERE id = ?').get(req.params.id);
   if (!target) return res.status(404).json({ error: 'Admin not found' });
 
   const { role_id, status } = req.body;
@@ -160,7 +165,7 @@ router.put('/admins/:id', requirePermission('roles.write'), (req, res) => {
   const params = [];
 
   if (role_id) {
-    if (!db.prepare('SELECT id FROM roles WHERE id = ?').get(role_id)) {
+    if (!await db.prepare('SELECT id FROM roles WHERE id = ?').get(role_id)) {
       return res.status(400).json({ error: 'Unknown role_id' });
     }
     updates.push('role_id = ?'); params.push(role_id);
@@ -173,12 +178,12 @@ router.put('/admins/:id', requirePermission('roles.write'), (req, res) => {
   if (!updates.length) return res.status(400).json({ error: 'No fields to update' });
 
   params.push(target.id);
-  db.prepare(`UPDATE admin_users SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+  await db.prepare(`UPDATE admin_users SET ${updates.join(', ')} WHERE id = ?`).run(...params);
 
   // A role or status change must take effect immediately, not at token expiry
-  destroyAllSessionsFor(target.id);
+  await destroyAllSessionsFor(target.id);
 
-  const updated = db.prepare('SELECT id, email, name, status, role_id FROM admin_users WHERE id = ?').get(target.id);
+  const updated = await db.prepare('SELECT id, email, name, status, role_id FROM admin_users WHERE id = ?').get(target.id);
   res.json({ admin: updated, message: 'Updated. The admin will need to sign in again.' });
 });
 
@@ -186,8 +191,8 @@ router.put('/admins/:id', requirePermission('roles.write'), (req, res) => {
 // Staff are the only people who hold a password, so they are the only people
 // who can be locked out of one. Members never need this — they sign in with a
 // one-time code.
-router.post('/admins/:id/reset-password', requirePermission('roles.write'), (req, res) => {
-  const target = db.prepare('SELECT * FROM admin_users WHERE id = ?').get(req.params.id);
+router.post('/admins/:id/reset-password', requirePermission('roles.write'), async (req, res) => {
+  const target = await db.prepare('SELECT * FROM admin_users WHERE id = ?').get(req.params.id);
   if (!target) return res.status(404).json({ error: 'Admin not found' });
 
   const { new_password } = req.body;
@@ -195,11 +200,11 @@ router.post('/admins/:id/reset-password', requirePermission('roles.write'), (req
     return res.status(400).json({ error: 'Admin passwords must be at least 10 characters' });
   }
 
-  db.prepare('UPDATE admin_users SET password_hash = ? WHERE id = ?')
+  await db.prepare('UPDATE admin_users SET password_hash = ? WHERE id = ?')
     .run(bcrypt.hashSync(new_password, 10), target.id);
 
   // Whoever held the old password loses their sessions with it
-  destroyAllSessionsFor(target.id);
+  await destroyAllSessionsFor(target.id);
 
   res.json({ message: 'Password reset. Their existing sessions were signed out.' });
 });

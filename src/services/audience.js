@@ -2,6 +2,12 @@ const db = require('../db');
 const { parseJSON } = require('../utils/helpers');
 const cohortRules = require('./cohortRules');
 
+// Columns notify() and availability() actually read. SELECT u.* was shipping
+// password hashes and JSON the send path never looks at.
+const USER_NOTIFY_COLS = `u.id, u.email, u.name, u.phone, u.status, u.company,
+  u.preferred_channels, u.preferred_days, u.preferred_time_start, u.preferred_time_end,
+  u.notification_prefs, u.quiet_hours_start, u.quiet_hours_end`;
+
 // ─── Audience resolution ────────────────────────────────────
 // Who a piece of work reaches. Surveys, blasts and member listings all need
 // the same targeting rules, so they live here rather than being reimplemented
@@ -12,9 +18,12 @@ const cohortRules = require('./cohortRules');
 // This used to treat the root circle as "no restriction", which meant Dev
 // Circle silently meant everyone — a leak between workspaces by construction.
 function circleScope(circleId) {
-  if (!circleId) return { clause: '', params: [] };
+  if (!circleId) return { join: '', clause: '', params: [] };
+  // Starting at circle_members is the plan the membership PK can serve.
+  // A nested IN (SELECT user_id …) hides that from the planner.
   return {
-    clause: 'AND u.id IN (SELECT user_id FROM circle_members WHERE circle_id = ?)',
+    join: 'JOIN circle_members cm ON cm.user_id = u.id AND cm.circle_id = ?',
+    clause: '',
     params: [circleId]
   };
 }
@@ -30,6 +39,7 @@ function circleScope(circleId) {
 function memberFilters(query) {
   const where = ['1=1'];
   const params = [];
+  let from = 'users u';
 
   const {
     search, status, api_status, cohort_id, work_sector, location_state,
@@ -47,6 +57,9 @@ function memberFilters(query) {
     if (built.ruleCount) {
       where.push(`(${built.where})`);
       params.push(...built.params);
+      // Derived counts (surveys completed, gifts claimed, …) are joined once
+      // rather than correlated per member.
+      if (built.from && built.from !== 'users u') from = built.from;
     }
   }
 
@@ -72,20 +85,23 @@ function memberFilters(query) {
     where.push('EXISTS (SELECT 1 FROM json_each(u.api_products) WHERE json_each.value = ?)');
     params.push(api_product);
   }
-  if (cohort_id) {
-    where.push('u.id IN (SELECT user_id FROM user_cohorts WHERE cohort_id = ?)');
-    params.push(cohort_id);
-  }
-  if (circle_id) {
-    where.push('u.id IN (SELECT user_id FROM circle_members WHERE circle_id = ?)');
-    params.push(circle_id);
-  }
 
-  return { where: where.join(' AND '), params };
+  const joinParams = [];
+  if (circle_id) {
+    from = `${from} JOIN circle_members cm ON cm.user_id = u.id AND cm.circle_id = ?`;
+    joinParams.push(circle_id);
+  }
+  if (cohort_id) {
+    from = `${from} JOIN user_cohorts ucf ON ucf.user_id = u.id AND ucf.cohort_id = ?`;
+    joinParams.push(cohort_id);
+  }
+  if (joinParams.length) params.unshift(...joinParams);
+
+  return { from, where: where.join(' AND '), params };
 }
 
 // Resolve a survey's audience to member rows
-function resolveAudience(survey) {
+async function resolveAudience(survey) {
   const targets = parseJSON(survey.target_ids, []) || [];
   const scope = circleScope(survey.circle_id);
 
@@ -96,7 +112,7 @@ function resolveAudience(survey) {
   if (survey.target_type === 'anonymous') return [];
 
   if (survey.target_type === 'all') {
-    return db.prepare(`SELECT * FROM users u WHERE u.status = 'active' ${scope.clause}`)
+    return await db.prepare(`SELECT ${USER_NOTIFY_COLS} FROM users u ${scope.join} WHERE u.status = 'active' ${scope.clause}`)
       .all(...scope.params);
   }
 
@@ -104,29 +120,31 @@ function resolveAudience(survey) {
   const placeholders = targets.map(() => '?').join(',');
 
   if (survey.target_type === 'cohort') {
-    return db.prepare(`
-      SELECT DISTINCT u.* FROM users u
+    return await db.prepare(`
+      SELECT DISTINCT ${USER_NOTIFY_COLS} FROM users u
+      ${scope.join}
       JOIN user_cohorts uc ON uc.user_id = u.id
       WHERE uc.cohort_id IN (${placeholders}) AND u.status = 'active' ${scope.clause}
-    `).all(...targets, ...scope.params);
+    `).all(...scope.params, ...targets);
   }
 
   if (survey.target_type === 'specific') {
-    return db.prepare(`
-      SELECT * FROM users u WHERE u.id IN (${placeholders}) AND u.status = 'active' ${scope.clause}
-    `).all(...targets, ...scope.params);
+    return await db.prepare(`
+      SELECT ${USER_NOTIFY_COLS} FROM users u ${scope.join}
+      WHERE u.id IN (${placeholders}) AND u.status = 'active' ${scope.clause}
+    `).all(...scope.params, ...targets);
   }
 
   return [];
 }
 
 // Resolve a blast's recipients to member rows
-function blastRecipients(blast) {
+async function blastRecipients(blast) {
   const targetIds = parseJSON(blast.target_ids, []) || [];
   const scope = circleScope(blast.circle_id);
 
   if (blast.target_type === 'all') {
-    return db.prepare(`SELECT * FROM users u WHERE u.status = 'active' ${scope.clause}`)
+    return await db.prepare(`SELECT ${USER_NOTIFY_COLS} FROM users u ${scope.join} WHERE u.status = 'active' ${scope.clause}`)
       .all(...scope.params);
   }
 
@@ -134,16 +152,18 @@ function blastRecipients(blast) {
   const placeholders = targetIds.map(() => '?').join(',');
 
   if (blast.target_type === 'cohort') {
-    return db.prepare(`
-      SELECT DISTINCT u.* FROM users u
+    return await db.prepare(`
+      SELECT DISTINCT ${USER_NOTIFY_COLS} FROM users u
+      ${scope.join}
       JOIN user_cohorts uc ON uc.user_id = u.id
       WHERE uc.cohort_id IN (${placeholders}) AND u.status = 'active' ${scope.clause}
-    `).all(...targetIds, ...scope.params);
+    `).all(...scope.params, ...targetIds);
   }
 
-  return db.prepare(`
-    SELECT * FROM users u WHERE u.id IN (${placeholders}) AND u.status = 'active' ${scope.clause}
-  `).all(...targetIds, ...scope.params);
+  return await db.prepare(`
+    SELECT ${USER_NOTIFY_COLS} FROM users u ${scope.join}
+    WHERE u.id IN (${placeholders}) AND u.status = 'active' ${scope.clause}
+  `).all(...scope.params, ...targetIds);
 }
 
-module.exports = { circleScope, memberFilters, resolveAudience, blastRecipients };
+module.exports = { circleScope, memberFilters, resolveAudience, blastRecipients, USER_NOTIFY_COLS };

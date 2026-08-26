@@ -9,33 +9,45 @@ const router = express.Router();
 
 // ─── Cohorts ────────────────────────────────────────────────
 
-// GET /api/admin/cohorts
-router.get('/cohorts', requirePermission('cohorts.read'), (req, res) => {
-  // Cohorts belong to the circle they were made in
-  const cohorts = db.prepare(`
-    SELECT c.*, ci.name as circle_name, COUNT(uc.user_id) as member_count
+async function loadCohortList(circleId) {
+  // Cohorts belong to the circle they were made in. Counts come from one
+  // GROUP BY of user_cohorts — a correlated COUNT per cohort is the plan
+  // that gets worse as membership grows. The outer query is not grouped, so
+  // Postgres never has to prove ci.name from c.id.
+  const cohorts = await db.prepare(`
+    SELECT c.*, ci.name as circle_name, COALESCE(mc.n, 0) as member_count
     FROM cohorts c
-    LEFT JOIN user_cohorts uc ON uc.cohort_id = c.id
     LEFT JOIN circles ci ON ci.id = c.circle_id
+    LEFT JOIN (
+      SELECT uc.cohort_id, COUNT(*) as n
+      FROM user_cohorts uc
+      JOIN cohorts cx ON cx.id = uc.cohort_id AND cx.circle_id = ?
+      GROUP BY uc.cohort_id
+    ) mc ON mc.cohort_id = c.id
     WHERE c.circle_id = ?
-    GROUP BY c.id
     ORDER BY member_count DESC
-  `).all(req.circleId);
+  `).all(circleId, circleId);
 
-  res.json({
-    cohorts: cohorts.map(c => ({ ...c, filter_rules: parseJSON(c.filter_rules, null) }))
-  });
+  return {
+    cohorts: (cohorts || []).map(c => ({ ...c, filter_rules: parseJSON(c.filter_rules, null) }))
+  };
+}
+
+// GET /api/admin/cohorts
+router.get('/cohorts', requirePermission('cohorts.read'), async (req, res) => {
+  const { takePreload } = require('../../middleware/preload');
+  res.json(await takePreload(req, () => loadCohortList(req.circleId)));
 });
 
 // GET /api/admin/cohorts/rule-fields — catalogue for the cohort builder
-router.get('/cohorts/rule-fields', requirePermission('cohorts.read'), (req, res) => {
-  res.json({ fields: cohortRules.catalogue() });
+router.get('/cohorts/rule-fields', requirePermission('cohorts.read'), async (req, res) => {
+  res.json({ fields: await cohortRules.catalogue() });
 });
 
 // POST /api/admin/cohorts/preview — how many members a rule set matches
-router.post('/cohorts/preview', requirePermission('cohorts.read'), (req, res) => {
+router.post('/cohorts/preview', requirePermission('cohorts.read'), async (req, res) => {
   try {
-    const result = cohortRules.evaluate(req.body.filter_rules, { limit: 10 });
+    const result = await cohortRules.evaluate(req.body.filter_rules, { limit: 10 });
     res.json(result);
   } catch (err) {
     if (err instanceof cohortRules.RuleError) return res.status(400).json({ error: err.message });
@@ -44,7 +56,7 @@ router.post('/cohorts/preview', requirePermission('cohorts.read'), (req, res) =>
 });
 
 // POST /api/admin/cohorts
-router.post('/cohorts', requirePermission('cohorts.write'), (req, res) => {
+router.post('/cohorts', requirePermission('cohorts.write'), async (req, res) => {
   const { name, description, color, type = 'custom', filter_rules, auto_sync = true, circle_id } = req.body;
   if (!name) return res.status(400).json({ error: 'name required' });
 
@@ -55,7 +67,7 @@ router.post('/cohorts', requirePermission('cohorts.write'), (req, res) => {
   // with a definition the engine cannot evaluate.
   if (filter_rules) {
     try {
-      cohortRules.evaluate(filter_rules, { limit: 1 });
+      await cohortRules.evaluate(filter_rules, { limit: 1 });
     } catch (err) {
       if (err instanceof cohortRules.RuleError) return res.status(400).json({ error: err.message });
       throw err;
@@ -63,7 +75,7 @@ router.post('/cohorts', requirePermission('cohorts.write'), (req, res) => {
   }
 
   const id = uuid();
-  db.prepare(`
+  await db.prepare(`
     INSERT INTO cohorts (id, name, description, type, color, filter_rules, auto_sync, circle_id, created_by)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
@@ -76,9 +88,9 @@ router.post('/cohorts', requirePermission('cohorts.write'), (req, res) => {
 
   // Populate immediately. Rule-based cohorts used to be created empty because
   // matching happened only in the browser preview and was then discarded.
-  const sync = filter_rules ? cohortRules.sync(id) : { added: 0, removed: 0, total: 0 };
+  const sync = filter_rules ? await cohortRules.sync(id) : { added: 0, removed: 0, total: 0 };
 
-  const cohort = db.prepare('SELECT * FROM cohorts WHERE id = ?').get(id);
+  const cohort = await db.prepare('SELECT * FROM cohorts WHERE id = ?').get(id);
   res.status(201).json({
     cohort: { ...cohort, filter_rules: parseJSON(cohort.filter_rules, null) },
     sync
@@ -86,9 +98,9 @@ router.post('/cohorts', requirePermission('cohorts.write'), (req, res) => {
 });
 
 // PUT /api/admin/cohorts/:id
-router.put('/cohorts/:id', requirePermission('cohorts.write'), (req, res) => {
+router.put('/cohorts/:id', requirePermission('cohorts.write'), async (req, res) => {
   const { name, description, color, filter_rules, auto_sync } = req.body;
-  const cohort = db.prepare('SELECT * FROM cohorts WHERE id = ?').get(req.params.id);
+  const cohort = await db.prepare('SELECT * FROM cohorts WHERE id = ?').get(req.params.id);
   if (!cohort) return res.status(404).json({ error: 'Cohort not found' });
 
   const updates = [];
@@ -101,7 +113,7 @@ router.put('/cohorts/:id', requirePermission('cohorts.write'), (req, res) => {
   if (filter_rules !== undefined) {
     if (filter_rules) {
       try {
-        cohortRules.evaluate(filter_rules, { limit: 1 });
+        await cohortRules.evaluate(filter_rules, { limit: 1 });
       } catch (err) {
         if (err instanceof cohortRules.RuleError) return res.status(400).json({ error: err.message });
         throw err;
@@ -114,20 +126,20 @@ router.put('/cohorts/:id', requirePermission('cohorts.write'), (req, res) => {
   if (updates.length === 0) return res.status(400).json({ error: 'No fields to update' });
 
   params.push(cohort.id);
-  db.prepare(`UPDATE cohorts SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+  await db.prepare(`UPDATE cohorts SET ${updates.join(', ')} WHERE id = ?`).run(...params);
 
   const sync = filter_rules !== undefined && filter_rules
-    ? cohortRules.sync(cohort.id)
+    ? await cohortRules.sync(cohort.id)
     : null;
 
-  const updated = db.prepare('SELECT * FROM cohorts WHERE id = ?').get(cohort.id);
+  const updated = await db.prepare('SELECT * FROM cohorts WHERE id = ?').get(cohort.id);
   res.json({ cohort: { ...updated, filter_rules: parseJSON(updated.filter_rules, null) }, sync });
 });
 
 // POST /api/admin/cohorts/:id/sync — re-run the rules on demand
-router.post('/cohorts/:id/sync', requirePermission('cohorts.write'), (req, res) => {
+router.post('/cohorts/:id/sync', requirePermission('cohorts.write'), async (req, res) => {
   try {
-    res.json(cohortRules.sync(req.params.id));
+    res.json(await cohortRules.sync(req.params.id));
   } catch (err) {
     if (err instanceof cohortRules.RuleError) return res.status(404).json({ error: err.message });
     throw err;
@@ -135,25 +147,23 @@ router.post('/cohorts/:id/sync', requirePermission('cohorts.write'), (req, res) 
 });
 
 // DELETE /api/admin/cohorts/:id
-router.delete('/cohorts/:id', requirePermission('cohorts.write'), (req, res) => {
-  const cohort = db.prepare('SELECT * FROM cohorts WHERE id = ?').get(req.params.id);
+router.delete('/cohorts/:id', requirePermission('cohorts.write'), async (req, res) => {
+  const cohort = await db.prepare('SELECT * FROM cohorts WHERE id = ?').get(req.params.id);
   if (!cohort) return res.status(404).json({ error: 'Cohort not found' });
   if (cohort.type === 'system') return res.status(400).json({ error: 'Cannot delete system cohorts' });
 
-  db.transaction(() => {
-    db.prepare('DELETE FROM user_cohorts WHERE cohort_id = ?').run(cohort.id);
-    db.prepare('DELETE FROM cohorts WHERE id = ?').run(cohort.id);
-  })();
+  await db.prepare('DELETE FROM user_cohorts WHERE cohort_id = ?').run(cohort.id);
+  await db.prepare('DELETE FROM cohorts WHERE id = ?').run(cohort.id);
 
   res.json({ message: 'Cohort deleted' });
 });
 
 // POST /api/admin/cohorts/:id/members
-router.post('/cohorts/:id/members', requirePermission('cohorts.write'), (req, res) => {
+router.post('/cohorts/:id/members', requirePermission('cohorts.write'), async (req, res) => {
   const { user_ids } = req.body;
   if (!Array.isArray(user_ids)) return res.status(400).json({ error: 'user_ids array required' });
 
-  const cohort = db.prepare('SELECT * FROM cohorts WHERE id = ?').get(req.params.id);
+  const cohort = await db.prepare('SELECT * FROM cohorts WHERE id = ?').get(req.params.id);
   if (!cohort) return res.status(404).json({ error: 'Cohort not found' });
 
   const stmt = db.prepare('INSERT OR IGNORE INTO user_cohorts (user_id, cohort_id) VALUES (?, ?)');
@@ -169,15 +179,16 @@ router.post('/cohorts/:id/members', requirePermission('cohorts.write'), (req, re
     }
   })();
 
-  const count = db.prepare('SELECT COUNT(*) as c FROM user_cohorts WHERE cohort_id = ?').get(cohort.id).c;
+  const count = Number((await db.prepare('SELECT COUNT(*) as c FROM user_cohorts WHERE cohort_id = ?').get(cohort.id))?.c || 0);
   res.json({ message: `${added} member(s) added`, added, unknown, member_count: count });
 });
 
 // DELETE /api/admin/cohorts/:id/members/:userId
-router.delete('/cohorts/:id/members/:userId', requirePermission('cohorts.write'), (req, res) => {
-  db.prepare('DELETE FROM user_cohorts WHERE user_id = ? AND cohort_id = ?')
+router.delete('/cohorts/:id/members/:userId', requirePermission('cohorts.write'), async (req, res) => {
+  await db.prepare('DELETE FROM user_cohorts WHERE user_id = ? AND cohort_id = ?')
     .run(req.params.userId, req.params.id);
   res.json({ message: 'Member removed from cohort' });
 });
 
 module.exports = router;
+module.exports.loadCohortList = loadCohortList;

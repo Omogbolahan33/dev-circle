@@ -11,11 +11,11 @@ const scheduler = require('./services/scheduler');
 // so the first request doesn't hit an uninitialized DB.
 
 async function boot() {
-  if (config.isPostgres) {
+  const db = require('./db');
+  if (db.ready && typeof db.ready.then === 'function') {
     try {
-      const db = require('./db');
-      if (db.ready && typeof db.ready.then === 'function') {
-        await db.ready;
+      await db.ready;
+      if (config.isPostgres) {
         logger.info('Postgres connected', { database: 'postgres' });
         if (config.supabase.configured) {
           logger.info('Supabase configured', { url: config.supabase.url, bucket: config.supabase.storageBucket });
@@ -31,10 +31,18 @@ async function boot() {
         logger.warn('Continuing despite Postgres boot error — check DATABASE_URL and network');
       }
     }
-  } else {
+  }
+
+  if (!config.isPostgres) {
     logger.info('Using SQLite', { path: config.dbPath });
     if (config.supabase.configured) {
       logger.info('Supabase Storage configured with SQLite — uploads will use Supabase bucket', { bucket: config.supabase.storageBucket });
+    }
+  }
+
+  if (config.sandbox.enabled) {
+    try { require('./db/sandbox').db(); } catch (err) {
+      logger.warn('Sandbox did not open at boot', { message: err.message });
     }
   }
 
@@ -57,6 +65,9 @@ async function boot() {
 
   // Fire due session reminders, nudge stale surveys, close past sessions
   scheduler.start();
+
+  // Fill the page cache so the first console visit is not a Postgres RTT.
+  require('./services/warmCache').start();
 
   // Finish in-flight requests before exiting, so a deploy does not cut someone off mid-survey
   for (const signal of ['SIGTERM', 'SIGINT']) {

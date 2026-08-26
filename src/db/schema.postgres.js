@@ -67,6 +67,30 @@ const SCHEMA_POSTGRES = `
     PRIMARY KEY (circle_id, user_id)
   );
 
+  -- Roles & admin users must exist before circle_admins can reference them
+  CREATE TABLE IF NOT EXISTS roles (
+    id TEXT PRIMARY KEY,
+    name TEXT UNIQUE NOT NULL,
+    description TEXT,
+    permissions TEXT NOT NULL DEFAULT '[]',
+    is_system INTEGER DEFAULT 0,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+  );
+
+  CREATE TABLE IF NOT EXISTS admin_users (
+    id TEXT PRIMARY KEY,
+    email TEXT UNIQUE NOT NULL,
+    name TEXT NOT NULL,
+    password_hash TEXT NOT NULL,
+    role_id TEXT REFERENCES roles(id) ON DELETE SET NULL,
+    status TEXT DEFAULT 'active' CHECK(status IN ('active','inactive')),
+    is_global INTEGER DEFAULT 0,
+    must_change_password INTEGER DEFAULT 0,
+    invited_by TEXT,
+    invited_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+  );
+
   CREATE TABLE IF NOT EXISTS circle_admins (
     circle_id TEXT NOT NULL REFERENCES circles(id) ON DELETE CASCADE,
     admin_id TEXT NOT NULL REFERENCES admin_users(id) ON DELETE CASCADE,
@@ -303,31 +327,6 @@ const SCHEMA_POSTGRES = `
     UNIQUE (session_id, offset_minutes)
   );
 
-  -- Roles & Permissions
-  CREATE TABLE IF NOT EXISTS roles (
-    id TEXT PRIMARY KEY,
-    name TEXT UNIQUE NOT NULL,
-    description TEXT,
-    permissions TEXT NOT NULL DEFAULT '[]',
-    is_system INTEGER DEFAULT 0,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-  );
-
-  -- Admin Users
-  CREATE TABLE IF NOT EXISTS admin_users (
-    id TEXT PRIMARY KEY,
-    email TEXT UNIQUE NOT NULL,
-    name TEXT NOT NULL,
-    password_hash TEXT NOT NULL,
-    role_id TEXT REFERENCES roles(id) ON DELETE SET NULL,
-    status TEXT DEFAULT 'active' CHECK(status IN ('active','inactive')),
-    is_global INTEGER DEFAULT 0,
-    must_change_password INTEGER DEFAULT 0,
-    invited_by TEXT,
-    invited_at TIMESTAMPTZ,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-  );
-
   -- Sessions (auth)
   CREATE TABLE IF NOT EXISTS sessions (
     token_hash TEXT PRIMARY KEY,
@@ -385,6 +384,59 @@ const SCHEMA_POSTGRES = `
     applied_at TIMESTAMPTZ DEFAULT NOW()
   );
 
+  -- ─── Onboarding ──────────────────────────────────────────
+  -- A form a circle publishes to collect people who are not members yet, on
+  -- pages this platform does not own. See migration 27 in src/db/migrations.js
+  -- for why this is a different object from a survey rather than a flavour of
+  -- one — in short: a public survey promises anonymity and an onboarding form
+  -- exists to learn who somebody is, and a survey response is evidence where an
+  -- onboarding submission is an application that gets decided on.
+  CREATE TABLE IF NOT EXISTS onboarding_forms (
+    id TEXT PRIMARY KEY,
+    circle_id TEXT NOT NULL REFERENCES circles(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    description TEXT,
+    questions TEXT NOT NULL DEFAULT '[]',
+    theme TEXT,
+    field_map TEXT NOT NULL DEFAULT '{}',
+    cohort_ids TEXT NOT NULL DEFAULT '[]',
+    status TEXT DEFAULT 'draft' CHECK(status IN ('draft','active','closed')),
+    public_token TEXT UNIQUE,
+    allowed_origins TEXT NOT NULL DEFAULT '[]',
+    redirect_url TEXT,
+    submitted_message TEXT,
+    duplicate_policy TEXT DEFAULT 'replace' CHECK(duplicate_policy IN ('replace','reject','allow')),
+    created_by TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+  );
+
+  -- An application, not a member and not a response. It carries no user_id
+  -- until somebody approves it, which is what makes a publicly embeddable form
+  -- safe to publish: everything that counts, mails or exports members reads
+  -- users and circle_members, so an application here is invisible to all of it
+  -- until a decision is made.
+  CREATE TABLE IF NOT EXISTS onboarding_submissions (
+    id TEXT PRIMARY KEY,
+    form_id TEXT NOT NULL REFERENCES onboarding_forms(id) ON DELETE CASCADE,
+    circle_id TEXT NOT NULL,
+    answers TEXT NOT NULL DEFAULT '{}',
+    profile TEXT NOT NULL DEFAULT '{}',
+    consent_channels TEXT NOT NULL DEFAULT '[]',
+    email TEXT,
+    name TEXT,
+    session_key_hash TEXT,
+    status TEXT DEFAULT 'started' CHECK(status IN ('started','pending','approved','rejected','withdrawn')),
+    source_origin TEXT,
+    source_page TEXT,
+    decided_by TEXT REFERENCES admin_users(id) ON DELETE SET NULL,
+    decided_at TIMESTAMPTZ,
+    decision_note TEXT,
+    user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+    submitted_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+  );
+
   -- Sandbox meta (used by sandbox.js)
   CREATE TABLE IF NOT EXISTS sandbox_meta (
     key TEXT PRIMARY KEY,
@@ -402,6 +454,7 @@ const SCHEMA_POSTGRES = `
   CREATE INDEX IF NOT EXISTS idx_user_cohorts_cohort ON user_cohorts(cohort_id);
   CREATE INDEX IF NOT EXISTS idx_consent_user ON consent(user_id);
   CREATE INDEX IF NOT EXISTS idx_circles_slug ON circles(slug);
+  CREATE INDEX IF NOT EXISTS idx_circles_status_created ON circles(status, created_at);
   CREATE INDEX IF NOT EXISTS idx_circle_members_user ON circle_members(user_id);
   CREATE INDEX IF NOT EXISTS idx_circle_admins_admin ON circle_admins(admin_id);
   CREATE INDEX IF NOT EXISTS idx_surveys_trigger ON surveys(trigger_event);
@@ -416,6 +469,7 @@ const SCHEMA_POSTGRES = `
   CREATE INDEX IF NOT EXISTS idx_engagement_user ON engagement_history(user_id);
   CREATE INDEX IF NOT EXISTS idx_engagement_type ON engagement_history(type);
   CREATE INDEX IF NOT EXISTS idx_engagement_created ON engagement_history(created_at);
+  CREATE INDEX IF NOT EXISTS idx_engagement_user_created ON engagement_history(user_id, created_at DESC);
   CREATE INDEX IF NOT EXISTS idx_feedback_user ON feedback(user_id);
   CREATE INDEX IF NOT EXISTS idx_feedback_status ON feedback(status);
   CREATE INDEX IF NOT EXISTS idx_feedback_source ON feedback(source);
@@ -433,10 +487,27 @@ const SCHEMA_POSTGRES = `
   CREATE INDEX IF NOT EXISTS idx_integration_events_processed ON integration_events(processed);
   CREATE INDEX IF NOT EXISTS idx_user_gifts_user ON user_gifts(user_id);
   CREATE UNIQUE INDEX IF NOT EXISTS idx_user_gifts_unique ON user_gifts(user_id, gift_id);
+  CREATE INDEX IF NOT EXISTS idx_user_gifts_gift ON user_gifts(gift_id);
+  CREATE INDEX IF NOT EXISTS idx_users_created_at ON users(created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_survey_responses_user_completed ON survey_responses(user_id, completed_at);
+  CREATE INDEX IF NOT EXISTS idx_survey_responses_survey_completed ON survey_responses(survey_id, completed_at);
+  CREATE INDEX IF NOT EXISTS idx_feedback_created ON feedback(created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_feedback_circle_created ON feedback(circle_id, created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_surveys_circle_created ON surveys(circle_id, created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_cohorts_circle ON cohorts(circle_id);
+  CREATE INDEX IF NOT EXISTS idx_admin_users_role ON admin_users(role_id);
+  CREATE INDEX IF NOT EXISTS idx_gifts_circle ON gifts(circle_id);
+  CREATE INDEX IF NOT EXISTS idx_blasts_circle ON message_blasts(circle_id);
   CREATE UNIQUE INDEX IF NOT EXISTS idx_feedback_verbatim ON feedback(user_id, survey_id, question_id) WHERE question_id IS NOT NULL AND survey_id IS NOT NULL AND user_id IS NOT NULL;
   CREATE UNIQUE INDEX IF NOT EXISTS idx_feedback_verbatim_anon ON feedback(response_id, question_id) WHERE response_id IS NOT NULL AND question_id IS NOT NULL;
   CREATE UNIQUE INDEX IF NOT EXISTS idx_feedback_external_response ON feedback(source_system, external_response_id) WHERE external_response_id IS NOT NULL;
   CREATE UNIQUE INDEX IF NOT EXISTS idx_session_dispatch_once ON session_dispatches(session_id, offset_minutes);
+  CREATE INDEX IF NOT EXISTS idx_onboarding_forms_circle ON onboarding_forms(circle_id);
+  CREATE INDEX IF NOT EXISTS idx_onboarding_forms_token ON onboarding_forms(public_token) WHERE public_token IS NOT NULL;
+  CREATE INDEX IF NOT EXISTS idx_onboarding_submissions_form ON onboarding_submissions(form_id, status);
+  CREATE INDEX IF NOT EXISTS idx_onboarding_submissions_circle ON onboarding_submissions(circle_id, status);
+  CREATE INDEX IF NOT EXISTS idx_onboarding_submissions_email ON onboarding_submissions(email) WHERE email IS NOT NULL;
+  CREATE INDEX IF NOT EXISTS idx_onboarding_submissions_key ON onboarding_submissions(session_key_hash) WHERE session_key_hash IS NOT NULL;
 `;
 
 module.exports = { SCHEMA_POSTGRES };

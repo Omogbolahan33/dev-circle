@@ -3,6 +3,7 @@ const { uuid, parseJSON } = require('../utils/helpers');
 const { logger } = require('../utils/logger');
 const notifications = require('./notifications');
 const engagement = require('./engagement');
+const { USER_NOTIFY_COLS } = require('./audience');
 
 // ─── Scheduled engagement sessions ──────────────────────────
 // Closes two blueprint requirements that had no implementation: members
@@ -66,56 +67,56 @@ function availability(user, when) {
 
 // ─── Audience ───────────────────────────────────────────────
 
-function audienceFor(session) {
+async function audienceFor(session) {
   const targets = parseJSON(session.target_ids, []) || [];
 
   if (session.target_type === 'circle') {
     const ids = targets.length ? targets : [session.circle_id].filter(Boolean);
     if (!ids.length) return [];
     const placeholders = ids.map(() => '?').join(',');
-    return db.prepare(`
-      SELECT DISTINCT u.* FROM users u
+    return (await db.prepare(`
+      SELECT DISTINCT ${USER_NOTIFY_COLS} FROM users u
       JOIN circle_members m ON m.user_id = u.id
       WHERE m.circle_id IN (${placeholders}) AND u.status = 'active'
-    `).all(...ids);
+    `).all(...ids)) || [];
   }
 
   if (session.target_type === 'cohort') {
     if (!targets.length) return [];
     const placeholders = targets.map(() => '?').join(',');
-    return db.prepare(`
-      SELECT DISTINCT u.* FROM users u
+    return (await db.prepare(`
+      SELECT DISTINCT ${USER_NOTIFY_COLS} FROM users u
       JOIN user_cohorts uc ON uc.user_id = u.id
       WHERE uc.cohort_id IN (${placeholders}) AND u.status = 'active'
-    `).all(...targets);
+    `).all(...targets)) || [];
   }
 
   if (session.target_type === 'specific') {
     if (!targets.length) return [];
     const placeholders = targets.map(() => '?').join(',');
-    return db.prepare(`SELECT * FROM users WHERE id IN (${placeholders}) AND status = 'active'`)
-      .all(...targets);
+    return (await db.prepare(`SELECT ${USER_NOTIFY_COLS} FROM users u WHERE u.id IN (${placeholders}) AND u.status = 'active'`)
+      .all(...targets)) || [];
   }
 
   // 'all' still means "everyone in this session's circle", not the whole base
   if (session.circle_id) {
-    return db.prepare(`
-      SELECT DISTINCT u.* FROM users u
+    return (await db.prepare(`
+      SELECT DISTINCT ${USER_NOTIFY_COLS} FROM users u
       JOIN circle_members m ON m.user_id = u.id
       WHERE m.circle_id = ? AND u.status = 'active'
-    `).all(session.circle_id);
+    `).all(session.circle_id)) || [];
   }
 
-  return db.prepare("SELECT * FROM users WHERE status = 'active'").all();
+  return (await db.prepare(`SELECT ${USER_NOTIFY_COLS} FROM users u WHERE u.status = 'active'`).all()) || [];
 }
 
 // Who this session reaches, and who it clashes with — so a session can be
 // moved before it is announced rather than after nobody turns up.
-function preview(session) {
+async function preview(session) {
   const when = parseWhen(session.scheduled_for);
   if (!when) throw new SessionError('scheduled_for is not a valid date');
 
-  const audience = audienceFor(session);
+  const audience = await audienceFor(session);
   const channels = parseJSON(session.channels, ['in_portal']) || ['in_portal'];
 
   const available = [];
@@ -124,7 +125,7 @@ function preview(session) {
 
   for (const user of audience) {
     const slot = availability(user, when);
-    const { allowed, skipped } = notifications.resolveChannels(user, channels, 'survey_invites');
+    const { allowed, skipped } = await notifications.resolveChannels(user, channels, 'survey_invites');
 
     const entry = {
       id: user.id, name: user.name, email: user.email,
@@ -177,7 +178,7 @@ function describe(session, offsetMinutes) {
 
 // Send one wave for a session. offsetMinutes === null is the announcement.
 async function dispatch(sessionId, offsetMinutes = null) {
-  const session = db.prepare('SELECT * FROM scheduled_sessions WHERE id = ?').get(sessionId);
+  const session = await db.prepare('SELECT * FROM scheduled_sessions WHERE id = ?').get(sessionId);
   if (!session) throw new SessionError('Session not found');
   if (session.status === 'cancelled') throw new SessionError('Session is cancelled');
 
@@ -185,11 +186,11 @@ async function dispatch(sessionId, offsetMinutes = null) {
 
   // The unique index is what actually prevents a double send; this check just
   // avoids doing the work twice.
-  const already = db.prepare('SELECT 1 FROM session_dispatches WHERE session_id = ? AND offset_minutes = ?')
+  const already = await db.prepare('SELECT 1 FROM session_dispatches WHERE session_id = ? AND offset_minutes = ?')
     .get(sessionId, marker);
   if (already) return { skipped: true, reason: 'Already dispatched' };
 
-  const audience = audienceFor(session);
+  const audience = await audienceFor(session);
   const channels = parseJSON(session.channels, ['in_portal']) || ['in_portal'];
   const { title, body } = describe(session, offsetMinutes);
 
@@ -219,7 +220,7 @@ async function dispatch(sessionId, offsetMinutes = null) {
   }
 
   try {
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO session_dispatches (id, session_id, offset_minutes, recipient_count)
       VALUES (?, ?, ?, ?)
     `).run(uuid(), sessionId, marker, audience.length);
@@ -229,7 +230,7 @@ async function dispatch(sessionId, offsetMinutes = null) {
   }
 
   if (offsetMinutes === null && session.status === 'scheduled') {
-    db.prepare("UPDATE scheduled_sessions SET status = 'announced' WHERE id = ?").run(sessionId);
+    await db.prepare("UPDATE scheduled_sessions SET status = 'announced' WHERE id = ?").run(sessionId);
   }
 
   return { skipped: false, recipients: audience.length, delivered, offset_minutes: offsetMinutes };
@@ -240,11 +241,11 @@ async function dispatch(sessionId, offsetMinutes = null) {
 // out sessions that have passed.
 
 async function runDueReminders() {
-  const sessions = db.prepare(`
+  const sessions = (await db.prepare(`
     SELECT * FROM scheduled_sessions
     WHERE status IN ('scheduled','announced')
       AND scheduled_for > datetime('now', '-1 day')
-  `).all();
+  `).all()) || [];
 
   const fired = [];
   const now = Date.now();
@@ -279,17 +280,18 @@ async function runDueReminders() {
 // Surveys carrying reminder_after_days nudge members who were invited that
 // long ago and still have not responded.
 async function runSurveyReminders() {
-  const surveys = db.prepare(`
-    SELECT * FROM surveys
+  const surveys = (await db.prepare(`
+    SELECT id, title, engagement_mode, time_estimate_min, reminder_after_days
+    FROM surveys
     WHERE status = 'active' AND reminder_after_days IS NOT NULL
       AND (expires_at IS NULL OR expires_at > datetime('now'))
-  `).all();
+  `).all()) || [];
 
   const results = [];
 
   for (const survey of surveys) {
-    const pending = db.prepare(`
-      SELECT u.* FROM survey_responses sr
+    const pending = (await db.prepare(`
+      SELECT ${USER_NOTIFY_COLS} FROM survey_responses sr
       JOIN users u ON u.id = sr.user_id
       WHERE sr.survey_id = ?
         AND sr.completed_at IS NULL
@@ -301,7 +303,7 @@ async function runSurveyReminders() {
           WHERE d.user_id = u.id AND d.source_id = sr.survey_id
             AND d.source_type = 'survey_reminder'
         )
-    `).all(survey.id, `-${survey.reminder_after_days} days`);
+    `).all(survey.id, `-${survey.reminder_after_days} days`)) || [];
 
     const mode = survey.engagement_mode;
     const channels = mode === 'in_portal' || mode === '1-on-1' ? ['in_portal'] : ['in_portal', mode];
@@ -325,13 +327,18 @@ async function runSurveyReminders() {
   return results;
 }
 
-function closePastSessions() {
-  return db.prepare(`
-    UPDATE scheduled_sessions
-    SET status = 'completed'
-    WHERE status IN ('scheduled','announced')
-      AND datetime(scheduled_for, '+' || COALESCE(duration_min, 30) || ' minutes') < datetime('now')
-  `).run().changes;
+async function closePastSessions() {
+  const sql = db.isPostgres
+    ? `UPDATE scheduled_sessions
+       SET status = 'completed'
+       WHERE status IN ('scheduled','announced')
+         AND scheduled_for + (COALESCE(duration_min, 30)::text || ' minutes')::interval < NOW()`
+    : `UPDATE scheduled_sessions
+       SET status = 'completed'
+       WHERE status IN ('scheduled','announced')
+         AND datetime(scheduled_for, '+' || COALESCE(duration_min, 30) || ' minutes') < datetime('now')`;
+  const result = await db.prepare(sql).run();
+  return Number(result?.changes || 0);
 }
 
 // Brand assets nothing points at any more — a logo that was replaced, or one
@@ -343,10 +350,10 @@ function closePastSessions() {
 // of queries, which is cheap but not free, and nothing goes wrong if an
 // orphaned file survives another hour.
 let lastSweep = 0;
-function sweepUploads({ now = Date.now() } = {}) {
+async function sweepUploads({ now = Date.now() } = {}) {
   if (now - lastSweep < 60 * 60 * 1000) return null;
   lastSweep = now;
-  const { removed, bytes } = require('./uploads').sweep(db, { now });
+  const { removed, bytes } = await require('./uploads').sweep(db, { now });
   if (removed) {
     logger.info('Swept unreferenced brand assets', { removed, bytes });
   }
@@ -356,8 +363,8 @@ function sweepUploads({ now = Date.now() } = {}) {
 async function tick() {
   const reminders = await runDueReminders();
   const surveyNudges = await runSurveyReminders();
-  const closed = closePastSessions();
-  const sweptAssets = sweepUploads();
+  const closed = await closePastSessions();
+  const sweptAssets = await sweepUploads();
   return {
     reminders, survey_reminders: surveyNudges, sessions_closed: closed,
     ...(sweptAssets === null ? {} : { assets_swept: sweptAssets })

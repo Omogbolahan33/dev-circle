@@ -18,8 +18,8 @@ const router = express.Router();
 
 // ─── The forms ──────────────────────────────────────────────
 
-router.get('/onboarding', requirePermission('onboarding.read'), (req, res) => {
-  const forms = db.prepare(`
+router.get('/onboarding', requirePermission('onboarding.read'), async (req, res) => {
+  const forms = await db.prepare(`
     SELECT f.*,
       (SELECT COUNT(*) FROM onboarding_submissions s
         WHERE s.form_id = f.id AND s.status = 'pending') as pending_count,
@@ -40,7 +40,7 @@ router.get('/onboarding', requirePermission('onboarding.read'), (req, res) => {
 // operators and the theme come from the survey schema unchanged — it is the
 // same builder over the same definition — and what is added is the list of
 // profile fields a question may be tagged with.
-router.get('/onboarding/schema', requirePermission('onboarding.read'), (req, res) => {
+router.get('/onboarding/schema', requirePermission('onboarding.read'), async (req, res) => {
   res.json({
     types: surveyForm.TYPES,
     operators: surveyForm.OPERATORS,
@@ -85,16 +85,16 @@ router.get('/onboarding/schema', requirePermission('onboarding.read'), (req, res
   });
 });
 
-function formInCircle(req) {
-  return db.prepare('SELECT * FROM onboarding_forms WHERE id = ? AND circle_id = ?')
+async function formInCircle(req) {
+  return await db.prepare('SELECT * FROM onboarding_forms WHERE id = ? AND circle_id = ?')
     .get(req.params.id, req.circleId);
 }
 
-router.get('/onboarding/:id', requirePermission('onboarding.read'), (req, res) => {
-  const form = formInCircle(req);
+router.get('/onboarding/:id', requirePermission('onboarding.read'), async (req, res) => {
+  const form = await formInCircle(req);
   if (!form) return res.status(404).json({ error: 'Form not found' });
 
-  const counts = db.prepare(`
+  const counts = await db.prepare(`
     SELECT
       COUNT(*) FILTER (WHERE status = 'pending')  as pending,
       COUNT(*) FILTER (WHERE status = 'approved') as approved,
@@ -150,21 +150,21 @@ function refuseIfNotReady(res, definition, status) {
 // Cohorts an approved applicant joins. Only cohorts of this circle: a form
 // that could add somebody to another workspace's cohort would move people
 // between circles without anybody choosing to.
-function cohortsInCircle(ids, circleId) {
+async function cohortsInCircle(ids, circleId) {
   const wanted = Array.isArray(ids) ? ids : [];
   if (!wanted.length) return [];
-  const known = db.prepare('SELECT id FROM cohorts WHERE circle_id = ?').all(circleId).map(c => c.id);
+  const known = (await db.prepare('SELECT id FROM cohorts WHERE circle_id = ?').all(circleId)).map(c => c.id);
   return wanted.filter(id => known.includes(id));
 }
 
-router.post('/onboarding', requirePermission('onboarding.write'), (req, res) => {
+router.post('/onboarding', requirePermission('onboarding.write'), async (req, res) => {
   const { name, description, redirect_url, submitted_message, duplicate_policy, status } = req.body;
 
   if (!name || !String(name).trim()) return res.status(400).json({ error: 'name required' });
 
   const opening = status === 'active' ? 'active' : 'draft';
 
-  const definition = onboarding.normalizeDefinition(req.body, {
+  const definition = await onboarding.normalizeDefinition(req.body, {
     createdBy: req.admin.id,
     allowEmpty: opening !== 'active'
   });
@@ -177,7 +177,7 @@ router.post('/onboarding', requirePermission('onboarding.write'), (req, res) => 
   const policy = ['replace', 'reject', 'allow'].includes(duplicate_policy) ? duplicate_policy : 'replace';
 
   const id = uuid();
-  db.prepare(`
+  await db.prepare(`
     INSERT INTO onboarding_forms (id, circle_id, name, description, questions, theme, field_map,
                                   cohort_ids, status, public_token, allowed_origins,
                                   redirect_url, submitted_message, duplicate_policy, created_by)
@@ -187,7 +187,7 @@ router.post('/onboarding', requirePermission('onboarding.write'), (req, res) => 
     JSON.stringify(definition.questions),
     definition.theme ? JSON.stringify(definition.theme) : null,
     JSON.stringify(definition.field_map),
-    JSON.stringify(cohortsInCircle(req.body.cohort_ids, req.circleId)),
+    JSON.stringify(await cohortsInCircle(req.body.cohort_ids, req.circleId)),
     opening,
     // The token exists from the moment the form does, so the snippet can be
     // copied out of the builder on the first save rather than after a second
@@ -197,7 +197,7 @@ router.post('/onboarding', requirePermission('onboarding.write'), (req, res) => 
     redirect_url || null, submitted_message || null, policy, req.admin.id
   );
 
-  const form = db.prepare('SELECT * FROM onboarding_forms WHERE id = ?').get(id);
+  const form = await db.prepare('SELECT * FROM onboarding_forms WHERE id = ?').get(id);
   res.status(201).json({
     form: onboarding.hydrate(form),
     embed_snippet: snippet(req, form),
@@ -205,13 +205,13 @@ router.post('/onboarding', requirePermission('onboarding.write'), (req, res) => 
   });
 });
 
-router.put('/onboarding/:id', requirePermission('onboarding.write'), (req, res) => {
-  const form = formInCircle(req);
+router.put('/onboarding/:id', requirePermission('onboarding.write'), async (req, res) => {
+  const form = await formInCircle(req);
   if (!form) return res.status(404).json({ error: 'Form not found' });
 
-  const decided = db.prepare(
+  const decided = (await db.prepare(
     "SELECT COUNT(*) as n FROM onboarding_submissions WHERE form_id = ? AND status != 'started'"
-  ).get(form.id).n;
+  ).get(form.id)).n;
 
   const wanted = ['draft', 'active', 'closed'].includes(req.body.status) ? req.body.status : form.status;
 
@@ -258,7 +258,7 @@ router.put('/onboarding/:id', requirePermission('onboarding.write'), (req, res) 
       }
     }
   } else {
-    const definition = onboarding.normalizeDefinition(req.body, {
+    const definition = await onboarding.normalizeDefinition(req.body, {
       createdBy: req.admin.id,
       allowEmpty: wanted !== 'active'
     });
@@ -284,7 +284,7 @@ router.put('/onboarding/:id', requirePermission('onboarding.write'), (req, res) 
   const policy = ['replace', 'reject', 'allow'].includes(req.body.duplicate_policy)
     ? req.body.duplicate_policy : form.duplicate_policy;
 
-  db.prepare(`
+  await db.prepare(`
     UPDATE onboarding_forms
     SET name = ?, description = ?, questions = ?, theme = ?, field_map = ?, cohort_ids = ?,
         status = ?, allowed_origins = ?, redirect_url = ?, submitted_message = ?,
@@ -296,7 +296,7 @@ router.put('/onboarding/:id', requirePermission('onboarding.write'), (req, res) 
     JSON.stringify(questions),
     theme ? JSON.stringify(theme) : null,
     JSON.stringify(field_map),
-    JSON.stringify(cohortsInCircle(req.body.cohort_ids, req.circleId)),
+    JSON.stringify(await cohortsInCircle(req.body.cohort_ids, req.circleId)),
     wanted,
     JSON.stringify(origins),
     req.body.redirect_url ?? form.redirect_url,
@@ -305,7 +305,7 @@ router.put('/onboarding/:id', requirePermission('onboarding.write'), (req, res) 
     form.id
   );
 
-  const updated = db.prepare('SELECT * FROM onboarding_forms WHERE id = ?').get(form.id);
+  const updated = await db.prepare('SELECT * FROM onboarding_forms WHERE id = ?').get(form.id);
   res.json({
     form: onboarding.hydrate(updated),
     embed_snippet: snippet(req, updated),
@@ -316,8 +316,8 @@ router.put('/onboarding/:id', requirePermission('onboarding.write'), (req, res) 
 // Copying a form. Every slot gets a fresh id and the branching rules are
 // rewritten to match — surveyForm.copyQuestions is where that is explained,
 // and the mapping is rebuilt against the new ids in the same pass.
-router.post('/onboarding/:id/duplicate', requirePermission('onboarding.write'), (req, res) => {
-  const form = formInCircle(req);
+router.post('/onboarding/:id/duplicate', requirePermission('onboarding.write'), async (req, res) => {
+  const form = await formInCircle(req);
   if (!form) return res.status(404).json({ error: 'Form not found' });
 
   const questions = surveyForm.copyQuestions(onboarding.hydrate(form).questions);
@@ -326,7 +326,7 @@ router.post('/onboarding/:id/duplicate', requirePermission('onboarding.write'), 
   );
 
   const id = uuid();
-  db.prepare(`
+  await db.prepare(`
     INSERT INTO onboarding_forms (id, circle_id, name, description, questions, theme, field_map,
                                   cohort_ids, status, public_token, allowed_origins,
                                   redirect_url, submitted_message, duplicate_policy, created_by)
@@ -342,20 +342,20 @@ router.post('/onboarding/:id/duplicate', requirePermission('onboarding.write'), 
   );
 
   res.status(201).json({
-    form: onboarding.hydrate(db.prepare('SELECT * FROM onboarding_forms WHERE id = ?').get(id))
+    form: onboarding.hydrate(await db.prepare('SELECT * FROM onboarding_forms WHERE id = ?').get(id))
   });
 });
 
 // A form that nobody has filled in can be deleted. One that somebody has is
 // closed instead — deleting it would take the applications with it, and those
 // are the record of what people were asked and what they were told.
-router.delete('/onboarding/:id', requirePermission('onboarding.write'), (req, res) => {
-  const form = formInCircle(req);
+router.delete('/onboarding/:id', requirePermission('onboarding.write'), async (req, res) => {
+  const form = await formInCircle(req);
   if (!form) return res.status(404).json({ error: 'Form not found' });
 
-  const submissions = db.prepare(
+  const submissions = (await db.prepare(
     "SELECT COUNT(*) as n FROM onboarding_submissions WHERE form_id = ? AND status != 'started'"
-  ).get(form.id).n;
+  ).get(form.id)).n;
 
   if (submissions > 0) {
     return res.status(409).json({
@@ -363,7 +363,7 @@ router.delete('/onboarding/:id', requirePermission('onboarding.write'), (req, re
     });
   }
 
-  db.prepare('DELETE FROM onboarding_forms WHERE id = ?').run(form.id);
+  await db.prepare('DELETE FROM onboarding_forms WHERE id = ?').run(form.id);
   res.json({ message: 'Form deleted' });
 });
 
@@ -372,7 +372,7 @@ router.delete('/onboarding/:id', requirePermission('onboarding.write'), (req, re
 // Applications across every form in this circle. Unfinished ones are left out
 // by default: somebody who opened a form and stopped typing has not applied,
 // and a queue full of blank rows is a queue nobody works through.
-router.get('/onboarding-applications', requirePermission('onboarding.read'), (req, res) => {
+router.get('/onboarding-applications', requirePermission('onboarding.read'), async (req, res) => {
   const status = ['pending', 'approved', 'rejected', 'withdrawn', 'started'].includes(req.query.status)
     ? req.query.status : 'pending';
 
@@ -380,7 +380,7 @@ router.get('/onboarding-applications', requirePermission('onboarding.read'), (re
   const offset = Number(req.query.offset) || 0;
   const formId = req.query.form_id || null;
 
-  const rows = db.prepare(`
+  const rows = await db.prepare(`
     SELECT s.id, s.form_id, s.email, s.name, s.status, s.submitted_at, s.created_at,
            s.source_origin, s.source_page, s.decided_at, s.decision_note, s.user_id,
            f.name as form_name,
@@ -393,26 +393,26 @@ router.get('/onboarding-applications', requirePermission('onboarding.read'), (re
     LIMIT ? OFFSET ?
   `).all(...[req.circleId, status, ...(formId ? [formId] : []), limit, offset]);
 
-  const total = db.prepare(`
+  const total = (await db.prepare(`
     SELECT COUNT(*) as n FROM onboarding_submissions
     WHERE circle_id = ? AND status = ? ${formId ? 'AND form_id = ?' : ''}
-  `).get(...[req.circleId, status, ...(formId ? [formId] : [])]).n;
+  `).get(...[req.circleId, status, ...(formId ? [formId] : [])])).n;
 
-  res.json({ applications: rows, total, pending: pendingCount(req.circleId) });
+  res.json({ applications: rows, total, pending: await pendingCount(req.circleId) });
 });
 
-function pendingCount(circleId) {
-  return db.prepare(
+async function pendingCount(circleId) {
+  return (await db.prepare(
     "SELECT COUNT(*) as n FROM onboarding_submissions WHERE circle_id = ? AND status = 'pending'"
-  ).get(circleId).n;
+  ).get(circleId)).n;
 }
 
 // One application, in full: what they were asked, what they answered, and what
 // of it the form understood as a fact about them. All three, because a
 // reviewer deciding whether to let somebody into a workspace is entitled to
 // see the answers in the words they were given rather than a summary of them.
-router.get('/onboarding-applications/:id', requirePermission('onboarding.read'), (req, res) => {
-  const submission = db.prepare(`
+router.get('/onboarding-applications/:id', requirePermission('onboarding.read'), async (req, res) => {
+  const submission = await db.prepare(`
     SELECT s.*, f.name as form_name, f.questions as form_questions, a.name as decided_by_name
     FROM onboarding_submissions s
     JOIN onboarding_forms f ON f.id = s.form_id
@@ -451,19 +451,19 @@ router.get('/onboarding-applications/:id', requirePermission('onboarding.read'),
     // to the circle. Worth knowing before deciding: the second is somebody who
     // is already a member somewhere in the platform.
     existing_member: email
-      ? db.prepare('SELECT id, name, email, created_at FROM users WHERE lower(email) = ?').get(email) || null
+      ? (await db.prepare('SELECT id, name, email, created_at FROM users WHERE lower(email) = ?').get(email)) || null
       : null
   });
 });
 
-router.post('/onboarding-applications/:id/approve', requirePermission('onboarding.approve'), (req, res) => {
-  const submission = db.prepare(
+router.post('/onboarding-applications/:id/approve', requirePermission('onboarding.approve'), async (req, res) => {
+  const submission = await db.prepare(
     'SELECT id FROM onboarding_submissions WHERE id = ? AND circle_id = ?'
   ).get(req.params.id, req.circleId);
   if (!submission) return res.status(404).json({ error: 'Application not found' });
 
   try {
-    const result = onboarding.approve(submission.id, { adminId: req.admin.id, note: req.body?.note });
+    const result = await onboarding.approve(submission.id, { adminId: req.admin.id, note: req.body?.note });
     res.json({ message: result.created ? 'Member created' : 'Existing member joined to this circle', ...result });
   } catch (err) {
     if (err instanceof onboarding.OnboardingError) return res.status(409).json({ error: err.message });
@@ -471,14 +471,14 @@ router.post('/onboarding-applications/:id/approve', requirePermission('onboardin
   }
 });
 
-router.post('/onboarding-applications/:id/reject', requirePermission('onboarding.approve'), (req, res) => {
-  const submission = db.prepare(
+router.post('/onboarding-applications/:id/reject', requirePermission('onboarding.approve'), async (req, res) => {
+  const submission = await db.prepare(
     'SELECT id FROM onboarding_submissions WHERE id = ? AND circle_id = ?'
   ).get(req.params.id, req.circleId);
   if (!submission) return res.status(404).json({ error: 'Application not found' });
 
   try {
-    onboarding.reject(submission.id, { adminId: req.admin.id, note: req.body?.note });
+    await onboarding.reject(submission.id, { adminId: req.admin.id, note: req.body?.note });
     res.json({ message: 'Application rejected' });
   } catch (err) {
     if (err instanceof onboarding.OnboardingError) return res.status(409).json({ error: err.message });

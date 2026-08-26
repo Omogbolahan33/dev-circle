@@ -50,7 +50,7 @@ if (config.isPostgres) {
         );
       `);
       const migrations = require('./migrations');
-      const defined = migrations.define({ _isPostgres: true, prepare: () => ({ all: () => [], get: () => null }), exec: () => {}, pragma: () => null });
+      const defined = migrations.define({ _isPostgres: true, prepare: async () => ({ all: async () => [], get: async () => null }), exec: () => {}, pragma: async () => null });
       for (const m of defined) {
         await pg.query(
           'INSERT INTO schema_migrations (id, name) VALUES ($1, $2) ON CONFLICT (id) DO NOTHING',
@@ -58,6 +58,14 @@ if (config.isPostgres) {
         );
       }
       logger.info('Postgres schema and migrations applied');
+      const bootstrap = require('./bootstrap');
+      const seeded = await bootstrap.ensureDemoAccounts(live);
+      if (!seeded.skipped) {
+        logger.info('Demo accounts ready', {
+          admin: 'admin@creditdirect.ng',
+          created: seeded.created
+        });
+      }
     } catch (err) {
       readyError = err;
       logger.error('Failed to init Postgres', { message: err.message, stack: err.stack });
@@ -161,6 +169,20 @@ if (config.isPostgres) {
   const { logger } = require('../utils/logger');
   require('./migrations').run(sqliteLive, { log: msg => logger.info(msg) });
 
+  const bootstrap = require('./bootstrap');
+  const demoReady = bootstrap.ensureDemoAccounts(sqliteLive).then(seeded => {
+    if (!seeded.skipped) {
+      logger.info('Demo accounts ready', {
+        admin: 'admin@creditdirect.ng',
+        created: seeded.created
+      });
+    }
+    return seeded;
+  }).catch(err => {
+    logger.error('Demo account bootstrap failed', { message: err.message, stack: err.stack });
+    throw err;
+  });
+
   context.useLive(sqliteLive);
 
   live = sqliteLive;
@@ -177,12 +199,27 @@ if (config.isPostgres) {
   module.exports = new Proxy(sqliteLive, {
     get(target, property) {
       const database = context.active() || target;
+      if (property === 'prepare') {
+        return sql => {
+          const stmt = database.prepare(sql);
+          const cache = require('../middleware/cache');
+          if (!cache.isMutatingSql(sql)) return stmt;
+          const run = stmt.run.bind(stmt);
+          stmt.run = (...args) => {
+            const result = run(...args);
+            if (result && Number(result.changes) > 0) cache.noteWrite(sql);
+            return result;
+          };
+          return stmt;
+        };
+      }
       const value = database[property];
       return typeof value === 'function' ? value.bind(database) : value;
     }
   });
   module.exports.isPostgres = false;
   module.exports.isSQLite = true;
+  module.exports.ready = demoReady;
 }
 
 // Shared helpers

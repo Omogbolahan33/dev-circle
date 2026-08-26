@@ -256,6 +256,23 @@ function seed(database) {
 // their live session is mirrored across for as long as it is valid — same
 // account, same role, same permissions, different data.
 
+// Live rows come from Postgres: TIMESTAMPTZ arrives as a Date, INTEGER
+// sometimes as a boolean, and missing columns as undefined. better-sqlite3
+// will not bind any of those, so every value we write across is reduced to
+// a string, number, buffer or null.
+function toSqlite(value) {
+  if (value === undefined || value === null) return null;
+  const t = typeof value;
+  if (t === 'string' || t === 'number' || t === 'bigint') return value;
+  if (t === 'boolean') return value ? 1 : 0;
+  if (Buffer.isBuffer(value)) return value;
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value.toISOString();
+  }
+  if (t === 'object') return JSON.stringify(value);
+  return String(value);
+}
+
 function mirrorAccess(database, { admin, role, session }) {
   database.transaction(() => {
     if (role) {
@@ -263,14 +280,18 @@ function mirrorAccess(database, { admin, role, session }) {
       // stale row here holding the name. The name is cosmetic in the sandbox —
       // permissions are read by id — so the mirror steps around it rather than
       // deleting a row something else may still point at.
-      const clash = database.prepare('SELECT id FROM roles WHERE name = ? AND id <> ?').get(role.name, role.id);
-      const name = clash ? `${role.name} (${role.id.slice(0, 8)})` : role.name;
+      const clash = database.prepare('SELECT id FROM roles WHERE name = ? AND id <> ?')
+        .get(toSqlite(role.name), toSqlite(role.id));
+      const name = clash ? `${role.name} (${String(role.id).slice(0, 8)})` : role.name;
 
       database.prepare(`
         INSERT INTO roles (id, name, description, permissions, is_system)
         VALUES (?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET permissions = excluded.permissions, name = excluded.name
-      `).run(role.id, name, role.description, role.permissions, role.is_system);
+      `).run(
+        toSqlite(role.id), toSqlite(name), toSqlite(role.description),
+        toSqlite(role.permissions), toSqlite(role.is_system)
+      );
     }
 
     // An account recreated on the same address is a different id here. Nothing
@@ -278,14 +299,18 @@ function mirrorAccess(database, { admin, role, session }) {
     // sessions go rather than blocking the unique address.
     database.prepare(`
       DELETE FROM sessions WHERE subject_id IN (SELECT id FROM admin_users WHERE email = ? AND id <> ?)
-    `).run(admin.email, admin.id);
-    database.prepare('DELETE FROM admin_users WHERE email = ? AND id <> ?').run(admin.email, admin.id);
+    `).run(toSqlite(admin.email), toSqlite(admin.id));
+    database.prepare('DELETE FROM admin_users WHERE email = ? AND id <> ?')
+      .run(toSqlite(admin.email), toSqlite(admin.id));
 
     database.prepare(`
       INSERT INTO admin_users (id, email, name, password_hash, role_id, status, is_global)
       VALUES (?, ?, ?, ?, ?, ?, 1)
       ON CONFLICT(id) DO UPDATE SET role_id = excluded.role_id, status = excluded.status, is_global = 1
-    `).run(admin.id, admin.email, admin.name, admin.password_hash, admin.role_id, admin.status);
+    `).run(
+      toSqlite(admin.id), toSqlite(admin.email), toSqlite(admin.name),
+      toSqlite(admin.password_hash), toSqlite(admin.role_id), toSqlite(admin.status)
+    );
 
     // A role is held within a circle, so the mirrored account needs its grant
     // in the sandbox's own circle — otherwise the caller arrives with a valid
@@ -296,7 +321,7 @@ function mirrorAccess(database, { admin, role, session }) {
       database.prepare(`
         INSERT INTO circle_admins (circle_id, admin_id, role_id) VALUES (?, ?, ?)
         ON CONFLICT(circle_id, admin_id) DO UPDATE SET role_id = excluded.role_id
-      `).run(sandboxCircle.id, admin.id, admin.role_id);
+      `).run(toSqlite(sandboxCircle.id), toSqlite(admin.id), toSqlite(admin.role_id));
     }
 
     database.prepare(`
@@ -304,8 +329,9 @@ function mirrorAccess(database, { admin, role, session }) {
       VALUES (?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(token_hash) DO UPDATE SET expires_at = excluded.expires_at
     `).run(
-      session.token_hash, session.subject_id, session.is_admin,
-      session.issued_via, session.user_agent, session.expires_at, session.scope || 'full'
+      toSqlite(session.token_hash), toSqlite(session.subject_id), toSqlite(session.is_admin),
+      toSqlite(session.issued_via), toSqlite(session.user_agent),
+      toSqlite(session.expires_at), toSqlite(session.scope || 'full')
     );
   })();
 }
@@ -344,4 +370,4 @@ function status() {
   };
 }
 
-module.exports = { db, reset, status, mirrorAccess, DB_PATH };
+module.exports = { db, reset, status, mirrorAccess, toSqlite, DB_PATH };

@@ -1,5 +1,6 @@
 const circles = require('../services/circles');
-const { permissionsFor } = require('./auth');
+const context = require('../db/context');
+const { parsePermissions } = require('./auth');
 
 // ─── Working inside a circle ────────────────────────────────
 // Every admin request happens in one workspace. Which one comes from the
@@ -10,12 +11,15 @@ const { permissionsFor } = require('./auth');
 // circle, so permissions are resolved per request rather than once at sign-in:
 // a CDL rep for one workspace has none in another.
 
-function circleContext(req, res, next) {
+async function circleContext(req, res, next) {
   // Only staff work inside a circle; members reach their own data by identity
   if (!req.isAdmin) return next();
 
   const requested = req.headers['x-circle-id'] || req.query.circle_id || null;
-  const available = circles.forAdmin(req.admin);
+  // requireAuth already joined the reachable circles onto the session.
+  const available = Array.isArray(req.availableCircles)
+    ? req.availableCircles
+    : await circles.forAdmin(req.admin);
 
   if (!available.length) {
     return res.status(403).json({
@@ -24,9 +28,13 @@ function circleContext(req, res, next) {
     });
   }
 
-  const circle = requested
+  let circle = requested
     ? available.find(c => c.id === requested || c.slug === requested)
     : available[0];
+
+  // Live workspace ids do not exist in the sandbox. Fall back to its only
+  // circle rather than refusing every sandboxed admin call.
+  if (!circle && context.inSandbox()) circle = available[0];
 
   if (!circle) {
     // Naming a circle they cannot reach is refused rather than quietly
@@ -41,9 +49,12 @@ function circleContext(req, res, next) {
   req.circleId = circle.id;
   req.availableCircles = available;
 
-  // Permissions belong to the role held in *this* circle
-  const roleId = circles.roleFor(req.admin, circle.id);
-  req.permissions = permissionsFor({ ...req.admin, role_id: roleId });
+  // Permissions belong to the role held in *this* circle. forAdmin already
+  // joined that role; global staff keep the list loaded with the session.
+  const isGlobalCircle = circle.global === true || circle.global === 1 || circle.global === '1';
+  if (!isGlobalCircle) {
+    req.permissions = parsePermissions(circle.role_permissions);
+  }
 
   // So a client can tell which workspace answered
   res.setHeader('X-Circle-Id', circle.id);
