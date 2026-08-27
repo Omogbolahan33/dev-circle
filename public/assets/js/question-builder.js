@@ -100,6 +100,19 @@ const QuestionBuilder = (() => {
       cards[cards.length - 1]?.querySelector('.q-text')?.focus();
     }
 
+    // Add many questions at once from a bulk import. The caller has already
+    // validated them through the schema (see question-import.js), so each
+    // arrives with an id and no empty option rows; this only files them.
+    function importQuestions(ready) {
+      const start = state.questions.length;
+      for (const q of ready) state.questions.push(q);
+      if (state.questions.length) {
+        state.openQuestion = start;   // open the first imported one
+      }
+      render();
+      changed();
+    }
+
     function render() {
       const holder = el.questions;
       holder.innerHTML = state.questions.map((q, i) => card(q, i)).join('');

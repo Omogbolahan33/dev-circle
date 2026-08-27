@@ -59,7 +59,10 @@
             <div class="hide" id="lockNotice"></div>
             <div id="questions"></div>
 
-            <button class="btn btn-sm btn-secondary mt-3" id="addToggle" onclick="toggleTypeMenu()">+ Add a question</button>
+            <div class="field-row mt-3">
+              <button class="btn btn-sm btn-secondary" id="addToggle" onclick="toggleTypeMenu()">+ Add a question</button>
+              <button class="btn btn-sm btn-ghost" id="importToggle" onclick="openQuestionImport()">Import questions…</button>
+            </div>
             <div class="type-menu hide mt-3" id="typeMenu"></div>
           </section>
 
@@ -159,6 +162,7 @@
 <script src="/assets/js/survey-theme.js"></script>
 <script src="/assets/js/survey-render.js"></script>
 <script src="/assets/js/question-builder.js"></script>
+<script src="/assets/js/question-import.js"></script>
 <script src="/assets/js/theme-panel.js"></script>
 <script>
   Shell.admin('surveys');
@@ -348,6 +352,7 @@
   function renderTypeMenu()      { builder?.renderTypeMenu(); }
   function toggleTypeMenu(force) { builder?.toggleTypeMenu(force); }
   function addQuestion(type)     { builder?.add(type); }
+  function openQuestionImport()  { QuestionImport.open({ builder, noun: 'survey' }); }
 
 
   // ─── Theme panel ──────────────────────────────────────────
