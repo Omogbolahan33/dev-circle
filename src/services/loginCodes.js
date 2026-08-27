@@ -101,9 +101,16 @@ async function deliver(user, identity, code) {
   const minutes = Math.round(TTL_SEC / 60);
 
   return notifications.sendDirect(user, {
-    channel: identity.channel,
+    channel: identity.channel || 'email',
     to: identity.value,
-    category: 'platform_updates',
+    // Transactional sign-in code: named workflow so the email renders with
+    // the dedicated code template rather than a generic announcement.
+    category: 'login_code',
+    workflow: 'login_code',
+    templateData: { code, expiresInMinutes: minutes },
+    // The delivery log only accepts the engagement source_type set; a code is
+    // a system transaction.
+    sourceType: 'system',
     title: `${code} is your Dev Circle sign-in code`,
     body: `Enter ${code} to sign in. It expires in ${minutes} minutes. ` +
           'If you did not try to sign in, you can ignore this message.'

@@ -149,7 +149,6 @@ async function dispatchToProvider(channel, user, message) {
       error: outcome.error || null
     };
   }
-
   if (channel === 'whatsapp' || channel === 'sms') {
     const { delivery } = config;
     if (!delivery.enabled) {
@@ -204,6 +203,9 @@ const insertDelivery = () => db.prepare(`
 `);
 
 // Send one message to one member across every channel they allow.
+// `workflow` + `templateData` let a caller name the business event (a session
+// invite, a gift, a feedback reply…) so the email it renders uses the matching
+// branded template with its full data, rather than a generic announcement.
 async function notify(user, {
   category = 'platform_updates',
   title,
@@ -211,7 +213,9 @@ async function notify(user, {
   actionUrl = null,
   sourceType = 'system',
   sourceId = null,
-  channels = ['in_portal']
+  channels = ['in_portal'],
+  workflow = null,
+  templateData = null
 }) {
   if (!title) throw new Error('notify() requires a title');
 
@@ -224,7 +228,10 @@ async function notify(user, {
     await insertNotification().run(notificationId, user.id, category, title, body, actionUrl, sourceType, sourceId);
   }
 
-  const message = { category, title, body, action_url: actionUrl, notification_id: notificationId };
+  const message = {
+    category, title, body, action_url: actionUrl, notification_id: notificationId,
+    source_type: sourceType, source_id: sourceId, workflow, templateData
+  };
 
   for (const channel of allowed) {
     let outcome;
@@ -266,14 +273,19 @@ async function sendDirect(user, {
   title,
   body = null,
   sourceType = 'system',
-  sourceId = null
+  sourceId = null,
+  workflow = null,
+  templateData = null
 }) {
   if (!title) throw new Error('sendDirect() requires a title');
   if (!CHANNELS.includes(channel)) throw new Error(`Unsupported channel ${channel}`);
 
   let outcome;
   try {
-    outcome = await dispatchToProvider(channel, user, { category, title, body, to, action_url: null });
+    outcome = await dispatchToProvider(channel, user, {
+      category, title, body, to, action_url: null,
+      source_type: sourceType, source_id: sourceId, workflow, templateData
+    });
   } catch (err) {
     outcome = { status: 'failed', ref: null, error: err.message };
   }
@@ -373,7 +385,11 @@ async function drainDeferred() {
       title: source?.title || 'You have an update from Dev Circle',
       body: source?.body || null,
       action_url: source?.action_url || null,
-      notification_id: source?.id || null
+      notification_id: source?.id || null,
+      // Carry the original event so a drained email renders its real template
+      // (a held session invite is still a session invite an hour later).
+      source_type: source?.source_type || null,
+      source_id: source?.source_id || null
     });
 
     await db.prepare(`

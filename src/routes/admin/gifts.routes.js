@@ -117,6 +117,12 @@ router.post('/gifts/:id/deliver', requirePermission('gifts.write'), async (req, 
     actionUrl: '/member/gifts.html',
     sourceType: 'system',
     sourceId: gift.id,
+    workflow: 'gift_claimed',
+    templateData: {
+      giftName: gift.name,
+      giftValue: gift.value,
+      currency: gift.currency || 'NGN'
+    },
     channels: ['in_portal', 'email']
   });
 

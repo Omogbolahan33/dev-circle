@@ -131,15 +131,9 @@
     .choice.selected { background: var(--cd-blue-dim); border-color: var(--cd-blue-40); color: var(--cd-blue); }
 
     /* Spacing between the full-width blocks stacked above the two-column home. */
-    .int-card + .home-mini { margin-top: var(--sp-5); }
-    .home-mini + .home { margin-top: var(--sp-5); }
-
-    /* Groups + feedback sit beside each other directly under the track, so
-       the standing/participation summary is visible without scrolling. */
-    .home-mini { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-5); align-items: stretch; }
-    @media (max-width: 880px) { .home-mini { grid-template-columns: minmax(0, 1fr); gap: var(--sp-4); } }
-    .say-card { display: flex; flex-direction: column; }
-    .say-card .btn { margin-top: auto; }
+    .int-card + .say-card { margin-top: var(--sp-5); }
+    .say-card + .home { margin-top: var(--sp-5); }
+    .say-card .btn-block { max-width: 320px; }
 
     @media (max-width: 680px) {
       .int-track { grid-template-columns: minmax(0, 1fr); gap: var(--sp-3); }
@@ -298,24 +292,18 @@
       </div>
     </section>
 
-    <!-- Where you sit and your line to the team, directly under the track so
-         the participation summary is visible before any scrolling. -->
-    <div class="home-mini">
-      <section class="panel-card">
-        <div class="panel-title">Where you sit</div>
-        <div class="membership" id="membership"></div>
-        <p class="hint">These decide which surveys and sessions reach you.</p>
-      </section>
-
-      <section class="panel-card say-card">
-        <div class="panel-title">Say something</div>
-        <p class="text-sm muted mb-4">
-          You do not have to wait to be asked. It reaches the team building the APIs,
-          and you can follow what happens to it.
-        </p>
-        <a class="btn btn-primary btn-block" href="/member/feedback.html">Give feedback</a>
-      </section>
-    </div>
+    <!-- The member's line to the team, directly under the track so it is
+         visible before any scrolling. Circle/cohort membership ("where you
+         sit") is intentionally not shown to members: it only decides matching
+         and is never something a member acts on — it belongs in the console. -->
+    <section class="panel-card say-card">
+      <div class="panel-title">Say something</div>
+      <p class="text-sm muted mb-4">
+        You do not have to wait to be asked. It reaches the team building the APIs,
+        and you can follow what happens to it.
+      </p>
+      <a class="btn btn-primary btn-block" href="/member/feedback.html">Give feedback</a>
+    </section>
 
     <div class="home">
 
@@ -417,7 +405,6 @@
       renderReadiness(profile.readiness);
       renderHeat(engagement.history, profile.stats);
       renderTrack(profile.user, profile.product_catalog);
-      renderMembership(profile);
       renderInvites(surveys.surveys);
       renderSessions(sessions.sessions);
       renderTimeline(engagement.history.slice(0, 8));
@@ -804,16 +791,6 @@
       btn.disabled = false;
       btn.textContent = 'Save products';
     }
-  }
-
-  function renderMembership({ circles, cohorts }) {
-    const tags = [
-      ...(circles || []).map(c => `<span class="tag" style="background:${c.color}22;color:${c.color}">${escapeHtml(c.name)}</span>`),
-      ...(cohorts || []).map(c => `<span class="tag" style="background:${c.color}22;color:${c.color}">${escapeHtml(c.name)}</span>`)
-    ];
-    document.getElementById('membership').innerHTML = tags.length
-      ? tags.join('')
-      : '<span class="dim text-xs">Not in any group yet.</span>';
   }
 
   // Exactly one call to action, chosen by what actually matters most:

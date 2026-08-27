@@ -2,6 +2,7 @@ const express = require('express');
 const db = require('../../db');
 const { requirePermission } = require('../../middleware/auth');
 const engagement = require('../../services/engagement');
+const notifications = require('../../services/notifications');
 const { toCSV } = require('../../utils/helpers');
 const { buildXLSX } = require('../../utils/xlsx');
 const views = require('../../services/feedbackViews');
@@ -252,12 +253,48 @@ router.put('/feedback/:id', requirePermission('feedback.write'), async (req, res
     WHERE id = ?
   `).run(status, status, fb.id);
 
+  const member = await db.prepare('SELECT * FROM users WHERE id = ?').get(fb.user_id);
+
   if (note) {
     engagement.log(fb.user_id, 'feedback_submitted', {
       referenceId: fb.id,
       metadata: { triage_note: note, status },
       source: 'manual'
     });
+  }
+
+  // Tell the member what happened to what they sent. Feedback updates are a
+  // mandatory category — a reply to someone's own feedback is transactional,
+  // not marketing. The email uses the dedicated feedback_update template.
+  if (member && member.status === 'active') {
+    const verb = status === 'resolved' ? 'closed' : status === 'reviewed' ? 'read and triaged' : 'updated';
+    try {
+      // Title references what they wrote, not the internal category
+      const excerpt = String(fb.content || 'your message').replace(/\s+/g, ' ').trim();
+      const short = excerpt.length > 60 ? excerpt.slice(0, 57) + '…' : excerpt;
+
+      await notifications.notify(member, {
+        category: 'feedback_updates',
+        title: `Update on feedback: ${short}`,
+        body: note
+          ? note
+          : `Your feedback has been ${verb}. Thank you for helping us improve.`,
+        actionUrl: '/member/feedback.html',
+        sourceType: 'system',
+        sourceId: fb.id,
+        workflow: 'feedback_update',
+        templateData: {
+          feedbackTitle: short,
+          feedbackStatus: status,
+          responseMessage: note || null
+        },
+        channels: ['in_portal', 'email']
+      });
+    } catch (err) {
+      // A notification failure must not undo a triage decision; the status
+      // change is the source of truth and is already committed.
+      console.error('Feedback update notification failed:', err.message);
+    }
   }
 
   res.json({ feedback: await db.prepare('SELECT * FROM feedback WHERE id = ?').get(fb.id) });

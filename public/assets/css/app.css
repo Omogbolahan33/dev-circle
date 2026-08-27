@@ -359,6 +359,18 @@
 .breadcrumb a { color: var(--ash); text-decoration: none; }
 .breadcrumb a:hover { color: var(--white); text-decoration: none; }
 .breadcrumb .sep { color: var(--ash-dim); opacity: 0.5; }
+/* The page title, when it lives in the breadcrumb on a small screen. */
+.breadcrumb .current { color: var(--text-1); font-weight: var(--fw-semibold); }
+
+/* On a phone the big desktop page header is replaced by the breadcrumb
+   carrying the title — a hero-sized heading is wasted width on a 360px
+   column and pushes the content down. Mark the large header
+   .hide-on-mobile and add the title span inside the breadcrumb. */
+.breadcrumb .mobile-current { display: none; }
+@media (max-width: 600px) {
+  .breadcrumb .mobile-current { display: inline; }
+  .hide-on-mobile { display: none !important; }
+}
 
 .page-head-row {
   display: flex;
