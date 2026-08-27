@@ -71,14 +71,25 @@
   border-radius: var(--r-sm);
 }
 
-.option-row { display: flex; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-2); }
+.option-item { margin-bottom: var(--sp-2); }
+.option-row { display: flex; align-items: center; gap: var(--sp-2); }
 .option-row input { flex: 1; }
 .option-row .handle { color: var(--ash-dim); font-family: var(--font-mono); font-size: var(--fs-xs); width: 18px; }
-/* A card option is two lines in the editor: the word, and the subtext
-   under it, set smaller and quieter so the pair reads the way the member
-   will read it */
-.option-fields { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; }
+/* An option is its word. The line under it is not a field in every row —
+   it is opened with the pen, and once written it reads the way the member
+   will read it: smaller, quieter, one line */
+.option-fields { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 0; }
 .option-row .option-fields input { flex: none; width: 100%; }
+.option-desc-toggle { width: 24px; height: 24px; font-size: var(--fs-sm); }
+.option-desc-toggle.on { color: var(--cd-blue); }
+.option-desc-preview {
+  display: block; width: 100%; padding: 0; border: 0; background: none;
+  text-align: left; color: var(--ash-dim); font-size: var(--fs-sm); line-height: 1.4;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer;
+}
+.option-desc-preview:hover { color: var(--ash); }
+.option-desc-wrap { display: none; margin: 4px 0 0 26px; }
+.option-desc-wrap.open { display: block; }
 .option-subtext { font-size: var(--fs-sm); }
 .exclusive-flag { font-size: 10px; padding: 2px var(--sp-2); border-radius: var(--r-sm); color: var(--ash-dim); border: 1px solid var(--line); }
 .exclusive-flag.on { color: var(--gold-ink); border-color: var(--cd-gold); background: var(--gold-dim); }

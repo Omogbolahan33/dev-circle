@@ -46,6 +46,12 @@ const QuestionBuilder = (() => {
     // walks their own branches.
     let previewAnswers = {};
 
+    // Which option description is open for editing. The list redraws as a
+    // whole the moment anything in it changes, so the open row has to outlive
+    // the redraw — keyed by the question and the option's place in its list.
+    const descExpanded = new Set();
+    const descKey = (questionId, list, i) => `${questionId}|${list}|${i}`;
+
     // Whatever the page calls the thing being built, for the preview's heading.
     if (!opts.title) opts.title = () => '';
 
@@ -222,24 +228,37 @@ const QuestionBuilder = (() => {
                 : option;
               const subtext = isCards && option && typeof option === 'object'
                 ? (option.subtext || '') : '';
+              const descOpen = isCards && descExpanded.has(descKey(question.id, list, i));
               return `
-              <div class="option-row" data-list="${list}" data-option="${i}">
-                <span class="handle">${i + 1}</span>
-                <div class="option-fields">
-                  <input type="text" class="input option-word" value="${escapeHtml(word)}" placeholder="Option ${i + 1}">
+              <div class="option-item" data-list="${list}" data-option="${i}">
+                <div class="option-row">
+                  <span class="handle">${i + 1}</span>
+                  <div class="option-fields">
+                    <input type="text" class="input option-word" value="${escapeHtml(word)}" placeholder="Option ${i + 1}">
+                    ${isCards && subtext ? `
+                    <button type="button" class="option-desc-preview" data-toggle-desc
+                            title="The line the member reads under this option — click to edit">
+                      ${escapeHtml(subtext)}</button>` : ''}
+                  </div>
                   ${isCards ? `
-                  <input type="text" class="input option-subtext" maxlength="300" value="${escapeHtml(subtext)}"
-                         placeholder="Subtext — text, [link](https://…) or ![image](https://…)">` : ''}
-                </div>
-                ${question.type === 'multi_choice' && list === 'options' ? `
+                  <button type="button" class="icon-btn option-desc-toggle${subtext ? ' on' : ''}"
+                          data-toggle-desc aria-label="Add or edit the line shown under this option"
+                          title="A line under this option as the member reads it — words, a link, a picture">✎</button>` : ''}
+                  ${question.type === 'multi_choice' && list === 'options' ? `
                   <button class="exclusive-flag${(question.exclusive_options || []).includes(word) ? ' on' : ''}"
                           data-exclusive="${i}" title="Cannot be picked with anything else">only</button>` : ''}
-                <button class="icon-btn" data-drop-option="${i}" aria-label="Remove option">×</button>
+                  <button class="icon-btn" data-drop-option="${i}" aria-label="Remove option">×</button>
+                </div>
+                ${isCards ? `
+                <div class="option-desc-wrap${descOpen ? ' open' : ''}">
+                  <input type="text" class="input option-subtext" maxlength="300" value="${escapeHtml(subtext)}"
+                         placeholder="Shown under the option — text, [link](https://…) or ![image](https://…)">
+                </div>` : ''}
               </div>`;
             }).join('')}
           </div>
           <button class="btn btn-sm btn-ghost mt-2" data-add-option="${list}">+ Add option</button>
-          ${isCards ? '<p class="hint">Subtext sits under the option as the member reads it — a sentence, a link, or a picture.</p>' : ''}
+          ${isCards ? '<p class="hint">The ✎ beside an option adds the line the member reads under it — a sentence, a link, or a picture.</p>' : ''}
         </div>`;
 
       switch (question.type) {
@@ -695,9 +714,10 @@ const QuestionBuilder = (() => {
 
       // Options, rows and columns
       const isCards = question.type === 'choice' || question.type === 'multi_choice';
-      cardEl.querySelectorAll('.option-row').forEach(row => {
-        const list = row.dataset.list;
-        const i = Number(row.dataset.option);
+      cardEl.querySelectorAll('.option-item').forEach(item => {
+        const list = item.dataset.list;
+        const i = Number(item.dataset.option);
+        const row = item.querySelector('.option-row');
 
         const wordOf = () => isCards
           ? (question[list][i] && typeof question[list][i] === 'object'
@@ -709,6 +729,27 @@ const QuestionBuilder = (() => {
           }
           return question[list][i];
         };
+
+        // The line under an option is opened with the pen rather than sitting
+        // there in every row: the member meets it only if it was written, and
+        // the editor meets it only if it is opened.
+        const key = descKey(question.id, list, i);
+        const openDesc = () => {
+          // One open editor at a time: opening a line closes the one already
+          // open, the way the pen is a single thing in the author's hand
+          for (const open of [...descExpanded]) if (open !== key) descExpanded.delete(open);
+          descExpanded.add(key);
+          redraw();
+          const now = el.questions.querySelector(`.q-card[data-index="${index}"]`);
+          now?.querySelector(`.option-item[data-list="${list}"][data-option="${i}"] .option-subtext`)?.focus();
+        };
+        const closeDesc = () => { descExpanded.delete(key); redraw(); };
+
+        row.querySelectorAll('[data-toggle-desc]').forEach(toggle => {
+          toggle.addEventListener('click', () => {
+            if (descExpanded.has(key)) closeDesc(); else openDesc();
+          });
+        });
 
         row.querySelector('.option-word').addEventListener('input', e => {
           const before = wordOf();
@@ -722,12 +763,16 @@ const QuestionBuilder = (() => {
           touch();
         });
 
-        row.querySelector('.option-subtext')?.addEventListener('input', e => {
+        item.querySelector('.option-subtext')?.addEventListener('input', e => {
           asCard().subtext = e.target.value;
           touch();
         });
+        item.querySelector('.option-subtext')?.addEventListener('keydown', e => {
+          if (e.key === 'Enter') { e.preventDefault(); closeDesc(); }
+        });
 
         row.querySelector('[data-drop-option]')?.addEventListener('click', () => {
+          descExpanded.delete(key);
           question[list].splice(i, 1);
           redraw();
         });

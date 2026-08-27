@@ -196,7 +196,7 @@ test('the definition change hook fires when a question is added', () => {
   assert.equal(changes, 1, 'the page has to be told its form changed');
 });
 
-test('a choice option offers a line under it for its subtext', () => {
+test('a choice option offers its line with a pen, and a written one reads as a quiet line', () => {
   const { builder, el } = build([{
     id: 'q1', type: 'choice', text: 'Which environment?',
     options: [{ label: 'Sandbox' }, { label: 'Production', subtext: 'Live traffic' }]
@@ -204,9 +204,16 @@ test('a choice option offers a line under it for its subtext', () => {
   builder.render();
   const html = el.questions.innerHTML;
 
-  assert.ok(html.includes('option-subtext'), 'a card option has its subtext line');
-  assert.ok(html.includes('Live traffic'), 'the written subtext stays editable');
-  assert.ok(html.includes('Subtext'), 'the line says what it is for');
+  assert.ok(html.includes('option-desc-toggle'), 'each card option offers its pen');
+  assert.ok(html.includes('option-desc-preview'), 'the written subtext reads under the option');
+  assert.ok(html.includes('Live traffic'), 'the written subtext stays');
+  assert.ok(html.includes('option-subtext'), 'the editor for the line is there, waiting to be opened');
+  assert.ok(!/option-desc-wrap open/.test(html), 'no editor is open until it is asked for');
+
+  // A dropdown option is a word and stays one: no pen, no line
+  const { builder: b2, el: plain } = build([{ id: 'q1', type: 'dropdown', text: 'Where?', options: ['NG', 'KE'] }]);
+  b2.render();
+  assert.ok(!plain.questions.innerHTML.includes('option-desc-toggle'), 'a dropdown keeps its options plain');
 });
 
 test('branching on an answer is drawn where it is allowed, and nowhere else', () => {
