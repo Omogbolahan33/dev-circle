@@ -208,6 +208,7 @@ test('a choice option offers its line with a pen, and a written one reads as a q
   assert.ok(html.includes('option-desc-preview'), 'the written subtext reads under the option');
   assert.ok(html.includes('Live traffic'), 'the written subtext stays');
   assert.ok(html.includes('option-subtext'), 'the editor for the line is there, waiting to be opened');
+  assert.ok(html.includes('data-attach-subtext'), 'the editor offers a picture from the device');
   assert.ok(!/option-desc-wrap open/.test(html), 'no editor is open until it is asked for');
 
   // A dropdown option is a word and stays one: no pen, no line

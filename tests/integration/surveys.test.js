@@ -304,7 +304,8 @@ test('an option can carry a line under it — text, a link, a picture — and th
         text: 'Which environment do you use most?',
         options: [
           { label: 'Sandbox', subtext: 'Staging for tests — see [the docs](https://example.com/sandbox)' },
-          { label: 'Production', subtext: 'Live traffic · ![the flow](https://example.com/flow.png)' }
+          { label: 'Production', subtext: 'Live traffic · ![the flow](https://example.com/flow.png)' },
+          { label: 'Both', subtext: 'Pick one · ![the diagram](/uploads/the-diagram-ab12cd34ef56.png)' }
         ]
       },
       { id: 'q2', type: 'text', text: 'Anything else?', required: false }
@@ -318,6 +319,23 @@ test('an option can carry a line under it — text, a link, a picture — and th
     .questions.find(q => q.id === 'q1');
   assert.equal(served.options[1].subtext, 'Live traffic · ![the flow](https://example.com/flow.png)',
     'the subtext goes out as it was written');
+  assert.equal(served.options[2].subtext, 'Pick one · ![the diagram](/uploads/the-diagram-ab12cd34ef56.png)',
+    'a picture uploaded from the device goes out the same way');
+
+  // and an address that is neither a web address nor one of the platform's
+  // uploads is refused at save, with the option named
+  const notOurs = await create({
+    status: 'draft',
+    questions: [{
+      id: 'q1', type: 'choice', text: 'Pick',
+      options: [
+        { label: 'A', subtext: '![x](/etc/passwd)' },
+        { label: 'B' }
+      ]
+    }]
+  });
+  assert.equal(notOurs.status, 400, JSON.stringify(notOurs.body));
+  assert.match(notOurs.body.error, /Option "A"/);
 
   const done = await respond(survey, token, { q1: 'Production' });
   assert.equal(done.status, 200, JSON.stringify(done.body));

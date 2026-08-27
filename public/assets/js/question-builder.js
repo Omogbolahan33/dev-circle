@@ -258,8 +258,12 @@ const QuestionBuilder = (() => {
                 </div>
                 ${isCards ? `
                 <div class="option-desc-wrap${descOpen ? ' open' : ''}">
-                  <input type="text" class="input option-subtext" maxlength="300" value="${escapeHtml(subtext)}"
-                         placeholder="Shown under the option — text, [link](https://…) or ![image](https://…)">
+                  <div class="option-desc-edit">
+                    <input type="text" class="input option-subtext" maxlength="300" value="${escapeHtml(subtext)}"
+                           placeholder="Shown under the option — text, [link](https://…), or a picture with ＋ picture">
+                    <button type="button" class="btn btn-sm btn-ghost option-attach" data-attach-subtext
+                            title="Upload a picture from your device — it is served from here, and its words come from the file name">＋ picture</button>
+                  </div>
                 </div>` : ''}
               </div>`;
             }).join('')}
@@ -776,6 +780,21 @@ const QuestionBuilder = (() => {
           if (e.key === 'Enter') { e.preventDefault(); closeDesc(); }
         });
 
+        item.querySelector('[data-attach-subtext]')?.addEventListener('click', () => {
+          const picker = document.createElement('input');
+          picker.type = 'file';
+          picker.accept = 'image/png,image/jpeg,image/gif,image/webp';
+          picker.style.display = 'none';
+          picker.addEventListener('change', () => {
+            const file = picker.files && picker.files[0];
+            if (picker.parentNode) picker.parentNode.removeChild(picker);
+            if (!file) return;
+            attachSubtextPicture(file, item.querySelector('.option-subtext'));
+          });
+          document.body.appendChild(picker);
+          picker.click();
+        });
+
         row.querySelector('[data-drop-option]')?.addEventListener('click', () => {
           descExpanded.delete(key);
           question[list].splice(i, 1);
@@ -963,6 +982,31 @@ const QuestionBuilder = (() => {
       // and touch the rest of it uses — so an extension cannot get the two
       // confused and leave the preview showing the previous state.
       if (opts.bindExtra) opts.bindExtra(cardEl, question, index, { redraw, touch });
+    }
+
+    // A picture under an option, straight from the author's device. It is
+    // uploaded the same way a brand asset is — the bytes decide what it is,
+    // it is served from here under the name they earned — and lands in the
+    // line as the image it is, with the file name as the words for the
+    // people who cannot see it.
+    function attachSubtextPicture(file, input) {
+      if (!input) return;
+
+      new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result).split(',')[1]);
+        reader.onerror = () => reject(new Error('That picture could not be read'));
+        reader.readAsDataURL(file);
+      })
+        .then(base64 => api.post('/admin/uploads', { file: base64, kind: 'image', filename: file.name }))
+        .then(({ asset }) => {
+          const words = String(file.name || '').replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' ').trim() || 'A picture';
+          const current = input.value.replace(/\s+$/, '');
+          input.value = (current ? current + ' ' : '') + `![${words}](${asset.path})`;
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+          showToast('Picture added — it is served from here');
+        })
+        .catch(err => showToast(err.message || 'The picture could not be uploaded', 'error'));
     }
 
     function firstValue(source) {

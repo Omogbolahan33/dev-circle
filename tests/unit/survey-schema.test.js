@@ -84,6 +84,41 @@ test('a link under an option that is not a web address is refused, with the opti
   assert.ok(messages(result).some(m => /Option "B"/.test(m) && /http:\/\/? or https:\/\//.test(m)));
 });
 
+test('a picture uploaded from the device may sit under an option, and nowhere else may', () => {
+  const stored = normalize([{
+    type: 'choice', text: 'Which?',
+    options: [
+      { label: 'A', subtext: 'See ![the flow](/uploads/flow-diagram-ab12cd34ef56.png)' },
+      { label: 'B', subtext: 'Or ![a hash named one](/uploads/3f2b8a1c9d4e4f5a8b6c7d8e9f0a1b2c.png)' }
+    ]
+  }]);
+  assert.equal(messages(stored).length, 0, 'an uploaded picture is a picture: ' + JSON.stringify(messages(stored)));
+  assert.equal(stored.questions[0].options[0].subtext, 'See ![the flow](/uploads/flow-diagram-ab12cd34ef56.png)');
+  const html = schema.linkify('See ![the flow](/uploads/flow-diagram-ab12cd34ef56.png)');
+  assert.ok(html.includes('<img class="sv-wording-img" src="/uploads/flow-diagram-ab12cd34ef56.png" alt="the flow"'),
+    'it is drawn as the image it is');
+
+  // Anything that is not a web address and not one of our uploads stays refused
+  const notOurs = normalize([{
+    type: 'choice', text: 'Which?',
+    options: [{ label: 'A' }, { label: 'B', subtext: '![x](/etc/passwd)' }]
+  }]);
+  assert.ok(messages(notOurs).some(m => /Option "B"/.test(m) && /only come from/.test(m)));
+
+  const escaped = normalize([{
+    type: 'choice', text: 'Which?',
+    options: [{ label: 'A' }, { label: 'B', subtext: '![x](/uploads/../../.env)' }]
+  }]);
+  assert.ok(messages(escaped).some(m => /Option "B"/.test(m)), 'an upload path that climbs out of the folder is not an upload');
+
+  // A link still goes only to the web — an uploaded file is a picture, not a destination
+  const asLink = normalize([{
+    type: 'choice', text: 'Which?',
+    options: [{ label: 'A' }, { label: 'B', subtext: '[open](/uploads/flow-diagram-ab12cd34ef56.png)' }]
+  }]);
+  assert.ok(messages(asLink).some(m => /Option "B"/.test(m) && /a link may only go to an http:\/\/ or https:\/\//.test(m)));
+});
+
 test('a dropdown keeps its options as words — no room under them for subtext', () => {
   const result = normalize([{
     type: 'dropdown', text: 'Which?',

@@ -218,6 +218,14 @@ const SurveySchema = (() => {
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 
+  // Where a picture in the wording may come from: the web, or this
+  // platform's own uploads — the path a picture uploaded from the builder
+  // lands at. The shape is the one uploads.js writes, nothing else, because
+  // the address of an image a member's browser fetches is a door, and this
+  // is the only door with a lock the schema can check at save time.
+  const STORED_PATH = /^\/uploads\/(?:[a-z0-9_-]+\/)*[a-z0-9]+(?:-[a-z0-9]+)*\.[a-z0-9]+$/;
+  const imageAddress = url => TEXT_FORMATS.url.test(url) || STORED_PATH.test(url);
+
   // Every link and image in a piece of wording, held to what a question is
   // allowed to say: words the member can read, an address that is a web
   // address, and — for an image — words for the people who cannot see it. A
@@ -242,8 +250,8 @@ const SurveySchema = (() => {
           at(field, `The words under the image are ${label.length} characters; keep them under ${RICH_LABEL_MAX}`);
         } else if (url.length > RICH_URL_MAX) {
           at(field, `The address of the image is ${url.length} characters long; keep it under ${RICH_URL_MAX}`);
-        } else if (!TEXT_FORMATS.url.test(url)) {
-          at(field, `The image comes from "${url}" — an image may only come from an http:// or https:// address`);
+        } else if (!imageAddress(url)) {
+          at(field, `The image comes from "${url}" — an image may only come from an http:// or https:// address, or a picture uploaded here`);
         }
       } else if (!label) {
         at(field, 'A link with nothing to click on — a link needs its words and its address');
@@ -285,10 +293,12 @@ const SurveySchema = (() => {
       const label = match[2].trim();
       const url = match[3].trim();
 
-      if (label && TEXT_FORMATS.url.test(url)) {
-        out += isImage
+      if (isImage) {
+        out += (label && imageAddress(url))
           ? `<img class="sv-wording-img" src="${htmlEscape(url)}" alt="${htmlEscape(label)}" loading="lazy">`
-          : `<a href="${htmlEscape(url)}" target="_blank" rel="noopener noreferrer">${htmlEscape(label)}</a>`;
+          : htmlEscape(match[0]);
+      } else if (label && TEXT_FORMATS.url.test(url)) {
+        out += `<a href="${htmlEscape(url)}" target="_blank" rel="noopener noreferrer">${htmlEscape(label)}</a>`;
       } else {
         out += htmlEscape(match[0]);
       }

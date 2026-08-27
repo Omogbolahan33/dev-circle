@@ -90,7 +90,10 @@
 .option-desc-preview:hover { color: var(--ash); }
 .option-desc-wrap { display: none; margin: 4px 0 0 26px; }
 .option-desc-wrap.open { display: block; }
+.option-desc-edit { display: flex; align-items: center; gap: var(--sp-2); }
+.option-desc-edit .input { flex: 1; }
 .option-subtext { font-size: var(--fs-sm); }
+.option-attach { flex-shrink: 0; white-space: nowrap; }
 .exclusive-flag { font-size: 10px; padding: 2px var(--sp-2); border-radius: var(--r-sm); color: var(--ash-dim); border: 1px solid var(--line); }
 .exclusive-flag.on { color: var(--gold-ink); border-color: var(--cd-gold); background: var(--gold-dim); }
 

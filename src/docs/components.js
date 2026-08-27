@@ -257,7 +257,7 @@ const schemas = {
 
     options: arrayOf(object({
       label: str('The word of the option — the word is what is stored in the answer'),
-      subtext: str('A line under the option, as the member reads it: text, [words](https://…) a link, ![words](https://…) an image, or a bare address. Only for choice and multi_choice', { nullable: true, example: 'See [our rate limits](https://docs.example.com/limits)' })
+      subtext: str('A line under the option, as the member reads it: text, [words](https://…) a link, ![words](https://…) an image from the web, ![words](/uploads/…) a picture uploaded from the builder, or a bare address. Only for choice and multi_choice', { nullable: true, example: 'See [our rate limits](https://docs.example.com/limits)' })
     }), 'Choices — choice, multi_choice, dropdown and ranking. Dropdown and ranking take the bare words; choice and multi_choice take a word or a card with subtext under it'),
     allow_other: bool('Offer a free-text "something else" alongside the options'),
     randomize: bool('Shuffle the options, to take the edge off order effects'),
