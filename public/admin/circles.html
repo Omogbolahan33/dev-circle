@@ -43,6 +43,57 @@
     }
     .staff-row:last-child { border-bottom: none; }
     .staff-name { flex: 1; min-width: 0; }
+
+    /* ─── Branding editor ─────────────────────────────────── */
+    .brand-preview {
+      border: 1px solid var(--line);
+      border-radius: var(--r-lg);
+      padding: var(--sp-4);
+      margin-bottom: var(--sp-4);
+      background: var(--surface-1);
+      transition: background .2s, color .2s, border-color .2s;
+    }
+    .brand-preview-accent {
+      display: inline-flex; align-items: center; gap: var(--sp-2);
+      padding: 6px 14px; border-radius: var(--r-md);
+      font-weight: var(--fw-semibold); font-size: var(--fs-sm);
+      background: var(--cd-blue); color: var(--on-accent, #fff);
+      margin-bottom: var(--sp-3);
+    }
+    .brand-preview-title { font-family: var(--font-display); font-weight: var(--fw-bold); font-size: var(--fs-lg); }
+    .brand-preview-sub { font-size: var(--fs-sm); color: var(--ash); margin-top: 2px; }
+    .brand-preview-card {
+      margin-top: var(--sp-3); padding: var(--sp-3);
+      background: var(--surface-2); border: 1px solid var(--line);
+      border-radius: var(--r-md); font-size: var(--fs-sm);
+    }
+    .brand-swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: var(--sp-3); }
+    .brand-swatch label { display: block; font-size: var(--fs-xs); color: var(--ash-dim); margin-bottom: 4px; }
+    .brand-swatch .swatch-row { display: flex; align-items: center; gap: var(--sp-2); }
+    .brand-swatch input[type="color"] {
+      width: 38px; height: 34px; padding: 2px; border: 1px solid var(--line);
+      border-radius: var(--r-sm); background: var(--surface-2); cursor: pointer;
+    }
+    .brand-swatch input[type="text"] { flex: 1; min-width: 0; }
+    .brand-asset {
+      display: flex; align-items: center; gap: var(--sp-3);
+      padding: var(--sp-3); border: 1px solid var(--line-faint);
+      border-radius: var(--r-md); margin-bottom: var(--sp-2); background: var(--surface-1);
+    }
+    .brand-asset-thumb {
+      width: 56px; height: 40px; border-radius: var(--r-sm); object-fit: cover;
+      border: 1px solid var(--line); background: var(--surface-2);
+      display: flex; align-items: center; justify-content: center;
+      font-size: var(--fs-xs); color: var(--ash-dim); flex-shrink: 0;
+    }
+    .brand-asset-meta { flex: 1; min-width: 0; }
+    .brand-asset-name { font-size: var(--fs-xs); word-break: break-all; }
+    .brand-note {
+      font-size: var(--fs-xs); color: var(--ash-dim);
+      background: var(--cd-blue-dim); border-radius: var(--r-sm);
+      padding: var(--sp-2) var(--sp-3); margin-bottom: var(--sp-4);
+    }
+    .brand-locked { opacity: .6; pointer-events: none; }
   </style>
 </head>
 <body>
@@ -135,8 +186,134 @@
   </div>
 </aside>
 
+<!-- ─── Branding ───────────────────────────────────────── -->
+<aside class="drawer drawer-lg" id="brandDrawer">
+  <div class="drawer-head">
+    <div>
+      <div class="drawer-title">Circle branding</div>
+      <div class="drawer-sub" id="brandCircleName"></div>
+    </div>
+    <button class="icon-btn" onclick="Shell.closeDrawer('brandDrawer')">×</button>
+  </div>
+  <div class="drawer-body" id="brandBody">
+    <div class="brand-note" id="brandPermNote" style="display:none">
+      Your role in this circle can view its branding but not change it. Ask a
+      global admin or a role with “Manage circles” to edit.
+    </div>
+
+    <div class="brand-preview" id="brandPreview">
+      <span class="brand-preview-accent" id="bpButton">Primary action</span>
+      <div class="brand-preview-title" id="bpTitle">The look of this workspace</div>
+      <div class="brand-preview-sub" id="bpSub">Everyone in this circle — admins, members and participants — sees these colours, type and imagery across the portal.</div>
+      <div class="brand-preview-card" id="bpCard">
+        Cards, surfaces and lines follow the canvas you set.
+      </div>
+    </div>
+
+    <details class="theme-section" id="brand-sec-colours" data-bsection="colours" open>
+      <summary>
+        <span class="section-dot" aria-hidden="true"></span>
+        <span>Colours</span>
+        <span class="section-sub">Accent, canvas, text and surfaces</span>
+        <span class="section-caret" aria-hidden="true">›</span>
+      </summary>
+      <div class="section-body">
+        <div class="brand-swatches" id="brandSwatches"></div>
+        <p class="hint">Contrast is checked as you work. A combination the member cannot read is refused on save, not silently published. Leave the canvas and text empty to follow the member's light or dark setting.</p>
+      </div>
+    </details>
+
+    <details class="theme-section" id="brand-sec-type" data-bsection="type">
+      <summary>
+        <span class="section-dot" aria-hidden="true"></span>
+        <span>Type</span>
+        <span class="section-sub">The typeface across the portal</span>
+        <span class="section-caret" aria-hidden="true">›</span>
+      </summary>
+      <div class="section-body">
+        <div class="field">
+          <label class="label">Typeface</label>
+          <select class="input" id="brandFont"></select>
+        </div>
+      </div>
+    </details>
+
+    <details class="theme-section" id="brand-sec-shape" data-bsection="shape">
+      <summary>
+        <span class="section-dot" aria-hidden="true"></span>
+        <span>Shape &amp; wash</span>
+        <span class="section-sub">Corner radius and background wash</span>
+        <span class="section-caret" aria-hidden="true">›</span>
+      </summary>
+      <div class="section-body">
+        <div class="field-row">
+          <div class="field">
+            <label class="label">Corners</label>
+            <select class="input" id="brandCorner"></select>
+          </div>
+          <div class="field">
+            <label class="label">Wash</label>
+            <select class="input" id="brandBackground"></select>
+          </div>
+        </div>
+      </div>
+    </details>
+
+    <details class="theme-section" id="brand-sec-images" data-bsection="images">
+      <summary>
+        <span class="section-dot" aria-hidden="true"></span>
+        <span>Images</span>
+        <span class="section-sub">Wordmark and background</span>
+        <span class="section-caret" aria-hidden="true">›</span>
+      </summary>
+      <div class="section-body">
+        <div class="field">
+          <label class="label">Logo</label>
+          <div class="brand-asset" id="brandLogoAsset">
+            <span class="brand-asset-thumb" id="brandLogoThumb">No logo</span>
+            <div class="brand-asset-meta">
+              <div class="brand-asset-name dim" id="brandLogoName">Shown in the navigation wherever this circle is the workspace.</div>
+            </div>
+            <label class="btn btn-sm btn-secondary">Upload<input type="file" accept="image/png,image/jpeg,image/gif,image/webp" hidden data-brand-upload="logo_url"></label>
+            <button class="btn btn-sm btn-ghost" data-brand-clear="logo_url" style="display:none">Remove</button>
+          </div>
+        </div>
+
+        <div class="field">
+          <label class="label">Background image</label>
+          <div class="brand-asset" id="brandBgAsset">
+            <span class="brand-asset-thumb" id="brandBgThumb">None</span>
+            <div class="brand-asset-meta">
+              <div class="brand-asset-name dim" id="brandBgName">A photograph behind the whole portal. A scrim keeps text legible.</div>
+            </div>
+            <label class="btn btn-sm btn-secondary">Upload<input type="file" accept="image/png,image/jpeg,image/gif,image/webp" hidden data-brand-upload="background_image"></label>
+            <button class="btn btn-sm btn-ghost" data-brand-clear="background_image" style="display:none">Remove</button>
+          </div>
+          <div class="field-row mt-3" id="bgOptions" style="display:none">
+            <div class="field">
+              <label class="label">How it sits</label>
+              <select class="input" id="brandBgFit"></select>
+            </div>
+            <label class="label" style="flex:1">Scrim strength
+              <input type="range" class="input" id="brandBgOverlay" min="0" max="0.95" step="0.05" value="0.55">
+            </label>
+          </div>
+        </div>
+      </div>
+    </details>
+  </div>
+  <div class="drawer-foot">
+    <button class="btn btn-ghost" id="brandReset" onclick="resetBrand()">Reset to product defaults</button>
+    <span style="flex:1"></span>
+    <button class="btn btn-secondary" onclick="Shell.closeDrawer('brandDrawer')">Close</button>
+    <button class="btn btn-primary" id="brandSave" onclick="saveBrand(this)">Save branding</button>
+  </div>
+</aside>
+
 <script src="/assets/js/api.js"></script>
 <script src="/assets/js/shell.js"></script>
+<script src="/assets/js/survey-theme.js"></script>
+<script src="/assets/js/brand.js"></script>
 <script>
   Shell.admin(null);
 
@@ -178,6 +355,7 @@
           </div>
           <div class="circle-actions">
             ${c.id === here ? '' : `<button class="btn btn-sm btn-secondary" onclick="goTo('${c.id}')">Switch to</button>`}
+            <button class="btn btn-sm btn-secondary" onclick="openBrand('${c.id}')">Branding</button>
             <button class="btn btn-sm btn-secondary" onclick="openStaff('${c.id}')">Access</button>
           </div>
         </article>`).join('');
@@ -275,6 +453,297 @@
       showToast(err.message, 'error');
     }
   }
+
+  // ─── Branding ──────────────────────────────────────────
+  // The look of the whole workspace for everyone in it. The editor works on a
+  // local draft; saving is what puts it in front of members, and the same
+  // contrast rules a survey is held to are enforced on the way in.
+
+  let brandState = { circleId: null, theme: {}, canBrand: false, loaded: false };
+
+  const COLOUR_FIELDS = [
+    { key: 'accent', label: 'Accent (buttons, links)' },
+    { key: 'background_color', label: 'Canvas' },
+    { key: 'text_color', label: 'Text' },
+    { key: 'muted_color', label: 'Muted text' },
+    { key: 'surface_color', label: 'Cards & surfaces' }
+  ];
+  const PRESETS = ['#107EBC', '#0D9488', '#8B7CF6', '#E11D48', '#16A34A', '#E6B473', '#945A39', '#1A1A2E'];
+
+  function brandOptionList(map, current) {
+    // The engine's catalogues come in two shapes: FONTS is a map of
+    // { label, … }, while BACKGROUNDS/CORNERS/FITS are plain value arrays.
+    const entries = Array.isArray(map)
+      ? map.map(v => [v, { label: v[0].toUpperCase() + v.slice(1) }])
+      : Object.entries(map);
+    return entries.map(([value, f]) =>
+      `<option value="${value}" ${value === current ? 'selected' : ''}>${escapeHtml(f.label || value)}</option>`).join('');
+  }
+
+  function renderSwatches() {
+    const t = brandState.theme;
+    document.getElementById('brandSwatches').innerHTML = COLOUR_FIELDS.map(f => {
+      const value = t[f.key] || SurveyTheme.resolve(t)[f.key] || '#107EBC';
+      return `
+        <div class="brand-swatch">
+          <label>${f.label}</label>
+          <div class="swatch-row">
+            <input type="color" value="${value}" data-colour="${f.key}">
+            <input type="text" class="input" value="${t[f.key] || ''}" placeholder="default"
+                   data-colour-text="${f.key}" maxlength="7">
+          </div>
+        </div>`;
+    }).join('') + `
+      <div class="brand-swatch" style="grid-column:1/-1">
+        <label>Quick accents</label>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          ${PRESETS.map(c => `<button type="button" class="brand-preset" data-preset="${c}"
+            style="width:26px;height:26px;border-radius:6px;border:1px solid var(--line);background:${c};cursor:pointer"
+            title="${c}" aria-label="${c}"></button>`).join('')}
+        </div>
+      </div>`;
+  }
+
+  function renderAssets() {
+    const t = brandState.theme;
+
+    const logo = t.logo_url;
+    const logoThumb = document.getElementById('brandLogoThumb');
+    if (logo) { logoThumb.outerHTML = `<img class="brand-asset-thumb" id="brandLogoThumb" src="${escapeHtml(logo)}" alt="">`; }
+    else { logoThumb.outerHTML = `<span class="brand-asset-thumb" id="brandLogoThumb">No logo</span>`; }
+    document.getElementById('brandLogoName').textContent = logo ? logo.split('/').pop() : 'Shown in the navigation wherever this circle is the workspace.';
+    document.getElementById('brandLogoName').className = 'brand-asset-name' + (logo ? ' mono' : ' dim');
+    document.querySelector('[data-brand-clear="logo_url"]').style.display = logo ? '' : 'none';
+
+    const bg = t.background_image;
+    const bgThumb = document.getElementById('brandBgThumb');
+    if (bg) { bgThumb.outerHTML = `<img class="brand-asset-thumb" id="brandBgThumb" src="${escapeHtml(bg)}" alt="" style="object-fit:cover">`; }
+    else { bgThumb.outerHTML = `<span class="brand-asset-thumb" id="brandBgThumb">None</span>`; }
+    document.getElementById('brandBgName').textContent = bg ? bg.split('/').pop() : 'A photograph behind the whole portal. A scrim keeps text legible.';
+    document.getElementById('brandBgName').className = 'brand-asset-name' + (bg ? ' mono' : ' dim');
+    document.querySelector('[data-brand-clear="background_image"]').style.display = bg ? '' : 'none';
+    document.getElementById('bgOptions').style.display = bg ? 'flex' : 'none';
+    if (bg) {
+      document.getElementById('brandBgFit').value = t.background_fit || 'cover';
+      document.getElementById('brandBgOverlay').value = t.background_overlay ?? 0.55;
+    }
+  }
+
+  // Paint the preview from the current draft — the same toCSS the shell uses,
+  // so what an editor sees is what members get.
+  function previewBrand() {
+    const resolved = SurveyTheme.resolve(brandState.theme);
+    const vars = SurveyTheme.toCSS(resolved);
+    const preview = document.getElementById('brandPreview');
+    for (const [name, value] of Object.entries(vars)) preview.style.setProperty(name, value);
+
+    const legible = SurveyTheme.legibility(resolved);
+    const issues = legible.issues || [];
+    const warnings = legible.warnings || [];
+    document.getElementById('bpTitle').textContent = issues.length
+      ? '⚠ ' + issues[0].message
+      : (warnings.length ? 'Readable, though contrast is modest' : 'The look of this workspace');
+    document.getElementById('bpTitle').style.color = issues.length ? '#b91c1c' : '';
+
+    // Remember which brand sections are open, because the swatch/asset
+    // re-render below does not touch them but the drawer is redrawn on open;
+    // mark a section's dot when it carries anything non-default.
+    const setMark = (section, on) => {
+      const el = document.getElementById(`brand-sec-${section}`);
+      if (el) el.querySelector('summary')?.toggleAttribute('data-has-custom', Boolean(on));
+    };
+    setMark('colours', ['accent', 'background_color', 'text_color', 'muted_color', 'surface_color', 'background']
+      .some(k => t[k] != null && t[k] !== ''));
+    setMark('type', t.font && t.font !== 'default');
+    setMark('shape', (t.corner && t.corner !== 'soft') || (t.background && t.background !== 'plain'));
+    setMark('images', Boolean(t.logo_url || t.background_image));
+
+    renderSwatches();
+    renderAssets();
+  }
+
+  async function openBrand(id) {
+    brandState = { circleId: id, theme: {}, canBrand: false, loaded: false };
+    const circle = circles.find(c => c.id === id);
+    document.getElementById('brandCircleName').textContent = circle ? circle.name : '';
+    Shell.openDrawer('brandDrawer');
+
+    // Controls populated once from the engine's own catalogues, so an option
+    // added there appears here without a second list to maintain.
+    document.getElementById('brandFont').innerHTML = brandOptionList(SurveyTheme.FONTS, 'default');
+    document.getElementById('brandCorner').innerHTML = brandOptionList(SurveyTheme.CORNERS, 'soft');
+    document.getElementById('brandBackground').innerHTML = brandOptionList(SurveyTheme.BACKGROUNDS, 'plain');
+    document.getElementById('brandBgFit').innerHTML = brandOptionList(SurveyTheme.FITS, 'cover');
+
+    try {
+      const detail = await api.get(`/admin/circles/${id}`);
+      brandState.canBrand = Boolean(detail.can_brand);
+      // The editor owns the stored draft (the raw theme column). `brand` on
+      // the response is the resolved look including the survey-only default,
+      // which is not what this drawer edits.
+      const raw = detail.circle.theme;
+      try { brandState.theme = raw ? JSON.parse(raw) : {}; }
+      catch { brandState.theme = {}; }
+
+      document.getElementById('brandPermNote').style.display = brandState.canBrand ? 'none' : '';
+      document.getElementById('brandSave').style.display = brandState.canBrand ? '' : 'none';
+      document.getElementById('brandReset').style.display = brandState.canBrand ? '' : 'none';
+      document.getElementById('brandBody').classList.toggle('brand-locked', !brandState.canBrand);
+
+      const t = brandState.theme;
+      document.getElementById('brandFont').value = t.font || 'default';
+      document.getElementById('brandCorner').value = t.corner || 'soft';
+      document.getElementById('brandBackground').value = t.background || 'plain';
+
+      brandState.loaded = true;
+      previewBrand();
+
+      // Open a section that already carries a brand, so the customisation is
+      // never hidden behind a collapsed heading; colours always starts open.
+      const has = (...ks) => ks.some(k => t[k] != null && t[k] !== '');
+      const openSection = (id, on) => document.getElementById(`brand-sec-${id}`)?.toggleAttribute('open', Boolean(on));
+      openSection('colours', true);
+      openSection('type', has('font'));
+      openSection('shape', has('corner', 'background'));
+      openSection('images', has('logo_url', 'background_image'));
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  }
+
+  async function uploadBrandAsset(input) {
+    const file = input.files?.[0];
+    if (!file || !brandState.canBrand) return;
+    const key = input.dataset.brandUpload;
+    try {
+      const base64 = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result).split(',')[1]);
+        reader.onerror = () => reject(new Error('That file could not be read'));
+        reader.readAsDataURL(file);
+      });
+      const { asset } = await api.post('/admin/uploads', { file: base64, kind: 'image', filename: file.name });
+      brandState.theme[key] = asset.path;
+      if (key === 'background_image' && brandState.theme.background_overlay === undefined) {
+        brandState.theme.background_overlay = 0.55;
+      }
+      previewBrand();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+    input.value = '';
+  }
+
+  async function saveBrand(button) {
+    if (!brandState.canBrand) return;
+
+    // Validate before sending; the server holds the same rules, but refusing
+    // here saves a round trip and shows the reason in the preview anyway.
+    const { theme, issues, warnings } = SurveyTheme.normalize(brandState.theme);
+    if (issues.length) {
+      showToast(issues[0].message, 'error');
+      return;
+    }
+
+    button.disabled = true;
+    try {
+      const res = await api.put(`/admin/circles/${brandState.circleId}`, { theme: theme || {} });
+      brandState.theme = res.circle.theme ? JSON.parse(res.circle.theme) : {};
+      showToast('Branding saved — everyone in this circle now sees it');
+      if (res.warnings?.length) showToast(res.warnings[0].message, 'warning');
+      previewBrand();
+      // If this is the workspace the console is in, repaint it immediately.
+      if (brandState.circleId === Auth.getCircle() && window.Brand) {
+        window.Brand.apply(res.brand || brandState.theme);
+      }
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+    button.disabled = false;
+  }
+
+  async function resetBrand() {
+    if (!brandState.canBrand) return;
+    if (!await Shell.confirm({
+      title: 'Reset branding?',
+      text: 'This circle returns to the product look. Its surveys keep any theme of their own.'
+    })) return;
+    try {
+      const res = await api.put(`/admin/circles/${brandState.circleId}`, { theme: null });
+      brandState.theme = {};
+      document.getElementById('brandFont').value = 'default';
+      document.getElementById('brandCorner').value = 'soft';
+      document.getElementById('brandBackground').value = 'plain';
+      showToast('Branding reset');
+      previewBrand();
+      if (brandState.circleId === Auth.getCircle() && window.Brand) window.Brand.clear();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  }
+
+  // ─── Editor events ─────────────────────────────────────
+  document.addEventListener('input', e => {
+    if (!brandState.loaded || !brandState.canBrand) return;
+    const t = brandState.theme;
+
+    if (e.target.matches('[data-colour]')) {
+      const key = e.target.dataset.colour;
+      t[key] = e.target.value;
+      const text = document.querySelector(`[data-colour-text="${key}"]`);
+      if (text) text.value = e.target.value;
+      previewBrand();
+    } else if (e.target.matches('[data-colour-text]')) {
+      const key = e.target.dataset.colourText;
+      const v = e.target.value.trim();
+      if (!v) delete t[key];
+      else if (/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(v)) t[key] = v;
+      else return;
+      const picker = document.querySelector(`[data-colour="${key}"]`);
+      const resolved = SurveyTheme.resolve(t)[key] || '#107EBC';
+      if (picker) picker.value = t[key] || resolved;
+      previewBrand();
+    } else if (e.target.id === 'brandBgOverlay') {
+      t.background_overlay = Number(e.target.value);
+    }
+  });
+
+  document.addEventListener('change', e => {
+    if (!brandState.loaded || !brandState.canBrand) return;
+    const t = brandState.theme;
+    if (e.target.id === 'brandFont') {
+      if (e.target.value === 'default') delete t.font; else t.font = e.target.value;
+      previewBrand();
+    } else if (e.target.id === 'brandCorner') {
+      if (e.target.value === 'soft') delete t.corner; else t.corner = e.target.value;
+      previewBrand();
+    } else if (e.target.id === 'brandBackground') {
+      if (e.target.value === 'plain') delete t.background; else t.background = e.target.value;
+      previewBrand();
+    } else if (e.target.id === 'brandBgFit') {
+      t.background_fit = e.target.value;
+    } else if (e.target.matches('[data-brand-upload]')) {
+      uploadBrandAsset(e.target);
+    }
+  });
+
+  document.addEventListener('click', e => {
+    if (!brandState.loaded || !brandState.canBrand) return;
+    const preset = e.target.closest('[data-preset]');
+    if (preset) {
+      brandState.theme.accent = preset.dataset.preset;
+      previewBrand();
+    }
+    const clear = e.target.closest('[data-brand-clear]');
+    if (clear) {
+      delete brandState.theme[clear.dataset.brandClear];
+      if (clear.dataset.brandClear === 'background_image') {
+        delete brandState.theme.background_fit;
+        delete brandState.theme.background_overlay;
+      }
+      previewBrand();
+    }
+  });
 
   load();
 </script>

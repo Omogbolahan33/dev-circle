@@ -1,5 +1,18 @@
 const { parseJSON } = require('../utils/helpers');
 
+// The API products a member may record against themselves. The integration
+// track itself (sandbox → KYB → production) is written by the Developer Hub
+// webhooks or an administrator; a member telling us which product families
+// they build against is harmless self-declaration that improves matching.
+const SELF_SERVE_PRODUCTS = ['payments', 'lending', 'identity', 'credit_scoring'];
+
+const PRODUCT_LABELS = {
+  payments: 'Payments',
+  lending: 'Lending',
+  identity: 'Identity',
+  credit_scoring: 'Credit scoring'
+};
+
 // ─── Member Readiness & Staged Task Rings ────────────────────
 // Members are required to provide key information to participate effectively:
 //   1. Profile Details (Name, Phone, Company, Work Sector)
@@ -214,5 +227,7 @@ function computeReadiness(user, consentList = []) {
 }
 
 module.exports = {
-  computeReadiness
+  computeReadiness,
+  SELF_SERVE_PRODUCTS,
+  PRODUCT_LABELS
 };

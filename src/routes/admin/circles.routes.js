@@ -93,8 +93,17 @@ router.get('/:id', requirePermission('circles.read'), async (req, res) => {
     ? Number(members[0]._total || 0)
     : (offset ? Number((await db.prepare('SELECT COUNT(*) as c FROM circle_members WHERE circle_id = ?').get(circle.id))?.c || 0) : 0);
 
+  // What the role row permits decides whether the branding editor opens. A
+  // global admin always can; everyone else is gated on circles.write.
+  const perms = req.admin.is_global
+    ? ['*']
+    : (await circles.forAdmin(req.admin)).find(c => c.id === circle.id)?.role_permissions || [];
+  const canBrand = Boolean(perms.includes('*') || perms.includes('circles.write'));
+
   res.json({
     circle,
+    brand: circles.brandOf(circle),
+    can_brand: canBrand,
     member_count,
     members: (members || []).map(({ _total, ...row }) => row),
     cohorts,
@@ -137,10 +146,14 @@ router.put('/:id', requirePermission('circles.write'), async (req, res) => {
     return res.status(403).json({ error: 'You do not have access to that circle.' });
   }
 
-  const { name, description, color, survey_theme } = req.body;
+  const { name, description, color, survey_theme, theme } = req.body;
   const updates = [];
   const params = [];
   const themeWarnings = [];
+
+  // This route already carries circles.write — the permission the role row
+  // grants or withholds — so a circle admin can rename staff but cannot
+  // rebrand unless their role says so, and a global admin always can.
 
   if (name) { updates.push('name = ?'); params.push(name); }
   if (description !== undefined) { updates.push('description = ?'); params.push(description); }
@@ -152,22 +165,47 @@ router.put('/:id', requirePermission('circles.write'), async (req, res) => {
     if (survey_theme === null) {
       updates.push('survey_theme = ?'); params.push(null);
     } else {
-      const { theme, issues, warnings } = surveyForm.themes.normalize(survey_theme);
+      const { theme: st, issues, warnings } = surveyForm.themes.normalize(survey_theme);
       if (issues.length) {
         return res.status(400).json({ error: issues[0].message, issues });
       }
       themeWarnings.push(...warnings);
-      updates.push('survey_theme = ?'); params.push(theme ? JSON.stringify(theme) : null);
+      updates.push('survey_theme = ?'); params.push(st ? JSON.stringify(st) : null);
     }
   }
 
-  if (!updates.length) return res.status(400).json({ error: 'No fields to update' });
+  // The workspace's own brand — colours, canvas, type and imagery applied to
+  // the whole portal as experienced by everyone in the circle. Validated
+  // through the same definition as survey themes, so unreadable contrasts are
+  // refused here and no stylesheet ever enters the database. Null clears it;
+  // setBrand persists its own column.
+  let brandSaved = false;
+  if (theme !== undefined) {
+    try {
+      const { warnings } = await circles.setBrand(circle.id, theme);
+      themeWarnings.push(...warnings);
+      brandSaved = true;
+    } catch (err) {
+      if (err instanceof circles.CircleError) {
+        return res.status(400).json({ error: err.message, issues: err.issues || [], warnings: err.warnings || [] });
+      }
+      throw err;
+    }
+  }
 
-  params.push(circle.id);
-  await db.prepare(`UPDATE circles SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+  if (!updates.length && !brandSaved) {
+    return res.status(400).json({ error: 'No fields to update' });
+  }
 
+  if (updates.length) {
+    params.push(circle.id);
+    await db.prepare(`UPDATE circles SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+  }
+
+  const updated = await circles.byId(circle.id);
   res.json({
-    circle: await circles.byId(circle.id),
+    circle: updated,
+    brand: circles.brandOf(updated),
     ...(themeWarnings.length ? { warnings: themeWarnings } : {})
   });
 });

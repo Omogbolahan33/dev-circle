@@ -54,12 +54,12 @@
 
     <nav class="breadcrumb mb-3">
       <a href="/member/dashboard.html">Home</a>
-      <span class="sep">/</span>
-      <span>Sessions</span>
+      <span class="sep mobile-current">/</span>
+      <span class="current mobile-current">Sessions</span>
     </nav>
 
     <header class="page-head-block mb-6">
-      <h1 class="page-title-lg">Sessions</h1>
+      <h1 class="page-title-lg hide-on-mobile">Sessions</h1>
       <p class="lede">
         Office hours, workshops and 1-on-1s you are invited to. Times are West Africa Time.
       </p>
@@ -82,7 +82,7 @@
           Sessions are scheduled against the days and times you chose. If something is
           booked outside them, we flag it here rather than assuming you are free.
         </p>
-        <a class="btn btn-secondary" href="/member/profile.html?redirect=/member/sessions.html#availability">Change when you are available</a>
+        <a class="btn btn-secondary" href="/member/profile.html?redirect=/member/sessions.html#availability" data-icon="sessions" data-icon-size="15">Change when you are available</a>
       </div>
     </section>
 
@@ -91,6 +91,8 @@
 
 <script src="/assets/js/api.js"></script>
 <script src="/assets/js/shell.js"></script>
+<script src="/assets/js/survey-theme.js"></script>
+<script src="/assets/js/brand.js"></script>
 <script>
   Shell.portal('sessions');
 
@@ -136,7 +138,7 @@
                   </div>` : ''}
                 ${s.survey_id ? `
                   <a class="btn btn-sm btn-primary mt-4" href="/member/survey.html?id=${s.survey_id}">
-                    Open the survey${s.survey_title ? ': ' + escapeHtml(s.survey_title) : ''}
+                    ${icon('surveys', 14)} Open the survey${s.survey_title ? ': ' + escapeHtml(s.survey_title) : ''}
                   </a>` : ''}
               </div>
             </article>`;

@@ -2,6 +2,7 @@ const config = require('../../config');
 const dbContext = require('../../db/context');
 const { logger } = require('../../utils/logger');
 const { renderTemplate } = require('./templates');
+const { resolveWorkflow } = require('./workflows');
 const TermiiEmailProvider = require('./providers/termii');
 const SimpuEmailProvider = require('./providers/simpu');
 const CustomerIoEmailProvider = require('./providers/customerio');
@@ -397,7 +398,11 @@ class EmailService {
   }
 
   /**
-   * Adapts a generic notification dispatch (from notifications service) into an email.
+   * Adapts a notification dispatch (from the notifications service) into a
+   * branded email. The template and its data are resolved in one place —
+   * workflows.js — so a session announcement uses the session template (not
+   * the survey one), a gift email never renders "undefined", and a sign-in
+   * code uses the code template, regardless of which category the caller used.
    */
   async sendNotificationEmail({ user, message }) {
     const to = message.to || user.email;
@@ -405,53 +410,19 @@ class EmailService {
       return { status: 'failed', ref: null, error: 'No email address on file for user' };
     }
 
-    const category = message.category || 'platform_updates';
-    let template = 'generic';
-    let templateData = {
-      recipientName: user.name || null,
-      title: message.title,
-      body: message.body,
-      actionUrl: message.action_url
-    };
-
-    if (category === 'survey_invites') {
-      template = 'survey_invite';
-      templateData.surveyTitle = message.title.replace(/^(You're invited:\s*|Invited:\s*)/i, '');
-      templateData.surveyDescription = message.body;
-      templateData.surveyUrl = message.action_url || `${config.appUrl}/member/surveys.html`;
-    } else if (category === 'survey_reminders') {
-      template = 'survey_reminder';
-      templateData.surveyTitle = message.title.replace(/^Reminder:\s*/i, '');
-      templateData.surveyUrl = message.action_url || `${config.appUrl}/member/surveys.html`;
-    } else if (category === 'gift_notifications') {
-      template = 'gift_claimed';
-      templateData.giftName = message.title.replace(/^Gift claimed:\s*/i, '');
-    } else if (category === 'feedback_updates') {
-      template = 'feedback_update';
-      templateData.feedbackTitle = message.title;
-      templateData.responseMessage = message.body;
-      templateData.feedbackUrl = message.action_url;
-    } else if (category === 'login_code' || String(message.title || '').toLowerCase().includes('sign-in code')) {
-      template = 'login_code';
-      const match = String(message.title || message.body || '').match(/\b(\d{6})\b/);
-      templateData.code = match ? match[1] : '';
-    } else {
-      template = 'blast';
-      templateData.content = message.body;
-      templateData.subject = message.title;
-      templateData.actionText = message.action_url ? 'View in Portal' : null;
-    }
+    const { template, subject, templateData } = resolveWorkflow(message, user);
 
     return this.send({
       to,
-      subject: message.title,
+      subject,
       template,
       templateData,
-      category,
+      category: message.category || 'platform_updates',
       actionUrl: message.action_url,
       metadata: {
         notificationId: message.notification_id,
-        userId: user.id
+        userId: user.id,
+        workflow: message.workflow || null
       }
     });
   }

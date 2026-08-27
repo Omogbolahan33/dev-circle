@@ -403,7 +403,11 @@ const paths = {
             best_streak: int('Longest streak reached')
           }),
           unread_notifications: int('Unread items in the portal inbox'),
-          readiness: ref('Readiness')
+          readiness: ref('Readiness'),
+          product_catalog: arrayOf(object({
+            key: str('Product family key'),
+            label: str('Display label')
+          }), 'API products a member may record themselves')
         }), {
           user: MEMBER_EXAMPLE,
           cohorts: [{ id: 'c1', name: 'All Members', type: 'system', color: '#107EBC' }],
@@ -428,14 +432,24 @@ const paths = {
       operationId: 'updateProfile',
       summary: 'Update the signed-in member\'s profile',
       description: [
-        'Only the fields present in the body are touched. A phone number is stored twice: as',
-        'the member wrote it, and in the canonical E.164 form whose **last six digits are half',
-        'their credential** — so changing it here changes what they sign in with, and a number',
-        'we cannot read is refused outright.'
+        'Only the fields present in the body are touched.',
+        '',
+        '**Locked after registration:** the phone number is half the sign-in credential — its',
+        'last six digits are what a participant enters with their email — so once a number is on',
+        'the account it cannot be changed from here; sending a *different* number returns 403. An',
+        'account that arrived without one (Developer Hub SSO, landing page, import) may still SET',
+        'its number once, which is the rescue path that makes the account signable-into. Email,',
+        'API stage (sandbox/production), KYB status and circle/cohort memberships are not editable',
+        'by the member at all — they are written by the Developer Hub webhooks or an administrator.',
+        '',
+        '**api_products** is the one integration fact a member self-declares: which product',
+        'families they build against. Only the known families (payments, lending, identity,',
+        'credit_scoring) are accepted; unknown values are rejected with 400. A number we cannot',
+        'read is also refused outright.'
       ].join('\n'),
       requestBody: jsonBody(object({
         name: str('Full name'),
-        phone: str('Phone number, however they write it'),
+        phone: str('Only accepted when no number is set yet; afterwards locked (403)'),
         company: str('Employer'),
         work_sector: str('Industry'),
         preferred_channels: arrayOf({ type: 'string', enum: CHANNELS }, 'Channels they prefer'),
@@ -445,7 +459,7 @@ const paths = {
         date_of_birth: str('YYYY-MM-DD'),
         gender: str('Self-reported'),
         location_state: str('Nigerian state'),
-        api_products: arrayOf({ type: 'string' }, 'Product families they integrate against')
+        api_products: arrayOf({ type: 'string', enum: ['payments', 'lending', 'identity', 'credit_scoring'] }, 'Product families they build against')
       }), {
         name: 'Chidi Nwosu',
         phone: '0803 555 0142',
@@ -455,9 +469,12 @@ const paths = {
         api_products: ['lending', 'payments']
       }),
       responses: {
-        200: json('The updated profile.', object({ user: ref('Member') }), { user: MEMBER_EXAMPLE }),
+        200: json('The updated profile.', object({ user: ref('Member'), readiness: ref('Readiness') }), { user: MEMBER_EXAMPLE }),
         400: json('Nothing to update, or a value was rejected.', ref('Error'), {
           error: 'That is not a phone number we can read.'
+        }),
+        403: json('A locked field was sent — e.g. changing an already-registered phone number.', ref('Error'), {
+          error: 'Your phone number cannot be changed after registration — it is what you sign in with. Contact support if you have a new number and we will verify and update it for you.'
         })
       }
     })

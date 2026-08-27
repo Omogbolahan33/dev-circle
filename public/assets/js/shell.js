@@ -40,7 +40,15 @@ const ICONS = {
   chevron:    '<path d="m9 18 6-6-6-6"/>',
   logout:     '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5M21 12H9"/>',
   profile:    '<circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"/>',
-  home:       '<path d="m3 10 9-7 9 7v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/>'
+  home:       '<path d="m3 10 9-7 9 7v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/>',
+  // Action icons for buttons and links that were plain text.
+  send:       '<path d="m22 2-7 20-4-9-9-4 20-7z"/><path d="M22 2 11 13"/>',
+  edit:       '<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>',
+  check:      '<path d="M20 6 9 17l-5-5"/>',
+  arrowRight: '<path d="M5 12h14M12 5l7 7-7 7"/>',
+  arrowLeft:  '<path d="M19 12H5M12 19l-7-7 7-7"/>',
+  shieldCheck:'<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/>',
+  package:    '<path d="m7.5 4.3 9 5.2"/><path d="M21 16V8a2 2 0 0 0-1-1.7l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.7l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.3 7 12 12l8.7-5M12 22V12"/>'
 };
 
 function icon(name, size = 16) {
@@ -131,6 +139,8 @@ const Shell = {
     this._bindKeys(true);
     this._loadCircles();
     this._loadAttention();
+    this.injectIcons();
+    this.applyBrand();
   },
 
   // Member portal: top bar, no palette — four destinations do not need one.
@@ -145,6 +155,33 @@ const Shell = {
     this._mountOverlays();
     this._bindKeys(false);
     this._loadUnread();
+    this.injectIcons();
+    this.applyBrand();
+  },
+
+  // Paint the shell with the active workspace's brand. Admins get it on
+  // /auth/me (the same call the switcher makes); members get it on
+  // /users/profile. A circle with no brand falls back to the product look.
+  async applyBrand() {
+    if (!window.Brand) return;
+    try {
+      const activeId = Auth.getCircle();
+      let list = null;
+
+      if (Auth.isAdmin()) {
+        const me = await api.get('/auth/me');
+        list = me.circles;
+      } else {
+        const profile = await api.get('/users/profile');
+        list = profile.circles;
+      }
+
+      const brand = window.Brand.fromList(list, activeId);
+      if (brand) window.Brand.apply(brand);
+      else window.Brand.clear();
+    } catch {
+      // The console works unbranded if the brand call fails — never block.
+    }
   },
 
   _sidebar(activeId) {
@@ -163,7 +200,7 @@ const Shell = {
     return `
       <aside class="sidebar" id="sidebar">
         <a href="/admin/dashboard.html" class="sidebar-brand">
-          <span class="brand-mark" id="brandMark">dev<span>.</span>circle</span>
+          <span class="brand-mark" id="brandMark" data-brand-logo>dev<span>.</span>circle</span>
           <span class="brand-badge">Admin</span>
         </a>
         <button class="sidebar-search" onclick="Shell.openPalette()">
@@ -210,7 +247,7 @@ const Shell = {
     return `
       <div class="mobile-bar">
         <button class="icon-btn" onclick="Shell.openNav()" aria-label="Open navigation">${icon('menu', 18)}</button>
-        <span class="brand-mark">dev<span>.</span>circle</span>
+        <span class="brand-mark" data-brand-logo>dev<span>.</span>circle</span>
         <span class="spacer"></span>
         <span class="badge badge-info">${current ? current.label : 'Admin'}</span>
       </div>`;
@@ -218,12 +255,26 @@ const Shell = {
 
   _portalBar(activeId) {
     const user = Auth.getUser() || {};
+    const current = PORTAL_NAV.find(i => i.id === activeId);
+    const currentLabel = current ? current.label : 'Home';
+
+    // Primary destinations get a tab on the phone bottom bar; the rest
+    // (History, Notifications) stay reachable from the avatar menu and bell.
+    const tabItems = PORTAL_NAV.filter(i =>
+      ['dashboard', 'surveys', 'sessions', 'feedback', 'gifts'].includes(i.id));
+
     return `
       <header class="portal-bar">
         <div class="portal-bar-inner">
           <a href="/member/dashboard.html" class="sidebar-brand" style="padding:0;height:auto">
-            <span class="brand-mark">dev<span>.</span>circle</span>
+            <span class="brand-mark" data-brand-logo>dev<span>.</span>circle</span>
           </a>
+
+          <!-- Current page, shown in the bar on a phone where the link row
+               collapses to a bottom tab bar — the member-side equivalent of
+               the admin mobile breadcrumb. -->
+          <span class="portal-current mobile-only">${escapeHtml(currentLabel)}</span>
+
           <nav class="portal-links">
             ${PORTAL_NAV.map(i => `
               <a href="${i.href}" class="portal-link${i.id === activeId ? ' active' : ''}">${i.label}</a>`).join('')}
@@ -249,7 +300,18 @@ const Shell = {
             </div>
           </div>
         </div>
-      </header>`;
+      </header>
+
+      <!-- Phone-only bottom navigation: the five things a member came to do,
+           reachable with a thumb. Hidden on larger screens that show the link
+           row in the top bar. -->
+      <nav class="portal-tabbar" aria-label="Main">
+        ${tabItems.map(i => `
+          <a href="${i.href}" class="portal-tab${i.id === activeId ? ' active' : ''}">
+            <span class="portal-tab-icon">${icon(i.icon || (i.id === 'dashboard' ? 'home' : i.id), 22)}</span>
+            <span class="portal-tab-label">${i.label}</span>
+          </a>`).join('')}
+      </nav>`;
   },
 
   toggleAccount(e) {
@@ -304,6 +366,20 @@ const Shell = {
       }
     });
   },
+
+  // ── Icons ──
+  // Static buttons/links can opt into an icon with data-icon="send" instead
+  // of hand-writing SVG. Called once on shell mount; pages that re-render
+  // dynamically can call Shell.icons(scope) afterwards.
+  injectIcons(root = document) {
+    root.querySelectorAll('[data-icon]:not([data-icon-added])').forEach(el => {
+      const name = el.getAttribute('data-icon');
+      const size = Number(el.getAttribute('data-icon-size')) || 15;
+      el.insertAdjacentHTML('afterbegin', icon(name, size));
+      el.setAttribute('data-icon-added', '');
+    });
+  },
+  icons(root) { this.injectIcons(root); },
 
   // ── Mobile navigation ──
   openNav()  { document.getElementById('sidebar')?.classList.add('open'); },
@@ -404,7 +480,15 @@ const Shell = {
   // circle you were in, which read as though switching had not worked.
   _nameCircle(name) {
     const mark = document.getElementById('brandMark');
-    if (mark) mark.textContent = name;
+    if (mark) {
+      // A branded workspace shows its wordmark image here; the circle name
+      // is still carried by the switcher next to it.
+      if (mark.classList.contains('has-logo')) {
+        mark.setAttribute('aria-label', name);
+      } else {
+        mark.textContent = name;
+      }
+    }
 
     // Keep whatever the page called itself, and say which workspace it is in
     const page = document.title.split('—').pop().trim();

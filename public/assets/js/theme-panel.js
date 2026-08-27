@@ -83,6 +83,12 @@ const ThemePanel = (() => {
         </div>`;
     }
 
+    // Which sections are open, remembered across the re-renders a colour drag
+    // or a font pick causes. Colours starts open — it is where most theming
+    // begins — and anything the form has customised opens on first paint.
+    const openSections = new Set(['colours']);
+    let firstRender = true;
+
     function render() {
       const theme = SurveyTheme.resolve(state.theme, state.circleTheme);
       const panel = mount;
@@ -123,7 +129,40 @@ const ThemePanel = (() => {
       const ratio = theme.background_color && theme.text_color
         ? SurveyTheme.contrast(theme.text_color, theme.background_color) : null;
 
-      panel.innerHTML = `
+      // Which keys count as "this form has customised this section", so a
+      // collapsed section can still show where the customisation lives.
+      const has = (...keys) => keys.some(k => state.theme && state.theme[k] != null && state.theme[k] !== '');
+      const hasCopy = group => state.theme && state.theme[group] &&
+        Object.values(state.theme[group]).some(v => v && String(v).trim());
+      const customised = {
+        colours: has('accent', 'background_color', 'text_color', 'surface_color', 'muted_color', 'background'),
+        type: has('font', 'brand_font', 'scale') || has('brand_font_name'),
+        layout: has('mode', 'layout', 'progress', 'corner'),
+        images: has('logo_url', 'header_image', 'background_image'),
+        opening: hasCopy('intro'),
+        closing: hasCopy('thank_you')
+      };
+
+      // A collapsing section. It starts open on the first render when the
+      // caller asks or the form has already customised it, then its state is
+      // remembered by id across the re-renders a colour drag causes.
+      const section = (id, title, sub, body, { open = false, marked = false } = {}) => {
+        if (firstRender && (open || marked)) openSections.add(id);
+        const isOpen = openSections.has(id);
+        return `
+        <details class="theme-section" id="theme-${id}"${isOpen ? ' open' : ''} data-section="${id}">
+          <summary${marked ? ' data-has-custom' : ''}>
+            <span class="section-dot" aria-hidden="true"></span>
+            <span>${escapeHtml(title)}</span>
+            ${sub ? `<span class="section-sub">${escapeHtml(sub)}</span>` : ''}
+            <span class="section-caret" aria-hidden="true">›</span>
+          </summary>
+          <div class="section-body">${body}</div>
+        </details>`;
+      };
+
+      // ── Colours ──────────────────────────────────────────
+      const coloursBody = `
         <div class="field">
           <label class="label">Accent</label>
           <div class="row" style="gap:var(--sp-3)">
@@ -138,9 +177,8 @@ const ThemePanel = (() => {
           <p class="hint">Buttons and progress take this. Text on it is worked out from its brightness, so a pale accent gets dark type rather than white on white.</p>
         </div>
 
-        <div class="card-title mb-3 mt-4">Brand colours</div>
         <p class="hint" style="margin-top:0;margin-bottom:var(--sp-3)">
-          Leave these empty and the survey follows the member's light or dark setting.
+          Leave the brand colours empty and the ${noun} follows the member's light or dark setting.
           Name a background and everything between it and the text — cards, borders,
           secondary labels — is worked out from the pair.
         </p>
@@ -163,20 +201,17 @@ const ThemePanel = (() => {
           ${colour('muted_color', 'Secondary text', { clearable: true, hint: 'Hints, counts and labels.' })}
         </details>
 
-        <div class="field-row mt-4">
+        <div class="field-row">
           <div class="field">
             <label class="label">Wash</label>
             ${choose('background', schema.theme.backgrounds, { plain: 'None', tinted: 'Tinted', gradient: 'Gradient' })}
           </div>
-          <div class="field">
-            <label class="label">Corners</label>
-            ${choose('corner', schema.theme.corners, { sharp: 'Sharp', soft: 'Soft', round: 'Round' })}
-          </div>
-        </div>
+        </div>`;
 
-        <div class="card-title mb-3 mt-4">Type</div>
-        <!-- A font picker: real families, chosen by name, each set in itself.
-             Grouped, because fifteen names in a flat list is a wall. -->
+      // ── Type ─────────────────────────────────────────────
+      // A font picker: real families, chosen by name, each set in itself.
+      // Grouped, because fifteen names in a flat list is a wall.
+      const typeBody = `
         <div class="field">
           <label class="label">Font</label>
           <select class="input font-select" id="fontSelect"
@@ -202,7 +237,7 @@ const ThemePanel = (() => {
           ${chosenFont.note ? `<p class="hint">${escapeHtml(chosenFont.note)}</p>` : ''}
           ${chosenFont.device ? `
             <p class="hint" style="color:var(--gold-ink)">
-              This one is not sent with the survey — it renders only for readers who already have it.
+              This one is not sent with the ${noun} — it renders only for readers who already have it.
               To be certain everyone sees it, upload the font file and it will be served from here.
             </p>` : ''}
         </div>
@@ -222,12 +257,20 @@ const ThemePanel = (() => {
             ${choose('scale', Object.keys(schema.theme.scales),
               { small: 'Small', regular: 'Regular', large: 'Large', larger: 'Larger' })}
           </div>
+        </div>`;
+
+      // ── Layout ───────────────────────────────────────────
+      const layoutBody = `
+        <div class="field-row">
+          <div class="field">
+            <label class="label">Corners</label>
+            ${choose('corner', schema.theme.corners, { sharp: 'Sharp', soft: 'Soft', round: 'Round' })}
+          </div>
           <div class="field">
             <label class="label">Light or dark</label>
             ${choose('mode', schema.theme.modes, { auto: 'Follow the member', light: 'Always light', dark: 'Always dark' })}
           </div>
         </div>
-
         <div class="field-row">
           <div class="field">
             <label class="label">One page or one question</label>
@@ -237,9 +280,10 @@ const ThemePanel = (() => {
             <label class="label">Progress</label>
             ${choose('progress', schema.theme.progress, { bar: 'Bar', steps: 'Steps', count: 'Count only', none: 'None' })}
           </div>
-        </div>
+        </div>`;
 
-        <div class="card-title mb-3 mt-4">Images</div>
+      // ── Images ───────────────────────────────────────────
+      const imagesBody = `
         ${asset('logo_url', 'Wordmark', 'Replaces the Dev Circle mark in the bar and on the opening screen.')}
         ${asset('header_image', 'Opening image', 'Sits above the headline on the first screen.')}
         ${asset('background_image', 'Background image')}
@@ -255,9 +299,10 @@ const ThemePanel = (() => {
                      value="${Math.round((theme.background_overlay ?? 0.55) * 100)}" style="width:100%">
             </div>
           </div>
-          <p class="hint">A photograph behind text is the quickest way to make a survey unreadable, so it is dimmed unless you say otherwise.</p>` : ''}
+          <p class="hint">A photograph behind text is the quickest way to make a ${noun} unreadable, so it is dimmed unless you say otherwise.</p>` : ''}`;
 
-        <div class="card-title mb-3 mt-4">Opening screen</div>
+      // ── Opening / closing screens ────────────────────────
+      const openingBody = `
         <div class="field">
           <input type="text" class="input" data-theme-copy="intro.headline" placeholder="Headline — leave empty to open on the first question"
                  value="${escapeHtml(theme.intro?.headline || '')}">
@@ -268,24 +313,43 @@ const ThemePanel = (() => {
         <div class="field">
           <input type="text" class="input" data-theme-copy="intro.button" placeholder="Button — defaults to Start"
                  value="${escapeHtml(theme.intro?.button || '')}">
-        </div>
+        </div>`;
 
-        <div class="card-title mb-3 mt-4">Closing screen</div>
+      const closingBody = `
         <div class="field">
           <input type="text" class="input" data-theme-copy="thank_you.headline" placeholder="Headline — defaults to thanking them by name"
                  value="${escapeHtml(theme.thank_you?.headline || '')}">
         </div>
         <div class="field">
           <textarea class="input" data-theme-copy="thank_you.body" placeholder="What happens next">${escapeHtml(theme.thank_you?.body || '')}</textarea>
-        </div>
+        </div>`;
 
-        <div class="row wrap" style="gap:var(--sp-2)">
+      panel.innerHTML = `
+        ${section('colours', 'Colours', 'Accent, background and text', coloursBody, { open: true, marked: customised.colours })}
+        ${section('type', 'Type', 'Font and text size', typeBody, { marked: customised.type })}
+        ${section('layout', 'Shape & layout', 'Corners, light/dark, paging and progress', layoutBody, { marked: customised.layout })}
+        ${section('images', 'Images', 'Wordmark, opening image and background', imagesBody, { marked: customised.images })}
+        ${section('opening', 'Opening screen', 'Shown before the first question', openingBody, { marked: customised.opening })}
+        ${section('closing', 'Closing screen', 'Shown after the last answer', closingBody, { marked: customised.closing })}
+
+        <div class="row wrap" style="gap:var(--sp-2);margin-top:var(--sp-4)">
           <button class="btn btn-sm btn-secondary" data-theme-reset>Reset to the workspace look</button>
           <button class="btn btn-sm btn-ghost" data-theme-default>Make this the workspace default</button>
         </div>`;
 
       panel.querySelector('[data-theme-reset]')?.addEventListener('click', reset);
       panel.querySelector('[data-theme-default]')?.addEventListener('click', saveAsCircleDefault);
+
+      // Remember a section being opened or closed so a drag-driven re-render
+      // does not snap it shut (or open) under the cursor.
+      panel.querySelectorAll('[data-section]').forEach(el => {
+        el.addEventListener('toggle', () => {
+          const id = el.dataset.section;
+          if (el.open) openSections.add(id); else openSections.delete(id);
+        });
+      });
+
+      firstRender = false;
 
       // Colour pickers and plain fields. The contrast readout has to move with
       // them, so anything that changes a colour redraws the panel — but only

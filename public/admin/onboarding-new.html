@@ -107,7 +107,10 @@
             <div class="hide" id="lockNotice"></div>
             <div id="questions"></div>
 
-            <button class="btn btn-sm btn-secondary mt-3" id="addToggle" onclick="toggleTypeMenu()">+ Add a question</button>
+            <div class="field-row mt-3">
+              <button class="btn btn-sm btn-secondary" id="addToggle" onclick="toggleTypeMenu()">+ Add a question</button>
+              <button class="btn btn-sm btn-ghost" id="importToggle" onclick="openQuestionImport()">Import questions…</button>
+            </div>
             <div class="type-menu hide mt-3" id="typeMenu"></div>
           </section>
 
@@ -227,10 +230,13 @@
 
 <script src="/assets/js/api.js"></script>
 <script src="/assets/js/shell.js"></script>
+<script src="/assets/js/survey-theme.js"></script>
+<script src="/assets/js/brand.js"></script>
 <script src="/assets/js/survey-schema.js"></script>
 <script src="/assets/js/survey-theme.js"></script>
 <script src="/assets/js/survey-render.js"></script>
 <script src="/assets/js/question-builder.js"></script>
+<script src="/assets/js/question-import.js"></script>
 <script src="/assets/js/theme-panel.js"></script>
 <script>
   Shell.admin('onboarding');
@@ -268,6 +274,38 @@
   function renderTypeMenu()      { builder?.renderTypeMenu(); }
   function toggleTypeMenu(force) { builder?.toggleTypeMenu(force); }
   function addQuestion(type)     { builder?.add(type); }
+  function openQuestionImport()  {
+    QuestionImport.open({
+      builder,
+      noun: 'form',
+      // Onboarding questions carry a maps_to tag the survey schema does not
+      // know about, so the import cannot hold it. Re-tag once the questions
+      // land, from wording/format, the same way a hand-added question is set.
+      afterAdd: function onImported() { tagImportedFields(); renderChecklist(); }
+    });
+  }
+
+  // A freshly imported email/phone/name/dob question is tagged automatically,
+  // because the form cannot publish without the credential collected and a
+  // sheet almost always contains them; anything else stays untagged and is
+  // mapped from the card.
+  function tagImportedFields() {
+    for (const q of state.questions) {
+      if (q.maps_to || !SurveySchema.isAnswerable(q)) continue;
+      const text = (q.text || '').toLowerCase();
+      const want = (fields || []).filter(f => f.types.includes(q.type));
+      let map = null;
+      if (q.format === 'email' || /email|e-mail/.test(text)) map = 'email';
+      else if (q.format === 'phone' || /phone|number.*whatsapp|whatsapp/.test(text)) map = 'phone';
+      else if (/\bname\b|full[ -]name|your[ -]name|call you|we call you/.test(text)) map = 'name';
+      else if (/date of birth|dob|\bage\b/.test(text)) map = 'date_of_birth';
+      if (map && want.some(f => f.value === map)) {
+        q.maps_to = map;
+        const field = fields.find(f => f.value === map);
+        if (field?.required) q.required = true;
+      }
+    }
+  }
   function renderThemePanel()    { themePanel?.render(); }
 
   // ─── Loading ──────────────────────────────────────────────
@@ -466,6 +504,8 @@
             </div>
           </div>`;
         document.getElementById('addToggle').classList.add('hide');
+        document.getElementById('importToggle')?.classList.add('hide');
+        document.getElementById('typeMenu')?.classList.add('hide');
       }
 
       renderThemePanel();

@@ -44,12 +44,12 @@
 
     <nav class="breadcrumb mb-3">
       <a href="/member/dashboard.html">Home</a>
-      <span class="sep">/</span>
-      <span>Rewards</span>
+      <span class="sep mobile-current">/</span>
+      <span class="current mobile-current">Rewards</span>
     </nav>
 
     <header class="page-head-block mb-6">
-      <h1 class="page-title-lg">Rewards</h1>
+      <h1 class="page-title-lg hide-on-mobile">Rewards</h1>
       <p class="lede">Small thanks for the time you put in. Nothing here is a prize draw — each one has a clear condition, and it is either met or it is not.</p>
     </header>
 
@@ -83,6 +83,8 @@
 
 <script src="/assets/js/api.js"></script>
 <script src="/assets/js/shell.js"></script>
+<script src="/assets/js/survey-theme.js"></script>
+<script src="/assets/js/brand.js"></script>
 <script>
   Shell.portal('gifts');
 
@@ -109,11 +111,11 @@
 
       document.getElementById('available').innerHTML = gifts.available.length
         ? gifts.available.map(g => rewardRow(g,
-            `<button class="btn btn-sm btn-gold" onclick="claim('${g.id}', this)">Claim</button>`)).join('')
+            `<button class="btn btn-sm btn-gold" onclick="claim('${g.id}', this)">${icon('gifts', 13)} Claim</button>`)).join('')
         : emptyState({
             title: 'Nothing ready yet',
             text: 'Answer a survey to unlock your first reward.',
-            action: '<a class="btn btn-sm btn-primary" href="/member/dashboard.html">See open surveys</a>'
+            action: `<a class="btn btn-sm btn-primary" href="/member/dashboard.html">See open surveys ${icon('arrowRight', 13)}</a>`
           });
 
       // Show what is still out of reach and exactly what it takes, rather than
@@ -148,8 +150,8 @@
                 <div class="text-xs dim mt-1">We will contact you with delivery instructions shortly.</div>
               </div>
               <div class="row gap-2">
-                <a class="btn btn-sm btn-primary" href="/member/dashboard.html">Back to dashboard →</a>
-                <a class="btn btn-sm btn-secondary" href="/member/engagement.html">View history</a>
+                <a class="btn btn-sm btn-primary" href="/member/dashboard.html">Back to dashboard ${icon('arrowRight', 13)}</a>
+                <a class="btn btn-sm btn-secondary" href="/member/engagement.html">${icon('activity', 13)} View history</a>
               </div>
             </div>
           </div>`;

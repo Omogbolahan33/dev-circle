@@ -46,12 +46,12 @@
 
     <nav class="breadcrumb mb-3">
       <a href="/member/dashboard.html">Home</a>
-      <span class="sep">/</span>
-      <span>Surveys</span>
+      <span class="sep mobile-current">/</span>
+      <span class="current mobile-current">Surveys</span>
     </nav>
 
     <header class="page-head-block mb-6">
-      <h1 class="page-title-lg">Surveys</h1>
+      <h1 class="page-title-lg hide-on-mobile">Surveys</h1>
       <p class="lede">
         Short, specific questions from the team building the APIs you integrate with.
         We tell you how long each one takes before you start, and we mean it.
@@ -80,6 +80,8 @@
 
 <script src="/assets/js/api.js"></script>
 <script src="/assets/js/shell.js"></script>
+<script src="/assets/js/survey-theme.js"></script>
+<script src="/assets/js/brand.js"></script>
 <script>
   Shell.portal('surveys');
 
@@ -120,7 +122,7 @@
                 <span>${escapeHtml(MODES[s.engagement_mode] || s.engagement_mode)}</span>
               </div>
             </div>
-            <span class="btn btn-sm btn-primary">Start</span>
+            <span class="btn btn-sm btn-primary">Start ${icon('arrowRight', 14)}</span>
           </a>`).join('')
         : emptyState({
             title: 'Nothing to answer right now',

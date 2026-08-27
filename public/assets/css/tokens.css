@@ -270,7 +270,11 @@ body {
   font-size: var(--fs-base);
   line-height: var(--lh-normal);
   color: var(--text);
-  background: var(--surface-0);
+  /* A circle brand can paint a photograph or wash behind the whole portal;
+     --survey-canvas carries those layers (scrim included), and is absent on
+     an unbranded install, where this falls back to the canvas colour. */
+  background: var(--survey-canvas, var(--surface-0));
+  background-color: var(--surface-0);
   /* Flipping theme should feel deliberate rather than jarring. */
   transition: background var(--duration-fast) linear, color var(--duration-fast) linear;
 }

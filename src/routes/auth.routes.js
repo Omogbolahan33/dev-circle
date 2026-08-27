@@ -363,9 +363,10 @@ router.get('/me', requireAuth, async (req, res) => {
       isAdmin: true,
       // Enough for the switcher without a second COUNT of circle_members.
       // member_count is omitted on purpose — the circles page still loads it.
+      // brand is the workspace look the console paints itself with.
       circles: (req.availableCircles || []).map(c => ({
         id: c.id, name: c.name, slug: c.slug, description: c.description,
-        color: c.color, status: c.status
+        color: c.color, status: c.status, brand: circles.brandOf(c)
       })),
       can_create_circles: flagOn(req.admin.is_global)
     });

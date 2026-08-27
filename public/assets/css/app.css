@@ -40,7 +40,10 @@
   min-width: 0;               /* Lets tables scroll instead of stretching */
   display: flex;
   flex-direction: column;
-  background: var(--surface-0);
+  /* The brand canvas (a photograph or wash) is painted on <body>; this
+     surface stays transparent so it shows through. With no canvas set the
+     whole window is the canvas colour anyway. */
+  background: transparent;
 }
 
 .app-body {
@@ -84,6 +87,13 @@
   color: var(--white);
 }
 .brand-mark span { color: var(--cd-blue); }
+
+/* A circle's own wordmark replaces the product name in the chrome. It is
+   capped to the mark's line-height so a large logo cannot push the bar. */
+.brand-mark.has-logo { display: inline-flex; align-items: center; }
+.brand-mark .brand-logo-img {
+  height: 26px; width: auto; max-width: 160px; object-fit: contain; display: block;
+}
 
 .brand-badge {
   font-family: var(--font-mono);
@@ -359,6 +369,18 @@
 .breadcrumb a { color: var(--ash); text-decoration: none; }
 .breadcrumb a:hover { color: var(--white); text-decoration: none; }
 .breadcrumb .sep { color: var(--ash-dim); opacity: 0.5; }
+/* The page title, when it lives in the breadcrumb on a small screen. */
+.breadcrumb .current { color: var(--text-1); font-weight: var(--fw-semibold); }
+
+/* On a phone the big desktop page header is replaced by the breadcrumb
+   carrying the title — a hero-sized heading is wasted width on a 360px
+   column and pushes the content down. Mark the large header
+   .hide-on-mobile and add the title span inside the breadcrumb. */
+.breadcrumb .mobile-current { display: none; }
+@media (max-width: 600px) {
+  .breadcrumb .mobile-current { display: inline; }
+  .hide-on-mobile { display: none !important; }
+}
 
 .page-head-row {
   display: flex;
@@ -873,6 +895,57 @@ tr:hover .row-actions, tr:focus-within .row-actions { opacity: 1; }
   flex-shrink: 0;
 }
 .drawer-title { font-family: var(--font-display); font-weight: var(--fw-bold); font-size: var(--fs-lg); }
+
+/* ─── Theme rail sections ──────────────────────────────────
+   The appearance controls are a lot at once — colours, type, shape, imagery,
+   layout and the opening and closing screens. Grouping them into collapsing
+   sections means an author sees headings and opens the part they came for,
+   rather than a wall of controls. Each section's summary says what is in it;
+   a dot marks a section that is already doing something non-default, so a
+   collapsed rail still shows where the customisation lives. */
+.theme-section {
+  border-top: 1px solid var(--line-faint);
+  padding: var(--sp-2) 0;
+}
+.theme-section:first-child { border-top: none; }
+.theme-section > summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) 0;
+  font-family: var(--font-display);
+  font-weight: var(--fw-semibold);
+  font-size: var(--fs-sm);
+  color: var(--white);
+  user-select: none;
+}
+.theme-section > summary::-webkit-details-marker { display: none; }
+.theme-section > summary:hover { color: var(--cd-blue); }
+.theme-section > summary .section-caret {
+  margin-left: auto;
+  color: var(--ash-dim);
+  transition: transform var(--duration-fast) var(--ease-out);
+  flex-shrink: 0;
+}
+.theme-section[open] > summary .section-caret { transform: rotate(90deg); }
+.theme-section > summary .section-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--cd-blue);
+  flex-shrink: 0;
+  /* Hidden unless the section carries a custom value; JS sets [data-set] */
+  display: none;
+}
+.theme-section > summary[data-has-custom] .section-dot { display: inline-block; }
+.theme-section > summary .section-sub {
+  font-weight: var(--fw-regular);
+  font-size: var(--fs-xs);
+  color: var(--ash-dim);
+}
+.theme-section .section-body { padding-top: var(--sp-2); }
+.theme-section .section-body .card-title { display: none; }
+.theme-section .section-body .field:last-child { margin-bottom: 0; }
 .drawer-sub { font-size: var(--fs-xs); color: var(--ash); margin-top: 2px; }
 .drawer-body { flex: 1; overflow-y: auto; padding: var(--sp-5); }
 .drawer-foot {
@@ -953,6 +1026,9 @@ tr:hover .row-actions, tr:focus-within .row-actions { opacity: 1; }
 .input::placeholder { color: var(--ash-dim); }
 .input:focus { border-color: var(--cd-blue); }
 .input:disabled { opacity: 0.5; cursor: not-allowed; }
+/* Read-only fields are facts rather than form controls (the locked phone
+   credential): dimmed like disabled but still selectable/copyable. */
+.input[readonly] { background: var(--surface-1); color: var(--text-2); cursor: default; }
 select.input { cursor: pointer; appearance: none; background-image: linear-gradient(45deg, transparent 50%, var(--ash) 50%), linear-gradient(135deg, var(--ash) 50%, transparent 50%); background-position: calc(100% - 16px) 50%, calc(100% - 11px) 50%; background-size: 5px 5px, 5px 5px; background-repeat: no-repeat; padding-right: var(--sp-8); }
 textarea.input { min-height: 90px; line-height: var(--lh-normal); }
 
@@ -1229,6 +1305,20 @@ textarea.input { min-height: 90px; line-height: var(--lh-normal); }
 .portal-link:hover { color: var(--white); background: var(--tint-1); text-decoration: none; }
 .portal-link.active { color: var(--white); background: var(--cd-blue-dim); }
 
+/* The current page label shown in the bar on a phone; desktop shows the full
+   link row instead. */
+.portal-current {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  color: var(--text-1);
+  white-space: nowrap;
+}
+.mobile-only { display: none; }
+
+/* Thumb navigation: a fixed bottom tab bar on phones, hidden where the link
+   row fits in the top bar. */
+.portal-tabbar { display: none; }
+
 .portal-body {
   flex: 1;
   max-width: var(--max-reading);
@@ -1236,7 +1326,42 @@ textarea.input { min-height: 90px; line-height: var(--lh-normal); }
   margin: 0 auto;
   padding: var(--sp-8) var(--sp-5) var(--sp-16);
 }
-@media (max-width: 640px) { .portal-body { padding: var(--sp-6) var(--sp-4) var(--sp-12); } }
+@media (max-width: 640px) {
+  .portal-body { padding: var(--sp-6) var(--sp-4) calc(var(--sp-12) + 64px); }
+
+  /* The link row moves to the bottom tab bar; the bar instead names the page,
+     so it is the member's mobile breadcrumb and the in-content breadcrumb is
+     hidden to avoid showing "Home / Page" twice. */
+  .portal-links { display: none; }
+  .portal-current { display: inline-block; flex: 1; text-align: center; }
+  .mobile-only { display: inline; }
+  .portal-body .breadcrumb { display: none; }
+
+  .portal-tabbar {
+    display: flex;
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    z-index: var(--z-sticky);
+    background: var(--surface-1);
+    border-top: 1px solid var(--line-faint);
+    padding: var(--sp-1) 0 calc(var(--sp-1) + env(safe-area-inset-bottom, 0px));
+  }
+  .portal-tab {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: var(--sp-1) 0;
+    color: var(--ash-dim);
+    text-decoration: none;
+    font-size: 10px;
+    font-weight: var(--fw-medium);
+  }
+  .portal-tab-icon { display: flex; align-items: center; justify-content: center; height: 22px; }
+  .portal-tab.active { color: var(--cd-blue); }
+  .portal-tab.active .portal-tab-icon svg { stroke: var(--cd-blue); }
+}
 
 /* Notification bell with unread marker. */
 .bell { position: relative; }

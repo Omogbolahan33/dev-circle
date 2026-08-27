@@ -201,13 +201,30 @@ async function dispatch(sessionId, offsetMinutes = null) {
     ? `/member/survey.html?id=${session.survey_id}`
     : `/member/sessions.html?id=${session.id}`;
   const sourceType = offsetMinutes === null ? 'session_invite' : 'session_reminder';
+  const workflow = offsetMinutes === null ? 'session_invite' : 'session_reminder';
   const category = offsetMinutes === null ? 'survey_invites' : 'survey_reminders';
+
+  // Human-readable WAT time for the branded email template (in-portal still
+  // gets the title/body; the email gets the dedicated session layout).
+  const when = parseWhen(session.scheduled_for);
+  const sessionTime = when
+    ? new Date(when.getTime() + WAT_OFFSET_MS).toISOString().slice(0, 16).replace('T', ' ') + ' WAT'
+    : null;
+  const sessionTitle = session.title;
 
   let delivered = 0;
   for (const user of audience) {
     const result = await notifications.notify(user, {
       category, title, body, actionUrl,
-      sourceType, sourceId: session.id, channels
+      sourceType, sourceId: session.id, channels,
+      workflow,
+      templateData: {
+        sessionTitle,
+        sessionDescription: session.description || null,
+        sessionTime,
+        scheduledAt: session.scheduled_for,
+        meetingUrl: session.location || null
+      }
     });
     if (result.delivered > 0) {
       delivered++;

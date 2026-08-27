@@ -84,15 +84,15 @@ router.get('/:token', opening, async (req, res) => {
   const form = await onboarding.byToken(req.params.token);
   if (!form) return gone(res);
 
+  // Resolved on the way out, exactly as a survey's is, so the page filling
+  // it in needs no idea that a circle exists — but it still wears the circle's
+  // brand, layered beneath the form's own choices.
+  const circleRow = form.circle_id ? await circles.byId(form.circle_id) : null;
+
   res.json({
     form: {
       ...onboarding.forPublic(form),
-      // Resolved on the way out, exactly as a survey's is, so the page filling
-      // it in needs no idea that a circle exists or that it carries a default.
-      theme: surveyForm.themes.resolve(
-        onboarding.hydrate(form).theme,
-        parseJSON((await circles.byId(form.circle_id))?.survey_theme, null)
-      )
+      theme: surveyForm.resolveThemeFor(onboarding.hydrate(form).theme, circleRow)
     }
   });
 });

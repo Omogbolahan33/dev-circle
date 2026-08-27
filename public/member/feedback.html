@@ -46,12 +46,12 @@
 
     <nav class="breadcrumb mb-3">
       <a href="/member/dashboard.html">Home</a>
-      <span class="sep">/</span>
-      <span>Feedback</span>
+      <span class="sep mobile-current">/</span>
+      <span class="current mobile-current">Feedback</span>
     </nav>
 
     <header class="page-head-block mb-6">
-      <h1 class="page-title-lg">Feedback</h1>
+      <h1 class="page-title-lg hide-on-mobile">Feedback</h1>
       <p class="lede">
         Tell us what is working and what is not. This goes to the team that builds the
         Credit Direct APIs — not a ticket queue. You can see everything you have sent,
@@ -87,7 +87,7 @@
         </div>
 
         <div class="row align-center gap-3">
-          <button class="btn btn-primary" id="sendBtn" onclick="submit()">Send feedback</button>
+          <button class="btn btn-primary" id="sendBtn" onclick="submit()"></button>
           <a class="btn btn-ghost" href="/member/dashboard.html">Cancel</a>
         </div>
       </div>
@@ -100,8 +100,8 @@
             <p class="text-sm muted mt-1" id="successMsg">Your feedback goes directly to the Credit Direct API team.</p>
           </div>
           <div class="row gap-2">
-            <a class="btn btn-primary" href="/member/dashboard.html">Back to dashboard →</a>
-            <button class="btn btn-secondary" onclick="resetForm()">Send another</button>
+            <a class="btn btn-primary" href="/member/dashboard.html" data-icon="home" data-icon-size="15">Back to dashboard</a>
+            <button class="btn btn-secondary" onclick="resetForm()" data-icon="feedback" data-icon-size="15">Send another</button>
           </div>
         </div>
       </div>
@@ -128,8 +128,14 @@
 
 <script src="/assets/js/api.js"></script>
 <script src="/assets/js/shell.js"></script>
+<script src="/assets/js/survey-theme.js"></script>
+<script src="/assets/js/brand.js"></script>
 <script>
   Shell.portal('feedback');
+
+  // Primary send button gets the send icon up front (it swaps to a spinner
+  // and back while sending).
+  document.getElementById('sendBtn').innerHTML = `${icon('send', 15)} Send feedback`;
 
   // Plain-language names for the categories the API accepts. The list itself
   // comes from the server, so a category can never be offered here that the
@@ -165,6 +171,20 @@
       if (!document.getElementById('fbCategory').options.length) {
         document.getElementById('fbCategory').innerHTML = data.categories
           .map(c => `<option value="${c}">${escapeHtml(CATEGORY_LABELS[c] || c)}</option>`).join('');
+      }
+
+      // Deep links from the dashboard (e.g. "Complete KYB") arrive pre-addressed
+      // so the member only has to hit send.
+      const params = new URLSearchParams(window.location.search);
+      const cat = params.get('category');
+      if (cat && data.categories.includes(cat)) {
+        document.getElementById('fbCategory').value = cat;
+      }
+      const subject = params.get('subject');
+      if (subject) {
+        document.getElementById('fbContent').value = subject + '\n\n';
+        document.getElementById('fbCount').textContent = subject.length + 2;
+        document.getElementById('fbContent').focus();
       }
 
       render();
@@ -248,7 +268,7 @@
       showToast(err.message, 'error');
     } finally {
       btn.disabled = false;
-      btn.textContent = 'Send feedback';
+      btn.innerHTML = `${icon('send', 15)} Send feedback`;
     }
   }
 

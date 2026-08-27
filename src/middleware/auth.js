@@ -204,6 +204,8 @@ function circlesFromAccessRows(rows, admin) {
       color: row.circle_color,
       status: row.circle_status,
       created_at: row.circle_created_at,
+      survey_theme: row.circle_survey_theme,
+      theme: row.circle_theme,
       role_id: global ? admin.role_id : row.circle_role_id,
       global,
       role_permissions: global ? row.role_permissions : row.circle_role_permissions
@@ -259,6 +261,7 @@ async function loadPrincipal(hash) {
       c.id as circle_id, c.name as circle_name, c.slug as circle_slug,
       c.description as circle_description, c.color as circle_color,
       c.status as circle_status, c.created_at as circle_created_at,
+      c.survey_theme as circle_survey_theme, c.theme as circle_theme,
       ca.role_id as circle_role_id,
       cr.permissions as circle_role_permissions
     FROM sessions s

@@ -162,9 +162,21 @@ function canGoOut(questions) {
   return Array.isArray(questions) && questions.some(schema.isAnswerable);
 }
 
+// The theme a surface inside a circle actually paints itself with. Layers,
+// from weakest to strongest: the look a circle's surveys start from
+// (survey_theme), the workspace's own brand (theme), and the surface's own
+// choices (survey or onboarding form). Merged field by field, so a survey
+// that sets only an accent still inherits its circle's wordmark and canvas.
+function resolveThemeFor(surfaceTheme, circleRow) {
+  const circleBrand = parseJSON(circleRow?.theme, null);
+  const circleDefault = parseJSON(circleRow?.survey_theme, null);
+  return themes.resolve(surfaceTheme, themes.resolve(circleBrand, circleDefault));
+}
+
 module.exports = {
   ...schema,
   themes,
+  resolveThemeFor,
   slotId,
   copyQuestions,
   normalizeDefinition,

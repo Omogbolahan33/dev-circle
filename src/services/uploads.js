@@ -293,6 +293,9 @@ async function referenced(db) {
 
   for (const row of await db.prepare('SELECT theme FROM surveys WHERE theme IS NOT NULL').all()) collect(row);
   for (const row of await db.prepare('SELECT survey_theme FROM circles WHERE survey_theme IS NOT NULL').all()) collect(row);
+  // A circle's workspace brand lives in its own theme column; its background
+  // imagery and logo must be kept exactly like a survey's.
+  for (const row of await db.prepare('SELECT theme FROM circles WHERE theme IS NOT NULL').all()) collect(row);
 
   return paths;
 }
