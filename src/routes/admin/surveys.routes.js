@@ -97,12 +97,12 @@ router.get('/surveys/schema', requirePermission('surveys.read'), async (req, res
       // allowed with a warning below AA
       contrast: { floor: surveyForm.themes.FLOOR, comfortable: surveyForm.themes.AA },
       // What this circle's surveys start from, so the builder opens on the
-      // workspace's look rather than the product's
-      circle: parseJSON(
-        req.circle?.survey_theme != null
-          ? req.circle.survey_theme
-          : (await db.prepare('SELECT survey_theme FROM circles WHERE id = ?').get(req.circleId))?.survey_theme,
-        null
+      // workspace's look rather than the product's: the workspace brand over
+      // the older survey-only default, merged field by field. req.circle is
+      // the full circle row, so both columns are already on it.
+      circle: surveyForm.themes.resolve(
+        parseJSON(req.circle?.theme, null),
+        parseJSON(req.circle?.survey_theme, null)
       )
     }
   });
@@ -112,7 +112,8 @@ router.get('/surveys/schema', requirePermission('surveys.read'), async (req, res
 router.get('/surveys/:id', requirePermission('surveys.read'), async (req, res) => {
   const survey = await db.prepare(`
     SELECT s.*,
-           c.survey_theme as circle_theme,
+           c.survey_theme as circle_survey_theme,
+           c.theme as circle_brand,
            (SELECT COUNT(*) FROM survey_responses sr
              WHERE sr.survey_id = s.id AND sr.completed_at IS NOT NULL) as completed_count
     FROM surveys s
@@ -121,12 +122,17 @@ router.get('/surveys/:id', requirePermission('surveys.read'), async (req, res) =
   `).get(req.params.id);
   if (!survey) return res.status(404).json({ error: 'Survey not found' });
 
-  const { circle_theme, completed_count, ...row } = survey;
+  const { circle_survey_theme, circle_brand, completed_count, ...row } = survey;
   const completed = Number(completed_count || 0);
 
   res.json({
     survey: surveyForm.hydrate(row),
-    circle_theme: parseJSON(circle_theme, null),
+    // The workspace look in force behind this survey: brand over the older
+    // survey-only default.
+    circle_theme: surveyForm.themes.resolve(
+      parseJSON(circle_brand, null),
+      parseJSON(circle_survey_theme, null)
+    ),
     completed_count: completed,
     questions_locked: completed > 0
   });

@@ -60,6 +60,7 @@ const SCHEMA_POSTGRES = `
     status TEXT DEFAULT 'active' CHECK(status IN ('active','archived')),
     created_by TEXT,
     survey_theme TEXT,
+    theme TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW()
   );
 

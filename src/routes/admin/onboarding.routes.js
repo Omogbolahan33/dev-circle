@@ -86,7 +86,11 @@ router.get('/onboarding/schema', requirePermission('onboarding.read'), async (re
       modes: surveyForm.themes.MODES,
       fits: surveyForm.themes.FITS,
       contrast: { floor: surveyForm.themes.FLOOR, comfortable: surveyForm.themes.AA },
-      circle: parseJSON(req.circle?.survey_theme, null)
+      // Workspace brand over the older survey-only default.
+      circle: surveyForm.themes.resolve(
+        parseJSON(req.circle?.theme, null),
+        parseJSON(req.circle?.survey_theme, null)
+      )
     }
   });
 });
@@ -117,7 +121,10 @@ router.get('/onboarding/:id', requirePermission('onboarding.read'), async (req, 
     // was shown — and here those answers are somebody's personal details,
     // filed under a question that no longer asks what it asked.
     questions_locked: (counts.pending + counts.approved + counts.rejected) > 0,
-    circle_theme: parseJSON(req.circle?.survey_theme, null),
+    circle_theme: surveyForm.themes.resolve(
+      parseJSON(req.circle?.theme, null),
+      parseJSON(req.circle?.survey_theme, null)
+    ),
     embed_snippet: form.public_token ? snippet(req, form) : null
   });
 });

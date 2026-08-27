@@ -1475,6 +1475,19 @@ function define(db) {
             WHERE external_ref IS NOT NULL;
         `);
       }
+    },
+    {
+      id: 29,
+      name: 'circle_branding',
+      up() {
+        // A circle's own look — accent, canvas, surfaces, type, background
+        // imagery and logo — applied to the whole portal as experienced by
+        // anyone in that circle (admins, members and participants), not just
+        // to surveys. survey_theme stays as the default a survey starts from;
+        // theme is the workspace's identity. Both are validated through the
+        // shared survey-theme definition (assets/js/survey-theme.js).
+        addColumn('circles', 'theme', 'TEXT');
+      }
     }
   ];
   return migrations;

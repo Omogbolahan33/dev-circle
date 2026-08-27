@@ -82,7 +82,13 @@ router.get('/profile', requireAuth, async (req, res) => {
   res.json({
     user: sanitizeUser(user),
     cohorts,
-    circles: memberCircles,
+    // brand is the resolved workspace look (theme over survey default), so
+    // the portal can paint itself before any other call lands. The raw
+    // theme column is for editors, not for the member's browser.
+    circles: (memberCircles || []).map(({ theme, ...c }) => ({
+      ...c,
+      brand: theme ? circles.brandOf({ theme, survey_theme: null }) : null
+    })),
     consent,
     stats: {
       surveys_completed: Number(byK.sr?.n2 || 0),
@@ -146,7 +152,13 @@ router.get('/readiness', requireAuth, async (req, res) => {
 
 // GET /api/users/circles — the circles this member belongs to
 router.get('/circles', requireAuth, async (req, res) => {
-  res.json({ circles: await circles.forUser(req.user.id) });
+  const rows = await circles.forUser(req.user.id);
+  res.json({
+    circles: (rows || []).map(({ theme, ...c }) => ({
+      ...c,
+      brand: theme ? circles.brandOf({ theme, survey_theme: null }) : null
+    }))
+  });
 });
 
 // ─── Scheduled sessions ─────────────────────────────────────
@@ -784,17 +796,15 @@ router.post('/surveys/:id/start', requireAuth, async (req, res) => {
     .get(survey.id, req.user.id);
 
   const hydrated = surveyForm.hydrate(survey);
+  const circleRow = survey.circle_id ? await circles.byId(survey.circle_id) : null;
 
   res.json({
     survey: {
       ...hydrated,
       // What the member's page paints itself with: the survey's own look over
-      // its circle's over the product's, resolved here so the page never has
-      // to know the order of precedence.
-      theme: surveyForm.themes.resolve(
-        hydrated.theme,
-        parseJSON((await circles.byId(survey.circle_id))?.survey_theme, null)
-      )
+      // the workspace brand over the circle's survey default over the
+      // product's, resolved here so the page never has to know the order.
+      theme: surveyForm.resolveThemeFor(hydrated.theme, circleRow)
     },
     response,
     // Answers kept from a previous sitting, so leaving a long survey and

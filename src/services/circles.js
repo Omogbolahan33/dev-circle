@@ -135,7 +135,7 @@ async function join(userId, circleId) {
 
 async function forUser(userId) {
   return await db.prepare(`
-    SELECT c.id, c.name, c.slug, c.description, c.color, m.role, m.added_at
+    SELECT c.id, c.name, c.slug, c.description, c.color, c.theme, m.role, m.added_at
     FROM circle_members m
     JOIN circles c ON c.id = m.circle_id
     WHERE m.user_id = ? AND c.status = 'active'
@@ -163,7 +163,7 @@ async function forAdmin(admin) {
   // loads counts on GET /admin/circles instead.
   if (admin.is_global) {
     const rows = await db.prepare(`
-      SELECT c.id, c.name, c.slug, c.description, c.color, c.status, c.survey_theme, c.created_at
+      SELECT c.id, c.name, c.slug, c.description, c.color, c.status, c.survey_theme, c.theme, c.created_at
       FROM circles c
       WHERE c.status = 'active'
       ORDER BY c.created_at
@@ -172,7 +172,7 @@ async function forAdmin(admin) {
   }
 
   return await db.prepare(`
-    SELECT c.id, c.name, c.slug, c.description, c.color, c.status, c.survey_theme, c.created_at,
+    SELECT c.id, c.name, c.slug, c.description, c.color, c.status, c.survey_theme, c.theme, c.created_at,
            ca.role_id, 0 as global, r.permissions as role_permissions
     FROM circle_admins ca
     JOIN circles c ON c.id = ca.circle_id
@@ -223,9 +223,68 @@ async function archive(circleId) {
   return circle;
 }
 
+// ─── Branding ───────────────────────────────────────────────
+// A circle's theme is the look of the whole workspace for everyone in it —
+// admins, members and participants. It is stored exactly like a survey theme
+// and validated through the same shared definition, so the legibility rules
+// (refuse an unreadable contrast, no stylesheet ever enters the database)
+// hold here too. null clears it back to product defaults.
+
+const themes = require('./surveyForm').themes;
+
+// The brand everyone in a circle experiences. Falls back to the circle's
+// survey default (itself normalised below), then to product defaults.
+function brandOf(circle) {
+  if (!circle) return null;
+  const parse = raw => {
+    if (!raw) return null;
+    try {
+      const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      return parsed && typeof parsed === 'object' ? parsed : null;
+    } catch {
+      return null;
+    }
+  };
+  const explicit = parse(circle.theme);
+  if (explicit && Object.keys(explicit).length) {
+    const { theme } = themes.normalize(explicit);
+    return { ...theme, _source: 'circle' };
+  }
+  const surveyDefault = parse(circle.survey_theme);
+  if (surveyDefault && Object.keys(surveyDefault).length) {
+    const { theme } = themes.normalize(surveyDefault);
+    return { ...theme, _source: 'survey_default' };
+  }
+  return null;
+}
+
+// Validate and persist a posted brand. Passing null (or {}) clears it.
+// Returns the normalised theme plus any legibility warnings; `issues` being
+// non-empty means nothing was saved.
+async function setBrand(circleId, input) {
+  const circle = await byId(circleId);
+  if (!circle) throw new CircleError('Circle not found');
+
+  if (input === null || input === undefined || (typeof input === 'object' && !Object.keys(input).length)) {
+    await db.prepare('UPDATE circles SET theme = NULL WHERE id = ?').run(circleId);
+    return { theme: null, issues: [], warnings: [] };
+  }
+
+  const { theme, issues, warnings } = themes.normalize(typeof input === 'string' ? input : input);
+  if (issues.length) {
+    const err = new CircleError(issues.map(i => i.message).join('; '));
+    err.issues = issues;
+    err.warnings = warnings;
+    throw err;
+  }
+
+  await db.prepare('UPDATE circles SET theme = ? WHERE id = ?').run(JSON.stringify(theme), circleId);
+  return { theme, issues, warnings };
+}
+
 module.exports = {
   all, byId, bySlug, fallback, create, slugify,
   members, addMembers, removeMember, join, forUser, circleIdsForUser, isMember,
   forAdmin, roleFor, canAdminister, grantAdmin, revokeAdmin,
-  archive, CircleError
+  archive, brandOf, setBrand, CircleError
 };

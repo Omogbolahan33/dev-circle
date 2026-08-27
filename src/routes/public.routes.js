@@ -70,15 +70,18 @@ router.get('/surveys/:token', opening, async (req, res) => {
   const survey = await openSurvey(req.params.token);
   if (!survey) return gone(res);
 
+  // Resolved on the way out, exactly as it is for a member, so the page
+  // answering it needs no idea that a circle exists — but they still see its
+  // brand. Three layers, merged field by field: what the survey says wins,
+  // over the workspace's own brand, over the look surveys start from, over
+  // the product defaults.
+  const circleRow = survey.circle_id ? await circles.byId(survey.circle_id) : null;
+  const theme = surveyForm.resolveThemeFor(surveyForm.hydrate(survey).theme, circleRow);
+
   res.json({
     survey: {
       ...surveyForm.forPublic(survey),
-      // Resolved on the way out, exactly as it is for a member, so the page
-      // answering it needs no idea that a circle exists
-      theme: surveyForm.themes.resolve(
-        surveyForm.hydrate(survey).theme,
-        parseJSON((await circles.byId(survey.circle_id))?.survey_theme, null)
-      )
+      theme
     }
   });
 });

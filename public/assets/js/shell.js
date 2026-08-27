@@ -140,6 +140,7 @@ const Shell = {
     this._loadCircles();
     this._loadAttention();
     this.injectIcons();
+    this.applyBrand();
   },
 
   // Member portal: top bar, no palette — four destinations do not need one.
@@ -155,6 +156,32 @@ const Shell = {
     this._bindKeys(false);
     this._loadUnread();
     this.injectIcons();
+    this.applyBrand();
+  },
+
+  // Paint the shell with the active workspace's brand. Admins get it on
+  // /auth/me (the same call the switcher makes); members get it on
+  // /users/profile. A circle with no brand falls back to the product look.
+  async applyBrand() {
+    if (!window.Brand) return;
+    try {
+      const activeId = Auth.getCircle();
+      let list = null;
+
+      if (Auth.isAdmin()) {
+        const me = await api.get('/auth/me');
+        list = me.circles;
+      } else {
+        const profile = await api.get('/users/profile');
+        list = profile.circles;
+      }
+
+      const brand = window.Brand.fromList(list, activeId);
+      if (brand) window.Brand.apply(brand);
+      else window.Brand.clear();
+    } catch {
+      // The console works unbranded if the brand call fails — never block.
+    }
   },
 
   _sidebar(activeId) {
@@ -173,7 +200,7 @@ const Shell = {
     return `
       <aside class="sidebar" id="sidebar">
         <a href="/admin/dashboard.html" class="sidebar-brand">
-          <span class="brand-mark" id="brandMark">dev<span>.</span>circle</span>
+          <span class="brand-mark" id="brandMark" data-brand-logo>dev<span>.</span>circle</span>
           <span class="brand-badge">Admin</span>
         </a>
         <button class="sidebar-search" onclick="Shell.openPalette()">
@@ -220,7 +247,7 @@ const Shell = {
     return `
       <div class="mobile-bar">
         <button class="icon-btn" onclick="Shell.openNav()" aria-label="Open navigation">${icon('menu', 18)}</button>
-        <span class="brand-mark">dev<span>.</span>circle</span>
+        <span class="brand-mark" data-brand-logo>dev<span>.</span>circle</span>
         <span class="spacer"></span>
         <span class="badge badge-info">${current ? current.label : 'Admin'}</span>
       </div>`;
@@ -240,7 +267,7 @@ const Shell = {
       <header class="portal-bar">
         <div class="portal-bar-inner">
           <a href="/member/dashboard.html" class="sidebar-brand" style="padding:0;height:auto">
-            <span class="brand-mark">dev<span>.</span>circle</span>
+            <span class="brand-mark" data-brand-logo>dev<span>.</span>circle</span>
           </a>
 
           <!-- Current page, shown in the bar on a phone where the link row
@@ -453,7 +480,15 @@ const Shell = {
   // circle you were in, which read as though switching had not worked.
   _nameCircle(name) {
     const mark = document.getElementById('brandMark');
-    if (mark) mark.textContent = name;
+    if (mark) {
+      // A branded workspace shows its wordmark image here; the circle name
+      // is still carried by the switcher next to it.
+      if (mark.classList.contains('has-logo')) {
+        mark.setAttribute('aria-label', name);
+      } else {
+        mark.textContent = name;
+      }
+    }
 
     // Keep whatever the page called itself, and say which workspace it is in
     const page = document.title.split('—').pop().trim();

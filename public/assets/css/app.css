@@ -40,7 +40,10 @@
   min-width: 0;               /* Lets tables scroll instead of stretching */
   display: flex;
   flex-direction: column;
-  background: var(--surface-0);
+  /* The brand canvas (a photograph or wash) is painted on <body>; this
+     surface stays transparent so it shows through. With no canvas set the
+     whole window is the canvas colour anyway. */
+  background: transparent;
 }
 
 .app-body {
@@ -84,6 +87,13 @@
   color: var(--white);
 }
 .brand-mark span { color: var(--cd-blue); }
+
+/* A circle's own wordmark replaces the product name in the chrome. It is
+   capped to the mark's line-height so a large logo cannot push the bar. */
+.brand-mark.has-logo { display: inline-flex; align-items: center; }
+.brand-mark .brand-logo-img {
+  height: 26px; width: auto; max-width: 160px; object-fit: contain; display: block;
+}
 
 .brand-badge {
   font-family: var(--font-mono);

@@ -6,13 +6,13 @@ const config = require('../../config');
 const router = express.Router();
 
 // ─── Brand assets ───────────────────────────────────────────
-// Uploading the images and fonts a survey is themed with. Gated on the same
-// permission as writing a survey: an asset is only ever reachable from a
-// theme, so being able to upload one and being able to use it are the same
-// ability.
+// Uploading the images and fonts a theme is built from — a survey's or a
+// whole circle's. Gated on the same permission as writing either: an asset
+// is only ever reachable from a theme, so being able to upload one and being
+// able to use it are the same ability.
 
 // POST /api/admin/uploads
-router.post('/uploads', requirePermission('surveys.write'), async (req, res) => {
+router.post('/uploads', requirePermission('surveys.write', 'circles.write'), async (req, res) => {
   const { file, kind = 'image', filename } = req.body;
 
   if (!['image', 'font'].includes(kind)) {
