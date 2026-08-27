@@ -42,6 +42,49 @@
       padding: var(--sp-4) 0;
       background: linear-gradient(transparent, var(--surface-0) 30%);
     }
+
+    /* ── Readiness Ring Tags & Banner ── */
+    .ring-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 10px;
+      border-radius: var(--r-full);
+      font-size: var(--fs-xs);
+      font-weight: var(--fw-semibold);
+      font-family: var(--font-mono);
+      margin-left: auto;
+    }
+    .ring-tag.done { background: rgba(13, 148, 136, 0.15); color: var(--teal); border: 1px solid var(--teal); }
+    .ring-tag.warn { background: rgba(230, 180, 115, 0.15); color: var(--gold-ink, #E6B473); border: 1px solid var(--gold-dim, #E6B473); }
+
+    .readiness-banner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--sp-4);
+      padding: var(--sp-3) var(--sp-5);
+      border-radius: var(--r-lg);
+      font-size: var(--fs-sm);
+      margin-bottom: var(--sp-6);
+    }
+    .readiness-banner.done {
+      background: var(--tint-success, rgba(13, 148, 136, 0.08));
+      border: 1px solid var(--teal);
+      color: var(--teal);
+    }
+    .readiness-banner.warn {
+      background: var(--tint-warn, rgba(230, 180, 115, 0.08));
+      border: 1px solid var(--gold-dim, rgba(230, 180, 115, 0.3));
+      color: var(--text-1);
+    }
+
+    .section.highlight-section {
+      outline: 2px solid var(--cd-gold);
+      box-shadow: 0 0 0 6px rgba(230, 180, 115, 0.18);
+      border-radius: var(--r-xl);
+      padding: var(--sp-4);
+    }
   </style>
 </head>
 <body>
@@ -53,6 +96,8 @@
 
     <div class="figures" id="figures"></div>
 
+    <div id="readinessBanner"></div>
+
     <!-- What Credit Direct holds about this developer's integration, and which
          groups decide what reaches them. Read-only: these are set by the
          Developer Hub and by the engagement team, not editable here. -->
@@ -62,8 +107,11 @@
       <div class="membership mt-4" id="membership"></div>
     </section>
 
-    <section class="section">
-      <div class="section-head"><h2 class="section-title">About you</h2></div>
+    <section class="section" id="about">
+      <div class="section-head">
+        <h2 class="section-title">About you</h2>
+        <span class="ring-tag" id="ringTagAbout">Ring 1</span>
+      </div>
       <div class="field-row">
         <div class="field">
           <label class="label">Name</label>
@@ -98,8 +146,11 @@
       </div>
     </section>
 
-    <section class="section">
-      <div class="section-head"><h2 class="section-title">When to reach you</h2></div>
+    <section class="section" id="availability">
+      <div class="section-head">
+        <h2 class="section-title">When to reach you</h2>
+        <span class="ring-tag" id="ringTagAvail">Ring 2</span>
+      </div>
       <p class="text-sm muted mb-4" style="max-width:54ch">
         We schedule sessions and send messages inside these windows. Outside them, anything
         due is held rather than sent.
@@ -122,8 +173,11 @@
       </div>
     </section>
 
-    <section class="section">
-      <div class="section-head"><h2 class="section-title">How to reach you</h2></div>
+    <section class="section" id="channels">
+      <div class="section-head">
+        <h2 class="section-title">How to reach you</h2>
+        <span class="ring-tag" id="ringTagChannels">Ring 3</span>
+      </div>
       <p class="text-sm muted mb-4" style="max-width:54ch">
         Your preference is where we would like to reach you. Consent is your permission to do
         it at all — manage that under
@@ -189,7 +243,8 @@
 
   async function load() {
     try {
-      const { user, stats, consent, circles, cohorts } = await api.get('/users/profile');
+      const profile = await api.get('/users/profile');
+      const { user, stats, consent, circles, cohorts, readiness } = profile;
       renderStanding(user, circles, cohorts);
 
       document.getElementById('identity').innerHTML = `
@@ -233,8 +288,66 @@
              <a href="/member/notifications.html">Allow now</a>.
            </p>`
         : `<p class="hint">Allowed: ${granted.length ? granted.map(c => CHANNELS[c] || c).join(', ') : 'nothing yet'}.</p>`;
+
+      renderReadinessTags(readiness);
+      handleHash();
     } catch (err) {
       showToast('Failed to load profile: ' + err.message, 'error');
+    }
+  }
+
+  function renderReadinessTags(readiness) {
+    if (!readiness) return;
+    const r1 = readiness.rings.find(r => r.id === 'profile');
+    const r2 = readiness.rings.find(r => r.id === 'availability');
+    const r3 = readiness.rings.find(r => r.id === 'channels');
+
+    const tagAbout = document.getElementById('ringTagAbout');
+    const tagAvail = document.getElementById('ringTagAvail');
+    const tagChannels = document.getElementById('ringTagChannels');
+
+    if (tagAbout && r1) {
+      tagAbout.textContent = r1.is_complete ? '✓ Ring 1 done' : `Ring 1 · ${r1.percentage}%`;
+      tagAbout.className = `ring-tag ${r1.is_complete ? 'done' : 'warn'}`;
+    }
+    if (tagAvail && r2) {
+      tagAvail.textContent = r2.is_complete ? '✓ Ring 2 done' : 'Ring 2 · Incomplete';
+      tagAvail.className = `ring-tag ${r2.is_complete ? 'done' : 'warn'}`;
+    }
+    if (tagChannels && r3) {
+      tagChannels.textContent = r3.is_complete ? '✓ Ring 3 done' : `Ring 3 · ${r3.percentage}%`;
+      tagChannels.className = `ring-tag ${r3.is_complete ? 'done' : 'warn'}`;
+    }
+
+    const banner = document.getElementById('readinessBanner');
+    if (banner) {
+      if (readiness.is_complete) {
+        banner.innerHTML = `
+          <div class="readiness-banner done">
+            <strong style="color:var(--teal)">✓ All 3 rings closed (100%)</strong>
+            <span class="dim">Your profile and available time are completely up to date.</span>
+          </div>`;
+      } else {
+        const availIncomplete = r2 && !r2.is_complete;
+        banner.innerHTML = `
+          <div class="readiness-banner warn">
+            <div>
+              <strong>${readiness.completed_rings} of 3 rings complete (${readiness.overall_percentage}%)</strong>
+              <div class="text-xs dim">${availIncomplete ? 'Updating your available time below finishes Ring 2 and unlocks clash-free scheduling.' : 'Complete the missing fields below to finish your profile setup.'}</div>
+            </div>
+            ${availIncomplete ? '<a class="btn btn-sm btn-primary" href="#availability">Jump to availability ↓</a>' : ''}
+          </div>`;
+      }
+    }
+  }
+
+  function handleHash() {
+    if (window.location.hash) {
+      const el = document.querySelector(window.location.hash);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        el.classList.add('highlight-section');
+      }
     }
   }
 

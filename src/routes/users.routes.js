@@ -9,6 +9,7 @@ const notifications = require('../services/notifications');
 const circles = require('../services/circles');
 const scheduler = require('../services/scheduler');
 const surveyForm = require('../services/surveyForm');
+const readiness = require('../services/readiness');
 
 const router = express.Router();
 
@@ -62,8 +63,18 @@ router.get('/profile', requireAuth, async (req, res) => {
       streak: user.engagement_streak,
       best_streak: user.best_streak
     },
-    unread_notifications: Number(byK.unread?.n || 0)
+    unread_notifications: Number(byK.unread?.n || 0),
+    readiness: readiness.computeReadiness(user, consent)
   });
+});
+
+// GET /api/users/readiness — 3 staged activity rings & unfinished tasks
+router.get('/readiness', requireAuth, async (req, res) => {
+  const [consent, user] = await Promise.all([
+    db.prepare('SELECT channel, status, granted_at, withdrawn_at FROM consent WHERE user_id = ?').all(req.user.id),
+    db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id)
+  ]);
+  res.json(readiness.computeReadiness(user, consent));
 });
 
 // ─── Circles ────────────────────────────────────────────────

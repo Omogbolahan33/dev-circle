@@ -61,6 +61,94 @@
     .track-note { color: var(--text-3); font-size: var(--fs-xs); }
     .track-step.done .track-name { color: var(--teal-ink); }
     .track-step.now .track-name { color: var(--gold-ink); }
+
+    /* ── Three Concentric Activity Rings & Staged Readiness ── */
+    .rings-widget { display: flex; flex-direction: column; gap: var(--sp-4); }
+    .rings-row { display: flex; align-items: center; gap: var(--sp-4); }
+    @media (max-width: 480px) { .rings-row { flex-direction: column; text-align: center; } }
+    .rings-svg-wrap { flex-shrink: 0; display: flex; justify-content: center; }
+    .rings-svg { display: block; overflow: visible; }
+    .ring-track { fill: none; stroke: var(--line); opacity: 0.35; }
+    .ring-fill {
+      fill: none;
+      stroke-linecap: round;
+      transition: stroke-dashoffset 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .ring-center-percent {
+      font-family: var(--font-display);
+      font-weight: var(--fw-bold);
+      fill: var(--text-1);
+      font-size: 22px;
+    }
+    .ring-center-label {
+      font-family: var(--font-mono);
+      font-size: 9px;
+      font-weight: var(--fw-semibold);
+      fill: var(--text-3);
+      letter-spacing: 0.08em;
+    }
+
+    .rings-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
+    .ring-item {
+      display: flex; align-items: flex-start; gap: var(--sp-2);
+      font-size: var(--fs-xs); padding: var(--sp-2);
+      border-radius: var(--r-md); background: var(--surface-1);
+      border: 1px solid var(--line-faint);
+    }
+    .ring-swatch { width: 10px; height: 10px; border-radius: 50%; margin-top: 3px; flex-shrink: 0; }
+    .ring-item-body { flex: 1; min-width: 0; }
+    .ring-item-head { display: flex; justify-content: space-between; align-items: baseline; gap: var(--sp-2); }
+    .ring-item-title { font-weight: var(--fw-semibold); color: var(--text-1); }
+    .ring-item-score { font-family: var(--font-mono); font-size: var(--fs-xs); }
+    .text-teal { color: var(--teal) !important; font-weight: var(--fw-semibold); }
+    .text-warn { color: var(--gold-ink, #E6B473) !important; font-weight: var(--fw-semibold); }
+
+    .readiness-blocker {
+      background: var(--tint-warn, rgba(230, 180, 115, 0.08));
+      border: 1px solid var(--gold-dim, rgba(230, 180, 115, 0.3));
+      border-radius: var(--r-lg);
+      padding: var(--sp-4);
+      display: flex; flex-direction: column; gap: var(--sp-2);
+    }
+    .readiness-blocker-head {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: var(--sp-2); font-size: var(--fs-xs);
+    }
+    .readiness-blocker-title {
+      font-weight: var(--fw-semibold);
+      color: var(--gold-ink, #E6B473);
+      display: flex; align-items: center; gap: var(--sp-2);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .readiness-blocker-text {
+      font-size: var(--fs-xs);
+      color: var(--text-2);
+      line-height: var(--lh-normal);
+      margin: 0;
+    }
+    .readiness-checklist { display: flex; flex-direction: column; gap: var(--sp-2); margin-top: var(--sp-1); }
+    .readiness-check-item {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: var(--sp-2); font-size: var(--fs-xs);
+      padding: var(--sp-1) var(--sp-2);
+      border-radius: var(--r-sm);
+      background: var(--surface-0);
+      border: 1px solid var(--line-faint);
+    }
+    .readiness-check-label { display: flex; align-items: center; gap: var(--sp-2); color: var(--text-1); }
+    .readiness-check-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--cd-gold); flex-shrink: 0;
+    }
+
+    .readiness-all-done {
+      background: var(--tint-success, rgba(13, 148, 136, 0.08));
+      border: 1px solid var(--teal);
+      border-radius: var(--r-lg);
+      padding: var(--sp-4);
+      display: flex; align-items: center; gap: var(--sp-3);
+    }
   </style>
 </head>
 <body>
@@ -103,6 +191,15 @@
       </div>
 
       <div class="stack">
+        <!-- The three activity rings: Profile, Available Time, Channels & Consent -->
+        <section class="panel-card" id="readinessSection">
+          <div class="panel-title" style="display:flex;align-items:center;justify-content:space-between">
+            <span>Setup & Readiness</span>
+            <span class="badge" id="readinessBadge">3 rings</span>
+          </div>
+          <div id="readinessContent"></div>
+        </section>
+
         <!-- Twelve weeks of taking part, as a record rather than a score. -->
         <section class="panel-card">
           <div class="panel-title">Your engagement</div>
@@ -183,6 +280,7 @@
 
       renderMasthead(profile);
       renderNextAction(profile, surveys.surveys, sessions.sessions);
+      renderReadiness(profile.readiness);
       renderHeat(engagement.history, profile.stats);
       renderTrack(profile.user);
       renderMembership(profile);
@@ -192,6 +290,147 @@
     } catch (err) {
       showToast('Failed to load: ' + err.message, 'error');
     }
+  }
+
+  function renderReadiness(readiness) {
+    const el = document.getElementById('readinessContent');
+    const badgeEl = document.getElementById('readinessBadge');
+    if (!el || !readiness) return;
+
+    const { overall_percentage, completed_rings, rings, unfinished_tasks, is_complete } = readiness;
+
+    if (badgeEl) {
+      badgeEl.textContent = `${completed_rings}/3 closed`;
+      badgeEl.className = `badge ${is_complete ? 'active' : 'warn'}`;
+    }
+
+    const r1 = rings.find(r => r.id === 'profile') || { percentage: 0, is_complete: false, color: '#0D9488', name: 'Profile Details', subtitle: 'About you' };
+    const r2 = rings.find(r => r.id === 'availability') || { percentage: 0, is_complete: false, color: '#E84E1B', name: 'Available Time', subtitle: 'When to reach you' };
+    const r3 = rings.find(r => r.id === 'channels') || { percentage: 0, is_complete: false, color: '#E6B473', name: 'Reachability & Consent', subtitle: 'How to reach you' };
+
+    const c1 = 402.12;
+    const c2 = 314.16;
+    const c3 = 226.19;
+
+    const off1 = (c1 * (1 - (r1.percentage || 0) / 100)).toFixed(2);
+    const off2 = (c2 * (1 - (r2.percentage || 0) / 100)).toFixed(2);
+    const off3 = (c3 * (1 - (r3.percentage || 0) / 100)).toFixed(2);
+
+    let statusMarkup = '';
+    if (is_complete) {
+      statusMarkup = `
+        <div class="readiness-all-done">
+          <div style="color:var(--teal);font-size:var(--fs-lg);font-weight:var(--fw-bold)">✓</div>
+          <div>
+            <div style="font-weight:var(--fw-semibold);color:var(--teal);font-size:var(--fs-sm)">All 3 rings complete</div>
+            <div class="text-xs dim">Your profile, available time, and contact permissions are 100% up to date.</div>
+          </div>
+        </div>`;
+    } else {
+      const isAvailIncomplete = !r2.is_complete;
+      const blockerMsg = isAvailIncomplete
+        ? 'Updating your available time is required so sessions and 1-on-1 calls don\'t clash with your day. That unfinished progress keeps you back from scheduled sessions and survey matching.'
+        : 'You have unfinished profile tasks keeping you back from full circle participation.';
+
+      const tasksHtml = (unfinished_tasks || []).slice(0, 3).map(t => `
+        <div class="readiness-check-item">
+          <div class="readiness-check-label">
+            <span class="readiness-check-dot" style="background:${t.color}"></span>
+            <span>${escapeHtml(t.label)}</span>
+          </div>
+          <a class="btn btn-sm btn-ghost" href="${t.action_url}" style="padding:2px 8px;font-size:var(--fs-xs)">${escapeHtml(t.action_label)}</a>
+        </div>`).join('');
+
+      const primaryAction = readiness.next_action || {
+        action_url: '/member/profile.html#availability',
+        action_label: 'Update available time'
+      };
+
+      statusMarkup = `
+        <div class="readiness-blocker">
+          <div class="readiness-blocker-head">
+            <div class="readiness-blocker-title">
+              <span class="readiness-check-dot"></span>
+              <span>${completed_rings} of 3 rings closed</span>
+            </div>
+            <span class="dim font-mono">${overall_percentage}%</span>
+          </div>
+          <p class="readiness-blocker-text">${escapeHtml(blockerMsg)}</p>
+          <div class="readiness-checklist">
+            ${tasksHtml}
+          </div>
+          <div style="margin-top:var(--sp-2)">
+            <a class="btn btn-sm btn-primary" href="${primaryAction.action_url}">${escapeHtml(primaryAction.action_label)} →</a>
+          </div>
+        </div>`;
+    }
+
+    el.innerHTML = `
+      <div class="rings-widget">
+        <div class="rings-row">
+          <div class="rings-svg-wrap">
+            <svg class="rings-svg" viewBox="0 0 160 160" width="124" height="124">
+              <!-- Ring 1 (Outer - Profile) -->
+              <circle cx="80" cy="80" r="64" class="ring-track" stroke-width="8"></circle>
+              <circle cx="80" cy="80" r="64" class="ring-fill" stroke-width="8"
+                stroke-dasharray="${c1}" stroke-dashoffset="${off1}" stroke="${r1.color}"
+                transform="rotate(-90 80 80)"></circle>
+
+              <!-- Ring 2 (Middle - Available Time) -->
+              <circle cx="80" cy="80" r="50" class="ring-track" stroke-width="8"></circle>
+              <circle cx="80" cy="80" r="50" class="ring-fill" stroke-width="8"
+                stroke-dasharray="${c2}" stroke-dashoffset="${off2}" stroke="${r2.color}"
+                transform="rotate(-90 80 80)"></circle>
+
+              <!-- Ring 3 (Inner - Channels & Consent) -->
+              <circle cx="80" cy="80" r="36" class="ring-track" stroke-width="8"></circle>
+              <circle cx="80" cy="80" r="36" class="ring-fill" stroke-width="8"
+                stroke-dasharray="${c3}" stroke-dashoffset="${off3}" stroke="${r3.color}"
+                transform="rotate(-90 80 80)"></circle>
+
+              <text x="80" y="75" text-anchor="middle" class="ring-center-percent">${overall_percentage}%</text>
+              <text x="80" y="93" text-anchor="middle" class="ring-center-label">${completed_rings}/3 RINGS</text>
+            </svg>
+          </div>
+
+          <div class="rings-meta">
+            <div class="ring-item">
+              <span class="ring-swatch" style="background:${r1.color}"></span>
+              <div class="ring-item-body">
+                <div class="ring-item-head">
+                  <span class="ring-item-title">${escapeHtml(r1.name)}</span>
+                  <span class="ring-item-score ${r1.is_complete ? 'text-teal' : 'dim'}">${r1.is_complete ? '✓ 100%' : r1.percentage + '%'}</span>
+                </div>
+                <div class="text-xs dim">${escapeHtml(r1.subtitle)}</div>
+              </div>
+            </div>
+
+            <div class="ring-item">
+              <span class="ring-swatch" style="background:${r2.color}"></span>
+              <div class="ring-item-body">
+                <div class="ring-item-head">
+                  <span class="ring-item-title">${escapeHtml(r2.name)}</span>
+                  <span class="ring-item-score ${r2.is_complete ? 'text-teal' : 'text-warn'}">${r2.is_complete ? '✓ 100%' : 'Incomplete (' + r2.percentage + '%)'}</span>
+                </div>
+                <div class="text-xs dim">${escapeHtml(r2.subtitle)}</div>
+              </div>
+            </div>
+
+            <div class="ring-item">
+              <span class="ring-swatch" style="background:${r3.color}"></span>
+              <div class="ring-item-body">
+                <div class="ring-item-head">
+                  <span class="ring-item-title">${escapeHtml(r3.name)}</span>
+                  <span class="ring-item-score ${r3.is_complete ? 'text-teal' : 'dim'}">${r3.is_complete ? '✓ 100%' : r3.percentage + '%'}</span>
+                </div>
+                <div class="text-xs dim">${escapeHtml(r3.subtitle)}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        ${statusMarkup}
+      </div>`;
   }
 
   function renderMasthead({ user, stats }) {
@@ -283,9 +522,12 @@
   }
 
   // Exactly one call to action, chosen by what actually matters most:
-  // consent we never got, then a session today, then a waiting survey.
-  function renderNextAction({ consent }, surveys, sessions) {
+  // consent we never got, then a session today, then a waiting survey,
+  // or unfinished profile/availability rings keeping you back.
+  function renderNextAction(profile, surveys, sessions) {
     const el = document.getElementById('nextAction');
+    const consent = profile.consent || [];
+    const readiness = profile.readiness;
     const pending = consent.filter(c => c.status === 'pending');
     const waiting = surveys.filter(s => !s.completed);
 
@@ -332,6 +574,21 @@
           <div class="headline">${escapeHtml(s.title)}</div>
           <p class="detail">${escapeHtml(s.description || 'Your answers shape what gets built next.')} About ${s.time_estimate_min} minutes, ${s.question_count} question${s.question_count === 1 ? '' : 's'}.</p>
           <a class="btn btn-primary" href="/member/survey.html?id=${s.id}">Start survey</a>
+        </div>`;
+      return;
+    }
+
+    if (readiness && !readiness.is_complete && readiness.next_action) {
+      const na = readiness.next_action;
+      el.innerHTML = `
+        <div class="next-action">
+          <div class="eyebrow">${readiness.completed_rings} of 3 rings complete · ${readiness.overall_percentage}% ready</div>
+          <div class="headline">${escapeHtml(na.headline)}</div>
+          <p class="detail">${escapeHtml(na.detail)} That unfinished progress keeps you back from scheduled sessions and survey matching.</p>
+          <div class="row-tight wrap">
+            <a class="btn btn-primary" href="${na.action_url}">${escapeHtml(na.action_label)} →</a>
+            <a class="btn btn-ghost" href="/member/profile.html">View profile</a>
+          </div>
         </div>`;
       return;
     }
