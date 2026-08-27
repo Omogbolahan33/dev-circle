@@ -218,12 +218,26 @@ const Shell = {
 
   _portalBar(activeId) {
     const user = Auth.getUser() || {};
+    const current = PORTAL_NAV.find(i => i.id === activeId);
+    const currentLabel = current ? current.label : 'Home';
+
+    // Primary destinations get a tab on the phone bottom bar; the rest
+    // (History, Notifications) stay reachable from the avatar menu and bell.
+    const tabItems = PORTAL_NAV.filter(i =>
+      ['dashboard', 'surveys', 'sessions', 'feedback', 'gifts'].includes(i.id));
+
     return `
       <header class="portal-bar">
         <div class="portal-bar-inner">
           <a href="/member/dashboard.html" class="sidebar-brand" style="padding:0;height:auto">
             <span class="brand-mark">dev<span>.</span>circle</span>
           </a>
+
+          <!-- Current page, shown in the bar on a phone where the link row
+               collapses to a bottom tab bar — the member-side equivalent of
+               the admin mobile breadcrumb. -->
+          <span class="portal-current mobile-only">${escapeHtml(currentLabel)}</span>
+
           <nav class="portal-links">
             ${PORTAL_NAV.map(i => `
               <a href="${i.href}" class="portal-link${i.id === activeId ? ' active' : ''}">${i.label}</a>`).join('')}
@@ -249,7 +263,18 @@ const Shell = {
             </div>
           </div>
         </div>
-      </header>`;
+      </header>
+
+      <!-- Phone-only bottom navigation: the five things a member came to do,
+           reachable with a thumb. Hidden on larger screens that show the link
+           row in the top bar. -->
+      <nav class="portal-tabbar" aria-label="Main">
+        ${tabItems.map(i => `
+          <a href="${i.href}" class="portal-tab${i.id === activeId ? ' active' : ''}">
+            <span class="portal-tab-icon">${icon(i.icon || (i.id === 'dashboard' ? 'home' : i.id), 22)}</span>
+            <span class="portal-tab-label">${i.label}</span>
+          </a>`).join('')}
+      </nav>`;
   },
 
   toggleAccount(e) {

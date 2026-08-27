@@ -1244,6 +1244,20 @@ textarea.input { min-height: 90px; line-height: var(--lh-normal); }
 .portal-link:hover { color: var(--white); background: var(--tint-1); text-decoration: none; }
 .portal-link.active { color: var(--white); background: var(--cd-blue-dim); }
 
+/* The current page label shown in the bar on a phone; desktop shows the full
+   link row instead. */
+.portal-current {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  color: var(--text-1);
+  white-space: nowrap;
+}
+.mobile-only { display: none; }
+
+/* Thumb navigation: a fixed bottom tab bar on phones, hidden where the link
+   row fits in the top bar. */
+.portal-tabbar { display: none; }
+
 .portal-body {
   flex: 1;
   max-width: var(--max-reading);
@@ -1251,7 +1265,42 @@ textarea.input { min-height: 90px; line-height: var(--lh-normal); }
   margin: 0 auto;
   padding: var(--sp-8) var(--sp-5) var(--sp-16);
 }
-@media (max-width: 640px) { .portal-body { padding: var(--sp-6) var(--sp-4) var(--sp-12); } }
+@media (max-width: 640px) {
+  .portal-body { padding: var(--sp-6) var(--sp-4) calc(var(--sp-12) + 64px); }
+
+  /* The link row moves to the bottom tab bar; the bar instead names the page,
+     so it is the member's mobile breadcrumb and the in-content breadcrumb is
+     hidden to avoid showing "Home / Page" twice. */
+  .portal-links { display: none; }
+  .portal-current { display: inline-block; flex: 1; text-align: center; }
+  .mobile-only { display: inline; }
+  .portal-body .breadcrumb { display: none; }
+
+  .portal-tabbar {
+    display: flex;
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    z-index: var(--z-sticky);
+    background: var(--surface-1);
+    border-top: 1px solid var(--line-faint);
+    padding: var(--sp-1) 0 calc(var(--sp-1) + env(safe-area-inset-bottom, 0px));
+  }
+  .portal-tab {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: var(--sp-1) 0;
+    color: var(--ash-dim);
+    text-decoration: none;
+    font-size: 10px;
+    font-weight: var(--fw-medium);
+  }
+  .portal-tab-icon { display: flex; align-items: center; justify-content: center; height: 22px; }
+  .portal-tab.active { color: var(--cd-blue); }
+  .portal-tab.active .portal-tab-icon svg { stroke: var(--cd-blue); }
+}
 
 /* Notification bell with unread marker. */
 .bell { position: relative; }
