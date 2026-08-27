@@ -3,6 +3,7 @@ const dbContext = require('../db/context');
 const config = require('../config');
 const { uuid, parseJSON } = require('../utils/helpers');
 const engagement = require('./engagement');
+const emailService = require('./email');
 
 // ─── Notification & delivery service ────────────────────────
 // The blueprint's core promise is that members "receive communications
@@ -140,9 +141,17 @@ async function dispatchToProvider(channel, user, message) {
     return { status: 'simulated', ref: null, error: 'Sandbox — not dispatched' };
   }
 
-  const { delivery } = config;
+  if (channel === 'email') {
+    const outcome = await emailService.sendNotificationEmail({ user, message });
+    return {
+      status: outcome.status,
+      ref: outcome.ref || null,
+      error: outcome.error || null
+    };
+  }
 
-  if (channel === 'email' || channel === 'whatsapp' || channel === 'sms') {
+  if (channel === 'whatsapp' || channel === 'sms') {
+    const { delivery } = config;
     if (!delivery.enabled) {
       return { status: 'simulated', ref: null };
     }
@@ -285,38 +294,34 @@ async function sendDirect(user, {
 // consent record to consult and no delivery row to write; the caller is told
 // what actually happened instead, because an invite that only looks sent
 // leaves somebody unable to get in.
-async function sendMail({ to, title, body }) {
+async function sendMail({ to, title, body, template = 'generic', templateData = {}, actionUrl = null }) {
   if (!to || !title) throw new Error('sendMail() requires "to" and a title');
 
   if (dbContext.inSandbox()) {
     return { status: 'simulated', reason: 'Sandbox — not dispatched' };
   }
 
-  const { delivery } = config;
-  if (!delivery.enabled) {
-    return { status: 'simulated', reason: 'No Customer.io credentials configured' };
-  }
+  const outcome = await emailService.send({
+    to,
+    subject: title,
+    body,
+    template,
+    templateData: {
+      ...templateData,
+      title,
+      body,
+      actionUrl
+    },
+    actionUrl,
+    category: 'staff_invite'
+  });
 
-  try {
-    const res = await fetch('https://api.customer.io/v1/send/triggers', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${delivery.customerIoApiKey}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        transactional_message_id: 'staff_invite',
-        identifiers: { email: to },
-        to,
-        message_data: { title, body }
-      })
-    });
-
-    if (!res.ok) return { status: 'failed', reason: `Provider responded ${res.status}` };
-    return { status: 'sent', reason: null };
-  } catch (err) {
-    return { status: 'failed', reason: err.message };
-  }
+  return {
+    status: outcome.status,
+    reason: outcome.error || null,
+    ref: outcome.ref || null,
+    provider: outcome.provider
+  };
 }
 
 // Send the same message to many members

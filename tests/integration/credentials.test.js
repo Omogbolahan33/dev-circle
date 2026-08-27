@@ -254,7 +254,7 @@ test('the credentials overview reports providers without handing back a secret',
   assert.equal(status, 200);
 
   const ids = body.providers.map(p => p.id);
-  assert.deepEqual(ids.sort(), ['customer_io', 'dev_hub_sso', 'sms', 'whatsapp']);
+  assert.deepEqual(ids.sort(), ['customer_io', 'dev_hub_sso', 'simpu', 'sms', 'termii', 'whatsapp']);
 
   for (const provider of body.providers) {
     assert.equal(typeof provider.configured, 'boolean');
@@ -266,6 +266,22 @@ test('the credentials overview reports providers without handing back a secret',
   const sso = body.providers.find(p => p.id === 'dev_hub_sso');
   assert.equal(sso.configured, true);
   assert.equal(JSON.stringify(body).includes('test-sso-secret'), false, 'no secret may appear in the response');
+
+  // Overview includes email service status
+  assert.ok(body.email);
+  assert.equal(typeof body.email.active_provider, 'string');
+});
+
+test('test-email endpoint requires credentials.write permission', async () => {
+  const denied = await h.post('/api/admin/credentials/test-email', { to: 'test@creditdirect.ng' }, { token: readerToken });
+  assert.equal(denied.status, 403);
+
+  const missingTo = await h.post('/api/admin/credentials/test-email', {}, { token: superToken });
+  assert.equal(missingTo.status, 400);
+
+  const allowed = await h.post('/api/admin/credentials/test-email', { to: 'test@creditdirect.ng' }, { token: superToken });
+  assert.equal(allowed.status, 200);
+  assert.match(allowed.body.message, /Test email dispatched/);
 });
 
 test('the overview counts a key nobody has ever used', async () => {

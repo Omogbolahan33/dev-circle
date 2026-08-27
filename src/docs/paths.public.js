@@ -262,6 +262,30 @@ const paths = {
     })
   },
 
+  '/auth/password': {
+    post: op({
+      tag: 'Authentication',
+      operationId: 'changePassword',
+      summary: 'Change staff password',
+      description: [
+        'Allows staff who signed in with a temporary handover password (or want to update their password)',
+        'to set their new password, clearing must_change_password and upgrading their session to full scope.'
+      ].join('\n'),
+      requestBody: jsonBody(object({
+        new_password: str('At least 10 characters', { format: 'password', minLength: 10 }),
+        current_password: str('Current password (optional if forced change)', { format: 'password' })
+      }, { required: ['new_password'] }), {
+        new_password: 'a-new-secure-password-123'
+      }),
+      responses: {
+        200: json('Password updated.', object({ message: str('Confirmation') }), { message: 'Password updated successfully' }),
+        400: json('Password too short or missing.', ref('Error'), { error: 'New password must be at least 10 characters' }),
+        401: json('Current password incorrect.', ref('Error'), { error: 'Current password is incorrect' }),
+        403: json('Not a staff account.', ref('Error'), { error: 'Only staff accounts manage passwords' })
+      }
+    })
+  },
+
   '/auth/me': {
     get: op({
       tag: 'Authentication',
