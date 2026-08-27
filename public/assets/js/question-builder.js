@@ -175,10 +175,10 @@ const QuestionBuilder = (() => {
           ${head}
 
           <div class="field">
-            <label class="label">${question.type === 'section' ? 'Heading' : 'Question'}</label>
+            <label class="label">${question.type === 'section' ? 'Heading' : 'Question'}
+              <span class="tip" data-tip="A word can be a link: [Terms &amp; Conditions](https://example.com/terms)">?</span></label>
             <input type="text" class="input q-text" value="${escapeHtml(question.text || '')}"
                    placeholder="${escapeHtml(placeholderFor(question.type))}">
-            <p class="hint">A word can be a link: [Terms &amp; Conditions](https://example.com/terms)</p>
           </div>
 
           ${SurveySchema.isAnswerable(question) ? `
@@ -218,9 +218,16 @@ const QuestionBuilder = (() => {
 
     function editor(question, index) {
       const isCards = question.type === 'choice' || question.type === 'multi_choice';
+      const optionTip = isCards
+        ? `The pen beside an option adds the line the member reads under it — a sentence, a link, or a picture.`
+          + (question.type === 'multi_choice'
+            ? ` Mark an option “only” when it cannot be true alongside the others — “None of these”.`
+            : '')
+        : '';
       const options = list => `
         <div class="field" style="margin-bottom:0">
-          <label class="label">Options</label>
+          <label class="label">Options${optionTip ? `
+            <span class="tip" data-tip="${escapeHtml(optionTip)}">?</span>` : ''}</label>
           <div class="options">
             ${(question[list] || []).map((option, i) => {
               const word = isCards
@@ -258,7 +265,6 @@ const QuestionBuilder = (() => {
             }).join('')}
           </div>
           <button class="btn btn-sm btn-ghost mt-2" data-add-option="${list}">+ Add option</button>
-          ${isCards ? '<p class="hint">The ✎ beside an option adds the line the member reads under it — a sentence, a link, or a picture.</p>' : ''}
         </div>`;
 
       switch (question.type) {
@@ -323,8 +329,7 @@ const QuestionBuilder = (() => {
                 <span class="check${question.randomize ? ' on' : ''}" data-set-check="randomize">✓</span>
                 Shuffle the order
               </label>
-            </div>
-            <p class="hint">Mark an option <strong>only</strong> when it cannot be true alongside the others — "None of these".</p>`;
+            </div>`;
 
         case 'ranking':
           return options('options');
@@ -362,10 +367,10 @@ const QuestionBuilder = (() => {
 
         case 'nps':
           return `
-            <p class="hint mb-3">Fixed at 0–10 and scored as promoters minus detractors, which is the only thing that makes it comparable with anyone else's NPS.</p>
             <div class="field-row" style="margin-bottom:0">
               <div class="field" style="margin-bottom:0">
-                <label class="label">0 means</label>
+                <label class="label">0 means
+                  <span class="tip" data-tip="Fixed at 0–10 and scored as promoters minus detractors, which is the only thing that makes it comparable with anyone else's NPS.">?</span></label>
                 <input type="text" class="input" data-set="label_low" placeholder="Not at all likely"
                        value="${escapeHtml(question.label_low || '')}">
               </div>
@@ -559,13 +564,13 @@ const QuestionBuilder = (() => {
       return `
         <div class="logic">
           <div class="row" style="gap:var(--sp-2);margin-bottom:var(--sp-3)">
-            <span class="logic-lead">When the answer to this question holds, the survey</span>
+            <span class="logic-lead">When the answer to this question holds, the survey
+              <span class="tip" data-tip="Checked in the order written — the first rule that holds decides. When none holds, the survey simply moves on to the next question.">?</span></span>
             <span class="spacer"></span>
             <button class="icon-btn" data-drop-branch aria-label="The survey always moves on from here">×</button>
           </div>
           ${question.branch_to.rules.map((rule, r) => branchRuleRow(rule, r, question, later)).join('')}
           <button class="btn btn-sm btn-ghost mt-2" data-add-branch-rule>+ Add a rule</button>
-          <p class="hint mt-2">Checked in the order written — the first rule that holds decides. When none holds, the survey simply moves on to the next question.</p>
         </div>`;
     }
 

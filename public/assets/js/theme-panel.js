@@ -106,7 +106,8 @@ const ThemePanel = (() => {
       // brand guide, which is how these actually arrive.
       const colour = (key, label, { hint = '', clearable = false } = {}) => `
         <div class="field">
-          <label class="label">${escapeHtml(label)}</label>
+          <label class="label">${escapeHtml(label)}${hint ? `
+            <span class="tip" data-tip="${escapeHtml(hint)}">?</span>` : ''}</label>
           <div class="row" style="gap:var(--sp-2)">
             <input type="color" class="input" data-theme="${key}"
                    value="${theme[key] || fallbackFor(key)}" style="width:46px;padding:2px;height:36px;flex:none">
@@ -114,10 +115,17 @@ const ThemePanel = (() => {
                    value="${escapeHtml(theme[key] || '')}" style="font-family:var(--font-mono)">
             ${clearable ? `<button class="icon-btn" data-clear-theme="${key}" title="Back to the default">×</button>` : ''}
           </div>
-          ${hint ? `<p class="hint">${hint}</p>` : ''}
         </div>`;
 
       const chosenFont = schema.theme.fonts.find(f => f.value === theme.font) || {};
+      // What a font choice needs saying: its note, and for a font that lives
+      // on the reader's machine, why it is worth uploading one instead
+      const fontTip = [
+        chosenFont.note,
+        chosenFont.device
+          ? `This one is not sent with the ${noun} — it renders only for readers who already have it. To be certain everyone sees it, upload the font file and it will be served from here.`
+          : null
+      ].filter(Boolean).join(' ');
 
       // What is on screen right now, so a warning is about the combination the
       // member will see rather than about one colour in isolation
@@ -160,7 +168,8 @@ const ThemePanel = (() => {
       // ── Colours ──────────────────────────────────────────
       const coloursBody = `
         <div class="field">
-          <label class="label">Accent</label>
+          <label class="label">Accent
+            <span class="tip" data-tip="Buttons and progress take this. Text on it is worked out from its brightness, so a pale accent gets dark type rather than white on white.">?</span></label>
           <div class="row" style="gap:var(--sp-3)">
             <input type="color" class="input" data-theme="accent" value="${theme.accent}" style="width:52px;padding:2px;height:36px">
             <input type="text" class="input" data-theme-hex="accent" value="${theme.accent}" style="font-family:var(--font-mono)">
@@ -170,15 +179,9 @@ const ThemePanel = (() => {
               <button class="swatch${theme.accent.toLowerCase() === hex.toLowerCase() ? ' on' : ''}"
                       style="background:${hex}" data-swatch="${hex}" aria-label="${hex}"></button>`).join('')}
           </div>
-          <p class="hint">Buttons and progress take this. Text on it is worked out from its brightness, so a pale accent gets dark type rather than white on white.</p>
         </div>
 
-        <p class="hint" style="margin-top:0;margin-bottom:var(--sp-3)">
-          Leave the brand colours empty and the ${noun} follows the member's light or dark setting.
-          Name a background and everything between it and the text — cards, borders,
-          secondary labels — is worked out from the pair.
-        </p>
-        ${colour('background_color', 'Background', { clearable: true })}
+        ${colour('background_color', 'Background', { clearable: true, hint: `Leave the brand colours empty and the ${noun} follows the member's light or dark setting. Name a background and everything between it and the text — cards, borders, secondary labels — is worked out from the pair.` })}
         ${colour('text_color', 'Text', { clearable: true })}
 
         ${ratio ? `
@@ -209,7 +212,8 @@ const ThemePanel = (() => {
       // Grouped, because fifteen names in a flat list is a wall.
       const typeBody = `
         <div class="field">
-          <label class="label">Font</label>
+          <label class="label">Font${fontTip ? `
+            <span class="tip" data-tip="${escapeHtml(fontTip)}">?</span>` : ''}</label>
           <select class="input font-select" id="fontSelect"
                   style="font-family:${(schema.theme.fonts.find(f => f.value === theme.font) || {}).stack || 'inherit'}">
             ${['sans', 'serif', 'mono', 'device', 'custom'].map(group => {
@@ -230,12 +234,6 @@ const ThemePanel = (() => {
             (schema.theme.fonts.find(f => f.value === theme.font) || {}).stack || 'inherit'}">
             How clear is our API documentation?
           </p>
-          ${chosenFont.note ? `<p class="hint">${escapeHtml(chosenFont.note)}</p>` : ''}
-          ${chosenFont.device ? `
-            <p class="hint" style="color:var(--gold-ink)">
-              This one is not sent with the ${noun} — it renders only for readers who already have it.
-              To be certain everyone sees it, upload the font file and it will be served from here.
-            </p>` : ''}
         </div>
 
         ${theme.font === 'brand' || theme.brand_font ? `
@@ -531,7 +529,8 @@ const ThemePanel = (() => {
       mount.innerHTML = `
         <div class="field-row">
           <div class="field" style="margin-bottom:0">
-            <label class="label">How the questions are shown</label>
+            <label class="label">How the questions are shown${theme.layout === 'by_section' ? `
+              <span class="tip" data-tip="The point where a section is introduced is where the page is divided — the section opens its page and the questions under it stay with it. Questions before the first section make up the first page.">?</span>` : ''}</label>
             <select class="input" data-display="layout">
               ${schema.theme.layouts.map(v => `
                 <option value="${v}"${theme.layout === v ? ' selected' : ''}>${escapeHtml(LABELS[v] || v)}</option>`).join('')}
@@ -539,16 +538,13 @@ const ThemePanel = (() => {
           </div>
           ${theme.layout === 'n_per_page' ? `
           <div class="field" style="margin-bottom:0">
-            <label class="label">N — questions per page</label>
+            <label class="label">N — questions per page
+              <span class="tip" data-tip="N is the number you set (${min}–${max}); it is not chosen for you.">?</span></label>
             <input type="number" class="input" data-display="page_size"
                    min="${min}" max="${max}"
                    value="${state.theme.page_size ?? ''}" placeholder="${min}–${max}">
           </div>` : ''}
-        </div>
-        ${theme.layout === 'by_section' ? `
-          <p class="hint">The point where a section is introduced is where the page is divided — the section opens its page and the questions under it stay with it. Questions before the first section make up the first page.</p>` : ''}
-        ${theme.layout === 'n_per_page' ? `
-          <p class="hint">N is the number you set (${min}–${max}); it is not chosen for you.</p>` : ''}`;
+        </div>`;
 
       mount.querySelector('[data-display="layout"]').addEventListener('change', e => {
         if (e.target.value === SurveyTheme.DEFAULTS.layout) delete state.theme.layout;

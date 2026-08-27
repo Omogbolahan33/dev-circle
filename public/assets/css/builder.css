@@ -196,6 +196,38 @@
 .asset-line-select { width: auto; flex-shrink: 0; }
 .asset-line-range { flex: 1; min-width: 60px; }
 
+/* A question mark beside what it explains. The sentence lives in the hover
+   rather than under every control: it is there when it is wanted and takes
+   no space when it is not. */
+.tip {
+  position: relative;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 15px; height: 15px;
+  margin-left: var(--sp-1);
+  border: 1px solid var(--line); border-radius: 50%;
+  font-size: 10px; line-height: 1; color: var(--ash-dim);
+  cursor: help; flex-shrink: 0;
+}
+.tip:hover { color: var(--white); border-color: var(--ash-dim); }
+.tip::after {
+  content: attr(data-tip);
+  position: absolute;
+  bottom: calc(100% + 6px); left: 0;
+  width: max-content; max-width: 300px;
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--surface-1);
+  color: var(--text-1);
+  font-size: var(--fs-xs); font-weight: var(--fw-regular);
+  line-height: var(--lh-loose);
+  text-align: left; white-space: normal;
+  border: 1px solid var(--line); border-radius: var(--r-md);
+  box-shadow: var(--shadow-md);
+  opacity: 0; pointer-events: none;
+  transition: opacity var(--duration-fast) var(--ease-out);
+  z-index: 60;
+}
+.tip:hover::after { opacity: 1; }
+
 /* The picker is set in whatever is selected, and a line of real wording
    under it shows the choice at the size a question is actually read. */
 .font-select { font-size: var(--fs-base); }
