@@ -52,6 +52,12 @@ const QuestionBuilder = (() => {
     const descExpanded = new Set();
     const descKey = (questionId, list, i) => `${questionId}|${list}|${i}`;
 
+    // Which cards have their "More options" fold open. The same redraw
+    // problem: the choice is the author's, so it is kept across the redraws
+    // their typing causes — keyed by the question's id, so a moved card
+    // carries its fold with it.
+    const moreExpanded = new Set();
+
     // Whatever the page calls the thing being built, for the preview's heading.
     if (!opts.title) opts.title = () => '';
 
@@ -186,8 +192,8 @@ const QuestionBuilder = (() => {
               <span class="check${question.required ? ' on' : ''}" data-required>✓</span> An answer is required
             </label>` : ''}
 
-          ${editor(question, index)}
-          ${opts.extraFields ? opts.extraFields(question, index) : ''}
+          ${coreEditor(question)}
+          ${moreOptions(question, index)}
           ${logicEditor(question, index)}
           ${SurveySchema.isAnswerable(question) && opts.allowBranching ? branchEditor(question, index) : ''}
 
@@ -215,8 +221,16 @@ const QuestionBuilder = (() => {
     }
 
     // ─── Per-type settings ────────────────────────────────────
+    // A type's editor is two things. The core is what the question is made of
+    // — its options, its rows, its columns — and it stays out in the open
+    // under the wording, because a choice question whose options are hidden is
+    // not a question but a promise. The settings are what tune the question:
+    // the form its answer may take, how long it may be, the order its options
+    // come in. They do not sit as separate rows, one per setting, making the
+    // card a form about a question instead of a question — they sit under one
+    // fold, and the fold's label carries what has already been decided.
 
-    function editor(question, index) {
+    function optionsList(question, list) {
       const isCards = question.type === 'choice' || question.type === 'multi_choice';
       const optionTip = isCards
         ? `The pen beside an option adds the line the member reads under it — a sentence, a link, or a picture.`
@@ -224,7 +238,7 @@ const QuestionBuilder = (() => {
             ? ` Mark an option “only” when it cannot be true alongside the others — “None of these”.`
             : '')
         : '';
-      const options = list => `
+      return `
         <div class="field" style="margin-bottom:0">
           <label class="label">Options${optionTip ? `
             <span class="tip" data-tip="${escapeHtml(optionTip)}">?</span>` : ''}</label>
@@ -270,7 +284,30 @@ const QuestionBuilder = (() => {
           </div>
           <button class="btn btn-sm btn-ghost mt-2" data-add-option="${list}">+ Add option</button>
         </div>`;
+    }
 
+    // What the question is made of: out in the open, under the wording.
+    function coreEditor(question) {
+      switch (question.type) {
+        case 'choice':
+        case 'dropdown':
+        case 'multi_choice':
+        case 'ranking':
+          return optionsList(question, 'options');
+        case 'matrix':
+          return `
+            <div class="field-row">
+              <div>${optionsList(question, 'rows').replace('>Options<', '>Rows<')}</div>
+              <div>${optionsList(question, 'columns').replace('>Options<', '>Columns<')}</div>
+            </div>`;
+        default:
+          return '';
+      }
+    }
+
+    // What tunes the question: the answer's form and bounds, the options'
+    // order, the scale's ends. One per type, all of it under the fold.
+    function settingsEditor(question) {
       switch (question.type) {
         case 'text':
           return `
@@ -297,8 +334,7 @@ const QuestionBuilder = (() => {
         case 'choice':
         case 'dropdown':
           return `
-            ${options('options')}
-            <div class="row wrap mt-3" style="gap:var(--sp-4)">
+            <div class="row wrap" style="gap:var(--sp-4)">
               <label class="row-tight text-sm" style="cursor:pointer">
                 <span class="check${question.allow_other ? ' on' : ''}" data-set-check="allow_other">✓</span>
                 Offer "something else"
@@ -311,8 +347,7 @@ const QuestionBuilder = (() => {
 
         case 'multi_choice':
           return `
-            ${options('options')}
-            <div class="field-row mt-3">
+            <div class="field-row">
               <div class="field" style="margin-bottom:0">
                 <label class="label">Pick at least</label>
                 <input type="number" class="input" data-set="min_select" min="0" max="20"
@@ -324,7 +359,7 @@ const QuestionBuilder = (() => {
                        value="${question.max_select || ''}" placeholder="No limit">
               </div>
             </div>
-            <div class="row wrap mt-3" style="gap:var(--sp-4)">
+            <div class="row wrap" style="gap:var(--sp-4);margin-top:var(--sp-2)">
               <label class="row-tight text-sm" style="cursor:pointer">
                 <span class="check${question.allow_other ? ' on' : ''}" data-set-check="allow_other">✓</span>
                 Offer "something else"
@@ -334,9 +369,6 @@ const QuestionBuilder = (() => {
                 Shuffle the order
               </label>
             </div>`;
-
-        case 'ranking':
-          return options('options');
 
         case 'rating':
           return `
@@ -387,10 +419,6 @@ const QuestionBuilder = (() => {
 
         case 'matrix':
           return `
-            <div class="field-row">
-              <div>${options('rows').replace('>Options<', '>Rows<')}</div>
-              <div>${options('columns').replace('>Options<', '>Columns<')}</div>
-            </div>
             <label class="row-tight text-sm" style="margin-bottom:0;cursor:pointer">
               <span class="check${question.multi ? ' on' : ''}" data-set-check="multi">✓</span>
               Allow more than one per row
@@ -454,6 +482,88 @@ const QuestionBuilder = (() => {
         default:
           return '';
       }
+    }
+
+    // The fold the settings sit under, with whatever this kind of form adds to
+    // a card — onboarding tags its questions, and a tag is a setting of the
+    // question, so it goes in the fold rather than out in the open. The fold
+    // is drawn only when there is something to put in it.
+    function moreOptions(question, index) {
+      const body = settingsEditor(question)
+        + (opts.extraFields ? opts.extraFields(question, index) : '');
+      if (!body.trim()) return '';
+
+      const summary = moreSummary(question);
+
+      return `
+        <div class="q-more${moreExpanded.has(question.id) ? ' open' : ''}">
+          <button type="button" class="q-more-toggle" data-toggle-more>
+            <span class="q-more-caret">▸</span>
+            <span class="q-more-label">More options</span>
+            ${summary ? `<span class="q-more-summary">${escapeHtml(summary)}</span>` : ''}
+          </button>
+          <div class="q-more-body">${body}</div>
+        </div>`;
+    }
+
+    // What the fold says while it is closed: every setting that is not at its
+    // default, in one quiet line. A closed fold must not be a black box — the
+    // card should read as what the question is, and this is the rest of it.
+    function moreSummary(question) {
+      const parts = [];
+      switch (question.type) {
+        case 'text': {
+          const format = (schema.text_formats || []).find(f => f.value === question.format);
+          if (question.format && question.format !== 'none') parts.push(format ? format.label : question.format);
+          if (question.max_length) parts.push(question.max_length + ' characters');
+          if (question.multiline !== false) parts.push('paragraph');
+          break;
+        }
+        case 'choice':
+        case 'dropdown':
+          if (question.allow_other) parts.push('an “other” option');
+          if (question.randomize) parts.push('shuffled');
+          break;
+        case 'multi_choice':
+          if (question.min_select) parts.push('pick at least ' + question.min_select);
+          if (question.max_select) parts.push('pick at most ' + question.max_select);
+          if (question.allow_other) parts.push('an “other” option');
+          if (question.randomize) parts.push('shuffled');
+          break;
+        case 'rating':
+          parts.push('1–' + (question.scale || 5) + ' ' + (question.style || 'numbers'));
+          if (question.label_low) parts.push('low: ' + question.label_low);
+          if (question.label_high) parts.push('high: ' + question.label_high);
+          break;
+        case 'nps':
+          if (question.label_low) parts.push('0 = ' + question.label_low);
+          if (question.label_high) parts.push('10 = ' + question.label_high);
+          break;
+        case 'matrix':
+          if (question.multi) parts.push('more than one per row');
+          break;
+        case 'number':
+          if (question.min != null && question.max != null) parts.push(question.min + '–' + question.max);
+          else if (question.min != null) parts.push('from ' + question.min);
+          else if (question.max != null) parts.push('to ' + question.max);
+          if (question.unit) parts.push(question.unit);
+          if (question.integer) parts.push('whole numbers');
+          break;
+        case 'date':
+          if (question.min) parts.push('no earlier than ' + question.min);
+          if (question.max) parts.push('no later than ' + question.max);
+          break;
+        case 'boolean':
+          if ((question.true_label && question.true_label !== 'Yes')
+            || (question.false_label && question.false_label !== 'No')) {
+            parts.push((question.true_label || 'Yes') + ' / ' + (question.false_label || 'No'));
+          }
+          break;
+        case 'section':
+          if (question.description) parts.push('a note');
+          break;
+      }
+      return parts.join(' · ');
     }
 
     // ─── Branching ────────────────────────────────────────────
@@ -719,6 +829,15 @@ const QuestionBuilder = (() => {
           question[key] = !question[key];
           redraw();
         });
+      });
+
+      // The fold is the author's choice about what they are looking at, so it
+      // survives the redraws their typing causes — but opening it changes the
+      // definition nothing, so it redraws without marking the form dirty.
+      cardEl.querySelector('[data-toggle-more]')?.addEventListener('click', () => {
+        if (moreExpanded.has(question.id)) moreExpanded.delete(question.id);
+        else moreExpanded.add(question.id);
+        render();
       });
 
       // Options, rows and columns

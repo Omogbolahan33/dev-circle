@@ -102,6 +102,56 @@ test('a card carries the settings its question type needs', () => {
   }
 });
 
+test('the type settings sit under one “More options” fold, and the fold says what is set', () => {
+  // A text question: every settings row goes under the fold, and the fold's
+  // label carries what has already been decided — so closed is not hidden
+  const { builder, el } = build([{
+    id: 'q1', type: 'text', text: 'What is stopping you?', format: 'email', max_length: 120, multiline: false
+  }]);
+  builder.render();
+  let html = el.questions.innerHTML;
+
+  assert.ok(html.includes('data-toggle-more'), 'the settings sit under a fold');
+  assert.ok(html.includes('More options'), 'the fold is named as such');
+  assert.ok(html.indexOf('data-toggle-more') < html.indexOf('data-set="format"'), 'the format is inside the fold');
+  assert.ok(html.indexOf('data-toggle-more') < html.indexOf('data-set="max_length"'), 'the length is inside the fold');
+  assert.ok(html.indexOf('data-toggle-more') < html.indexOf('data-set-check="multiline"'), 'the paragraph is inside the fold');
+  assert.ok(/data-toggle-more[\s\S]{0,300}?Email address[\s\S]{0,300}?120 characters/.test(html),
+    'the closed fold says what is set');
+
+  // A choice question: the options are what the question is made of, so they
+  // stay out in the open; only its tuning folds away
+  const { builder: b2, el: e2 } = build([{
+    id: 'q1', type: 'choice', text: 'Which environment?', options: ['Sandbox', 'Production'], allow_other: true
+  }]);
+  b2.render();
+  html = e2.questions.innerHTML;
+  assert.ok(html.indexOf('data-add-option="options"') < html.indexOf('data-toggle-more'), 'the options stay in the open');
+  assert.ok(html.indexOf('data-toggle-more') < html.indexOf('data-set-check="allow_other"'), 'the tuning is inside the fold');
+  assert.ok(/data-toggle-more[\s\S]{0,300}?an “other” option/.test(html), 'the fold says the “other” is on');
+
+  // A rating's scale is tuning too, so it folds the same way
+  const { builder: b3, el: e3 } = build([{ id: 'q1', type: 'rating', text: 'How clear?', scale: 5, style: 'stars' }]);
+  b3.render();
+  html = e3.questions.innerHTML;
+  assert.ok(html.indexOf('data-toggle-more') < html.indexOf('data-set="scale"'), 'the scale is inside the fold');
+  assert.ok(/1–5 stars/.test(html), 'the fold says the scale');
+
+  // A ranking question has nothing to tune, so it has no fold — unless this
+  // kind of form gives the question something to tune, and that too goes in
+  const { builder: b4, el: e4 } = build([{ id: 'q1', type: 'ranking', text: 'Order these', options: ['A', 'B'] }]);
+  b4.render();
+  assert.ok(!e4.questions.innerHTML.includes('data-toggle-more'), 'nothing to fold means no fold');
+
+  const { builder: b5, el: e5 } = build([{ id: 'q1', type: 'ranking', text: 'Order these', options: ['A', 'B'] }], {
+    extraFields: () => '<div class="maps"><select data-maps-to></select></div>'
+  });
+  b5.render();
+  html = e5.questions.innerHTML;
+  assert.ok(html.includes('data-toggle-more'), 'the tag gives the fold its reason');
+  assert.ok(html.indexOf('data-toggle-more') < html.indexOf('data-maps-to'), 'the tag sits inside the fold');
+});
+
 test('only one card is open at a time, and the closed ones show their wording', () => {
   const { builder, state, el } = build([]);
   builder.add('text');

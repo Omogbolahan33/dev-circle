@@ -16,13 +16,17 @@
     /* ─── The tag on a question ───────────────────────────
        What separates this from a survey: an answer can be a fact about the
        person rather than an opinion. The control sits under the question's own
-       settings and above its branching, because it is a property of the
-       question and not of the form. */
+       settings, above its branching, because it is a property of the question
+       and not of the form. */
     .maps {
       margin-top: var(--sp-4);
       padding-top: var(--sp-4);
       border-top: 1px dashed var(--line-faint);
     }
+    /* Both the settings and the tag sit inside the card's fold, so the
+       divider between them works at the fold's own scale rather than the
+       card's. */
+    .q-more-body > .maps { margin-top: var(--sp-3); padding-top: var(--sp-3); }
     .maps-lead { font-size: var(--fs-xs); color: var(--ash-dim); margin-bottom: var(--sp-2); }
     .maps-note { font-size: var(--fs-xs); color: var(--ash-dim); margin-top: var(--sp-2); line-height: var(--lh-loose); }
     .q-maps {

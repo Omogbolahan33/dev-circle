@@ -71,6 +71,37 @@
   border-radius: var(--r-sm);
 }
 
+/* The settings a question type can carry, under one fold rather than as a
+   separate row each. The card should read as a question, not as a form about
+   a question; the fold starts closed, and its label carries what has already
+   been decided, so what is closed is never a black box. */
+.q-more {
+  border-top: 1px dashed var(--line-faint);
+  margin-top: var(--sp-3);
+  padding-top: var(--sp-2);
+}
+.q-more-toggle {
+  display: flex; align-items: baseline; gap: var(--sp-2);
+  width: 100%;
+  background: none; border: 0; padding: var(--sp-1) 0;
+  font: inherit; font-size: var(--fs-sm); color: var(--ash);
+  cursor: pointer; text-align: left;
+}
+.q-more-toggle:hover .q-more-label { color: var(--white); }
+.q-more-caret {
+  font-size: 10px; color: var(--ash-dim); align-self: center;
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+.q-more.open .q-more-caret { transform: rotate(90deg); }
+.q-more-label { font-weight: var(--fw-medium); }
+.q-more-summary {
+  font-size: var(--fs-xs); color: var(--ash-dim);
+  min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.q-more-body { display: none; margin-top: var(--sp-2); }
+.q-more.open .q-more-body { display: block; }
+
 .option-item { margin-bottom: var(--sp-2); }
 .option-row { display: flex; align-items: center; gap: var(--sp-2); }
 .option-row input { flex: 1; }
