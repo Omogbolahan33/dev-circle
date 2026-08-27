@@ -173,24 +173,28 @@
 .contrast.warn { background: var(--gold-dim); color: var(--gold-ink); }
 .contrast.bad  { background: var(--rose-dim); color: var(--rose-ink); }
 
-/* An uploaded asset shows what was uploaded, not the path it landed at */
-.asset { display: flex; gap: var(--sp-3); align-items: center; }
-.asset.busy { opacity: 0.5; pointer-events: none; }
-.asset-thumb {
-  width: 46px; height: 46px;
-  border-radius: var(--r-md);
-  object-fit: contain;
+/* An uploaded asset is one line: what it is, what was uploaded, and what to
+   do about it. The reason it exists is the line's tooltip, not a row below. */
+.asset-line { display: flex; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-2); }
+.asset-line.busy { opacity: 0.5; pointer-events: none; }
+.asset-line-label { font-size: var(--fs-sm); color: var(--ash); flex-shrink: 0; min-width: 118px; }
+.asset-thumb-sm {
+  width: 26px; height: 26px;
+  border-radius: var(--r-sm);
+  object-fit: cover;
   background: var(--surface-0);
   border: 1px solid var(--line);
   flex-shrink: 0;
 }
-.asset-thumb.empty {
+.asset-thumb-sm.empty {
   display: flex; align-items: center; justify-content: center;
-  color: var(--ash-dim); border-style: dashed; font-size: var(--fs-sm);
+  color: var(--ash-dim); border-style: dashed; font-size: var(--fs-xs);
 }
-.asset-meta { min-width: 0; flex: 1; }
-.asset-name { font-size: var(--fs-xs); display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.asset label.btn { cursor: pointer; }
+.asset-name { font-size: var(--fs-xs); color: var(--ash-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.asset-line label.btn { cursor: pointer; flex-shrink: 0; }
+.asset-line .btn-ghost { flex-shrink: 0; }
+.asset-line-select { width: auto; flex-shrink: 0; }
+.asset-line-range { flex: 1; min-width: 60px; }
 
 /* The picker is set in whatever is selected, and a line of real wording
    under it shows the choice at the size a question is actually read. */

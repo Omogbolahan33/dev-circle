@@ -63,28 +63,26 @@ const ThemePanel = (() => {
     // to somebody else's server, and what stops an approved image being swapped
     // for something else after the fact.
 
-    function assetRow(key, current, kind = 'image') {
+    // One line: what it is, what was uploaded, and what to do about it. The
+    // reason it exists rides in the tooltip, because a row of explanation for
+    // every control is how a panel becomes a document.
+    function assetRow(key, current, kind = 'image', label = '', hint = '') {
       const accept = kind === 'font'
         ? '.woff2,.woff,.ttf,.otf,font/woff2,font/woff,font/ttf,font/otf'
         : 'image/png,image/jpeg,image/gif,image/webp';
 
       return `
-        <div class="asset" data-asset="${key}" data-kind="${kind}">
+        <div class="asset-line" data-asset="${key}" data-kind="${kind}"${hint ? ` title="${escapeHtml(hint)}"` : ''}>
+          ${label ? `<span class="asset-line-label">${escapeHtml(label)}</span>` : ''}
           ${current && kind === 'image'
-            ? `<img class="asset-thumb" src="${escapeHtml(current)}" alt="">`
-            : `<span class="asset-thumb empty">${kind === 'font' ? 'Aa' : '+'}</span>`}
-          <div class="asset-meta">
-            ${current
-              ? `<span class="asset-name mono">${escapeHtml(current.split('/').pop())}</span>`
-              : `<span class="asset-name dim">Nothing uploaded</span>`}
-            <div class="row" style="gap:var(--sp-2);margin-top:4px">
-              <label class="btn btn-sm btn-secondary">
-                ${current ? 'Replace' : 'Upload'}
-                <input type="file" accept="${accept}" hidden data-upload="${key}" data-upload-kind="${kind}">
-              </label>
-              ${current ? `<button class="btn btn-sm btn-ghost" data-clear-asset="${key}">Remove</button>` : ''}
-            </div>
-          </div>
+            ? `<img class="asset-thumb-sm" src="${escapeHtml(current)}" alt="">`
+            : `<span class="asset-thumb-sm empty">${kind === 'font' ? 'Aa' : '+'}</span>`}
+          <span class="asset-name mono" title="${current ? escapeHtml(current) : ''}">${current ? escapeHtml(current.split('/').pop()) : 'Nothing uploaded'}</span>
+          <label class="btn btn-sm btn-secondary">
+            ${current ? 'Replace' : 'Upload'}
+            <input type="file" accept="${accept}" hidden data-upload="${key}" data-upload-kind="${kind}">
+          </label>
+          ${current ? `<button class="btn btn-sm btn-ghost" data-clear-asset="${key}">Remove</button>` : ''}
         </div>`;
     }
 
@@ -97,13 +95,6 @@ const ThemePanel = (() => {
     function render() {
       const theme = SurveyTheme.resolve(state.theme, state.circleTheme);
       const panel = mount;
-
-      const asset = (key, label, hint = '') => `
-        <div class="field">
-          <label class="label">${escapeHtml(label)}</label>
-          ${assetRow(key, theme[key])}
-          ${hint ? `<p class="hint">${escapeHtml(hint)}</p>` : ''}
-        </div>`;
 
       const choose = (key, values, labels) => `
         <select class="input" data-theme="${key}">
@@ -248,12 +239,10 @@ const ThemePanel = (() => {
         </div>
 
         ${theme.font === 'brand' || theme.brand_font ? `
-          <div class="field">
-            <label class="label">Font file</label>
-            ${assetRow('brand_font', theme.brand_font, 'font')}
-            <input type="text" class="input mt-2" data-theme="brand_font_name" placeholder="What to call it, e.g. Acme Grotesk"
+          <div>
+            ${assetRow('brand_font', theme.brand_font, 'font', 'Font file', 'A .woff2 loads fastest. Whatever you upload is served from here, so nothing about the member reaches its foundry.')}
+            <input type="text" class="input mt-1" style="margin-left:${'var(--sp-2)'}" data-theme="brand_font_name" placeholder="What to call it, e.g. Acme Grotesk"
                    value="${escapeHtml(theme.brand_font_name || '')}">
-            <p class="hint">A .woff2 loads fastest. Whatever you upload is served from here, so nothing about the member reaches its foundry.</p>
           </div>` : ''}
 
         <div class="field-row">
@@ -289,22 +278,23 @@ const ThemePanel = (() => {
 
       // ── Images ───────────────────────────────────────────
       const imagesBody = `
-        ${asset('logo_url', 'Wordmark', 'Replaces the Dev Circle mark in the bar and on the opening screen.')}
-        ${asset('header_image', 'Opening image', 'Sits above the headline on the first screen.')}
-        ${asset('background_image', 'Background image')}
+        ${assetRow('logo_url', theme.logo_url, 'image', 'Wordmark', 'Replaces the Dev Circle mark in the bar and on the opening screen.')}
+        ${assetRow('header_image', theme.header_image, 'image', 'Opening image', 'Sits above the headline on the first screen.')}
+        ${assetRow('background_image', theme.background_image, 'image', 'Background image')}
         ${theme.background_image ? `
-          <div class="field-row">
-            <div class="field">
-              <label class="label">How it sits</label>
-              ${choose('background_fit', schema.theme.fits, { cover: 'Fills the screen', contain: 'Fits inside', tile: 'Tiles' })}
-            </div>
-            <div class="field">
-              <label class="label">Dimmed by ${Math.round((theme.background_overlay ?? 0.55) * 100)}%</label>
-              <input type="range" min="0" max="95" step="5" data-theme-range="background_overlay"
-                     value="${Math.round((theme.background_overlay ?? 0.55) * 100)}" style="width:100%">
-            </div>
+          <div class="asset-line" title="A photograph behind text is the quickest way to make a ${noun} unreadable, so it is dimmed unless you say otherwise.">
+            <span class="asset-line-label">How it sits</span>
+            <select class="input asset-line-select" data-theme="background_fit">
+              ${Object.entries({ cover: 'Fills the screen', contain: 'Fits inside', tile: 'Tiles' })
+                .filter(([v]) => (schema.theme.fits || []).includes(v))
+                .map(([v, l]) => `<option value="${v}"${theme.background_fit === v ? ' selected' : ''}>${escapeHtml(l)}</option>`).join('')}
+            </select>
           </div>
-          <p class="hint">A photograph behind text is the quickest way to make a ${noun} unreadable, so it is dimmed unless you say otherwise.</p>` : ''}`;
+          <div class="asset-line">
+            <span class="asset-line-label">Dimmed by ${Math.round((theme.background_overlay ?? 0.55) * 100)}%</span>
+            <input type="range" class="asset-line-range" min="0" max="95" step="5" data-theme-range="background_overlay"
+                   value="${Math.round((theme.background_overlay ?? 0.55) * 100)}">
+          </div>` : ''}`;
 
       // ── Opening / closing screens ────────────────────────
       const openingBody = `
