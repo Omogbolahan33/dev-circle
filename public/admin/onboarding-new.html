@@ -328,6 +328,10 @@
         count:     document.getElementById('stepQCount')
       },
       title: () => document.getElementById('fName').value.trim() || 'Untitled form',
+      // The words on the two screens live on the form — its name and
+      // description open it, its submitted message closes it — so the preview
+      // draws no opening screen of the theme's own.
+      screens: false,
       // Tagging changes what a question means but not what it looks like, so
       // the checklist is redrawn on every edit and the card is not.
       onChange: renderChecklist,
@@ -345,6 +349,11 @@
       state,
       mount: document.getElementById('rail-theme'),
       noun: 'form',
+      // This form's own fields hold the words on the opening and closing
+      // screens — "About this form" and "When they have sent it in" on the
+      // tab where it goes. A second copy of those words under Look would be a
+      // place an author writes and the member is shown from the other copy.
+      screens: false,
       onChange: () => renderPreview(),
       onReset: () => builder?.resetPreview()
     });

@@ -120,12 +120,6 @@
     .done-text { color: var(--ash); font-size: var(--fs-sm); line-height: var(--lh-loose); margin-bottom: var(--sp-2); }
     .done-meta { font-size: var(--fs-xs); color: var(--ash-dim); margin-bottom: var(--sp-6); }
 
-    .intro { max-width: 520px; }
-    .intro-logo { max-height: 44px; margin-bottom: var(--sp-6); }
-    .intro-header { width: 100%; max-height: 200px; object-fit: cover; border-radius: var(--r-lg); margin-bottom: var(--sp-6); display: block; }
-    .intro-title { font-family: var(--font-display); font-weight: var(--fw-bold); font-size: var(--fs-2xl); letter-spacing: -0.02em; margin-bottom: var(--sp-4); }
-    .intro-body { color: var(--ash); font-size: var(--fs-base); line-height: var(--lh-loose); margin-bottom: var(--sp-6); }
-    .intro-facts { display: flex; gap: var(--sp-5); font-size: var(--fs-xs); color: var(--ash-dim); margin-bottom: var(--sp-8); }
 
     /* Said once, at the end, and small: the person filling this in is handing
        over their details, and they are owed a plain sentence about what
@@ -281,8 +275,9 @@
 
       tellHost('ready');
 
-      if (theme.intro && (theme.intro.headline || theme.intro.body)) showIntro();
-      else begin();
+      // No separate opening screen: the form opens on its own words — its
+      // name and description, set where the form goes, not in its look.
+      begin();
     } catch (err) {
       // Somebody who followed a link has no home here to be sent back to, and
       // an already-sent application is a reason rather than an error.
@@ -324,27 +319,6 @@
         : theme.mode;
       document.documentElement.setAttribute('data-theme', mode);
     }
-  }
-
-  function showIntro() {
-    const count = answerable().length;
-    const about = questions.some(q => q.visible_if || q.branch_to) ? 'About ' : '';
-    document.getElementById('stage').innerHTML = `
-      <div class="intro">
-        ${theme.header_image ? `<img src="${escapeHtml(theme.header_image)}" alt="" class="intro-header">` : ''}
-        ${theme.logo_url ? `<img src="${escapeHtml(theme.logo_url)}" alt="" class="intro-logo">` : ''}
-        <h1 class="intro-title">${escapeHtml(theme.intro.headline || form.name)}</h1>
-        ${theme.intro.body ? `<p class="intro-body">${escapeHtml(theme.intro.body)}</p>`
-          : form.description ? `<p class="intro-body">${escapeHtml(form.description)}</p>` : ''}
-        <div class="intro-facts">
-          <span>${about}${count} question${count === 1 && !about ? '' : 's'}</span>
-          ${Object.keys(answers).length ? '<span>Your earlier answers are saved</span>' : ''}
-        </div>
-        <button class="btn btn-primary btn-lg" onclick="begin()">
-          ${escapeHtml(theme.intro.button || (Object.keys(answers).length ? 'Pick up where you left off' : 'Start'))}
-        </button>
-      </div>`;
-    reportHeight();
   }
 
   function begin() {
@@ -729,17 +703,18 @@
       document.getElementById('progressStrip').classList.add('hide');
       document.getElementById('foot').classList.add('hide');
 
-      const closing = theme.thank_you || {};
+      // The closing words are the form's own — the message set where the form
+      // goes, not a line the look carries. There is no theme thank-you here.
       const firstName = String(answers[questions.find(q => q.maps_to === 'name')?.id] || '')
         .trim().split(' ')[0];
 
       document.getElementById('stage').innerHTML = `
         <div class="done">
           <div class="done-mark">✓</div>
-          <div class="done-title">${escapeHtml(closing.headline ||
-            (firstName ? `Thank you, ${firstName}` : 'Thank you'))}</div>
+          <div class="done-title">${escapeHtml(
+            firstName ? `Thank you, ${firstName}` : 'Thank you')}</div>
           <p class="done-text">${escapeHtml(
-            result.submitted_message || closing.body ||
+            result.submitted_message ||
             'We have your details. Someone will review this and you will hear from us at the address you gave.')}</p>
           <p class="fine-print">
             Your answers are held by Credit Direct while this is reviewed. Nothing is sent to you

@@ -1262,8 +1262,11 @@ const QuestionBuilder = (() => {
             <div class="sv-control" data-preview="${escapeHtml(q.id)}"></div>
           </div>`;
 
+      // The opening image sits on the opening screen, so a kind of form that
+      // has no opening screen of its own shows no header image here either.
+      const hasOpeningScreen = opts.screens !== false;
       frame.innerHTML = `
-        ${theme.header_image ? `<img src="${escapeHtml(theme.header_image)}" alt=""
+        ${hasOpeningScreen && theme.header_image ? `<img src="${escapeHtml(theme.header_image)}" alt=""
            style="width:100%;max-height:110px;object-fit:cover;border-radius:var(--r-md);margin-bottom:var(--sp-4);display:block">` : ''}
         ${theme.logo_url ? `<img src="${escapeHtml(theme.logo_url)}" alt="" style="max-height:28px;margin-bottom:var(--sp-4)">` : ''}
         <div class="sv-ask" style="font-size:var(--fs-md);margin-bottom:var(--sp-4)">

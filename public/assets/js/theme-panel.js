@@ -3,6 +3,12 @@
 // colours and the contrast between them, type, corners, imagery, the shape
 // of its progress, and the words on its opening and closing screens.
 //
+// A kind of form whose own fields hold those words may pass `screens: false`
+// and get the panel without the opening and closing sections — an onboarding
+// form opens on its name and description and closes on its own submitted
+// message, so a second set of words for the same two screens is a place an
+// author writes and never sees.
+//
 // How the questions are shown is not here: that is the display control
 // (ThemePanel.display), mounted beside the questions, because it is a
 // decision the person writing the questions makes — with a number that is
@@ -34,6 +40,11 @@ const ThemePanel = (() => {
   function create(opts) {
     const { schema, state, mount } = opts;
     const noun = opts.noun || 'form';
+    // Whether the words on the two screens belong to this panel at all. A form
+    // whose own fields are those words passes screens: false — see the top of
+    // this file for why the alternative is a place an author writes and never
+    // sees.
+    const screens = opts.screens !== false;
 
     // The look changed. Redrawing the preview is the caller's business, because
     // what a preview looks like differs between a survey and an onboarding form
@@ -275,9 +286,13 @@ const ThemePanel = (() => {
         </div>`;
 
       // ── Images ───────────────────────────────────────────
+      // The opening image sits on the opening screen, so it goes with it: a
+      // form that has no opening screen of its own has no place for it to sit.
       const imagesBody = `
-        ${assetRow('logo_url', theme.logo_url, 'image', 'Wordmark', 'Replaces the Dev Circle mark in the bar and on the opening screen.')}
-        ${assetRow('header_image', theme.header_image, 'image', 'Opening image', 'Sits above the headline on the first screen.')}
+        ${assetRow('logo_url', theme.logo_url, 'image', 'Wordmark', screens
+          ? 'Replaces the Dev Circle mark in the bar and on the opening screen.'
+          : 'Replaces the Dev Circle mark in the bar.')}
+        ${screens ? assetRow('header_image', theme.header_image, 'image', 'Opening image', 'Sits above the headline on the first screen.') : ''}
         ${assetRow('background_image', theme.background_image, 'image', 'Background image')}
         ${theme.background_image ? `
           <div class="asset-line" title="A photograph behind text is the quickest way to make a ${noun} unreadable, so it is dimmed unless you say otherwise.">
@@ -321,9 +336,10 @@ const ThemePanel = (() => {
         ${section('colours', 'Colours', 'Accent, background and text', coloursBody, { open: true, marked: customised.colours })}
         ${section('type', 'Type', 'Font and text size', typeBody, { marked: customised.type })}
         ${section('layout', 'Shape', 'Corners, light/dark and progress', layoutBody, { marked: customised.layout })}
-        ${section('images', 'Images', 'Wordmark, opening image and background', imagesBody, { marked: customised.images })}
-        ${section('opening', 'Opening screen', 'Shown before the first question', openingBody, { marked: customised.opening })}
-        ${section('closing', 'Closing screen', 'Shown after the last answer', closingBody, { marked: customised.closing })}
+        ${section('images', 'Images', screens ? 'Wordmark, opening image and background' : 'Wordmark and background',
+          imagesBody, { marked: customised.images })}
+        ${screens ? section('opening', 'Opening screen', 'Shown before the first question', openingBody, { marked: customised.opening }) : ''}
+        ${screens ? section('closing', 'Closing screen', 'Shown after the last answer', closingBody, { marked: customised.closing }) : ''}
 
         <div class="row wrap" style="gap:var(--sp-2);margin-top:var(--sp-4)">
           <button class="btn btn-sm btn-secondary" data-theme-reset>Reset to the workspace look</button>

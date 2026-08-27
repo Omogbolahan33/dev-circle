@@ -246,6 +246,20 @@ test('the definition change hook fires when a question is added', () => {
   assert.equal(changes, 1, 'the page has to be told its form changed');
 });
 
+test('the preview shows the opening-screen image only when the form has an opening screen', () => {
+  const { builder, state, el } = build([{ id: 'q1', type: 'text', text: 'What is stopping you?' }]);
+  state.theme = { header_image: '/uploads/opening-flow.png' };
+  builder.preview();
+  assert.ok(el.preview.innerHTML.includes('opening-flow.png'), 'a survey opens on its image');
+
+  const { builder: b2, state: s2, el: e2 } = build(
+    [{ id: 'q1', type: 'text', text: 'What is stopping you?' }], { screens: false });
+  s2.theme = { header_image: '/uploads/opening-flow.png' };
+  b2.preview();
+  assert.ok(!e2.preview.innerHTML.includes('opening-flow.png'),
+    'a form without an opening screen shows no image the member would never see');
+});
+
 test('a choice option offers its line with a pen, and a written one reads as a quiet line', () => {
   const { builder, el } = build([{
     id: 'q1', type: 'choice', text: 'Which environment?',
