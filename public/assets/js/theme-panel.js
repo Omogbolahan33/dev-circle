@@ -137,7 +137,7 @@ const ThemePanel = (() => {
       const customised = {
         colours: has('accent', 'background_color', 'text_color', 'surface_color', 'muted_color', 'background'),
         type: has('font', 'brand_font', 'scale') || has('brand_font_name'),
-        layout: has('mode', 'layout', 'progress', 'corner'),
+        layout: has('mode', 'layout', 'page_size', 'progress', 'corner'),
         images: has('logo_url', 'header_image', 'background_image'),
         opening: hasCopy('intro'),
         closing: hasCopy('thank_you')
@@ -273,14 +273,29 @@ const ThemePanel = (() => {
         </div>
         <div class="field-row">
           <div class="field">
-            <label class="label">One page or one question</label>
-            ${choose('layout', schema.theme.layouts, { one_per_page: 'One at a time', all_at_once: 'All on one page' })}
+            <label class="label">How the pages are made</label>
+            ${choose('layout', schema.theme.layouts, {
+              one_per_page: 'One at a time',
+              all_at_once: 'All on one page',
+              n_per_page: 'N per page',
+              by_section: 'Sections split the pages'
+            })}
           </div>
           <div class="field">
             <label class="label">Progress</label>
             ${choose('progress', schema.theme.progress, { bar: 'Bar', steps: 'Steps', count: 'Count only', none: 'None' })}
           </div>
-        </div>`;
+        </div>
+        ${theme.layout === 'n_per_page' ? `
+          <div class="field">
+            <label class="label">Questions per page</label>
+            <input type="number" class="input" data-theme="page_size"
+                   min="${schema.theme.page_size ? schema.theme.page_size.min : 2}"
+                   max="${schema.theme.page_size ? schema.theme.page_size.max : 10}"
+                   value="${theme.page_size || 3}">
+          </div>` : ''}
+        ${theme.layout === 'by_section' ? `
+          <p class="hint">A section heading starts a new page, and the questions under it stay with it — the point where a section is introduced is where the page is divided. Questions before the first section make up the first page.</p>` : ''}`;
 
       // ── Images ───────────────────────────────────────────
       const imagesBody = `

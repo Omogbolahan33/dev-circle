@@ -207,7 +207,12 @@
         preview:   document.getElementById('preview'),
         count:     document.getElementById('stepQCount')
       },
-      title: () => document.getElementById('sTitle').value.trim() || 'Untitled survey'
+      title: () => document.getElementById('sTitle').value.trim() || 'Untitled survey',
+      // A survey may branch on its answers: jump to a later question, or end
+      // early (a consent question answered "no" ends it there). An onboarding
+      // form must not: a form that ends early, or jumps past a credential
+      // field, is a half-built member.
+      allowBranching: true
     });
 
     themePanel = ThemePanel.create({

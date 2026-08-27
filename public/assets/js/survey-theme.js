@@ -38,6 +38,7 @@ const SurveyTheme = (() => {
     font: 'default',
     corner: 'soft',
     layout: 'one_per_page',
+    page_size: 3,               // how many questions a page holds, when the layout is n_per_page
     progress: 'bar',
     mode: 'auto',
     logo_url: null,
@@ -67,7 +68,13 @@ const SurveyTheme = (() => {
   const BACKGROUNDS = ['plain', 'tinted', 'gradient'];
   const FITS = ['cover', 'contain', 'tile'];
   const CORNERS = ['sharp', 'soft', 'round'];
-  const LAYOUTS = ['one_per_page', 'all_at_once'];
+  // one_per_page: one question per screen. all_at_once: the whole survey on
+  // one page. n_per_page: a page of `page_size` questions. by_section: a
+  // section heading is where a page breaks, and the questions under it stay
+  // with it — the point where a section is introduced is the point where the
+  // survey page is divided.
+  const LAYOUTS = ['one_per_page', 'all_at_once', 'n_per_page', 'by_section'];
+  const PAGE_SIZE = { min: 2, max: 10 };
   const PROGRESS = ['bar', 'steps', 'count', 'none'];
   const MODES = ['auto', 'light', 'dark'];
 
@@ -396,6 +403,17 @@ const SurveyTheme = (() => {
     const layout = pick(input.layout, LAYOUTS, DEFAULTS.layout, 'layout', push);
     if (layout !== DEFAULTS.layout) theme.layout = layout;
 
+    // How many questions a page holds. Only the n_per_page layout has pages
+    // of a size, and a page of one is the one-per-page layout wearing a
+    // costume, while a page of everything is all-on-one-page — so the range
+    // excludes both.
+    if (layout === 'n_per_page') {
+      const size = parseInt(input.page_size, 10);
+      theme.page_size = Number.isFinite(size)
+        ? Math.min(PAGE_SIZE.max, Math.max(PAGE_SIZE.min, size))
+        : DEFAULTS.page_size;
+    }
+
     const progress = pick(input.progress, PROGRESS, DEFAULTS.progress, 'progress', push);
     if (progress !== DEFAULTS.progress) theme.progress = progress;
 
@@ -577,7 +595,7 @@ const SurveyTheme = (() => {
   }
 
   return {
-    DEFAULTS, FONTS, SCALES, BACKGROUNDS, CORNERS, LAYOUTS, PROGRESS, MODES, FITS, CORNER_RADII,
+    DEFAULTS, FONTS, SCALES, BACKGROUNDS, CORNERS, LAYOUTS, PAGE_SIZE, PROGRESS, MODES, FITS, CORNER_RADII,
     AA, FLOOR,
     normalize, resolve, toCSS, toCSSText, fontFace, legibility,
     normalizeHex, onAccent, contrast, luminance, shade, mix, withAlpha, familyName

@@ -505,17 +505,85 @@ const SurveyRender = (() => {
 
   // The wording, its note, and whether it must be answered — the part above
   // the control, shared so a required marker never appears on one screen and
-  // not the other.
+  // not the other. linkify() is the only place wording becomes HTML, and it
+  // is the one the builder's preview and the page the member answers on both
+  // go through — a link that renders in one and not the other would be a
+  // promise kept for some respondents and not others.
   function heading(question, { number = null } = {}) {
     return `
       ${number ? `<div class="sv-number-kicker">Question ${number}</div>` : ''}
-      <h2 class="sv-ask">${esc(question.text)}${
+      <h2 class="sv-ask">${SurveySchema.linkify(question.text)}${
         question.required ? '<span class="sv-required" aria-label="required">*</span>' : ''
       }</h2>
-      ${question.description ? `<p class="sv-note">${esc(question.description)}</p>` : ''}`;
+      ${question.description ? `<p class="sv-note">${SurveySchema.linkify(question.description)}</p>` : ''}`;
   }
 
-  return { mount, markup, bind, heading, esc, ordered, otherValue, OTHER };
+  // ─── Paging ───────────────────────────────────────────────
+  // Where the questions break into pages. Two ways it is done: a fixed
+  // number of questions to a page, and sections as the page breaks — a
+  // section heading opens its page and the questions under it stay with it,
+  // the way a divided form is divided.
+  //
+  // The list passed in is what is actually asked (branching already
+  // resolved), so a page holds what a member will really get, and the same
+  // grouping feeds the preview beside the builder — a page break drawn where
+  // the member will not get one is a preview lying.
+
+  function pagesBySize(list, size) {
+    const pages = [];
+    let current = [];
+    let count = 0;
+
+    const flush = () => {
+      if (current.length) pages.push(current);
+      current = [];
+      count = 0;
+    };
+
+    for (const question of list || []) {
+      const answerable = SurveySchema.isAnswerable(question);
+      // A page holds `size` questions. A section heads a page rather than
+      // trailing one — a heading at the bottom of a page reads as the top of
+      // the next — so it moves the page break to itself.
+      if (answerable && count >= size) flush();
+      if (!answerable && count > 0) flush();
+      current.push(question);
+      if (answerable) count++;
+    }
+
+    flush();
+    return pages.length ? pages : [[]];
+  }
+
+  function pagesBySection(list) {
+    const pages = [];
+    let current = null;
+
+    for (const question of list || []) {
+      if (!SurveySchema.isAnswerable(question)) {
+        // A section is where a page breaks: it opens its page
+        current = [question];
+        pages.push(current);
+      } else if (current) {
+        current.push(question);
+      } else {
+        current = [question];
+        pages.push(current);
+      }
+    }
+
+    return pages.length ? pages : [[]];
+  }
+
+  // The pages a survey of these questions breaks into, under this layout.
+  function pages(questions, { layout, size } = {}) {
+    const list = Array.isArray(questions) ? questions : [];
+    if (layout === 'n_per_page') return pagesBySize(list, Math.max(2, Number(size) || 2));
+    if (layout === 'by_section') return pagesBySection(list);
+    return [list];
+  }
+
+  return { mount, markup, bind, heading, pages, esc, ordered, otherValue, OTHER };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = SurveyRender;

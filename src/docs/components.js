@@ -249,10 +249,11 @@ const schemas = {
       ],
       example: 'rating'
     }),
-    text: str('The question as the member reads it', { example: 'How clear is our API documentation?' }),
-    description: str('A note under the question'),
+    text: str('The question as the member reads it. [words](https://…) in the wording or the note become a link — the only mark-up allowed, checked at save time', { example: 'How clear is our API documentation?' }),
+    description: str('A note under the question. May carry links like the wording'),
     required: bool('Whether an answer must be given. Only enforced if the member is shown the question'),
     visible_if: ref('SurveyLogic'),
+    branch_to: ref('SurveyBranch'),
 
     options: arrayOf({ type: 'string' }, 'Choices — choice, multi_choice, dropdown and ranking'),
     allow_other: bool('Offer a free-text "something else" alongside the options'),
@@ -296,6 +297,19 @@ const schemas = {
     }), 'Conditions on answers already given')
   }, { description: 'Shows a question only when earlier answers say it is worth asking' }),
 
+  SurveyBranch: object({
+    rules: arrayOf(object({
+      op: str('The comparison, asked of this question\'s own answer', {
+        enum: ['is', 'is_not', 'includes', 'not_includes', 'gt', 'gte', 'lt', 'lte', 'answered', 'not_answered'],
+        example: 'is'
+      }),
+      value: { description: 'What to compare against. Omitted for answered / not_answered', example: false },
+      goto: str('Id of a later question the survey jumps to when the rule holds. Exactly one of goto / end must be set', { example: 'q5_1c2d3e4f' }),
+      end: bool('End the survey when the rule holds', { example: true }),
+      message: str('What the respondent reads when the survey ends here. Without one, it ends in its usual thank-you', { example: "We can't continue without your agreement." })
+    }), 'What the survey does once this question is answered. Checked in the order written; the first rule that holds decides. When none holds, the survey moves on to the next question')
+  }, { description: 'The "then" of a branch, written where the "when" is: on the question whose answer decides it. A rule may only test this question\'s own answer (the same reason a visibility rule may only look backwards), and a jump may only land on a question later in the survey. visible_if decides what is asked; branch_to decides where it goes' }),
+
   SurveyTheme: object({
     accent: str('Brand colour, as hex. Text drawn on it is worked out from its luminance', { example: '#107EBC' }),
     background: str('Canvas treatment', { enum: ['plain', 'tinted', 'gradient'] }),
@@ -317,7 +331,8 @@ const schemas = {
       enum: ['small', 'regular', 'large', 'larger'], default: 'regular'
     }),
     corner: str('Corner radius', { enum: ['sharp', 'soft', 'round'] }),
-    layout: str('One question per screen, or the whole survey on one page', { enum: ['one_per_page', 'all_at_once'] }),
+    layout: str('How the questions are paginated: one per screen, all on one page, N per page, or a section heading as the page break', { enum: ['one_per_page', 'all_at_once', 'n_per_page', 'by_section'] }),
+    page_size: int('How many questions a page holds. Used when layout is n_per_page', { example: 3 }),
     progress: str('How progress is shown', { enum: ['bar', 'steps', 'count', 'none'] }),
     mode: str('Force a light or dark look, or follow the member\'s own setting', { enum: ['auto', 'light', 'dark'] }),
 

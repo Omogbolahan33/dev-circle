@@ -63,6 +63,13 @@
   padding: 2px var(--sp-2);
   border-radius: var(--r-sm);
 }
+.q-branches {
+  font-size: var(--fs-xs);
+  color: var(--cd-blue);
+  background: var(--cd-blue-dim);
+  padding: 2px var(--sp-2);
+  border-radius: var(--r-sm);
+}
 
 .option-row { display: flex; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-2); }
 .option-row input { flex: 1; }
@@ -110,6 +117,24 @@
 .preview-frame .sv-rate-mark { width: 40px; height: 40px; font-size: var(--fs-sm); }
 .preview-frame .sv-option { min-height: 40px; padding: var(--sp-2) var(--sp-3); font-size: var(--fs-sm); }
 .pv-q + .pv-q { margin-top: var(--sp-6); padding-top: var(--sp-6); border-top: 1px solid var(--line-faint); }
+/* Where the member's pages break, drawn in the preview the way they cut the
+   survey: a marked line, so the author sees the division before it goes out. */
+.pv-page-break {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  margin-top: var(--sp-6);
+  margin-bottom: var(--sp-6);
+  font-size: var(--fs-xs);
+  color: var(--ash-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.pv-page-break::before, .pv-page-break::after {
+  content: '';
+  flex: 1;
+  border-top: 1px dashed var(--line);
+}
 
 .swatches { display: flex; gap: var(--sp-2); flex-wrap: wrap; margin-top: var(--sp-2); }
 .swatch { width: 26px; height: 26px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; }

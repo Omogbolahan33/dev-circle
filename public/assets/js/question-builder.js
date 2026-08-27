@@ -140,6 +140,7 @@ const QuestionBuilder = (() => {
           <span class="q-kind">${escapeHtml(type.label)}</span>
           ${question.required ? '<span class="q-flag">required</span>' : ''}
           ${question.visible_if ? '<span class="q-branching">conditional</span>' : ''}
+          ${question.branch_to ? '<span class="q-branches">branches on its answer</span>' : ''}
           ${opts.cardFlags ? opts.cardFlags(question, index) : ''}
           <span class="spacer"></span>
           <button class="icon-btn" data-move="up" ${index === 0 ? 'disabled' : ''} aria-label="Move up">↑</button>
@@ -168,6 +169,7 @@ const QuestionBuilder = (() => {
             <label class="label">${question.type === 'section' ? 'Heading' : 'Question'}</label>
             <input type="text" class="input q-text" value="${escapeHtml(question.text || '')}"
                    placeholder="${escapeHtml(placeholderFor(question.type))}">
+            <p class="hint">A word can be a link: [Terms &amp; Conditions](https://example.com/terms)</p>
           </div>
 
           ${SurveySchema.isAnswerable(question) ? `
@@ -178,6 +180,7 @@ const QuestionBuilder = (() => {
           ${editor(question, index)}
           ${opts.extraFields ? opts.extraFields(question, index) : ''}
           ${logicEditor(question, index)}
+          ${SurveySchema.isAnswerable(question) && opts.allowBranching ? branchEditor(question, index) : ''}
 
           ${issues.length ? `<div class="issue-list">${issues
             .map(i => `<p class="issue">⚠ ${escapeHtml(i.message)}</p>`).join('')}</div>` : ''}
@@ -497,6 +500,94 @@ const QuestionBuilder = (() => {
       return `<input type="text" class="input" data-rule-value value="${escapeHtml(rule.value ?? '')}" placeholder="…">`;
     }
 
+    // ─── What happens next ────────────────────────────────────
+    // The "then" of a branch, configured where the "when" is: on the question
+    // whose answer decides it. Each rule says what the survey does when the
+    // answer to this question holds the condition — go to a later question,
+    // or end the survey, in the words written for that ending. The rules are
+    // read in order and the first that holds decides, so the editor draws
+    // them as a list, not a combination.
+    //
+    // Only the kind of form that may branch offers it at all; a profile form
+    // that ends early, or jumps past a credential field, is a half-built
+    // member.
+    function branchEditor(question, index) {
+      if (!question.branch_to) {
+        return `<div class="logic"><button class="btn btn-sm btn-ghost" data-add-branch>+ Branch on the answer to this question</button></div>`;
+      }
+
+      const later = state.questions.slice(index + 1);
+
+      return `
+        <div class="logic">
+          <div class="row" style="gap:var(--sp-2);margin-bottom:var(--sp-3)">
+            <span class="logic-lead">When the answer to this question holds, the survey</span>
+            <span class="spacer"></span>
+            <button class="icon-btn" data-drop-branch aria-label="The survey always moves on from here">×</button>
+          </div>
+          ${question.branch_to.rules.map((rule, r) => branchRuleRow(rule, r, question, later)).join('')}
+          <button class="btn btn-sm btn-ghost mt-2" data-add-branch-rule>+ Add a rule</button>
+          <p class="hint mt-2">Checked in the order written — the first rule that holds decides. When none holds, the survey simply moves on to the next question.</p>
+        </div>`;
+    }
+
+    function branchRuleRow(rule, r, question, later) {
+      const allowed = SurveySchema.operatorsFor(question.type);
+      const operator = schema.operators.find(o => o.op === rule.op);
+
+      return `
+        <div class="logic-rule" data-branch-rule="${r}">
+          <select class="input" data-branch-op style="max-width:150px">
+            ${schema.operators.filter(o => allowed.includes(o.op)).map(o => `
+              <option value="${o.op}"${o.op === rule.op ? ' selected' : ''}>${escapeHtml(o.label)}</option>`).join('')}
+          </select>
+          ${operator && operator.needsValue !== false ? branchValueInput(rule, question) : '<span class="spacer"></span>'}
+          <select class="input" data-branch-action style="width:auto">
+            <option value="goto"${rule.goto ? ' selected' : ''}>goes to a later question</option>
+            <option value="end"${rule.end && !rule.goto ? ' selected' : ''}>ends the survey</option>
+          </select>
+          ${rule.goto ? `
+            <select class="input" data-branch-target style="width:auto">
+              ${later.map(q => `
+                <option value="${q.id}"${q.id === rule.goto ? ' selected' : ''}>
+                  ${escapeHtml((q.text || 'Untitled').slice(0, 40))}${(q.text || '').length > 40 ? '…' : ''}</option>`).join('')}
+            </select>` : ''}
+          ${rule.end && !rule.goto ? `
+            <input type="text" class="input" data-branch-message maxlength="200" style="flex:2"
+                   placeholder="What to say when it ends, e.g. We can't continue without your agreement."
+                   value="${escapeHtml(rule.message || '')}">` : ''}
+          <button class="icon-btn" data-drop-branch-rule="${r}" aria-label="Remove rule">×</button>
+        </div>`;
+    }
+
+    // The value control follows the question being tested, which is the one
+    // being edited: options come from its own list, and a rule compared
+    // against a value the member cannot produce is a branch that never fires.
+    function branchValueInput(rule, question) {
+      if ((question.options || []).length) {
+        return `
+          <select class="input" data-branch-value>
+            ${(question.options || []).filter(Boolean).map(o => `
+              <option value="${escapeHtml(o)}"${o === rule.value ? ' selected' : ''}>${escapeHtml(o)}</option>`).join('')}
+            ${question.allow_other ? `<option value="__other__"${rule.value === '__other__' ? ' selected' : ''}>Something else</option>` : ''}
+          </select>`;
+      }
+      if (question.type === 'boolean') {
+        return `
+          <select class="input" data-branch-value>
+            <option value="true"${rule.value === true ? ' selected' : ''}>${escapeHtml(question.true_label || 'Yes')}</option>
+            <option value="false"${rule.value === false ? ' selected' : ''}>${escapeHtml(question.false_label || 'No')}</option>
+          </select>`;
+      }
+      if (question.type === 'date') {
+        return `<input type="date" class="input" data-branch-value value="${escapeHtml(rule.value || '')}">`;
+      }
+      if (['rating', 'nps', 'number'].includes(question.type)) {
+        return `<input type="number" class="input" data-branch-value value="${escapeHtml(rule.value ?? '')}">`;
+      }
+      return `<input type="text" class="input" data-branch-value value="${escapeHtml(rule.value ?? '')}" placeholder="…">`;
+    }
+
     // ─── Wiring one card ──────────────────────────────────────
     // Bound per card rather than re-rendering on every keystroke: a card that
     // redraws itself as you type takes the cursor with it.
@@ -694,6 +785,90 @@ const QuestionBuilder = (() => {
         });
       });
 
+      // What happens next
+      cardEl.querySelector('[data-add-branch]')?.addEventListener('click', () => {
+        question.branch_to = {
+          rules: [{
+            op: SurveySchema.operatorsFor(question.type)[0],
+            value: firstValue(question),
+            end: true
+          }]
+        };
+        redraw();
+      });
+
+      cardEl.querySelector('[data-drop-branch]')?.addEventListener('click', () => {
+        delete question.branch_to;
+        redraw();
+      });
+
+      cardEl.querySelector('[data-add-branch-rule]')?.addEventListener('click', () => {
+        question.branch_to.rules.push({
+          op: SurveySchema.operatorsFor(question.type)[0],
+          value: firstValue(question),
+          end: true
+        });
+        redraw();
+      });
+
+      cardEl.querySelectorAll('[data-branch-rule]').forEach(row => {
+        const r = Number(row.dataset.branchRule);
+        const rule = question.branch_to.rules[r];
+        const later = state.questions.slice(index + 1);
+
+        row.querySelector('[data-branch-op]')?.addEventListener('change', e => {
+          rule.op = e.target.value;
+          // The value belongs to the comparison: a rule that stops needing
+          // one stops carrying a stale one.
+          rule.value = firstValue(question);
+          redraw();
+        });
+
+        row.querySelector('[data-branch-action]')?.addEventListener('change', e => {
+          delete rule.end;
+          delete rule.goto;
+          delete rule.message;
+          if (e.target.value === 'end') {
+            rule.end = true;
+          } else {
+            // A jump needs a landing place; the nearest later question is the
+            // least surprising one to offer.
+            rule.goto = (later[0] || {}).id;
+            if (!rule.goto) rule.end = true;   // nothing later to jump to
+          }
+          redraw();
+        });
+
+        row.querySelector('[data-branch-target]')?.addEventListener('change', e => {
+          rule.goto = e.target.value;
+          touch();
+        });
+
+        row.querySelector('[data-branch-message]')?.addEventListener('input', e => {
+          rule.message = e.target.value;
+          touch();
+        });
+
+        row.querySelector('[data-branch-value]')?.addEventListener('input', e => {
+          rule.value = question.type === 'boolean' ? e.target.value === 'true'
+            : e.target.type === 'number' ? Number(e.target.value)
+            : e.target.value;
+          touch();
+        });
+        row.querySelector('[data-branch-value]')?.addEventListener('change', e => {
+          rule.value = question.type === 'boolean' ? e.target.value === 'true'
+            : e.target.type === 'number' ? Number(e.target.value)
+            : e.target.value;
+          touch();
+        });
+
+        row.querySelector('[data-drop-branch-rule]')?.addEventListener('click', () => {
+          question.branch_to.rules.splice(r, 1);
+          if (!question.branch_to.rules.length) delete question.branch_to;
+          redraw();
+        });
+      });
+
       // Whatever this kind of form adds to a card, wired with the same redraw
       // and touch the rest of it uses — so an extension cannot get the two
       // confused and leave the preview showing the previous state.
@@ -723,8 +898,11 @@ const QuestionBuilder = (() => {
 
     async function remove(index) {
       const question = state.questions[index];
+      // A question is depended on two ways: a later question shown only
+      // because of it, or an earlier question whose branch jumps to it.
       const dependents = state.questions.filter(q =>
-        (q.visible_if?.rules || []).some(rule => rule.question === question.id));
+        (q.visible_if?.rules || []).some(rule => rule.question === question.id) ||
+        (q.branch_to?.rules || []).some(rule => rule.goto === question.id));
 
       if (dependents.length) {
         const ok = await Shell.confirm({
@@ -755,10 +933,19 @@ const QuestionBuilder = (() => {
 
     function pruneLogic() {
       state.questions.forEach((question, index) => {
-        if (!question.visible_if) return;
-        const before = new Set(state.questions.slice(0, index).map(q => q.id));
-        question.visible_if.rules = question.visible_if.rules.filter(rule => before.has(rule.question));
-        if (!question.visible_if.rules.length) delete question.visible_if;
+        if (question.visible_if) {
+          const before = new Set(state.questions.slice(0, index).map(q => q.id));
+          question.visible_if.rules = question.visible_if.rules.filter(rule => before.has(rule.question));
+          if (!question.visible_if.rules.length) delete question.visible_if;
+        }
+        // A jump whose landing place was removed, or moved ahead of the
+        // question it jumps from, can no longer land — the rule goes with it
+        // rather than sitting in the definition pointing at nothing.
+        if (question.branch_to) {
+          const after = new Set(state.questions.slice(index + 1).map(q => q.id));
+          question.branch_to.rules = question.branch_to.rules.filter(rule => !rule.goto || after.has(rule.goto));
+          if (!question.branch_to.rules.length) delete question.branch_to;
+        }
       });
     }
 
@@ -803,6 +990,25 @@ const QuestionBuilder = (() => {
       const shown = SurveySchema.visible(questions, previewAnswers);
       const hidden = questions.length - shown.length;
 
+      // A paged layout shows the author where the member's pages break — cut
+      // from what is actually asked, the same way the survey cuts them.
+      const paged = theme.layout === 'n_per_page' || theme.layout === 'by_section';
+      const pages = paged ? SurveyRender.pages(shown, { layout: theme.layout, size: theme.page_size }) : [shown];
+
+      let running = 0;
+      const numberFor = new Map();
+      for (const q of shown) {
+        if (SurveySchema.isAnswerable(q)) { running++; numberFor.set(q.id, running); }
+      }
+
+      const questionHtml = q => `
+          <div class="pv-q">
+            ${SurveySchema.isAnswerable(q)
+              ? SurveyRender.heading(q, { number: numberFor.get(q.id) })
+              : `<div class="sv-section-mark">Section</div><h2 class="sv-ask">${SurveySchema.linkify(q.text)}</h2>`}
+            <div class="sv-control" data-preview="${escapeHtml(q.id)}"></div>
+          </div>`;
+
       frame.innerHTML = `
         ${theme.header_image ? `<img src="${escapeHtml(theme.header_image)}" alt=""
            style="width:100%;max-height:110px;object-fit:cover;border-radius:var(--r-md);margin-bottom:var(--sp-4);display:block">` : ''}
@@ -810,13 +1016,9 @@ const QuestionBuilder = (() => {
         <div class="sv-ask" style="font-size:var(--fs-md);margin-bottom:var(--sp-4)">
           ${escapeHtml(opts.title() || 'Untitled')}
         </div>
-        ${shown.map((q, i) => `
-          <div class="pv-q">
-            ${SurveySchema.isAnswerable(q)
-              ? SurveyRender.heading(q, { number: shown.slice(0, i + 1).filter(x => SurveySchema.isAnswerable(x)).length })
-              : `<div class="sv-section-mark">Section</div><h2 class="sv-ask">${escapeHtml(q.text)}</h2>`}
-            <div class="sv-control" data-preview="${escapeHtml(q.id)}"></div>
-          </div>`).join('')}
+        ${pages.map((group, gi) => `
+          ${gi > 0 ? `<div class="pv-page-break">Page ${gi + 1}</div>` : ''}
+          ${group.map(questionHtml).join('')}`).join('')}
         ${hidden ? `<p class="hint mt-4">${hidden} question${hidden === 1 ? '' : 's'} hidden by the answers above.</p>` : ''}`;
 
       for (const question of shown) {

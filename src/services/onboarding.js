@@ -411,6 +411,29 @@ async function normalizeDefinition(body, { createdBy = null, allowEmpty = false 
 // insists is at the point a decision is made — approving an application with
 // no way to reach anybody reports that plainly.
 
+// The questions whose branch can get the form past this field without
+// asking it: an earlier question whose branch ends the form, or jumps to a
+// question that sits past the field. The position of the questions is what
+// makes a branch able to do that, so this reads the whole list rather than
+// one question.
+function branchesPast(list, key) {
+  const fieldIndex = list.findIndex(q => q.maps_to === key);
+  if (fieldIndex === -1) return [];
+
+  const targets = new Map(list.map((q, i) => [q.id, i]));
+
+  return list
+    .map((q, i) => ({ q, i }))
+    .filter(({ q, i }) => q.branch_to && i < fieldIndex)
+    .filter(({ q }) => q.branch_to.rules.some(rule => {
+      if (rule.end) return true;
+      if (!rule.goto) return false;
+      const target = targets.get(rule.goto);
+      return target !== undefined && target > fieldIndex;
+    }))
+    .map(({ i }) => i);
+}
+
 function canGoOut(questions) {
   const list = Array.isArray(questions) ? questions : [];
   const issues = [];
@@ -444,6 +467,12 @@ function canGoOut(questions) {
       issues.push({
         index, number: index + 1, field: 'visible_if',
         message: `The ${noun} is only asked on a branch, so an application can arrive without one`
+      });
+    }
+    for (const branchIndex of branchesPast(list, key)) {
+      issues.push({
+        index: branchIndex, number: branchIndex + 1, field: 'branch_to',
+        message: `This branch can end the form, or jump past, before the ${noun} is asked, so an application can arrive without one`
       });
     }
     if (!question.required) {
@@ -493,6 +522,12 @@ function advice(questions) {
       notes.push({
         ...at(question), field: 'visible_if', key,
         message: `The ${noun} is only asked on a branch, so an application can arrive without one.`
+      });
+    }
+    for (const branchIndex of branchesPast(list, key)) {
+      notes.push({
+        index: branchIndex, number: branchIndex + 1, field: 'branch_to', key,
+        message: `This branch can end the form, or jump past, before the ${noun} is asked, so an application can arrive without one.`
       });
     }
     if (!question.required) {

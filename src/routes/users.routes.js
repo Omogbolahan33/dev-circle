@@ -903,6 +903,12 @@ router.post('/surveys/:id/respond', requireAuth, async (req, res) => {
     WHERE id = ?
   `).run(JSON.stringify(checked.answers), response.id);
 
+  // The survey may have branched to its end before it was over — a consent
+  // question answered "no" ends it there — and the ending the author wrote
+  // for that is what the member's screen should carry, not the thank-you of
+  // a survey walked to the end.
+  const ending = surveyForm.ending(questions, checked.answers);
+
   // Free-text answers are feedback, so they are filed with the rest of it
   // rather than left inside this one response's JSON where nobody can find them
   const { filed } = await verbatims.record(req.user.id, survey, checked.answers);
@@ -925,7 +931,9 @@ router.post('/surveys/:id/respond', requireAuth, async (req, res) => {
     // Answers to questions the member's branch took them past. Reported
     // rather than silently dropped, so a client that got its own branching
     // wrong can be found out.
-    discarded: checked.dropped.length
+    discarded: checked.dropped.length,
+    ended: !!ending,
+    end_message: ending ? ending.message : null
   });
 });
 

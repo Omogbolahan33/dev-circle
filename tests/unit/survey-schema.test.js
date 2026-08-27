@@ -225,6 +225,255 @@ test('any-of shows the question when a single rule holds', () => {
   assert.equal(schema.visible(questions, { q1: 5, q2: 5 }).length, 2);
 });
 
+// ─── Wording that points outside the survey ─────────────────
+
+test('a link in the wording is kept as written', () => {
+  const question = only({
+    type: 'boolean',
+    text: 'I have read and agree to the [Terms & Conditions](https://example.com/terms)'
+  });
+  assert.equal(
+    question.text,
+    'I have read and agree to the [Terms & Conditions](https://example.com/terms)'
+  );
+});
+
+test('a link that is not a web address is refused, because a click must go somewhere real', () => {
+  const result = normalize([
+    { type: 'boolean', text: 'Agree to the [Terms](javascript:alert(1))?' }
+  ]);
+  assert.ok(messages(result).some(m => /http/i.test(m)));
+});
+
+test('a link with no words to click on is refused', () => {
+  const result = normalize([
+    { type: 'boolean', text: 'Agree to the [ ](https://example.com/terms)?' }
+  ]);
+  assert.ok(messages(result).some(m => /nothing to click/i.test(m)));
+});
+
+test('a note under the question may carry links too', () => {
+  const question = only({
+    type: 'boolean',
+    text: 'Do you agree?',
+    description: 'By answering yes you accept the [Terms](https://example.com/terms) and [Privacy Policy](https://example.com/privacy).'
+  });
+  assert.match(question.description, /Privacy Policy/);
+});
+
+test('a bracket that is not a link stays the words it is', () => {
+  const question = only({ type: 'text', text: 'Press [Enter] to continue — what do you see?' });
+  assert.equal(question.text, 'Press [Enter] to continue — what do you see?');
+});
+
+test('linkify escapes the wording and writes only an anchor', () => {
+  const html = schema.linkify('Read the <script>[terms](https://example.com/t)</script> first');
+  assert.ok(!html.includes('<script>'), 'the wording is escaped, not trusted');
+  assert.ok(html.includes('<a href="https://example.com/t" target="_blank" rel="noopener noreferrer">terms</a>'));
+});
+
+test('linkify never makes a link of what it cannot parse', () => {
+  assert.equal(schema.linkify('a [broken (link) b'), 'a [broken (link) b');
+  assert.equal(schema.linkify('a [link](ftp://example.com/x) b'), 'a [link](ftp://example.com/x) b');
+});
+
+// ─── What happens next ─────────────────────────────────────
+// The "then" of a branch, written where the "when" is: on the question
+// whose answer decides it. The standing case is a consent question that
+// ends the survey when the answer is no, with its own words for that
+// ending; the other place a rule may send the survey is a later question.
+const CONSENT = [
+  {
+    id: 'q1', type: 'boolean', text: 'Do you agree to the [Terms](https://example.com/terms)?',
+    required: true, true_label: 'Yes', false_label: 'No',
+    branch_to: {
+      rules: [{ op: 'is', value: false, end: true, message: 'We can\'t continue without your agreement.' }]
+    }
+  },
+  { id: 'q2', type: 'text', text: 'Tell us about your integration.', required: true },
+  { id: 'q3', type: 'nps', text: 'How likely are you to recommend us?' }
+];
+
+test('a branch rule is held to the question it sits on', () => {
+  const result = normalize([
+    { id: 'q1', type: 'text', text: 'Anything?', branch_to: { rules: [{ op: 'gt', value: 5, end: true }] } }
+  ]);
+  assert.ok(messages(result).some(m => /cannot be asked of a text/i.test(m)));
+});
+
+test('a rule that neither ends the survey nor goes anywhere is refused', () => {
+  const result = normalize([
+    { id: 'q1', type: 'boolean', text: 'Agree?', branch_to: { rules: [{ op: 'is', value: true }] } }
+  ]);
+  assert.equal(result.questions[0].branch_to, undefined);
+  assert.ok(messages(result).some(m => /where the survey goes/i.test(m)));
+});
+
+test('a rule that does both has no single place to go', () => {
+  const result = normalize([
+    {
+      id: 'q1', type: 'boolean', text: 'Agree?',
+      branch_to: { rules: [{ op: 'is', value: true, end: true, goto: 'q2' }] }
+    },
+    { id: 'q2', type: 'text', text: 'More?' }
+  ]);
+  assert.equal(result.questions[0].branch_to, undefined);
+  assert.ok(messages(result).some(m => /where the survey goes/i.test(m)));
+});
+
+test('a branch holds its value to the same shapes a visibility rule does', () => {
+  const question = normalize([{
+    id: 'q1', type: 'choice', text: 'Which product?', options: ['Lending', 'Payments'],
+    branch_to: { rules: [{ op: 'is', value: 'lending', end: true }] }
+  }]).questions[0];
+  assert.deepEqual(question.branch_to.rules, [{ op: 'is', value: 'Lending', end: true }]);
+});
+
+test('a jump may only land on a question later in the survey', () => {
+  // A jump to a question already answered would re-ask it, and two questions
+  // jumping at each other is a loop a member cannot leave — so it is refused.
+  // Question order, not question ids, is what "later" means.
+  const result = normalize([
+    { id: 'q0', type: 'text', text: 'Earlier?' },
+    { id: 'q1', type: 'boolean', text: 'Later?', branch_to: { rules: [{ op: 'is', value: true, goto: 'q0' }] } }
+  ]);
+  assert.equal(result.questions[1].branch_to, undefined);
+  assert.ok(messages(result).some(m => /later in the survey/i.test(m)));
+});
+
+test('a no to the consent question ends the survey there', () => {
+  const questions = normalize(CONSENT).questions;
+  assert.deepEqual(schema.visible(questions, { q1: false }).map(q => q.id), ['q1']);
+  assert.deepEqual(schema.visible(questions, { q1: true }).map(q => q.id), ['q1', 'q2', 'q3']);
+});
+
+test('the ending is reported by the same walk that sees it', () => {
+  const questions = normalize(CONSENT).questions;
+
+  const ending = schema.ending(questions, { q1: false });
+  assert.equal(ending.question.id, 'q1');
+  assert.equal(ending.message, 'We can\'t continue without your agreement.');
+
+  assert.equal(schema.ending(questions, { q1: true, q2: 'Fine' }), null);
+});
+
+test('a jump lands on the question it names, skipping what is in between', () => {
+  const questions = normalize([
+    {
+      id: 'q1', type: 'choice', text: 'What are you building?', options: ['Public API', 'Internal tool'],
+      branch_to: { rules: [{ op: 'is', value: 'Internal tool', goto: 'q4' }] }
+    },
+    { id: 'q2', type: 'text', text: 'Which endpoint first?' },
+    { id: 'q3', type: 'text', text: 'Sandbox or production?' },
+    { id: 'q4', type: 'text', text: 'What breaks in your setup first?' },
+    { id: 'q5', type: 'nps', text: 'How likely are you to recommend us?' }
+  ]).questions;
+
+  assert.deepEqual(schema.visible(questions, { q1: 'Internal tool' }).map(q => q.id), ['q1', 'q4', 'q5']);
+  assert.deepEqual(schema.visible(questions, { q1: 'Public API' }).map(q => q.id), ['q1', 'q2', 'q3', 'q4', 'q5']);
+});
+
+test('a jump onto a hidden question lands on whatever is asked next after it', () => {
+  const questions = normalize([
+    {
+      id: 'q1', type: 'boolean', text: 'Quick path?',
+      branch_to: { rules: [{ op: 'is', value: true, goto: 'q2' }] }
+    },
+    {
+      id: 'q2', type: 'text', text: 'Only for the slow path?',
+      visible_if: { match: 'all', rules: [{ question: 'q1', op: 'is', value: false }] }
+    },
+    { id: 'q3', type: 'text', text: 'For everybody?' }
+  ]).questions;
+
+  // q2 is hidden for exactly the answer that jumps to it, so the walk lands
+  // on q3
+  assert.deepEqual(schema.visible(questions, { q1: true }).map(q => q.id), ['q1', 'q3']);
+});
+
+test('a branch cannot fire on an answer the member retracted', () => {
+  const questions = normalize([
+    { id: 'q0', type: 'choice', text: 'What is your role?', options: ['Developer', 'Buyer'] },
+    {
+      id: 'q1', type: 'boolean', text: 'Agree?',
+      visible_if: { match: 'all', rules: [{ question: 'q0', op: 'is', value: 'Developer' }] },
+      branch_to: { rules: [{ op: 'is', value: false, end: true }] }
+    },
+    { id: 'q2', type: 'text', text: 'More?' }
+  ]).questions;
+
+  // q1 was only ever asked of developers, so the buyer's answer to it is a
+  // retraction — and the survey does not end at a question they never saw
+  const shown = schema.visible(questions, { q0: 'Buyer', q1: false, q2: 'x' }).map(q => q.id);
+  assert.deepEqual(shown, ['q0', 'q2']);
+  assert.equal(schema.ending(questions, { q0: 'Buyer', q1: false, q2: 'x' }), null);
+});
+
+test('the first rule that holds decides, in the order written', () => {
+  const questions = normalize([
+    {
+      id: 'q1', type: 'choice', text: 'Status?', options: ['Sandbox', 'Production'],
+      branch_to: {
+        rules: [
+          { op: 'is', value: 'Production', goto: 'q4' },
+          { op: 'is', value: 'Production', end: true },
+          { op: 'is', value: 'Sandbox', end: true, message: 'Sandbox members are done here.' }
+        ]
+      }
+    },
+    { id: 'q2', type: 'text', text: 'Middle one' },
+    { id: 'q3', type: 'text', text: 'Middle two' },
+    { id: 'q4', type: 'text', text: 'Production fast lane' }
+  ]).questions;
+
+  // Production takes the first rule that holds — the jump — and the end
+  // written for the same answer never reads
+  assert.deepEqual(schema.visible(questions, { q1: 'Production' }).map(q => q.id), ['q1', 'q4']);
+  assert.equal(schema.ending(questions, { q1: 'Production' }), null);
+
+  const sandbox = schema.ending(questions, { q1: 'Sandbox' });
+  assert.equal(sandbox.question.id, 'q1');
+  assert.equal(sandbox.message, 'Sandbox members are done here.');
+});
+
+test('a required question the survey ended before is neither asked nor blocked', () => {
+  const questions = normalize(CONSENT).questions;
+
+  const done = schema.checkResponse(questions, { q1: false });
+  assert.ok(done.ok);
+  assert.deepEqual(done.asked, ['q1']);
+  assert.deepEqual(done.answers, { q1: false });
+
+  const open = schema.checkResponse(questions, { q1: true });
+  assert.ok(!open.ok);
+  assert.deepEqual(open.missing, ['q2']);
+});
+
+test('an answer given before the branch is kept; one the branch skipped is dropped', () => {
+  const questions = normalize(CONSENT).questions;
+  const checked = schema.checkResponse(questions, { q1: false, q2: 'Should not be stored' });
+  assert.ok(checked.ok);
+  assert.deepEqual(checked.answers, { q1: false });
+  assert.deepEqual(checked.dropped, ['q2']);
+});
+
+test('answers to the questions a jump skipped are dropped the same way', () => {
+  const questions = normalize([
+    {
+      id: 'q1', type: 'choice', text: 'What are you building?', options: ['Public API', 'Internal tool'],
+      branch_to: { rules: [{ op: 'is', value: 'Internal tool', goto: 'q4' }] }
+    },
+    { id: 'q2', type: 'text', text: 'Which endpoint first?', required: true },
+    { id: 'q3', type: 'text', text: 'Sandbox or production?', required: true },
+    { id: 'q4', type: 'text', text: 'What breaks in your setup first?' }
+  ]).questions;
+
+  const checked = schema.checkResponse(questions, { q1: 'Internal tool', q2: 'x', q3: 'y' });
+  assert.ok(checked.ok);
+  assert.deepEqual(checked.answers, { q1: 'Internal tool' });
+  assert.deepEqual(checked.dropped, ['q2', 'q3']);
+});
+
 // ─── Answers ────────────────────────────────────────────────
 
 const only = question => normalize([question]).questions[0];

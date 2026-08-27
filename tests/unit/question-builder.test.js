@@ -195,3 +195,45 @@ test('the definition change hook fires when a question is added', () => {
   builder.add('rating');
   assert.equal(changes, 1, 'the page has to be told its form changed');
 });
+
+test('branching on an answer is drawn where it is allowed, and nowhere else', () => {
+  // A survey may decide what happens to its own answers: jump to a later
+  // question, or end early (a consent question answered "no" ends it there).
+  const { builder, el } = build([{ id: 'q1', type: 'boolean', text: 'Do you agree?' }], { allowBranching: true });
+  builder.render();
+  assert.ok(el.questions.innerHTML.includes('data-add-branch'),
+    'a survey question should be able to decide what happens next');
+
+  // A form that collects a profile may not: a form that ends early, or
+  // jumps past a credential field, is a half-built member.
+  const { builder: b2, el: plain } = build([{ id: 'q1', type: 'boolean', text: 'Do you agree?' }]);
+  b2.render();
+  assert.ok(!plain.questions.innerHTML.includes('data-add-branch'));
+});
+
+test('a branch rule asks the condition of its own answer and where the survey goes', () => {
+  const { builder, el } = build([
+    {
+      id: 'q1', type: 'boolean', text: 'Do you agree?', true_label: 'Yes', false_label: 'No',
+      branch_to: {
+        rules: [
+          { op: 'is', value: false, end: true, message: "We can't continue without your agreement." },
+          { op: 'is', value: true, goto: 'q2' }
+        ]
+      }
+    },
+    { id: 'q2', type: 'text', text: 'More?' }
+  ], { allowBranching: true });
+  builder.render();
+  const html = el.questions.innerHTML;
+
+  assert.ok(html.includes('data-branch-op'), 'the rule is a comparison');
+  assert.ok(html.includes('data-branch-value'), 'the comparison holds a value');
+  assert.ok(html.includes('data-branch-action'), 'the rule says where the survey goes');
+  assert.ok(html.includes('data-branch-target'), 'a jump names its landing question');
+  assert.ok(html.includes('data-branch-message'), 'an ending may carry its own words');
+  assert.ok(html.includes("We can't continue without your agreement."), 'the written words stay editable');
+  assert.ok(!html.includes('data-rule-question'),
+    'the condition names nothing: it tests the question it sits on');
+  assert.ok(html.includes('q-branches'), 'the card reads as branching on its answer');
+});
