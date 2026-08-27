@@ -249,13 +249,16 @@ const schemas = {
       ],
       example: 'rating'
     }),
-    text: str('The question as the member reads it. [words](https://…) in the wording or the note become a link — the only mark-up allowed, checked at save time', { example: 'How clear is our API documentation?' }),
-    description: str('A note under the question. May carry links like the wording'),
+    text: str('The question as the member reads it. Wording may carry [words](https://…) a link, ![words](https://…) an image, or be a bare https address — the only mark-up allowed, checked at save time', { example: 'How clear is our API documentation?' }),
+    description: str('A note under the question. May carry links and images like the wording'),
     required: bool('Whether an answer must be given. Only enforced if the member is shown the question'),
     visible_if: ref('SurveyLogic'),
     branch_to: ref('SurveyBranch'),
 
-    options: arrayOf({ type: 'string' }, 'Choices — choice, multi_choice, dropdown and ranking'),
+    options: arrayOf(object({
+      label: str('The word of the option — the word is what is stored in the answer'),
+      subtext: str('A line under the option, as the member reads it: text, [words](https://…) a link, ![words](https://…) an image, or a bare address. Only for choice and multi_choice', { nullable: true, example: 'See [our rate limits](https://docs.example.com/limits)' })
+    }), 'Choices — choice, multi_choice, dropdown and ranking. Dropdown and ranking take the bare words; choice and multi_choice take a word or a card with subtext under it'),
     allow_other: bool('Offer a free-text "something else" alongside the options'),
     randomize: bool('Shuffle the options, to take the edge off order effects'),
     min_select: int('Fewest choices accepted — multi_choice'),
@@ -331,8 +334,8 @@ const schemas = {
       enum: ['small', 'regular', 'large', 'larger'], default: 'regular'
     }),
     corner: str('Corner radius', { enum: ['sharp', 'soft', 'round'] }),
-    layout: str('How the questions are paginated: one per screen, all on one page, N per page, or a section heading as the page break', { enum: ['one_per_page', 'all_at_once', 'n_per_page', 'by_section'] }),
-    page_size: int('How many questions a page holds. Used when layout is n_per_page', { example: 3 }),
+    layout: str('How the questions are shown: one per screen, all on one page, N per page, or a section heading as the page break — decided beside the questions in the builder, where they are written', { enum: ['one_per_page', 'all_at_once', 'n_per_page', 'by_section'] }),
+    page_size: int('N — how many questions a page holds. Set by the person writing the questions; required (2–10) when layout is n_per_page, refused without it', { example: 4 }),
     progress: str('How progress is shown', { enum: ['bar', 'steps', 'count', 'none'] }),
     mode: str('Force a light or dark look, or follow the member\'s own setting', { enum: ['auto', 'light', 'dark'] }),
 

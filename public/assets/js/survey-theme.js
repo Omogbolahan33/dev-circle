@@ -406,12 +406,17 @@ const SurveyTheme = (() => {
     // How many questions a page holds. Only the n_per_page layout has pages
     // of a size, and a page of one is the one-per-page layout wearing a
     // costume, while a page of everything is all-on-one-page — so the range
-    // excludes both.
+    // excludes both. And N is a number the author sets, not one the app
+    // picks: "N per page" without an N is a page size nobody chose, and a
+    // page size that lands anyway is a survey that quietly means something
+    // other than what was written.
     if (layout === 'n_per_page') {
       const size = parseInt(input.page_size, 10);
-      theme.page_size = Number.isFinite(size)
-        ? Math.min(PAGE_SIZE.max, Math.max(PAGE_SIZE.min, size))
-        : DEFAULTS.page_size;
+      if (!Number.isFinite(size)) {
+        push('page_size', `The "N per page" layout needs N — how many questions a page holds (${PAGE_SIZE.min}–${PAGE_SIZE.max})`);
+      } else {
+        theme.page_size = Math.min(PAGE_SIZE.max, Math.max(PAGE_SIZE.min, size));
+      }
     }
 
     const progress = pick(input.progress, PROGRESS, DEFAULTS.progress, 'progress', push);

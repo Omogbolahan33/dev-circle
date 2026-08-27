@@ -105,6 +105,7 @@
         <div class="stack">
           <section class="step" id="step-questions">
             <div class="hide" id="lockNotice"></div>
+            <div class="card mb-4" id="displayCard"></div>
             <div id="questions"></div>
 
             <div class="field-row mt-3">
@@ -268,6 +269,7 @@
   let fields = [];             // what a question can be tagged as collecting
   let builder = null;
   let themePanel = null;
+  let displayPanel = null;
 
   function renderQuestions()     { builder?.render(); }
   function renderPreview()       { builder?.preview(); }
@@ -307,6 +309,7 @@
     }
   }
   function renderThemePanel()    { themePanel?.render(); }
+  function renderDisplay()       { displayPanel?.render(); }
 
   // ─── Loading ──────────────────────────────────────────────
 
@@ -351,8 +354,19 @@
       onReset: () => builder?.resetPreview()
     });
 
+    // How the questions are shown is decided beside the questions, not in
+    // the look — and where the layout is "N per page", N is a number this
+    // page checks was actually set, because it is the designer's to set.
+    displayPanel = ThemePanel.display({
+      schema,
+      state,
+      mount: document.getElementById('displayCard'),
+      onChange: () => renderPreview()
+    });
+
     renderTypeMenu();
     renderThemePanel();
+    renderDisplay();
     await loadCircle();
     await loadCohorts();
 
@@ -447,6 +461,7 @@
       state.questions = form.questions || [];
       state.theme = form.theme || {};
       state.cohortIds = form.cohort_ids || [];
+      renderDisplay();
       state.locked = data.questions_locked;
       if (data.circle_theme) state.circleTheme = data.circle_theme;
 
@@ -713,6 +728,18 @@
         return;
       }
       state.issues = [];
+    }
+
+    // "N per page" without an N is a page size nobody chose. The server says
+    // the same thing; this is the version the author sees against the control.
+    if (state.theme && state.theme.layout === 'n_per_page') {
+      const n = parseInt(state.theme.page_size, 10);
+      const { min = 2, max = 10 } = (schema && schema.theme.page_size) || {};
+      if (!Number.isFinite(n) || n < min || n > max) {
+        showToast(`Set N — how many questions per page (${min}–${max})`, 'warning');
+        document.querySelector('[data-step="questions"]').click();
+        return;
+      }
     }
 
     const body = {

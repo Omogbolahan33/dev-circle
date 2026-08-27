@@ -196,6 +196,19 @@ test('the definition change hook fires when a question is added', () => {
   assert.equal(changes, 1, 'the page has to be told its form changed');
 });
 
+test('a choice option offers a line under it for its subtext', () => {
+  const { builder, el } = build([{
+    id: 'q1', type: 'choice', text: 'Which environment?',
+    options: [{ label: 'Sandbox' }, { label: 'Production', subtext: 'Live traffic' }]
+  }], { allowBranching: true });
+  builder.render();
+  const html = el.questions.innerHTML;
+
+  assert.ok(html.includes('option-subtext'), 'a card option has its subtext line');
+  assert.ok(html.includes('Live traffic'), 'the written subtext stays editable');
+  assert.ok(html.includes('Subtext'), 'the line says what it is for');
+});
+
 test('branching on an answer is drawn where it is allowed, and nowhere else', () => {
   // A survey may decide what happens to its own answers: jump to a later
   // question, or end early (a consent question answered "no" ends it there).

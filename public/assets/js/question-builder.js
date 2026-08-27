@@ -79,7 +79,10 @@ const QuestionBuilder = (() => {
     // added and the preview has something to show.
     function blank(type) {
       const question = { id: newId(), type, text: '', required: false };
-      if (['choice', 'dropdown', 'multi_choice', 'ranking'].includes(type)) {
+      if (['choice', 'multi_choice'].includes(type)) {
+        // Options a member reads as cards — a word, and the subtext under it
+        question.options = [{ label: '', subtext: '' }, { label: '', subtext: '' }];
+      } else if (['dropdown', 'ranking'].includes(type)) {
         question.options = ['', ''];
       }
       if (type === 'rating') { question.scale = 5; question.style = 'numbers'; }
@@ -208,21 +211,35 @@ const QuestionBuilder = (() => {
     // ─── Per-type settings ────────────────────────────────────
 
     function editor(question, index) {
+      const isCards = question.type === 'choice' || question.type === 'multi_choice';
       const options = list => `
         <div class="field" style="margin-bottom:0">
           <label class="label">Options</label>
           <div class="options">
-            ${(question[list] || []).map((option, i) => `
+            ${(question[list] || []).map((option, i) => {
+              const word = isCards
+                ? (option && typeof option === 'object' ? option.label : option)
+                : option;
+              const subtext = isCards && option && typeof option === 'object'
+                ? (option.subtext || '') : '';
+              return `
               <div class="option-row" data-list="${list}" data-option="${i}">
                 <span class="handle">${i + 1}</span>
-                <input type="text" class="input" value="${escapeHtml(option)}" placeholder="Option ${i + 1}">
+                <div class="option-fields">
+                  <input type="text" class="input option-word" value="${escapeHtml(word)}" placeholder="Option ${i + 1}">
+                  ${isCards ? `
+                  <input type="text" class="input option-subtext" maxlength="300" value="${escapeHtml(subtext)}"
+                         placeholder="Subtext — text, [link](https://…) or ![image](https://…)">` : ''}
+                </div>
                 ${question.type === 'multi_choice' && list === 'options' ? `
-                  <button class="exclusive-flag${(question.exclusive_options || []).includes(option) ? ' on' : ''}"
+                  <button class="exclusive-flag${(question.exclusive_options || []).includes(word) ? ' on' : ''}"
                           data-exclusive="${i}" title="Cannot be picked with anything else">only</button>` : ''}
                 <button class="icon-btn" data-drop-option="${i}" aria-label="Remove option">×</button>
-              </div>`).join('')}
+              </div>`;
+            }).join('')}
           </div>
           <button class="btn btn-sm btn-ghost mt-2" data-add-option="${list}">+ Add option</button>
+          ${isCards ? '<p class="hint">Subtext sits under the option as the member reads it — a sentence, a link, or a picture.</p>' : ''}
         </div>`;
 
       switch (question.type) {
@@ -479,8 +496,10 @@ const QuestionBuilder = (() => {
       if (source.options) {
         return `
           <select class="input" data-rule-value>
-            ${(source.options || []).filter(Boolean).map(o => `
-              <option value="${escapeHtml(o)}"${o === rule.value ? ' selected' : ''}>${escapeHtml(o)}</option>`).join('')}
+            ${(source.options || []).filter(o => SurveySchema.optionLabel(o)).map(o => {
+              const word = SurveySchema.optionLabel(o);
+              return `<option value="${escapeHtml(word)}"${word === rule.value ? ' selected' : ''}>${escapeHtml(word)}</option>`;
+            }).join('')}
             ${source.allow_other ? `<option value="__other__"${rule.value === '__other__' ? ' selected' : ''}>Something else</option>` : ''}
           </select>`;
       }
@@ -567,8 +586,10 @@ const QuestionBuilder = (() => {
       if ((question.options || []).length) {
         return `
           <select class="input" data-branch-value>
-            ${(question.options || []).filter(Boolean).map(o => `
-              <option value="${escapeHtml(o)}"${o === rule.value ? ' selected' : ''}>${escapeHtml(o)}</option>`).join('')}
+            ${(question.options || []).filter(o => SurveySchema.optionLabel(o)).map(o => {
+              const word = SurveySchema.optionLabel(o);
+              return `<option value="${escapeHtml(word)}"${word === rule.value ? ' selected' : ''}>${escapeHtml(word)}</option>`;
+            }).join('')}
             ${question.allow_other ? `<option value="__other__"${rule.value === '__other__' ? ' selected' : ''}>Something else</option>` : ''}
           </select>`;
       }
@@ -673,18 +694,36 @@ const QuestionBuilder = (() => {
       });
 
       // Options, rows and columns
+      const isCards = question.type === 'choice' || question.type === 'multi_choice';
       cardEl.querySelectorAll('.option-row').forEach(row => {
         const list = row.dataset.list;
         const i = Number(row.dataset.option);
 
-        row.querySelector('input').addEventListener('input', e => {
-          const before = question[list][i];
-          question[list][i] = e.target.value;
+        const wordOf = () => isCards
+          ? (question[list][i] && typeof question[list][i] === 'object'
+            ? question[list][i].label : question[list][i])
+          : question[list][i];
+        const asCard = () => {
+          if (!question[list][i] || typeof question[list][i] !== 'object') {
+            question[list][i] = { label: question[list][i] || '', subtext: '' };
+          }
+          return question[list][i];
+        };
+
+        row.querySelector('.option-word').addEventListener('input', e => {
+          const before = wordOf();
+          if (isCards) asCard().label = e.target.value;
+          else question[list][i] = e.target.value;
           // An option marked exclusive keeps that mark when it is renamed
           if (question.exclusive_options) {
             question.exclusive_options = question.exclusive_options
               .map(o => (o === before ? e.target.value : o));
           }
+          touch();
+        });
+
+        row.querySelector('.option-subtext')?.addEventListener('input', e => {
+          asCard().subtext = e.target.value;
           touch();
         });
 
@@ -694,7 +733,7 @@ const QuestionBuilder = (() => {
         });
 
         row.querySelector('[data-exclusive]')?.addEventListener('click', () => {
-          const option = question[list][i];
+          const option = wordOf();
           const held = question.exclusive_options || [];
           question.exclusive_options = held.includes(option)
             ? held.filter(o => o !== option)
@@ -706,7 +745,8 @@ const QuestionBuilder = (() => {
       cardEl.querySelectorAll('[data-add-option]').forEach(button => {
         button.addEventListener('click', () => {
           const list = button.dataset.addOption;
-          question[list] = (question[list] || []).concat('');
+          question[list] = (question[list] || []).concat(
+            isCards ? { label: '', subtext: '' } : '');
           redraw();
         });
       });
@@ -876,7 +916,7 @@ const QuestionBuilder = (() => {
     }
 
     function firstValue(source) {
-      if (source.options) return (source.options.filter(Boolean)[0]) || '';
+      if (source.options) return (source.options.map(o => SurveySchema.optionLabel(o)).find(Boolean)) || '';
       if (source.type === 'boolean') return true;
       if (['rating', 'nps', 'number'].includes(source.type)) return 0;
       return '';

@@ -2029,6 +2029,19 @@ textarea.input { min-height: 90px; line-height: var(--lh-normal); }
               background var(--duration-fast) var(--ease-out);
 }
 .sv-option:hover { border-color: var(--line-strong); }
+/* An option with subtext under the word: the mark sits with the top line */
+.sv-option:has(.sv-option-subtext) { align-items: flex-start; }
+.sv-option:has(.sv-option-subtext) .sv-mark { margin-top: 3px; }
+.sv-option-copy { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; flex: 1; }
+.sv-option-label { line-height: 1.35; }
+.sv-option-subtext { font-size: var(--fs-sm); line-height: 1.4; color: var(--text-3); }
+.sv-option-subtext a { color: var(--cd-blue); }
+/* A picture in wording — under an option, in a note, in a heading — is
+   content, not decoration: it gets a footing and a ceiling */
+img.sv-wording-img { max-width: 100%; max-height: 160px; border-radius: 8px; margin-top: 4px; display: block; background: var(--surface-2); }
+.sv-ask img.sv-wording-img, .sv-note img.sv-wording-img { max-height: 120px; }
+
+
 .sv-option.picked { border-color: var(--cd-blue); background: var(--cd-blue-dim); }
 .sv-option:focus-visible { outline: 2px solid var(--cd-blue); outline-offset: 2px; }
 

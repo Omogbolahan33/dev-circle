@@ -1,7 +1,12 @@
 // ─── The theme panel ────────────────────────────────────────
 // Every control that decides how a form looks to the person filling it in:
-// colours and the contrast between them, type, corners, imagery, layout, the
-// shape of its progress, and the words on its opening and closing screens.
+// colours and the contrast between them, type, corners, imagery, the shape
+// of its progress, and the words on its opening and closing screens.
+//
+// How the questions are shown is not here: that is the display control
+// (ThemePanel.display), mounted beside the questions, because it is a
+// decision the person writing the questions makes — with a number that is
+// theirs to set, not one the look picks for them.
 //
 // Shared between the survey builder and the onboarding builder for the same
 // reason the question editor is — see the top of question-builder.js. A
@@ -259,7 +264,11 @@ const ThemePanel = (() => {
           </div>
         </div>`;
 
-      // ── Layout ───────────────────────────────────────────
+      // ── Shape ───────────────────────────────────────────────────
+      // Corners, light/dark and progress are appearance — how the surface
+      // reads. How the questions are shown (one at a time, all at once, N per
+      // page, or divided by section) is not: it is the display control, which
+      // the builders mount beside the questions.
       const layoutBody = `
         <div class="field-row">
           <div class="field">
@@ -273,29 +282,10 @@ const ThemePanel = (() => {
         </div>
         <div class="field-row">
           <div class="field">
-            <label class="label">How the pages are made</label>
-            ${choose('layout', schema.theme.layouts, {
-              one_per_page: 'One at a time',
-              all_at_once: 'All on one page',
-              n_per_page: 'N per page',
-              by_section: 'Sections split the pages'
-            })}
-          </div>
-          <div class="field">
             <label class="label">Progress</label>
             ${choose('progress', schema.theme.progress, { bar: 'Bar', steps: 'Steps', count: 'Count only', none: 'None' })}
           </div>
-        </div>
-        ${theme.layout === 'n_per_page' ? `
-          <div class="field">
-            <label class="label">Questions per page</label>
-            <input type="number" class="input" data-theme="page_size"
-                   min="${schema.theme.page_size ? schema.theme.page_size.min : 2}"
-                   max="${schema.theme.page_size ? schema.theme.page_size.max : 10}"
-                   value="${theme.page_size || 3}">
-          </div>` : ''}
-        ${theme.layout === 'by_section' ? `
-          <p class="hint">A section heading starts a new page, and the questions under it stay with it — the point where a section is introduced is where the page is divided. Questions before the first section make up the first page.</p>` : ''}`;
+        </div>`;
 
       // ── Images ───────────────────────────────────────────
       const imagesBody = `
@@ -342,7 +332,7 @@ const ThemePanel = (() => {
       panel.innerHTML = `
         ${section('colours', 'Colours', 'Accent, background and text', coloursBody, { open: true, marked: customised.colours })}
         ${section('type', 'Type', 'Font and text size', typeBody, { marked: customised.type })}
-        ${section('layout', 'Shape & layout', 'Corners, light/dark, paging and progress', layoutBody, { marked: customised.layout })}
+        ${section('layout', 'Shape', 'Corners, light/dark and progress', layoutBody, { marked: customised.layout })}
         ${section('images', 'Images', 'Wordmark, opening image and background', imagesBody, { marked: customised.images })}
         ${section('opening', 'Opening screen', 'Shown before the first question', openingBody, { marked: customised.opening })}
         ${section('closing', 'Closing screen', 'Shown after the last answer', closingBody, { marked: customised.closing })}
@@ -518,7 +508,79 @@ const ThemePanel = (() => {
     return { render, reset, saveAsCircleDefault };
   }
 
-  return { create };
+  // ── The display control ───────────────────────────
+  // How the questions are shown: one at a time, all at once, N per page, or
+  // divided where a section is introduced. It is not part of the look, so it
+  // is not in the look — it is mounted beside the questions, where the person
+  // setting them decides it. And where the look only ever has to be legible,
+  // the N is a number the author types: the control offers no default of its
+  // own, and saving without one is refused — here, and on the server.
+  //
+  //   const display = ThemePanel.display({
+  //     schema, state,
+  //     mount: document.getElementById('displayCard'),
+  //     onChange: () => preview()
+  //   });
+  //   display.render();
+
+  function display(opts) {
+    const { schema, state, mount } = opts;
+
+    const LABELS = {
+      one_per_page: 'One question at a time',
+      all_at_once: 'All on one page',
+      n_per_page: 'N per page',
+      by_section: 'Sections split the pages'
+    };
+
+    function render() {
+      const theme = SurveyTheme.resolve(state.theme, state.circleTheme);
+      const bounds = schema.theme.page_size || { min: 2, max: 10 };
+      const { min, max } = bounds;
+
+      mount.innerHTML = `
+        <div class="field-row">
+          <div class="field" style="margin-bottom:0">
+            <label class="label">How the questions are shown</label>
+            <select class="input" data-display="layout">
+              ${schema.theme.layouts.map(v => `
+                <option value="${v}"${theme.layout === v ? ' selected' : ''}>${escapeHtml(LABELS[v] || v)}</option>`).join('')}
+            </select>
+          </div>
+          ${theme.layout === 'n_per_page' ? `
+          <div class="field" style="margin-bottom:0">
+            <label class="label">N — questions per page</label>
+            <input type="number" class="input" data-display="page_size"
+                   min="${min}" max="${max}"
+                   value="${state.theme.page_size ?? ''}" placeholder="${min}–${max}">
+          </div>` : ''}
+        </div>
+        ${theme.layout === 'by_section' ? `
+          <p class="hint">The point where a section is introduced is where the page is divided — the section opens its page and the questions under it stay with it. Questions before the first section make up the first page.</p>` : ''}
+        ${theme.layout === 'n_per_page' ? `
+          <p class="hint">N is the number you set (${min}–${max}); it is not chosen for you.</p>` : ''}`;
+
+      mount.querySelector('[data-display="layout"]').addEventListener('change', e => {
+        if (e.target.value === SurveyTheme.DEFAULTS.layout) delete state.theme.layout;
+        else state.theme.layout = e.target.value;
+        render();
+        if (opts.onChange) opts.onChange();
+      });
+
+      const sizeInput = mount.querySelector('[data-display="page_size"]');
+      if (sizeInput) {
+        sizeInput.addEventListener('input', () => {
+          if (sizeInput.value === '') delete state.theme.page_size;
+          else state.theme.page_size = sizeInput.value;
+          if (opts.onChange) opts.onChange();
+        });
+      }
+    }
+
+    return { render };
+  }
+
+  return { create, display };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = ThemePanel;

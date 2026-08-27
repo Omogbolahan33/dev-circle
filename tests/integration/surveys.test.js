@@ -294,6 +294,46 @@ test('a yes to the consent question still asks the rest, and the rest still has 
   assert.equal(done.body.end_message, null);
 });
 
+test('an option can carry a line under it — text, a link, a picture — and the answer stays the word', async () => {
+  const res = await create({
+    status: 'active',
+    theme: { layout: 'n_per_page', page_size: 2 },
+    questions: [
+      {
+        id: 'q1', type: 'choice', required: true,
+        text: 'Which environment do you use most?',
+        options: [
+          { label: 'Sandbox', subtext: 'Staging for tests — see [the docs](https://example.com/sandbox)' },
+          { label: 'Production', subtext: 'Live traffic · ![the flow](https://example.com/flow.png)' }
+        ]
+      },
+      { id: 'q2', type: 'text', text: 'Anything else?', required: false }
+    ]
+  });
+  assert.equal(res.status, 201, JSON.stringify(res.body));
+  const survey = res.body.survey;
+  const { token } = await answering(survey);
+
+  const served = (await h.post(`/api/users/surveys/${survey.id}/start`, {}, { token })).body.survey
+    .questions.find(q => q.id === 'q1');
+  assert.equal(served.options[1].subtext, 'Live traffic · ![the flow](https://example.com/flow.png)',
+    'the subtext goes out as it was written');
+
+  const done = await respond(survey, token, { q1: 'Production' });
+  assert.equal(done.status, 200, JSON.stringify(done.body));
+  assert.equal(done.body.answered, 2);
+});
+
+test('"N per page" without its N is refused — the number is set by the person writing the questions', async () => {
+  const res = await create({
+    status: 'active',
+    theme: { layout: 'n_per_page' },
+    questions: [{ type: 'text', text: 'One question?' }]
+  });
+  assert.equal(res.status, 400);
+  assert.match(res.body.error, /needs N/i);
+});
+
 test('a branch can jump the survey to a later question, and the skipped ones are not asked', async () => {
   const res = await create({
     status: 'active',

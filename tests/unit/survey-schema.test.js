@@ -31,11 +31,105 @@ test('the same option twice is refused, because it cannot be tallied', () => {
   assert.ok(messages(result).some(m => /same/i.test(m)));
 });
 
+// ─── Option subtext ─────────────────────────────────────────
+// A choice is read as a card: the word, and under it a line of subtext —
+// text, a link, an image or a bare address, the same rich wording as the
+// question itself, checked the same way. The answer stays the word.
+
+test('a choice option is a word with room for a line under it', () => {
+  const result = normalize([{
+    type: 'choice', text: 'Which?',
+    options: [
+      { label: 'Sandbox' },
+      { label: 'Production', subtext: 'Live traffic — see [the runbooks](https://example.com/runbooks)' }
+    ]
+  }]);
+  assert.equal(result.issues.length, 0);
+  assert.deepEqual(result.questions[0].options, [
+    { label: 'Sandbox' },
+    { label: 'Production', subtext: 'Live traffic — see [the runbooks](https://example.com/runbooks)' }
+  ]);
+});
+
+test('an image under an option is checked like any image and written as an image', () => {
+  const subtext = 'As in ![the flow](https://example.com/flow.png)';
+  const question = only({
+    type: 'choice', text: 'Which?',
+    options: [{ label: 'A' }, { label: 'B', subtext }]
+  });
+  assert.equal(question.options[1].subtext, subtext);
+  const html = schema.linkify(subtext);
+  assert.ok(html.includes('<img class="sv-wording-img" src="https://example.com/flow.png" alt="the flow"'), html);
+});
+
+test('an image under an option without words for the blind is refused, and so is an image that is not from the web', () => {
+  const noWords = normalize([{
+    type: 'choice', text: 'Which?',
+    options: [{ label: 'A' }, { label: 'B', subtext: '![](https://example.com/x.png)' }]
+  }]);
+  assert.ok(messages(noWords).some(m => /cannot see it/i.test(m)));
+
+  const notWeb = normalize([{
+    type: 'choice', text: 'Which?',
+    options: [{ label: 'A' }, { label: 'B', subtext: '![pic](ftp://example.com/x.png)' }]
+  }]);
+  assert.ok(messages(notWeb).some(m => /Option "B"/.test(m) && /http:\/\/? or https:\/\//.test(m)));
+});
+
+test('a link under an option that is not a web address is refused, with the option named', () => {
+  const result = normalize([{
+    type: 'choice', text: 'Which?',
+    options: [{ label: 'A' }, { label: 'B', subtext: '[t](javascript:alert(1))' }]
+  }]);
+  assert.ok(messages(result).some(m => /Option "B"/.test(m) && /http:\/\/? or https:\/\//.test(m)));
+});
+
+test('a dropdown keeps its options as words — no room under them for subtext', () => {
+  const result = normalize([{
+    type: 'dropdown', text: 'Which?',
+    options: [{ label: 'A', subtext: 'a note' }, 'B']
+  }]);
+  assert.deepEqual(result.questions[0].options, ['A', 'B']);
+});
+
+test('an answer to a choice is stored as the word, whatever the option looks like', () => {
+  const { questions } = normalize([{
+    type: 'choice', text: 'Which?',
+    options: [{ label: 'Sandbox' }, { label: 'Production', subtext: 'x' }]
+  }]);
+  const checked = schema.checkResponse(questions, { q1: 'production' });
+  assert.ok(checked.ok);
+  assert.equal(checked.answers.q1, 'Production', 'the answer is the word as offered');
+});
+
+test('a branch rule on a choice holds the word, not the card around it', () => {
+  const { questions } = normalize([
+    {
+      id: 'q1', type: 'choice', text: 'Which?',
+      options: [{ label: 'Sandbox' }, { label: 'Production', subtext: 'x' }],
+      branch_to: { rules: [{ op: 'is', value: 'Production', end: true, message: 'Bye' }] }
+    },
+    { id: 'q2', type: 'text', text: 'More?' }
+  ]);
+  assert.equal(questions[0].branch_to.rules[0].value, 'Production');
+  const ending = schema.ending(questions, { q1: 'Production' });
+  assert.ok(ending);
+  assert.equal(ending.message, 'Bye');
+});
+
+test('an option that is nothing but an address is a link whose label is itself', () => {
+  assert.equal(
+    schema.linkify('https://example.com/docs'),
+    '<a href="https://example.com/docs" target="_blank" rel="noopener noreferrer">https://example.com/docs</a>'
+  );
+});
+
 test('blank option rows are dropped rather than refused', () => {
   // They are the builder's empty inputs, not something the author wrote
   const result = normalize([{ type: 'choice', text: 'Which?', options: ['A', '', 'B', '  '] }]);
   assert.equal(result.issues.length, 0);
-  assert.deepEqual(result.questions[0].options, ['A', 'B']);
+  // Choice options are cards: a word, and the subtext under it
+  assert.deepEqual(result.questions[0].options, [{ label: 'A' }, { label: 'B' }]);
 });
 
 test('asking for more answers than there are options is refused', () => {
@@ -275,6 +369,17 @@ test('linkify escapes the wording and writes only an anchor', () => {
 test('linkify never makes a link of what it cannot parse', () => {
   assert.equal(schema.linkify('a [broken (link) b'), 'a [broken (link) b');
   assert.equal(schema.linkify('a [link](ftp://example.com/x) b'), 'a [link](ftp://example.com/x) b');
+});
+
+test('an image in the wording is written as an image, nothing else', () => {
+  const html = schema.linkify('See ![the map](https://example.com/m.png) and [the docs](https://example.com/d)');
+  assert.ok(!html.includes('<script>') && !html.includes('<iframe>'));
+  assert.ok(html.includes('<img class="sv-wording-img" src="https://example.com/m.png" alt="the map" loading="lazy">'));
+  assert.ok(html.includes('<a href="https://example.com/d" target="_blank" rel="noopener noreferrer">the docs</a>'));
+});
+
+test('an image that is not a web address stays the literal words', () => {
+  assert.equal(schema.linkify('see ![x](data:image/png;base64,AAA)'), 'see ![x](data:image/png;base64,AAA)');
 });
 
 // ─── What happens next ─────────────────────────────────────
@@ -661,6 +766,19 @@ test('a path cannot climb out of where uploads live', () => {
 test('only what differs from the default is stored, so a survey follows its circle', () => {
   assert.equal(themes.normalize({ accent: themes.DEFAULTS.accent, progress: 'bar' }).theme, null);
   assert.deepEqual(themes.normalize({ progress: 'steps' }).theme, { progress: 'steps' });
+});
+
+test('"N per page" without an N is refused — the number is the author\'s to set, not the app\'s to pick', () => {
+  const { issues } = themes.normalize({ layout: 'n_per_page' });
+  assert.ok(issues.some(i => i.field === 'page_size'), JSON.stringify(issues));
+
+  const { theme } = themes.normalize({ layout: 'n_per_page', page_size: 4 });
+  assert.equal(theme.page_size, 4);
+});
+
+test('an N outside the range is brought inside it rather than refused', () => {
+  assert.equal(themes.normalize({ layout: 'n_per_page', page_size: 99 }).theme.page_size, 10);
+  assert.equal(themes.normalize({ layout: 'n_per_page', page_size: 1 }).theme.page_size, 2);
 });
 
 test('a survey theme sits on top of its circle, field by field', () => {

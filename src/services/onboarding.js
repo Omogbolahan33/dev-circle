@@ -369,8 +369,11 @@ async function normalizeDefinition(body, { createdBy = null, allowEmpty = false 
     // Options that fold to nothing would be ticked by an applicant and mean
     // nothing to us — consent most of all, where the cost of losing one is
     // that we may not lawfully contact somebody who said we could.
+    // The options of a choice are the words the member picks — the label of
+    // each option, whether the option is a bare word or a card with subtext.
+    const optionWords = (question.options || []).map(o => surveyForm.optionLabel(o));
     if (field.channels) {
-      const unknown = (question.options || []).filter(option => !foldChannel(option));
+      const unknown = optionWords.filter(option => !foldChannel(option));
       if (unknown.length) {
         at(`${unknown.map(o => `"${o}"`).join(', ')} ${unknown.length === 1 ? 'is not a channel' : 'are not channels'} we can message on — use Email, WhatsApp, SMS, Calls or In-portal`);
         return;
@@ -378,7 +381,7 @@ async function normalizeDefinition(body, { createdBy = null, allowEmpty = false 
     }
 
     if (wanted === 'preferred_days') {
-      const unknown = (question.options || []).filter(option => !foldDay(option));
+      const unknown = optionWords.filter(option => !foldDay(option));
       if (unknown.length) {
         at(`${unknown.map(o => `"${o}"`).join(', ')} ${unknown.length === 1 ? 'is not a day' : 'are not days'} of the week`);
         return;

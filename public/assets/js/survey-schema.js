@@ -187,34 +187,40 @@ const SurveySchema = (() => {
   // ─── Links ────────────────────────────────────────────────
   // Wording may point outside the survey. The standing case is a consent
   // question whose "Terms & Conditions" must be the thing the member clicks,
-  // not words they have to go find.
+  // not words they have to go find. An option's subtext carries the same
+  // things — and an image, because a picture of the thing you are asking
+  // about is often the answer to "which one?".
   //
-  // There is no rich text: a link is written [label](https://…) and nothing
-  // else is. Raw HTML in a question would reach the respondent's screen as
-  // whatever the author typed; a mark-up the schema can check at save time is
-  // the only door wide enough for a link and narrow enough to trust.
+  // There is no rich text: a link is written [label](https://…), an image
+  // ![words](https://…), and a whole piece of wording that is nothing but
+  // an address is a link whose label is itself — and nothing else is. Raw
+  // HTML in a question would reach the respondent's screen as whatever the
+  // author typed; a mark-up the schema can check at save time is the only
+  // door wide enough for a link and an image and narrow enough to trust.
   //
   // The same file stays the law: the wording is checked when it is written,
   // and linkify() is the only place wording becomes HTML — everything is
-  // escaped first, and the only tag that can come out of a question is the
-  // anchor this writes.
+  // escaped first, and the only tags that can come out of a question are the
+  // anchor and the image this writes.
 
-  // A link as it is meant to be written, and something reaching for one.
-  // The second exists because a word in brackets followed by an address in
-  // parentheses is a link the author meant to write — and one that cannot be
-  // parsed is worse off refused than saved, because saved it reaches the
-  // member as words with brackets in them and nothing on screen says why.
-  const LINK_RE = /\[([^\[\]\n]*)\]\(([^()]*)\)/g;
-  const LINK_ATTEMPT_RE = /\[[^\[\]\n]*\]\([^)]*\)/g;
-  const LINK_LABEL_MAX = 80;
-  const LINK_URL_MAX = 500;
+  // A link or an image as it is meant to be written, and something reaching
+  // for one. The second exists because a word in brackets followed by an
+  // address in parentheses is one the author meant to write — and a
+  // fragment that cannot be parsed is worse off refused than saved, because
+  // saved it reaches the member as words with brackets in them and nothing
+  // on screen says why.
+  const RICH_RE = /(!?)\[([^\[\]\n]*)\]\(([^()]*)\)/g;
+  const RICH_ATTEMPT_RE = /!?\[[^\[\]\n]*\]\([^)]*\)/g;
+  const RICH_LABEL_MAX = 80;
+  const RICH_URL_MAX = 500;
 
   const htmlEscape = value => str(value)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 
-  // Every link in a piece of wording, held to what a question is allowed to
-  // say: words the member can read, an address that is a web address. A
+  // Every link and image in a piece of wording, held to what a question is
+  // allowed to say: words the member can read, an address that is a web
+  // address, and — for an image — words for the people who cannot see it. A
   // bracket that is not a link — "[Enter] to continue" — matches nothing and
   // stays the words it is.
   function checkLinks(text, field, at) {
@@ -222,18 +228,29 @@ const SurveySchema = (() => {
     if (!value.includes('[')) return;
 
     let attempt;
-    LINK_ATTEMPT_RE.lastIndex = 0;
-    while ((attempt = LINK_ATTEMPT_RE.exec(value))) {
+    RICH_ATTEMPT_RE.lastIndex = 0;
+    while ((attempt = RICH_ATTEMPT_RE.exec(value))) {
       const span = attempt[0];
-      const label = span.slice(1, span.indexOf(']')).trim();
+      const isImage = span[0] === '!';
+      const label = span.slice(isImage ? 2 : 1, span.indexOf(']')).trim();
       const url = span.slice(span.indexOf('](') + 2, -1).trim();
 
-      if (!label) {
+      if (isImage) {
+        if (!label) {
+          at(field, 'An image in the wording needs words for the people who cannot see it');
+        } else if (label.length > RICH_LABEL_MAX) {
+          at(field, `The words under the image are ${label.length} characters; keep them under ${RICH_LABEL_MAX}`);
+        } else if (url.length > RICH_URL_MAX) {
+          at(field, `The address of the image is ${url.length} characters long; keep it under ${RICH_URL_MAX}`);
+        } else if (!TEXT_FORMATS.url.test(url)) {
+          at(field, `The image comes from "${url}" — an image may only come from an http:// or https:// address`);
+        }
+      } else if (!label) {
         at(field, 'A link with nothing to click on — a link needs its words and its address');
-      } else if (label.length > LINK_LABEL_MAX) {
-        at(field, `The link label in the wording is ${label.length} characters; keep it under ${LINK_LABEL_MAX}`);
-      } else if (url.length > LINK_URL_MAX) {
-        at(field, `The address behind the link is ${url.length} characters long; keep it under ${LINK_URL_MAX}`);
+      } else if (label.length > RICH_LABEL_MAX) {
+        at(field, `The link label in the wording is ${label.length} characters; keep it under ${RICH_LABEL_MAX}`);
+      } else if (url.length > RICH_URL_MAX) {
+        at(field, `The address behind the link is ${url.length} characters long; keep it under ${RICH_URL_MAX}`);
       } else if (!TEXT_FORMATS.url.test(url)) {
         at(field, `The link points at "${url}" — a link may only go to an http:// or https:// address`);
       }
@@ -242,24 +259,36 @@ const SurveySchema = (() => {
 
   // Wording into what a respondent sees. A fragment that fails to parse stays
   // the literal words the author typed — however it got stored, it is not
-  // made into a link at render time, because a link is a promise about where
-  // a click goes and this is the only place that promise is kept.
+  // made into a link or an image at render time, because a link is a promise
+  // about where a click goes and this is the only place that promise is kept.
   function linkify(text) {
     const value = str(text);
-    if (!value.includes('[')) return htmlEscape(value);
+    const whole = trimmed(value);
+
+    // Wording that is nothing but an address is a link whose label is
+    // itself — the "URL" way of saying it.
+    if (!value.includes('[')) {
+      if (whole && TEXT_FORMATS.url.test(whole)) {
+        return `<a href="${htmlEscape(whole)}" target="_blank" rel="noopener noreferrer">${htmlEscape(whole)}</a>`;
+      }
+      return htmlEscape(value);
+    }
 
     let out = '';
     let last = 0;
     let match;
-    LINK_RE.lastIndex = 0;
+    RICH_RE.lastIndex = 0;
 
-    while ((match = LINK_RE.exec(value))) {
+    while ((match = RICH_RE.exec(value))) {
       out += htmlEscape(value.slice(last, match.index));
-      const label = match[1].trim();
-      const url = match[2].trim();
+      const isImage = match[1] === '!';
+      const label = match[2].trim();
+      const url = match[3].trim();
 
       if (label && TEXT_FORMATS.url.test(url)) {
-        out += `<a href="${htmlEscape(url)}" target="_blank" rel="noopener noreferrer">${htmlEscape(label)}</a>`;
+        out += isImage
+          ? `<img class="sv-wording-img" src="${htmlEscape(url)}" alt="${htmlEscape(label)}" loading="lazy">`
+          : `<a href="${htmlEscape(url)}" target="_blank" rel="noopener noreferrer">${htmlEscape(label)}</a>`;
       } else {
         out += htmlEscape(match[0]);
       }
@@ -276,12 +305,21 @@ const SurveySchema = (() => {
   // means something other than what was written is worse than one that refuses
   // to save.
 
+  // The word of an option, whichever shape it is held in. Answers, rules and
+  // comparisons work on words, never on shapes — an option is held as a
+  // plain word (dropdowns, rankings, grid rows, where there is no room to
+  // say more) or as a card with a word and a subtext under it (single and
+  // multiple choice, where the member reads each option and a link or a
+  // picture belongs under the word).
+  const optionLabel = option => trimmed(
+    option && typeof option === 'object' ? (option.label ?? option.text) : option);
+
   function normalizeOptions(raw) {
     if (!Array.isArray(raw)) return [];
     const seen = new Set();
     const options = [];
     for (const option of raw) {
-      const text = trimmed(option && typeof option === 'object' ? option.text : option);
+      const text = optionLabel(option);
       if (!text) continue;                       // blank rows are the builder's, not the author's
       const fold = foldOption(text);
       if (seen.has(fold)) continue;              // a list with the same option twice cannot be tallied
@@ -289,6 +327,35 @@ const SurveySchema = (() => {
       options.push(text);
     }
     return options;
+  }
+
+  // The choice cards: the word, and under it the subtext — text, a link,
+  // an image or a bare address, held to the same rules as any other wording.
+  const SUBTEXT_MAX = 300;
+
+  function normalizeOptionCards(raw, at) {
+    if (!Array.isArray(raw)) return [];
+    const seen = new Set();
+    const cards = [];
+    for (const option of raw) {
+      const label = optionLabel(option);
+      if (!label) continue;
+      const fold = foldOption(label);
+      if (seen.has(fold)) continue;
+      seen.add(fold);
+
+      const card = { label };
+      const subtext = option && typeof option === 'object'
+        ? trimmed(option.subtext ?? option.description ?? option.hint)
+        : '';
+      if (subtext) {
+        const written = subtext.slice(0, SUBTEXT_MAX);
+        checkLinks(written, 'options', (field, message) => at(field, `Option "${label}" — ${message}`));
+        card.subtext = written;
+      }
+      cards.push(card);
+    }
+    return cards;
   }
 
   function normalizeQuestion(raw, index, earlier) {
@@ -355,11 +422,12 @@ const SurveySchema = (() => {
       case 'dropdown':
       case 'multi_choice':
       case 'ranking': {
-        question.options = normalizeOptions(raw.options);
+        const cards = type === 'choice' || type === 'multi_choice';
+        question.options = cards ? normalizeOptionCards(raw.options, at) : normalizeOptions(raw.options);
         if (question.options.length < 2) {
           at('options', 'Needs at least two options to choose between');
         }
-        if (Array.isArray(raw.options) && raw.options.filter(o => !isBlank(o)).length > question.options.length) {
+        if (Array.isArray(raw.options) && raw.options.filter(o => !isBlank(optionLabel(o))).length > question.options.length) {
           at('options', 'Two options are the same');
         }
 
@@ -392,7 +460,7 @@ const SurveySchema = (() => {
           // Options that cannot be held together with any other — "None of
           // the above" ticked alongside three things is not an answer.
           const exclusive = normalizeOptions(raw.exclusive_options)
-            .filter(o => question.options.some(opt => foldOption(opt) === foldOption(o)));
+            .filter(o => question.options.some(opt => foldOption(optionLabel(opt)) === foldOption(o)));
           if (exclusive.length) question.exclusive_options = exclusive;
         }
         break;
@@ -618,13 +686,15 @@ const SurveySchema = (() => {
     if (!OPERATORS_BY_OP.get(op).needsValue) return { value: undefined };
 
     if (source.options && ['is', 'is_not', 'includes', 'not_includes'].includes(op)) {
-      const matchOption = source.options.find(o => foldOption(o) === foldOption(value));
+      const matchOption = source.options.find(o => foldOption(optionLabel(o)) === foldOption(value));
       const other = source.allow_other && foldOption(value) === '__other__';
       if (!matchOption && !other) {
         at(field, `"${trimmed(value)}" is not one of the options for "${source.text}"`);
         return null;
       }
-      return { value: other ? '__other__' : matchOption };
+      // The rule holds the word the answer will be held in — the label,
+      // never the card around it.
+      return { value: other ? '__other__' : optionLabel(matchOption) };
     }
     if (source.type === 'boolean') {
       return { value: value === true || value === 'true' || foldOption(value) === foldOption(source.true_label) };
@@ -935,8 +1005,8 @@ const SurveySchema = (() => {
       case 'choice':
       case 'dropdown': {
         const text = trimmed(value);
-        const known = (question.options || []).find(o => foldOption(o) === foldOption(text));
-        if (known) return pass(known);
+        const known = (question.options || []).find(o => foldOption(optionLabel(o)) === foldOption(text));
+        if (known) return pass(optionLabel(known));
         // An unlisted value is the "Other" box when the author allowed one,
         // and a rejected answer when they did not — otherwise a choice
         // question tallies values nobody was ever offered.
@@ -952,9 +1022,10 @@ const SurveySchema = (() => {
         for (const entry of value) {
           const text = trimmed(entry);
           if (!text) continue;
-          const known = (question.options || []).find(o => foldOption(o) === foldOption(text));
+          const known = (question.options || []).find(o => foldOption(optionLabel(o)) === foldOption(text));
           if (known) {
-            if (!picked.some(p => foldOption(p) === foldOption(known))) picked.push(known);
+            const word = optionLabel(known);
+            if (!picked.some(p => foldOption(p) === foldOption(word))) picked.push(word);
             continue;
           }
           if (!question.allow_other) return fail('Pick from the options');
@@ -985,12 +1056,13 @@ const SurveySchema = (() => {
         if (!Array.isArray(value)) return fail('Put the options in order');
         const ordered = [];
         for (const entry of value) {
-          const known = (question.options || []).find(o => foldOption(o) === foldOption(entry));
+          const known = (question.options || []).find(o => foldOption(optionLabel(o)) === foldOption(entry));
           if (!known) return fail('That is not one of the options');
-          if (ordered.some(o => foldOption(o) === foldOption(known))) {
+          const word = optionLabel(known);
+          if (ordered.some(o => foldOption(o) === foldOption(word))) {
             return fail('Each option can only take one position');
           }
-          ordered.push(known);
+          ordered.push(word);
         }
         // A partial ranking is not comparable with a complete one, so the
         // whole list is the answer or none of it is.
@@ -1257,7 +1329,7 @@ const SurveySchema = (() => {
     linkify, ending, branchAction,
     answerToText, npsScore,
     // exported for callers that need the same folding rules
-    foldOption, toNumber, isRealDate
+    foldOption, toNumber, isRealDate, optionLabel, SUBTEXT_MAX
   };
 })();
 

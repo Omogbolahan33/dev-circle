@@ -451,6 +451,10 @@ const surveyStmt = db.prepare(`
   // expects, because seeded data that a live submission would have refused is
   // data every screen then has to be defensive about.
   function inventAnswer(q) {
+    // An answer is the word an option is held under — the label of a card,
+    // the word itself otherwise. Seeding a card would put a shape in the data
+    // where every screen expects words.
+    const words = (q.options || []).map(o => surveyForm.optionLabel(o));
     switch (q.type) {
       case 'rating': return between(1, q.scale || 5);
       case 'nps': return between(0, 10);
@@ -458,18 +462,18 @@ const surveyStmt = db.prepare(`
       case 'date': return new Date(Date.now() - between(30, 400) * 86400000).toISOString().slice(0, 10);
       case 'boolean': return Math.random() > 0.4;
       case 'choice':
-      case 'dropdown': return pick(q.options);
+      case 'dropdown': return pick(words);
       case 'multi_choice': {
         const exclusive = q.exclusive_options || [];
         // Sometimes the "None of these" answer, which is the one that has to
         // stand alone — worth having in the data so the screens meet it
         if (exclusive.length && Math.random() > 0.75) return [pick(exclusive)];
-        const open = q.options.filter(o => !exclusive.includes(o));
+        const open = words.filter(o => !exclusive.includes(o));
         const most = Math.min(q.max_select || open.length, open.length);
         const many = between(Math.max(1, q.min_select || 1), most);
         return open.slice().sort(() => Math.random() - 0.5).slice(0, many);
       }
-      case 'ranking': return q.options.slice().sort(() => Math.random() - 0.5);
+      case 'ranking': return words.slice().sort(() => Math.random() - 0.5);
       case 'matrix':
         return Object.fromEntries(q.rows.map(row => [row, pick(q.columns)]));
       case 'text':

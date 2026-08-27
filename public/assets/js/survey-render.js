@@ -53,7 +53,7 @@ const SurveyRender = (() => {
   // that is not on the list.
   function otherValue(question, value) {
     if (!question.allow_other) return '';
-    const offered = new Set((question.options || []).map(o => o.toLowerCase()));
+    const offered = new Set((question.options || []).map(o => SurveySchema.optionLabel(o).toLowerCase()));
     const values = Array.isArray(value) ? value : [value];
     const written = values.find(v => typeof v === 'string' && v.trim() && !offered.has(v.trim().toLowerCase()));
     return written || '';
@@ -61,7 +61,7 @@ const SurveyRender = (() => {
 
   const isPicked = (value, option) =>
     (Array.isArray(value) ? value : [value]).some(v =>
-      String(v ?? '').trim().toLowerCase() === String(option).trim().toLowerCase());
+      String(v ?? '').trim().toLowerCase() === SurveySchema.optionLabel(option).trim().toLowerCase());
 
   // ─── Controls ─────────────────────────────────────────────
   // Each returns the markup, then wires itself up in bind(). Split that way so
@@ -102,13 +102,20 @@ const SurveyRender = (() => {
         const options = ordered(question, seed);
         const other = otherValue(question, value);
 
-        const rows = options.map((option, i) => `
+        const rows = options.map((option, i) => {
+          const label = SurveySchema.optionLabel(option);
+          const subtext = option && typeof option === 'object' ? option.subtext : '';
+          return `
           <button type="button" class="sv-option${isPicked(value, option) ? ' picked' : ''}"
                   data-option="${i}" role="${multi ? 'checkbox' : 'radio'}"
                   aria-checked="${isPicked(value, option)}">
             <span class="sv-mark${multi ? ' box' : ''}"></span>
-            <span>${esc(option)}</span>
-          </button>`).join('');
+            <span class="sv-option-copy">
+              <span class="sv-option-label">${esc(label)}</span>
+              ${subtext ? `<span class="sv-option-subtext">${SurveySchema.linkify(subtext)}</span>` : ''}
+            </span>
+          </button>`;
+        }).join('');
 
         const otherRow = question.allow_other ? `
           <div class="sv-option sv-other${other ? ' picked' : ''}" data-other-row>
@@ -130,7 +137,7 @@ const SurveyRender = (() => {
           <select class="input sv-select">
             <option value="">Choose one…</option>
             ${options.map((o, i) => `
-              <option value="${i}"${isPicked(value, o) ? ' selected' : ''}>${esc(o)}</option>`).join('')}
+              <option value="${i}"${isPicked(value, o) ? ' selected' : ''}>${esc(SurveySchema.optionLabel(o))}</option>`).join('')}
             ${question.allow_other
               ? `<option value="${OTHER}"${other ? ' selected' : ''}>${esc(question.other_label || 'Something else')}</option>`
               : ''}
@@ -324,7 +331,7 @@ const SurveyRender = (() => {
         const collect = () => {
           const picked = $$('.sv-option[data-option]')
             .filter(b => b.classList.contains('picked'))
-            .map(b => options[Number(b.dataset.option)]);
+            .map(b => SurveySchema.optionLabel(options[Number(b.dataset.option)]));
           const other = otherInput && $('[data-other-row]')?.classList.contains('picked')
             ? otherInput.value.trim() : '';
           if (other) picked.push(other);
@@ -333,9 +340,9 @@ const SurveyRender = (() => {
 
         $$('.sv-option[data-option]').forEach(button => {
           button.addEventListener('click', () => {
-            const option = options[Number(button.dataset.option)];
+            const option = SurveySchema.optionLabel(options[Number(button.dataset.option)]);
             const exclusive = (question.exclusive_options || [])
-              .some(o => o.toLowerCase() === String(option).toLowerCase());
+              .some(o => o.toLowerCase() === option.toLowerCase());
 
             if (!multi) {
               $$('.sv-option').forEach(b => { b.classList.remove('picked'); b.setAttribute('aria-checked', 'false'); });
@@ -349,8 +356,8 @@ const SurveyRender = (() => {
                 $$('.sv-option').forEach(b => { b.classList.remove('picked'); b.setAttribute('aria-checked', 'false'); });
               } else if (turningOn) {
                 $$('.sv-option[data-option]').forEach(b => {
-                  const value = options[Number(b.dataset.option)];
-                  if ((question.exclusive_options || []).some(o => o.toLowerCase() === String(value).toLowerCase())) {
+                  const value = SurveySchema.optionLabel(options[Number(b.dataset.option)]);
+                  if ((question.exclusive_options || []).some(o => o.toLowerCase() === value.toLowerCase())) {
                     b.classList.remove('picked');
                     b.setAttribute('aria-checked', 'false');
                   }
@@ -385,7 +392,7 @@ const SurveyRender = (() => {
         const other = $('.sv-other-input');
         const collect = () => {
           if (select.value === OTHER) return other ? other.value.trim() : '';
-          return select.value === '' ? '' : options[Number(select.value)];
+          return select.value === '' ? '' : SurveySchema.optionLabel(options[Number(select.value)]);
         };
         select.addEventListener('change', () => {
           if (other) other.classList.toggle('hide', select.value !== OTHER);

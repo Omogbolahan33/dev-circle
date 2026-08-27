@@ -1,5 +1,7 @@
+const path = require('path');
 const db = require('../db');
 const { uuid, parseJSON } = require('../utils/helpers');
+const schema = require(path.join(__dirname, '..', '..', 'public', 'assets', 'js', 'survey-schema.js'));
 
 // ─── Survey verbatims ───────────────────────────────────────
 // A sentence a developer writes in a survey is feedback. It used to live only
@@ -31,7 +33,9 @@ const fold = value => String(value ?? '').trim().toLowerCase();
 // within the options they were offered.
 function otherText(question, answer) {
   if (!question.allow_other) return null;
-  const offered = new Set((question.options || []).map(fold));
+  // What was offered is the word of each option — a card's label — because
+  // that is what the member picked, and only what they wrote is filed here
+  const offered = new Set((question.options || []).map(o => fold(schema.optionLabel(o))));
   const written = (Array.isArray(answer) ? answer : [answer])
     .map(v => String(v ?? '').trim())
     .filter(v => v && !offered.has(fold(v)));
