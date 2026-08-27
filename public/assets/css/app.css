@@ -895,6 +895,57 @@ tr:hover .row-actions, tr:focus-within .row-actions { opacity: 1; }
   flex-shrink: 0;
 }
 .drawer-title { font-family: var(--font-display); font-weight: var(--fw-bold); font-size: var(--fs-lg); }
+
+/* ─── Theme rail sections ──────────────────────────────────
+   The appearance controls are a lot at once — colours, type, shape, imagery,
+   layout and the opening and closing screens. Grouping them into collapsing
+   sections means an author sees headings and opens the part they came for,
+   rather than a wall of controls. Each section's summary says what is in it;
+   a dot marks a section that is already doing something non-default, so a
+   collapsed rail still shows where the customisation lives. */
+.theme-section {
+  border-top: 1px solid var(--line-faint);
+  padding: var(--sp-2) 0;
+}
+.theme-section:first-child { border-top: none; }
+.theme-section > summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) 0;
+  font-family: var(--font-display);
+  font-weight: var(--fw-semibold);
+  font-size: var(--fs-sm);
+  color: var(--white);
+  user-select: none;
+}
+.theme-section > summary::-webkit-details-marker { display: none; }
+.theme-section > summary:hover { color: var(--cd-blue); }
+.theme-section > summary .section-caret {
+  margin-left: auto;
+  color: var(--ash-dim);
+  transition: transform var(--duration-fast) var(--ease-out);
+  flex-shrink: 0;
+}
+.theme-section[open] > summary .section-caret { transform: rotate(90deg); }
+.theme-section > summary .section-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--cd-blue);
+  flex-shrink: 0;
+  /* Hidden unless the section carries a custom value; JS sets [data-set] */
+  display: none;
+}
+.theme-section > summary[data-has-custom] .section-dot { display: inline-block; }
+.theme-section > summary .section-sub {
+  font-weight: var(--fw-regular);
+  font-size: var(--fs-xs);
+  color: var(--ash-dim);
+}
+.theme-section .section-body { padding-top: var(--sp-2); }
+.theme-section .section-body .card-title { display: none; }
+.theme-section .section-body .field:last-child { margin-bottom: 0; }
 .drawer-sub { font-size: var(--fs-xs); color: var(--ash); margin-top: 2px; }
 .drawer-body { flex: 1; overflow-y: auto; padding: var(--sp-5); }
 .drawer-foot {

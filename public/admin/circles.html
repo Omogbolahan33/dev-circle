@@ -210,56 +210,97 @@
       </div>
     </div>
 
-    <div class="field">
-      <label class="label">Colours</label>
-      <div class="brand-swatches" id="brandSwatches"></div>
-      <p class="hint">Contrast is checked as you work. A combination the member cannot read is refused on save, not silently published.</p>
-    </div>
+    <details class="theme-section" id="brand-sec-colours" data-bsection="colours" open>
+      <summary>
+        <span class="section-dot" aria-hidden="true"></span>
+        <span>Colours</span>
+        <span class="section-sub">Accent, canvas, text and surfaces</span>
+        <span class="section-caret" aria-hidden="true">›</span>
+      </summary>
+      <div class="section-body">
+        <div class="brand-swatches" id="brandSwatches"></div>
+        <p class="hint">Contrast is checked as you work. A combination the member cannot read is refused on save, not silently published. Leave the canvas and text empty to follow the member's light or dark setting.</p>
+      </div>
+    </details>
 
-    <div class="field mt-6">
-      <label class="label">Typeface</label>
-      <select class="input" id="brandFont"></select>
-    </div>
-
-    <div class="field mt-6">
-      <label class="label">Corners</label>
-      <select class="input" id="brandCorner"></select>
-    </div>
-
-    <div class="field mt-6">
-      <label class="label">Canvas</label>
-      <select class="input" id="brandBackground"></select>
-    </div>
-
-    <div class="field mt-6">
-      <label class="label">Logo</label>
-      <div class="brand-asset" id="brandLogoAsset">
-        <span class="brand-asset-thumb" id="brandLogoThumb">No logo</span>
-        <div class="brand-asset-meta">
-          <div class="brand-asset-name dim" id="brandLogoName">Shown in the navigation wherever this circle is the workspace.</div>
+    <details class="theme-section" id="brand-sec-type" data-bsection="type">
+      <summary>
+        <span class="section-dot" aria-hidden="true"></span>
+        <span>Type</span>
+        <span class="section-sub">The typeface across the portal</span>
+        <span class="section-caret" aria-hidden="true">›</span>
+      </summary>
+      <div class="section-body">
+        <div class="field">
+          <label class="label">Typeface</label>
+          <select class="input" id="brandFont"></select>
         </div>
-        <label class="btn btn-sm btn-secondary">Upload<input type="file" accept="image/png,image/jpeg,image/gif,image/webp" hidden data-brand-upload="logo_url"></label>
-        <button class="btn btn-sm btn-ghost" data-brand-clear="logo_url" style="display:none">Remove</button>
       </div>
-    </div>
+    </details>
 
-    <div class="field mt-6">
-      <label class="label">Background image</label>
-      <div class="brand-asset" id="brandBgAsset">
-        <span class="brand-asset-thumb" id="brandBgThumb">None</span>
-        <div class="brand-asset-meta">
-          <div class="brand-asset-name dim" id="brandBgName">A photograph behind the whole portal. A scrim keeps text legible.</div>
+    <details class="theme-section" id="brand-sec-shape" data-bsection="shape">
+      <summary>
+        <span class="section-dot" aria-hidden="true"></span>
+        <span>Shape &amp; wash</span>
+        <span class="section-sub">Corner radius and background wash</span>
+        <span class="section-caret" aria-hidden="true">›</span>
+      </summary>
+      <div class="section-body">
+        <div class="field-row">
+          <div class="field">
+            <label class="label">Corners</label>
+            <select class="input" id="brandCorner"></select>
+          </div>
+          <div class="field">
+            <label class="label">Wash</label>
+            <select class="input" id="brandBackground"></select>
+          </div>
         </div>
-        <label class="btn btn-sm btn-secondary">Upload<input type="file" accept="image/png,image/jpeg,image/gif,image/webp" hidden data-brand-upload="background_image"></label>
-        <button class="btn btn-sm btn-ghost" data-brand-clear="background_image" style="display:none">Remove</button>
       </div>
-      <div class="field-row mt-3" id="bgOptions" style="display:none">
-        <select class="input" id="brandBgFit"></select>
-        <label class="label" style="flex:1">Scrim strength
-          <input type="range" class="input" id="brandBgOverlay" min="0" max="0.95" step="0.05" value="0.55">
-        </label>
+    </details>
+
+    <details class="theme-section" id="brand-sec-images" data-bsection="images">
+      <summary>
+        <span class="section-dot" aria-hidden="true"></span>
+        <span>Images</span>
+        <span class="section-sub">Wordmark and background</span>
+        <span class="section-caret" aria-hidden="true">›</span>
+      </summary>
+      <div class="section-body">
+        <div class="field">
+          <label class="label">Logo</label>
+          <div class="brand-asset" id="brandLogoAsset">
+            <span class="brand-asset-thumb" id="brandLogoThumb">No logo</span>
+            <div class="brand-asset-meta">
+              <div class="brand-asset-name dim" id="brandLogoName">Shown in the navigation wherever this circle is the workspace.</div>
+            </div>
+            <label class="btn btn-sm btn-secondary">Upload<input type="file" accept="image/png,image/jpeg,image/gif,image/webp" hidden data-brand-upload="logo_url"></label>
+            <button class="btn btn-sm btn-ghost" data-brand-clear="logo_url" style="display:none">Remove</button>
+          </div>
+        </div>
+
+        <div class="field">
+          <label class="label">Background image</label>
+          <div class="brand-asset" id="brandBgAsset">
+            <span class="brand-asset-thumb" id="brandBgThumb">None</span>
+            <div class="brand-asset-meta">
+              <div class="brand-asset-name dim" id="brandBgName">A photograph behind the whole portal. A scrim keeps text legible.</div>
+            </div>
+            <label class="btn btn-sm btn-secondary">Upload<input type="file" accept="image/png,image/jpeg,image/gif,image/webp" hidden data-brand-upload="background_image"></label>
+            <button class="btn btn-sm btn-ghost" data-brand-clear="background_image" style="display:none">Remove</button>
+          </div>
+          <div class="field-row mt-3" id="bgOptions" style="display:none">
+            <div class="field">
+              <label class="label">How it sits</label>
+              <select class="input" id="brandBgFit"></select>
+            </div>
+            <label class="label" style="flex:1">Scrim strength
+              <input type="range" class="input" id="brandBgOverlay" min="0" max="0.95" step="0.05" value="0.55">
+            </label>
+          </div>
+        </div>
       </div>
-    </div>
+    </details>
   </div>
   <div class="drawer-foot">
     <button class="btn btn-ghost" id="brandReset" onclick="resetBrand()">Reset to product defaults</button>
@@ -504,6 +545,19 @@
       : (warnings.length ? 'Readable, though contrast is modest' : 'The look of this workspace');
     document.getElementById('bpTitle').style.color = issues.length ? '#b91c1c' : '';
 
+    // Remember which brand sections are open, because the swatch/asset
+    // re-render below does not touch them but the drawer is redrawn on open;
+    // mark a section's dot when it carries anything non-default.
+    const setMark = (section, on) => {
+      const el = document.getElementById(`brand-sec-${section}`);
+      if (el) el.querySelector('summary')?.toggleAttribute('data-has-custom', Boolean(on));
+    };
+    setMark('colours', ['accent', 'background_color', 'text_color', 'muted_color', 'surface_color', 'background']
+      .some(k => t[k] != null && t[k] !== ''));
+    setMark('type', t.font && t.font !== 'default');
+    setMark('shape', (t.corner && t.corner !== 'soft') || (t.background && t.background !== 'plain'));
+    setMark('images', Boolean(t.logo_url || t.background_image));
+
     renderSwatches();
     renderAssets();
   }
@@ -543,6 +597,15 @@
 
       brandState.loaded = true;
       previewBrand();
+
+      // Open a section that already carries a brand, so the customisation is
+      // never hidden behind a collapsed heading; colours always starts open.
+      const has = (...ks) => ks.some(k => t[k] != null && t[k] !== '');
+      const openSection = (id, on) => document.getElementById(`brand-sec-${id}`)?.toggleAttribute('open', Boolean(on));
+      openSection('colours', true);
+      openSection('type', has('font'));
+      openSection('shape', has('corner', 'background'));
+      openSection('images', has('logo_url', 'background_image'));
     } catch (err) {
       showToast(err.message, 'error');
     }
