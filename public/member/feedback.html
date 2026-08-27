@@ -167,6 +167,20 @@
           .map(c => `<option value="${c}">${escapeHtml(CATEGORY_LABELS[c] || c)}</option>`).join('');
       }
 
+      // Deep links from the dashboard (e.g. "Complete KYB") arrive pre-addressed
+      // so the member only has to hit send.
+      const params = new URLSearchParams(window.location.search);
+      const cat = params.get('category');
+      if (cat && data.categories.includes(cat)) {
+        document.getElementById('fbCategory').value = cat;
+      }
+      const subject = params.get('subject');
+      if (subject) {
+        document.getElementById('fbContent').value = subject + '\n\n';
+        document.getElementById('fbCount').textContent = subject.length + 2;
+        document.getElementById('fbContent').focus();
+      }
+
       render();
     } catch (err) {
       document.getElementById('list').innerHTML =

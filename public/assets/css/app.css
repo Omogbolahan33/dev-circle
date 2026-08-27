@@ -953,6 +953,9 @@ tr:hover .row-actions, tr:focus-within .row-actions { opacity: 1; }
 .input::placeholder { color: var(--ash-dim); }
 .input:focus { border-color: var(--cd-blue); }
 .input:disabled { opacity: 0.5; cursor: not-allowed; }
+/* Read-only fields are facts rather than form controls (the locked phone
+   credential): dimmed like disabled but still selectable/copyable. */
+.input[readonly] { background: var(--surface-1); color: var(--text-2); cursor: default; }
 select.input { cursor: pointer; appearance: none; background-image: linear-gradient(45deg, transparent 50%, var(--ash) 50%), linear-gradient(135deg, var(--ash) 50%, transparent 50%); background-position: calc(100% - 16px) 50%, calc(100% - 11px) 50%; background-size: 5px 5px, 5px 5px; background-repeat: no-repeat; padding-right: var(--sp-8); }
 textarea.input { min-height: 90px; line-height: var(--lh-normal); }
 

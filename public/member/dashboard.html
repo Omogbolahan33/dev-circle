@@ -55,11 +55,20 @@
       color: var(--text-2);
     }
 
-    /* Sandbox → KYB → production as one continuous track rather than four
-       disconnected boxes: the point is how far along you are. */
-    .track { display: flex; flex-direction: column; gap: var(--sp-3); }
-    .track-step { display: flex; align-items: flex-start; gap: var(--sp-3); font-size: var(--fs-sm); }
-    .track-mark {
+    /* Sandbox → KYB → production as one continuous track, laid out as a
+       horizontal stepper so the whole integration story sits in the first
+       screenful rather than below the fold. It collapses to the vertical
+       form on a phone, where columns do not fit. */
+    .int-card { padding-bottom: var(--sp-4); margin-top: var(--sp-5); }
+    #nextAction:empty + .int-card { margin-top: var(--sp-2); }
+    .int-track {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: var(--sp-3);
+      margin: var(--sp-2) 0 var(--sp-4);
+    }
+    .int-step { position: relative; display: flex; align-items: flex-start; gap: var(--sp-2); font-size: var(--fs-sm); min-width: 0; }
+    .int-mark {
       width: 18px; height: 18px;
       border-radius: 50%;
       border: 2px solid var(--line-strong);
@@ -68,22 +77,78 @@
       display: flex; align-items: center; justify-content: center;
       font-size: 9px;
       position: relative;
+      z-index: 1;
+      background: var(--surface-2);
     }
-    .track-step:not(:last-child) .track-mark::after {
+    /* Connector between steps, drawn from each mark into the next column */
+    .int-step:not(:last-child)::before {
       content: '';
       position: absolute;
-      top: 16px; left: 50%;
-      width: 2px; height: calc(var(--sp-3) + 6px);
+      top: 9px;
+      left: 24px;
+      right: calc(-1 * var(--sp-3) + 6px);
+      height: 2px;
       background: var(--line);
-      transform: translateX(-50%);
     }
-    .track-step.done .track-mark { border-color: var(--teal); background: var(--teal); color: var(--on-accent); }
-    .track-step.done:not(:last-child) .track-mark::after { background: var(--teal); }
-    .track-step.now .track-mark { border-color: var(--cd-gold); background: var(--gold-dim); }
-    .track-name { font-weight: var(--fw-medium); }
-    .track-note { color: var(--text-3); font-size: var(--fs-xs); }
-    .track-step.done .track-name { color: var(--teal-ink); }
-    .track-step.now .track-name { color: var(--gold-ink); }
+    .int-step.done:not(:last-child)::before { background: var(--teal); }
+    .int-step.done .int-mark { border-color: var(--teal); background: var(--teal); color: var(--on-accent); }
+    .int-step.now .int-mark { border-color: var(--cd-gold); background: var(--gold-dim); }
+    .int-name { font-weight: var(--fw-medium); display: block; }
+    .int-note { color: var(--text-3); font-size: var(--fs-xs); display: block; line-height: 1.35; }
+    .int-step.done .int-name { color: var(--teal-ink); }
+    .int-step.now .int-name { color: var(--gold-ink); }
+
+    .int-footer {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: var(--sp-3); flex-wrap: wrap;
+      border-top: 1px solid var(--line-faint);
+      padding-top: var(--sp-3);
+    }
+    .int-products { font-size: var(--fs-xs); color: var(--text-2); min-width: 0; }
+    .int-products .tag { cursor: default; }
+    .int-actions { display: flex; gap: var(--sp-2); flex-wrap: wrap; align-items: center; }
+    .int-editor {
+      border-top: 1px solid var(--line-faint);
+      margin-top: var(--sp-3); padding-top: var(--sp-3);
+    }
+
+    /* Product picker pills — same interaction as the profile page choices. */
+    .choice-grid { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+    .choice {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--sp-2);
+      padding: var(--sp-2) var(--sp-3);
+      border: 1px solid var(--line);
+      border-radius: var(--r-full);
+      font-size: var(--fs-xs);
+      color: var(--ash);
+      cursor: pointer;
+      background: transparent;
+      transition: all var(--duration-fast) var(--ease-out);
+    }
+    .choice:hover { border-color: var(--line-strong); color: var(--white); }
+    .choice.selected { background: var(--cd-blue-dim); border-color: var(--cd-blue-40); color: var(--cd-blue); }
+
+    /* Spacing between the full-width blocks stacked above the two-column home. */
+    .int-card + .home-mini { margin-top: var(--sp-5); }
+    .home-mini + .home { margin-top: var(--sp-5); }
+
+    /* Groups + feedback sit beside each other directly under the track, so
+       the standing/participation summary is visible without scrolling. */
+    .home-mini { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-5); align-items: stretch; }
+    @media (max-width: 880px) { .home-mini { grid-template-columns: minmax(0, 1fr); gap: var(--sp-4); } }
+    .say-card { display: flex; flex-direction: column; }
+    .say-card .btn { margin-top: auto; }
+
+    @media (max-width: 680px) {
+      .int-track { grid-template-columns: minmax(0, 1fr); gap: var(--sp-3); }
+      .int-step:not(:last-child)::before {
+        top: 20px; left: 8px;
+        right: auto;
+        width: 2px; height: calc(var(--sp-3) + 10px);
+      }
+    }
 
     /* ── Three Concentric Activity Rings & Staged Readiness ── */
     .rings-card-body { display: flex; flex-direction: column; gap: var(--sp-3); }
@@ -206,6 +271,52 @@
     <!-- The one thing worth doing next, if there is one. -->
     <div id="nextAction"></div>
 
+    <!-- Integration track first: where the developer stands with the platform
+         (registered → sandbox → KYB → production) is the anchor the rest of the
+         dashboard hangs off, so it occupies the first full-width screen
+         instead of being four cards down a column. -->
+    <section class="panel-card int-card">
+      <div class="panel-title" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--sp-4)">
+        <span>Your integration</span>
+        <span class="dim text-xs">Track updated from the Developer Hub</span>
+      </div>
+      <div class="int-track" id="track"></div>
+
+      <div class="int-editor" id="productsEditor" hidden>
+        <label class="label" style="margin-bottom:var(--sp-2)">API products you build against</label>
+        <div class="choice-grid" id="productGroup"></div>
+        <div class="row-tight mt-3" style="margin-top:var(--sp-3)">
+          <button type="button" class="btn btn-sm btn-primary" id="saveProducts">Save products</button>
+          <button type="button" class="btn btn-sm btn-ghost" id="cancelProducts">Cancel</button>
+          <span class="hint" id="productsNote" style="margin-top:0"></span>
+        </div>
+      </div>
+
+      <div class="int-footer">
+        <div class="int-products" id="products"></div>
+        <div class="int-actions" id="trackActions"></div>
+      </div>
+    </section>
+
+    <!-- Where you sit and your line to the team, directly under the track so
+         the participation summary is visible before any scrolling. -->
+    <div class="home-mini">
+      <section class="panel-card">
+        <div class="panel-title">Where you sit</div>
+        <div class="membership" id="membership"></div>
+        <p class="hint">These decide which surveys and sessions reach you.</p>
+      </section>
+
+      <section class="panel-card say-card">
+        <div class="panel-title">Say something</div>
+        <p class="text-sm muted mb-4">
+          You do not have to wait to be asked. It reaches the team building the APIs,
+          and you can follow what happens to it.
+        </p>
+        <a class="btn btn-primary btn-block" href="/member/feedback.html">Give feedback</a>
+      </section>
+    </div>
+
     <div class="home">
 
       <div class="stack">
@@ -237,25 +348,12 @@
           </div>
         </section>
 
-        <section class="panel-card">
-          <div class="panel-title">Your integration</div>
-          <div class="track" id="track"></div>
-          <p class="hint" id="products"></p>
-        </section>
-
-        <section class="panel-card">
-          <div class="panel-title">Where you sit</div>
-          <div class="membership" id="membership"></div>
-          <p class="hint">These decide which surveys and sessions reach you.</p>
-        </section>
-
-        <section class="panel-card">
-          <div class="panel-title">Say something</div>
-          <p class="text-sm muted mb-4" style="margin-top:calc(-1 * var(--sp-2))">
-            You do not have to wait to be asked. It reaches the team building the APIs,
-            and you can follow what happens to it.
-          </p>
-          <a class="btn btn-primary btn-block" href="/member/feedback.html">Give feedback</a>
+        <section>
+          <div class="section-head">
+            <h2 class="section-title">Recent activity</h2>
+            <a href="/member/engagement.html" class="section-link">Full history →</a>
+          </div>
+          <div class="timeline" id="timeline"></div>
         </section>
       </div>
 
@@ -283,14 +381,6 @@
             <a href="/member/sessions.html" class="section-link">All sessions →</a>
           </div>
           <div id="sessions"></div>
-        </section>
-
-        <section>
-          <div class="section-head">
-            <h2 class="section-title">Recent activity</h2>
-            <a href="/member/engagement.html" class="section-link">Full history →</a>
-          </div>
-          <div class="timeline" id="timeline"></div>
         </section>
       </div>
 
@@ -326,7 +416,7 @@
       renderNextAction(profile, surveys.surveys, sessions.sessions);
       renderReadiness(profile.readiness);
       renderHeat(engagement.history, profile.stats);
-      renderTrack(profile.user);
+      renderTrack(profile.user, profile.product_catalog);
       renderMembership(profile);
       renderInvites(surveys.surveys);
       renderSessions(sessions.sessions);
@@ -593,28 +683,127 @@
     document.getElementById('answeredValue').textContent = stats.surveys_completed;
   }
 
-  // Where this developer stands with the platform, as one continuous track.
-  function renderTrack(user) {
+  // Where this developer stands with the platform, as one continuous track —
+  // with the one thing on it the member can move themselves (recording their
+  // products) offered as an action, and a route to the team for KYB.
+  const PRODUCT_LABELS = {
+    payments: 'Payments', lending: 'Lending', identity: 'Identity', credit_scoring: 'Credit scoring'
+  };
+  let productCatalog = [];
+
+  function renderTrack(user, catalog) {
     const live = user.api_status === 'production';
+    const kybDone = !!user.kyb_completed;
     const steps = [
       { name: 'Registered', note: 'Account created', done: true },
-      { name: 'Sandbox', note: 'Building against test keys', done: true, now: !live && !user.kyb_completed },
-      { name: 'KYB', note: user.kyb_completed ? 'Verified' : 'Not completed yet', done: !!user.kyb_completed, now: !live && !!user.kyb_completed },
+      { name: 'Sandbox', note: 'Building against test keys', done: true, now: !live && !kybDone },
+      { name: 'KYB', note: kybDone ? 'Verified' : 'Not completed yet', done: kybDone, now: !live && kybDone },
       { name: 'Production', note: live ? 'Serving live traffic' : 'Not live yet', done: live, now: live }
     ];
 
     document.getElementById('track').innerHTML = steps.map(s => `
-      <div class="track-step ${s.done ? 'done' : ''} ${s.now ? 'now' : ''}">
-        <span class="track-mark">${s.done ? '✓' : ''}</span>
+      <div class="int-step ${s.done ? 'done' : ''} ${s.now ? 'now' : ''}">
+        <span class="int-mark">${s.done ? '✓' : ''}</span>
         <span style="min-width:0">
-          <span class="track-name">${s.name}</span>
-          <span class="track-note" style="display:block">${escapeHtml(s.note)}</span>
+          <span class="int-name">${s.name}</span>
+          <span class="int-note">${escapeHtml(s.note)}</span>
         </span>
       </div>`).join('');
 
-    document.getElementById('products').textContent = (user.api_products || []).length
-      ? `Integrated with ${user.api_products.join(', ')}.`
-      : 'No API products recorded yet.';
+    productCatalog = (catalog && catalog.length)
+      ? catalog
+      : Object.keys(PRODUCT_LABELS).map(key => ({ key, label: PRODUCT_LABELS[key] }));
+
+    const products = user.api_products || [];
+    renderProductChips(products);
+    renderProductEditor(products);
+    renderTrackActions(live, kybDone, products);
+  }
+
+  function renderProductChips(products) {
+    document.getElementById('products').innerHTML = products.length
+      ? '<span class="dim">Integrated products:</span> ' +
+        products.map(p => `<span class="tag">${escapeHtml(PRODUCT_LABELS[p] || p)}</span>`).join(' ')
+      : '<span class="dim">No API products recorded yet.</span>';
+  }
+
+  function renderProductEditor(products) {
+    document.getElementById('productGroup').innerHTML = productCatalog.map(p => `
+      <button type="button" class="choice${products.includes(p.key) ? ' selected' : ''}" data-value="${p.key}">
+        ${escapeHtml(p.label)}
+      </button>`).join('');
+    document.getElementById('productsNote').textContent = '';
+  }
+
+  // Delegated once: the pills are re-rendered after every save, but the
+  // container itself never moves.
+  document.addEventListener('DOMContentLoaded', () => {
+    document.getElementById('productGroup').addEventListener('click', e => {
+      const pill = e.target.closest('.choice');
+      if (pill) pill.classList.toggle('selected');
+    });
+  });
+
+  // The editor's save/cancel buttons and its pill container are static in the
+  // page, so bind them once rather than re-binding every re-render.
+  document.addEventListener('DOMContentLoaded', () => {
+    document.getElementById('cancelProducts').addEventListener('click', () => {
+      document.getElementById('productsEditor').hidden = true;
+    });
+    document.getElementById('saveProducts').addEventListener('click', saveProducts);
+  });
+
+  // Exactly what the member can do about their integration from here: declare
+  // their products themselves, or reach the team for the bits the Hub owns.
+  function renderTrackActions(live, kybDone, products) {
+    const kybUrl = '/member/feedback.html?category=support&subject=' +
+      encodeURIComponent('KYB for go-live');
+    const actions = [];
+
+    if (!live && !kybDone) {
+      actions.push(`<a class="btn btn-sm btn-primary" href="${kybUrl}">Complete KYB →</a>`);
+    }
+    if (live) {
+      actions.push(`<a class="btn btn-sm btn-secondary" href="/member/feedback.html?category=billing">Talk to the team</a>`);
+    }
+
+    actions.push(
+      `<button type="button" class="btn btn-sm ${products.length ? 'btn-ghost' : 'btn-secondary'}"
+        id="editProducts">${products.length ? 'Update products' : 'Record API products'}</button>`
+    );
+
+    document.getElementById('trackActions').innerHTML = actions.join('');
+
+    document.getElementById('editProducts').addEventListener('click', () => {
+      const editor = document.getElementById('productsEditor');
+      editor.hidden = false;
+      editor.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    });
+  }
+
+  async function saveProducts() {
+    const btn = document.getElementById('saveProducts');
+    const chosen = Array.from(document.querySelectorAll('#productGroup .choice.selected'))
+      .map(el => el.dataset.value);
+    btn.disabled = true;
+    btn.textContent = 'Saving…';
+    try {
+      const res = await api.put('/users/profile', { api_products: chosen });
+      renderProductChips(chosen);
+      renderProductEditor(chosen);
+      const updated = res.user?.api_products || chosen;
+      renderTrackActions(res.user?.api_status === 'production', !!res.user?.kyb_completed, updated);
+      document.getElementById('productsEditor').hidden = true;
+      showToast(chosen.length
+        ? `Products recorded: ${chosen.map(p => PRODUCT_LABELS[p] || p).join(', ')}`
+        : 'Products cleared.');
+    } catch (err) {
+      document.getElementById('productsNote').textContent = err.message;
+      showToast(err.message, 'error');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Save products';
+    }
   }
 
   function renderMembership({ circles, cohorts }) {

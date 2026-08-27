@@ -86,6 +86,33 @@
       padding: var(--sp-4);
     }
 
+    /* Fields that cannot be self-edited are shown as plain statements, not
+       disabled inputs — a greyed box reads as broken, a read-only statement
+       reads as a rule. */
+    .locked-field {
+      display: flex;
+      align-items: center;
+      gap: var(--sp-2);
+      padding: var(--sp-2) var(--sp-3);
+      border: 1px solid var(--line-faint);
+      border-radius: var(--r-md);
+      background: var(--surface-1);
+      color: var(--text-2);
+      font-size: var(--fs-sm);
+    }
+    .locked-field .lock { color: var(--text-3); font-size: var(--fs-xs); }
+
+    .locked-note {
+      font-size: var(--fs-xs);
+      color: var(--text-3);
+      line-height: var(--lh-normal);
+      background: var(--surface-1);
+      border: 1px solid var(--line-faint);
+      border-radius: var(--r-lg);
+      padding: var(--sp-3);
+    }
+    .locked-note a { color: var(--cd-blue); }
+
     @media (max-width: 600px) {
       .identity-head { margin-bottom: var(--sp-3) !important; gap: var(--sp-3); }
       .identity-title { font-size: var(--fs-lg); }
@@ -110,12 +137,38 @@
     <div id="readinessBanner"></div>
 
     <!-- What Credit Direct holds about this developer's integration, and which
-         groups decide what reaches them. Read-only: these are set by the
-         Developer Hub and by the engagement team, not editable here. -->
+         groups decide what reaches them. The track itself is written by the
+         Developer Hub and the engagement team; the product families the member
+         builds against are the one part they tell us about themselves. -->
     <section class="section">
-      <div class="section-head"><h2 class="section-title">Your standing</h2></div>
+      <div class="section-head">
+        <h2 class="section-title">Your standing</h2>
+        <span class="dim text-xs">Set by the Developer Hub &amp; the team</span>
+      </div>
       <div class="kv" id="standing"></div>
       <div class="membership mt-4" id="membership"></div>
+
+      <div class="mt-6">
+        <label class="label">API products you build against</label>
+        <p class="hint" style="margin-top:0;margin-bottom:var(--sp-2)">
+          This is the one part of your integration you can tell us directly — it helps us
+          match the right surveys and sessions to you. Your API stage and KYB status are
+          updated automatically from the Developer Hub.
+        </p>
+        <div class="choice-grid" id="productGroup"></div>
+        <p class="hint" id="productsNote" style="display:none"></p>
+      </div>
+
+      <div class="locked-note mt-6">
+        <strong>What cannot be changed here:</strong>
+        your <strong>email address</strong> (it is how you are identified and sign in) and,
+        once set, your <strong>phone number</strong> — its last six digits are half your
+        sign-in credential, so changing it would lock you out.
+        <strong>API stage, KYB status and circle memberships</strong> are managed by the
+        Credit Direct team from the Developer Hub. If any of these need changing — a new
+        phone number especially — <a href="/member/feedback.html">tell the team</a> and we
+        will verify and update it.
+      </div>
     </section>
 
     <section class="section" id="about">
@@ -131,12 +184,14 @@
         <div class="field">
           <label class="label">Email</label>
           <input type="email" class="input" id="fEmail" disabled>
+          <p class="hint">Your email cannot be changed — it is how you are identified and sign in. Need it changed? <a href="/member/feedback.html">Tell the team</a>.</p>
         </div>
       </div>
       <div class="field-row">
         <div class="field">
           <label class="label">Phone</label>
           <input type="tel" class="input" id="fPhone" placeholder="+234…">
+          <p class="hint" id="fPhoneHint"></p>
         </div>
         <div class="field">
           <label class="label">Company</label>
@@ -237,9 +292,8 @@
 
   function renderStanding(user, circles, cohorts) {
     document.getElementById('standing').innerHTML = `
-      <div class="kv-row"><span class="kv-key">API stage</span><span class="kv-val">${escapeHtml(user.api_status)}</span></div>
-      <div class="kv-row"><span class="kv-key">KYB</span><span class="kv-val">${user.kyb_completed ? 'Completed' : 'Not yet completed'}</span></div>
-      <div class="kv-row"><span class="kv-key">Products</span><span class="kv-val">${(user.api_products || []).length ? user.api_products.map(escapeHtml).join(', ') : '—'}</span></div>
+      <div class="kv-row"><span class="kv-key">API stage</span><span class="kv-val">${escapeHtml(user.api_status)} <span class="dim text-xs">· from the Developer Hub</span></span></div>
+      <div class="kv-row"><span class="kv-key">KYB</span><span class="kv-val">${user.kyb_completed ? 'Completed' : 'Not yet completed'} <span class="dim text-xs">· verified by the team</span></span></div>
       <div class="kv-row"><span class="kv-key">Developer Hub</span><span class="kv-val mono text-xs">${user.dev_hub_user_id ? 'Linked' : 'Not linked'}</span></div>
       <div class="kv-row"><span class="kv-key">Member since</span><span class="kv-val">${formatDate(user.created_at)}</span></div>`;
 
@@ -254,11 +308,40 @@
       : '<span class="dim text-xs">You are not in any group yet.</span>';
   }
 
+  // Product catalog with plain-language labels, falling back to a small
+  // built-in list if the API did not supply one.
+  const FALLBACK_PRODUCTS = {
+    payments: 'Payments', lending: 'Lending', identity: 'Identity', credit_scoring: 'Credit scoring'
+  };
+
   async function load() {
     try {
       const profile = await api.get('/users/profile');
       const { user, stats, consent, circles, cohorts, readiness } = profile;
       renderStanding(user, circles, cohorts);
+
+      // The one part of the integration a member declares themselves.
+      const catalog = (profile.product_catalog || []).length
+        ? Object.fromEntries(profile.product_catalog.map(p => [p.key, p.label]))
+        : FALLBACK_PRODUCTS;
+      renderChoices('productGroup', catalog, user.api_products || []);
+
+      // Phone is a sign-in credential: once a number is on the account it is
+      // locked here and can only be changed via the team after verification.
+      // Accounts that arrived without one (SSO, landing page) may still set it.
+      const phoneInput = document.getElementById('fPhone');
+      const phoneHint = document.getElementById('fPhoneHint');
+      if (user.phone_normalized || user.phone) {
+        phoneInput.value = user.phone || user.phone_normalized;
+        // Read-only rather than disabled: the value stays selectable (useful
+        // for confirming the last six digits) but nothing on it can be edited.
+        phoneInput.readOnly = true;
+        phoneInput.setAttribute('aria-readonly', 'true');
+        phoneHint.innerHTML = '🔒 Locked after registration — the last six digits of this number ' +
+          'are what you sign in with. Got a new number? <a href="/member/feedback.html">Ask the team to change it</a>.';
+      } else {
+        phoneHint.textContent = 'Set the number you sign in with — you will be asked for its last six digits. Once set, it cannot be changed here.';
+      }
 
       document.getElementById('identity').innerHTML = `
         ${orbitAvatar(user.name, orbitLevel(stats.streak), 'avatar-xl' + (user.api_status === 'production' ? ' avatar-teal' : ' avatar-gold'))}
@@ -361,16 +444,25 @@
 
   async function saveProfile(returnHome = false) {
     try {
-      const res = await api.put('/users/profile', {
+      const payload = {
         name: document.getElementById('fName').value.trim(),
-        phone: document.getElementById('fPhone').value.trim(),
         company: document.getElementById('fCompany').value.trim(),
         work_sector: document.getElementById('fSector').value,
         preferred_channels: getChoices('channelGroup'),
         preferred_days: getChoices('dayGroup'),
         preferred_time_start: document.getElementById('fTimeStart').value,
-        preferred_time_end: document.getElementById('fTimeEnd').value
-      });
+        preferred_time_end: document.getElementById('fTimeEnd').value,
+        api_products: getChoices('productGroup')
+      };
+
+      // A locked phone field is shown read-only; only send it when the member
+      // is setting theirs for the first time (the rescue path).
+      const phoneInput = document.getElementById('fPhone');
+      if (!phoneInput.readOnly && !phoneInput.disabled) {
+        payload.phone = phoneInput.value.trim();
+      }
+
+      const res = await api.put('/users/profile', payload);
 
       const params = new URLSearchParams(window.location.search);
       const redirectUrl = params.get('redirect');

@@ -93,7 +93,13 @@ router.get('/profile', requireAuth, async (req, res) => {
       best_streak: user.best_streak
     },
     unread_notifications: Number(byK.unread?.n || 0),
-    readiness: readiness.computeReadiness(user, consent)
+    readiness: readiness.computeReadiness(user, consent),
+    // The product families a member may record themselves, with display
+    // labels — one canonical list shared with the picker on the dashboard.
+    product_catalog: readiness.SELF_SERVE_PRODUCTS.map(p => ({
+      key: p,
+      label: readiness.PRODUCT_LABELS[p] || p
+    }))
   });
 });
 
@@ -214,6 +220,11 @@ router.put('/profile', requireAuth, async (req, res) => {
     date_of_birth, gender, location_state, api_products
   } = req.body;
 
+  // req.user is the row the session was minted from; read the live record so a
+  // decision about what is locked is never made on stale data.
+  const existing = await db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
+  if (!existing) return res.status(404).json({ error: 'Member not found' });
+
   const updates = [];
   const params = [];
 
@@ -231,17 +242,40 @@ router.put('/profile', requireAuth, async (req, res) => {
   try {
     setText('name', name);
 
-    // The phone number is half the credential now, not just a contact detail —
-    // its last six digits are what they sign in with — so it is
-    // stored twice: as the member wrote it, and in the canonical form a
-    // sign-in is matched against.
+    // The phone number is half the credential, not just a contact detail — its
+    // last six digits are what a participant signs in with, alongside their
+    // email address. Once a number is on the account it cannot be changed from
+    // here: a change would silently change what they sign in with, and the
+    // number itself is never displayed anywhere it could be confirmed by an
+    // imposter. Accounts that arrived without one (Developer Hub SSO, landing
+    // page, import) may still SET theirs once — that rescue path is the one
+    // that makes the account signable-into. Anything else goes through the
+    // team, via admin or support, who verify identity first.
     if (phone !== undefined) {
       const normalized = identity.normalizePhone(phone);
       if (phone && !normalized) {
         return res.status(400).json({ error: 'That is not a phone number we can read.' });
       }
-      setText('phone', phone || null);
-      setText('phone_normalized', normalized);
+      if (existing.phone_normalized) {
+        // Same number, retyped in a different format: accept the display
+        // spelling but never move the credential to a different number.
+        const incoming = normalized || null;
+        if (incoming && incoming !== existing.phone_normalized) {
+          return res.status(403).json({
+            error: 'Your phone number cannot be changed after registration — ' +
+                   'it is what you sign in with. Contact support if you have ' +
+                   'a new number and we will verify and update it for you.',
+            field: 'phone'
+          });
+        }
+        setText('phone', phone || existing.phone);
+        setText('phone_normalized', existing.phone_normalized);
+      } else {
+        // No number yet — the rescue path. This is the one time a member sets
+        // their own sign-in credential.
+        setText('phone', phone || null);
+        setText('phone_normalized', normalized);
+      }
     }
 
     setText('company', company);
@@ -253,7 +287,15 @@ router.put('/profile', requireAuth, async (req, res) => {
     setText('location_state', location_state);
     setJson('preferred_channels', preferred_channels);
     setJson('preferred_days', preferred_days);
-    setJson('api_products', api_products);
+    if (api_products !== undefined) {
+      if (!Array.isArray(api_products)) throw new TypeError('api_products must be an array');
+      const allowed = readiness.SELF_SERVE_PRODUCTS;
+      const invalid = api_products.filter(p => !allowed.includes(p));
+      if (invalid.length) {
+        throw new TypeError(`Unknown API product(s): ${invalid.join(', ')}. Valid: ${allowed.join(', ')}`);
+      }
+      setJson('api_products', [...new Set(api_products)]);
+    }
   } catch (err) {
     return res.status(400).json({ error: err.message });
   }
