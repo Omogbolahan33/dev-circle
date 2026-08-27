@@ -280,7 +280,7 @@
         <label class="label" style="margin-bottom:var(--sp-2)">API products you build against</label>
         <div class="choice-grid" id="productGroup"></div>
         <div class="row-tight mt-3" style="margin-top:var(--sp-3)">
-          <button type="button" class="btn btn-sm btn-primary" id="saveProducts">Save products</button>
+          <button type="button" class="btn btn-sm btn-primary" id="saveProducts" data-icon="check" data-icon-size="13">Save products</button>
           <button type="button" class="btn btn-sm btn-ghost" id="cancelProducts">Cancel</button>
           <span class="hint" id="productsNote" style="margin-top:0"></span>
         </div>
@@ -302,7 +302,7 @@
         You do not have to wait to be asked. It reaches the team building the APIs,
         and you can follow what happens to it.
       </p>
-      <a class="btn btn-primary btn-block" href="/member/feedback.html">Give feedback</a>
+      <a class="btn btn-primary btn-block" href="/member/feedback.html" data-icon="send" data-icon-size="16">Give feedback</a>
     </section>
 
     <div class="home">
@@ -502,7 +502,7 @@
               <span style="color:var(--teal);font-weight:bold;font-size:var(--fs-sm)">✓ All 3 rings closed (100%)</span>
               <span class="dim text-xs">Ready for sessions &amp; survey matching</span>
             </div>
-            <a class="btn btn-sm btn-ghost" href="/member/profile.html" style="font-size:var(--fs-xs);padding:2px 8px">Edit profile</a>
+            <a class="btn btn-sm btn-ghost" href="/member/profile.html" style="font-size:var(--fs-xs);padding:2px 8px" data-icon="edit" data-icon-size="13">Edit profile</a>
           </div>
         </div>`;
     } else {
@@ -517,7 +517,7 @@
             <span class="readiness-check-dot" style="background:${t.color}"></span>
             <span>${escapeHtml(t.label)}</span>
           </div>
-          <a class="btn btn-sm btn-ghost" href="${t.action_url}" style="padding:2px 8px;font-size:var(--fs-xs)">${escapeHtml(t.action_label)}</a>
+          <a class="btn btn-sm btn-ghost" href="${t.action_url}" style="padding:2px 8px;font-size:var(--fs-xs)">${escapeHtml(t.action_label)} ${icon('chevron', 13)}</a>
         </div>`).join('');
 
       const primaryAction = readiness.next_action || {
@@ -602,7 +602,7 @@
               ${tasksHtml}
             </div>
             <div style="margin-top:var(--sp-2)">
-              <a class="btn btn-sm btn-primary" href="${primaryAction.action_url}">${escapeHtml(primaryAction.action_label)} →</a>
+              <a class="btn btn-sm btn-primary" href="${primaryAction.action_url}">${escapeHtml(primaryAction.action_label)} ${icon('arrowRight', 14)}</a>
             </div>
           </div>
         </div>`;
@@ -748,15 +748,15 @@
     const actions = [];
 
     if (!live && !kybDone) {
-      actions.push(`<a class="btn btn-sm btn-primary" href="${kybUrl}">Complete KYB →</a>`);
+      actions.push(`<a class="btn btn-sm btn-primary" href="${kybUrl}">${icon('shieldCheck', 14)} Complete KYB</a>`);
     }
     if (live) {
-      actions.push(`<a class="btn btn-sm btn-secondary" href="/member/feedback.html?category=billing">Talk to the team</a>`);
+      actions.push(`<a class="btn btn-sm btn-secondary" href="/member/feedback.html?category=billing">${icon('feedback', 14)} Talk to the team</a>`);
     }
 
     actions.push(
       `<button type="button" class="btn btn-sm ${products.length ? 'btn-ghost' : 'btn-secondary'}"
-        id="editProducts">${products.length ? 'Update products' : 'Record API products'}</button>`
+        id="editProducts">${icon('package', 14)} ${products.length ? 'Update products' : 'Record API products'}</button>`
     );
 
     document.getElementById('trackActions').innerHTML = actions.join('');
@@ -810,8 +810,8 @@
             ${soon.clashes_with_availability ? `<br><span class="clash">${escapeHtml(soon.clash_reason)}</span>` : ''}
           </p>
           <div class="row-tight wrap">
-            ${soon.survey_id ? `<a class="btn btn-primary" href="/member/survey.html?id=${soon.survey_id}">Open the survey</a>` : ''}
-            <a class="btn btn-ghost" href="/member/sessions.html">All sessions</a>
+            ${soon.survey_id ? `<a class="btn btn-primary" href="/member/survey.html?id=${soon.survey_id}">${icon('surveys', 15)} Open the survey</a>` : ''}
+            <a class="btn btn-ghost" href="/member/sessions.html">${icon('sessions', 15)} All sessions</a>
           </div>
         </div>`;
       return;
@@ -824,7 +824,7 @@
           <div class="eyebrow">${waiting.length} survey${waiting.length === 1 ? '' : 's'} waiting</div>
           <div class="headline">${escapeHtml(s.title)}</div>
           <p class="detail">${escapeHtml(s.description || 'Your answers shape what gets built next.')} About ${s.time_estimate_min} minutes, ${s.question_count} question${s.question_count === 1 ? '' : 's'}.</p>
-          <a class="btn btn-primary" href="/member/survey.html?id=${s.id}">Start survey</a>
+          <a class="btn btn-primary" href="/member/survey.html?id=${s.id}">Start survey ${icon('arrowRight', 15)}</a>
         </div>`;
       return;
     }
@@ -853,7 +853,7 @@
         <div class="invite-title">${escapeHtml(s.title)}</div>
         ${s.description ? `<p class="invite-desc">${escapeHtml(s.description)}</p>` : ''}
         <div class="invite-foot">
-          <span class="btn btn-sm btn-primary">Start</span>
+          <span class="btn btn-sm btn-primary">Start ${icon('arrowRight', 13)}</span>
           <span class="invite-cost">~${s.time_estimate_min} min · ${s.question_count} question${s.question_count === 1 ? '' : 's'}</span>
         </div>
       </a>`).join('');
@@ -873,7 +873,7 @@
             ${s.clashes_with_availability ? ` · <span class="clash">${escapeHtml(s.clash_reason)}</span>` : ''}
           </div>
         </div>
-        ${s.survey_id ? `<a class="btn btn-sm btn-secondary" href="/member/survey.html?id=${s.survey_id}">Survey</a>` : ''}
+        ${s.survey_id ? `<a class="btn btn-sm btn-secondary" href="/member/survey.html?id=${s.survey_id}">${icon('surveys', 13)} Survey</a>` : ''}
       </div>`).join('');
   }
 

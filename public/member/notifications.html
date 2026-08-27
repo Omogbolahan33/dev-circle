@@ -63,7 +63,7 @@
     <div class="panel active" id="panel-inbox">
       <div class="toolbar">
         <span class="spacer"></span>
-        <button class="btn btn-sm btn-secondary" id="readAllBtn" onclick="markAllRead()" hidden>Mark all read</button>
+        <button class="btn btn-sm btn-secondary" id="readAllBtn" onclick="markAllRead()" hidden data-icon="check" data-icon-size="13">Mark all read</button>
       </div>
       <div id="inbox"></div>
     </div>
@@ -75,8 +75,8 @@
       </p>
       <div id="consent"></div>
       <div class="mt-6 row align-center gap-3">
-        <a class="btn btn-primary" href="/member/dashboard.html">Done · Return to dashboard →</a>
-        <a class="btn btn-ghost" href="/member/profile.html#channels">Edit preferred channels in profile</a>
+        <a class="btn btn-primary" href="/member/dashboard.html" data-icon="home" data-icon-size="15">Done · Return to dashboard</a>
+        <a class="btn btn-ghost" href="/member/profile.html#channels" data-icon="edit" data-icon-size="14">Edit preferred channels in profile</a>
       </div>
     </div>
 
@@ -99,8 +99,8 @@
           </div>
         </div>
         <div class="row align-center gap-3">
-          <button class="btn btn-primary" onclick="savePreferences(true)">Save &amp; return to dashboard →</button>
-          <button class="btn btn-secondary" onclick="savePreferences(false)">Save preferences</button>
+          <button class="btn btn-primary" onclick="savePreferences(true)" data-icon="check" data-icon-size="15">Save &amp; return to dashboard</button>
+          <button class="btn btn-secondary" onclick="savePreferences(false)" data-icon="check" data-icon-size="15">Save preferences</button>
         </div>
       </section>
     </div>
@@ -250,7 +250,9 @@
             </div>
           </div>
           <button class="btn btn-sm ${granted ? 'btn-ghost' : 'btn-secondary'}"
-                  onclick="toggleConsent('${ch}', '${status}')">${granted ? 'Withdraw' : 'Allow'}</button>
+                  onclick="toggleConsent('${ch}', '${status}')">
+            ${granted ? icon('close', 13) + ' Withdraw' : icon('check', 13) + ' Allow'}
+          </button>
         </div>`;
     }).join('');
   }

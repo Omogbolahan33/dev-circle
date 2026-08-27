@@ -40,7 +40,15 @@ const ICONS = {
   chevron:    '<path d="m9 18 6-6-6-6"/>',
   logout:     '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5M21 12H9"/>',
   profile:    '<circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"/>',
-  home:       '<path d="m3 10 9-7 9 7v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/>'
+  home:       '<path d="m3 10 9-7 9 7v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/>',
+  // Action icons for buttons and links that were plain text.
+  send:       '<path d="m22 2-7 20-4-9-9-4 20-7z"/><path d="M22 2 11 13"/>',
+  edit:       '<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>',
+  check:      '<path d="M20 6 9 17l-5-5"/>',
+  arrowRight: '<path d="M5 12h14M12 5l7 7-7 7"/>',
+  arrowLeft:  '<path d="M19 12H5M12 19l-7-7 7-7"/>',
+  shieldCheck:'<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/>',
+  package:    '<path d="m7.5 4.3 9 5.2"/><path d="M21 16V8a2 2 0 0 0-1-1.7l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.7l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.3 7 12 12l8.7-5M12 22V12"/>'
 };
 
 function icon(name, size = 16) {
@@ -131,6 +139,7 @@ const Shell = {
     this._bindKeys(true);
     this._loadCircles();
     this._loadAttention();
+    this.injectIcons();
   },
 
   // Member portal: top bar, no palette — four destinations do not need one.
@@ -145,6 +154,7 @@ const Shell = {
     this._mountOverlays();
     this._bindKeys(false);
     this._loadUnread();
+    this.injectIcons();
   },
 
   _sidebar(activeId) {
@@ -329,6 +339,20 @@ const Shell = {
       }
     });
   },
+
+  // ── Icons ──
+  // Static buttons/links can opt into an icon with data-icon="send" instead
+  // of hand-writing SVG. Called once on shell mount; pages that re-render
+  // dynamically can call Shell.icons(scope) afterwards.
+  injectIcons(root = document) {
+    root.querySelectorAll('[data-icon]:not([data-icon-added])').forEach(el => {
+      const name = el.getAttribute('data-icon');
+      const size = Number(el.getAttribute('data-icon-size')) || 15;
+      el.insertAdjacentHTML('afterbegin', icon(name, size));
+      el.setAttribute('data-icon-added', '');
+    });
+  },
+  icons(root) { this.injectIcons(root); },
 
   // ── Mobile navigation ──
   openNav()  { document.getElementById('sidebar')?.classList.add('open'); },

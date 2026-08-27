@@ -82,7 +82,7 @@
           Sessions are scheduled against the days and times you chose. If something is
           booked outside them, we flag it here rather than assuming you are free.
         </p>
-        <a class="btn btn-secondary" href="/member/profile.html?redirect=/member/sessions.html#availability">Change when you are available</a>
+        <a class="btn btn-secondary" href="/member/profile.html?redirect=/member/sessions.html#availability" data-icon="sessions" data-icon-size="15">Change when you are available</a>
       </div>
     </section>
 
@@ -136,7 +136,7 @@
                   </div>` : ''}
                 ${s.survey_id ? `
                   <a class="btn btn-sm btn-primary mt-4" href="/member/survey.html?id=${s.survey_id}">
-                    Open the survey${s.survey_title ? ': ' + escapeHtml(s.survey_title) : ''}
+                    ${icon('surveys', 14)} Open the survey${s.survey_title ? ': ' + escapeHtml(s.survey_title) : ''}
                   </a>` : ''}
               </div>
             </article>`;

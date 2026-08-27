@@ -163,7 +163,7 @@
     <span class="spacer"></span>
     <span class="text-xs dim hide" id="saveState"></span>
     <button class="icon-btn" data-theme-toggle onclick="Theme.toggle()"><span data-theme-icon></span></button>
-    <button class="btn btn-sm btn-ghost" onclick="exitSurvey()">Save &amp; exit</button>
+    <button class="btn btn-sm btn-ghost" onclick="exitSurvey()" data-icon="arrowLeft" data-icon-size="13">Save &amp; exit</button>
   </div>
 
   <div class="progress-strip hide" id="progressStrip">
@@ -179,8 +179,8 @@
   </main>
 
   <div class="survey-foot hide" id="foot">
-    <button class="btn btn-secondary" id="prevBtn" onclick="goBack()">← Back</button>
-    <button class="btn btn-primary" id="nextBtn" onclick="goNext()">Next →</button>
+    <button class="btn btn-secondary" id="prevBtn" onclick="goBack()"></button>
+    <button class="btn btn-primary" id="nextBtn" onclick="goNext()"></button>
   </div>
 
 <script src="/assets/js/api.js"></script>
@@ -279,7 +279,7 @@
       document.getElementById('stage').innerHTML = `
         <div class="done">
           <p class="done-text" style="color:var(--rose-ink)">${escapeHtml(err.message)}</p>
-          ${overLink ? '' : '<a class="btn btn-primary" href="/member/dashboard.html">Back to home</a>'}
+          ${overLink ? '' : `<a class="btn btn-primary" href="/member/dashboard.html">${icon('home', 15)} Back to home</a>`}
         </div>`;
     }
   }
@@ -336,6 +336,7 @@
         </div>
         <button class="btn btn-primary btn-lg" onclick="begin()">
           ${escapeHtml(theme.intro.button || (Object.keys(answers).length ? 'Pick up where you left off' : 'Start'))}
+          ${icon('arrowRight', 18)}
         </button>
       </div>`;
   }
@@ -376,7 +377,7 @@
         : `<div class="done">
              <div class="done-title">Nothing to answer</div>
              <p class="done-text">There are no open surveys for you right now. We will let you know when there are.</p>
-             <a class="btn btn-primary" href="/member/dashboard.html">Back to home</a>
+             <a class="btn btn-primary" href="/member/dashboard.html">${icon('home', 15)} Back to home</a>
            </div>`;
     } catch (err) {
       document.getElementById('stage').innerHTML =
@@ -424,7 +425,10 @@
     updateProgress();
 
     document.getElementById('prevBtn').disabled = cursor === 0;
-    document.getElementById('nextBtn').textContent = isLast() ? 'Submit' : 'Next →';
+    document.getElementById('prevBtn').innerHTML = `${icon('arrowLeft', 15)} Back`;
+    document.getElementById('nextBtn').innerHTML = isLast()
+      ? `${icon('check', 15)} Submit`
+      : `Next ${icon('arrowRight', 15)}`;
 
     if (question.type === 'text') setTimeout(() => stage.querySelector('.sv-input')?.focus(), 60);
   }
@@ -469,7 +473,7 @@
 
     updateProgress();
     document.getElementById('prevBtn').classList.add('hide');
-    document.getElementById('nextBtn').textContent = 'Submit';
+    document.getElementById('nextBtn').innerHTML = `${icon('check', 15)} Submit`;
   }
 
   // An answer changed. Branching is re-evaluated on the spot, because what
@@ -653,8 +657,8 @@
           ${overLink
             ? '<p class="done-meta">Answered without an account — nothing here identifies you.</p>'
             : `<div class="row gap-3 justify-center mt-4">
-                 <a class="btn btn-primary" href="/member/dashboard.html">Return to dashboard →</a>
-                 <a class="btn btn-secondary" href="/member/surveys.html">More surveys</a>
+                 <a class="btn btn-primary" href="/member/dashboard.html">Return to dashboard ${icon('arrowRight', 15)}</a>
+                 <a class="btn btn-secondary" href="/member/surveys.html">${icon('surveys', 15)} More surveys</a>
                </div>`}
         </div>`;
       if (!overLink) {
@@ -736,6 +740,7 @@
   // Overlay furniture (scrim, toasts, confirm) without the portal chrome.
   Shell._mountOverlays();
   Shell._bindKeys(false);
+  Shell.injectIcons();
 
   init();
 </script>
