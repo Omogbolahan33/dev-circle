@@ -46,6 +46,10 @@
 <div class="portal">
   <div class="portal-body">
 
+    <div class="mb-4">
+      <a class="btn btn-sm btn-ghost" href="/member/dashboard.html">← Back to dashboard</a>
+    </div>
+
     <header class="mb-6">
       <h1 class="page-title-lg">Sessions</h1>
       <p class="lede">
@@ -70,7 +74,7 @@
           Sessions are scheduled against the days and times you chose. If something is
           booked outside them, we flag it here rather than assuming you are free.
         </p>
-        <a class="btn btn-secondary" href="/member/profile.html#availability">Change when you are available</a>
+        <a class="btn btn-secondary" href="/member/profile.html?redirect=/member/sessions.html#availability">Change when you are available</a>
       </div>
     </section>
 
@@ -120,7 +124,7 @@
                 ${s.clashes_with_availability ? `
                   <div class="clash-note">
                     ${escapeHtml(s.clash_reason || 'This falls outside the availability you set.')}
-                    <a href="/member/profile.html#availability">Update your availability</a>
+                    <a href="/member/profile.html?redirect=/member/sessions.html#availability">Update your availability</a>
                   </div>` : ''}
                 ${s.survey_id ? `
                   <a class="btn btn-sm btn-primary mt-4" href="/member/survey.html?id=${s.survey_id}">

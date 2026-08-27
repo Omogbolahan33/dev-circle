@@ -652,8 +652,16 @@
           </p>
           ${overLink
             ? '<p class="done-meta">Answered without an account — nothing here identifies you.</p>'
-            : '<a class="btn btn-primary" href="/member/dashboard.html">Back to home</a>'}
+            : `<div class="row gap-3 justify-center mt-4">
+                 <a class="btn btn-primary" href="/member/dashboard.html">Return to dashboard →</a>
+                 <a class="btn btn-secondary" href="/member/surveys.html">More surveys</a>
+               </div>`}
         </div>`;
+      if (!overLink) {
+        setTimeout(() => {
+          if (location.pathname.includes('survey.html')) location.href = '/member/dashboard.html';
+        }, 4000);
+      }
     } catch (err) {
       button.disabled = false;
       // The server checked the same definition, so a refusal here means the

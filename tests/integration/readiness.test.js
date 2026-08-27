@@ -108,3 +108,37 @@ test('updating available time completes Ring 2 and closes all 3 rings', async ()
   assert.equal(afterRes.body.unfinished_tasks.length, 0);
   assert.match(afterRes.body.summary, /All 3 rings closed/);
 });
+
+test('setting engagement channels automatically grants consent for them', async () => {
+  const user = h.makeUser({
+    name: 'Dayo Bello',
+    preferred_channels: [],
+    preferred_days: ['Mon']
+  });
+  // No consent granted initially
+  const token = await h.loginUser(user.email);
+
+  // Updating profile with channels
+  const updateRes = await h.put('/api/users/profile', {
+    preferred_channels: ['email', 'whatsapp']
+  }, { token });
+
+  assert.equal(updateRes.status, 200);
+  assert.ok(updateRes.body.consent);
+
+  const grantedChannels = updateRes.body.consent
+    .filter(c => c.status === 'granted')
+    .map(c => c.channel);
+
+  assert.ok(grantedChannels.includes('email'), 'Email consent automatically granted');
+  assert.ok(grantedChannels.includes('whatsapp'), 'WhatsApp consent automatically granted');
+
+  // Verify in consent table directly
+  const rows = h.db.prepare('SELECT channel, status FROM consent WHERE user_id = ?').all(user.id);
+  const byCh = Object.fromEntries(rows.map(r => [r.channel, r.status]));
+  assert.equal(byCh.email, 'granted');
+  assert.equal(byCh.whatsapp, 'granted');
+
+  // Ring 3 is now complete
+  assert.equal(updateRes.body.readiness.rings.find(r => r.id === 'channels').is_complete, true);
+});

@@ -92,6 +92,10 @@
 <div class="portal">
   <div class="portal-body">
 
+    <div class="mb-4">
+      <a class="btn btn-sm btn-ghost" href="/member/dashboard.html">← Back to dashboard</a>
+    </div>
+
     <header class="identity-head" id="identity"></header>
 
     <div class="figures" id="figures"></div>
@@ -193,7 +197,9 @@
     </section>
 
     <div class="save-bar">
-      <button class="btn btn-primary" onclick="saveProfile()">Save changes</button>
+      <a class="btn btn-ghost" href="/member/dashboard.html">← Back to dashboard</a>
+      <button type="button" class="btn btn-secondary" onclick="saveProfile(false)">Save changes</button>
+      <button type="button" class="btn btn-primary" onclick="saveProfile(true)">Save &amp; return to dashboard →</button>
     </div>
 
   </div>
@@ -275,19 +281,14 @@
       renderChoices('dayGroup', Object.fromEntries(DAYS.map(d => [d, d])), user.preferred_days || []);
       renderChoices('channelGroup', CHANNELS, user.preferred_channels || []);
 
-      // A preference for a channel you have not consented to would never be
-      // honoured, so say so here rather than letting it look active.
-      const granted = consent.filter(c => c.status === 'granted').map(c => c.channel);
-      const preferredWithoutConsent = (user.preferred_channels || []).filter(c => !granted.includes(c));
-
-      document.getElementById('consentSummary').innerHTML = preferredWithoutConsent.length
-        ? `<p class="hint" style="color:var(--cd-gold)">
-             You prefer ${preferredWithoutConsent.map(c => CHANNELS[c]).join(', ')}, but have not allowed
-             ${preferredWithoutConsent.length === 1 ? 'it' : 'them'} yet — so we will not use
-             ${preferredWithoutConsent.length === 1 ? 'it' : 'them'}.
-             <a href="/member/notifications.html">Allow now</a>.
-           </p>`
-        : `<p class="hint">Allowed: ${granted.length ? granted.map(c => CHANNELS[c] || c).join(', ') : 'nothing yet'}.</p>`;
+      // Selecting preferred channels automatically grants consent for them
+      const granted = (consent || []).filter(c => c.status === 'granted').map(c => c.channel);
+      document.getElementById('consentSummary').innerHTML = `
+        <p class="hint">
+          Selecting preferred channels automatically grants permission to reach you on them.
+          ${granted.length ? `Currently allowed: <strong>${granted.map(c => CHANNELS[c] || c).join(', ')}</strong>.` : ''}
+          Manage channel permissions anytime under <a href="/member/notifications.html">notifications</a>.
+        </p>`;
 
       renderReadinessTags(readiness);
       handleHash();
@@ -325,7 +326,7 @@
         banner.innerHTML = `
           <div class="readiness-banner done">
             <strong style="color:var(--teal)">✓ All 3 rings closed (100%)</strong>
-            <span class="dim">Your profile and available time are completely up to date.</span>
+            <span class="dim">Your profile, available time, and contact permissions are completely up to date.</span>
           </div>`;
       } else {
         const availIncomplete = r2 && !r2.is_complete;
@@ -351,9 +352,9 @@
     }
   }
 
-  async function saveProfile() {
+  async function saveProfile(returnHome = false) {
     try {
-      await api.put('/users/profile', {
+      const res = await api.put('/users/profile', {
         name: document.getElementById('fName').value.trim(),
         phone: document.getElementById('fPhone').value.trim(),
         company: document.getElementById('fCompany').value.trim(),
@@ -363,6 +364,24 @@
         preferred_time_start: document.getElementById('fTimeStart').value,
         preferred_time_end: document.getElementById('fTimeEnd').value
       });
+
+      const params = new URLSearchParams(window.location.search);
+      const redirectUrl = params.get('redirect');
+
+      if (redirectUrl) {
+        showToast('Profile and preferences saved! Redirecting...');
+        setTimeout(() => { window.location.href = redirectUrl; }, 800);
+        return;
+      }
+
+      if (returnHome || (res.readiness && res.readiness.is_complete)) {
+        showToast(res.readiness && res.readiness.is_complete
+          ? 'All 3 rings complete! Returning to dashboard...'
+          : 'Saved! Returning to dashboard...');
+        setTimeout(() => { window.location.href = '/member/dashboard.html'; }, 800);
+        return;
+      }
+
       showToast('Profile saved');
       load();
     } catch (err) { showToast(err.message, 'error'); }

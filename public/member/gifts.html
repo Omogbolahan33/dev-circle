@@ -36,10 +36,16 @@
 <div class="portal">
   <div class="portal-body">
 
+    <div class="mb-4">
+      <a class="btn btn-sm btn-ghost" href="/member/dashboard.html">← Back to dashboard</a>
+    </div>
+
     <header class="mb-6">
       <h1 class="page-title-lg">Rewards</h1>
       <p class="lede">Small thanks for the time you put in. Nothing here is a prize draw — each one has a clear condition, and it is either met or it is not.</p>
     </header>
+
+    <div id="claimSuccess"></div>
 
     <div class="figures" id="figures"></div>
 
@@ -123,6 +129,24 @@
     try {
       const res = await api.post(`/users/gifts/${id}/claim`, {});
       showToast(`${res.gift.name} claimed — we will be in touch with delivery details`);
+
+      const banner = document.getElementById('claimSuccess');
+      if (banner) {
+        banner.innerHTML = `
+          <div class="card p-4 mb-6" style="border:1px solid var(--teal);background:var(--tint-success, rgba(13,148,136,0.08));border-radius:var(--r-lg)">
+            <div class="row align-center justify-between wrap gap-3">
+              <div>
+                <strong style="color:var(--teal)">🎉 ${escapeHtml(res.gift.name)} claimed!</strong>
+                <div class="text-xs dim mt-1">We will contact you with delivery instructions shortly.</div>
+              </div>
+              <div class="row gap-2">
+                <a class="btn btn-sm btn-primary" href="/member/dashboard.html">Back to dashboard →</a>
+                <a class="btn btn-sm btn-secondary" href="/member/engagement.html">View history</a>
+              </div>
+            </div>
+          </div>`;
+      }
+
       load();
     } catch (err) {
       showToast(err.message, 'error');

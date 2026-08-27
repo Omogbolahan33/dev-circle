@@ -62,11 +62,40 @@
     .track-step.done .track-name { color: var(--teal-ink); }
     .track-step.now .track-name { color: var(--gold-ink); }
 
-    /* ── Three Concentric Activity Rings & Staged Readiness ── */
-    .rings-widget { display: flex; flex-direction: column; gap: var(--sp-4); }
-    .rings-row { display: flex; align-items: center; gap: var(--sp-4); }
-    @media (max-width: 480px) { .rings-row { flex-direction: column; text-align: center; } }
-    .rings-svg-wrap { flex-shrink: 0; display: flex; justify-content: center; }
+    /* ── Three Concentric Activity Rings & Staged Readiness Hero ── */
+    .readiness-panel {
+      background: var(--surface-2);
+      border: 1px solid var(--line-faint);
+      border-radius: var(--r-xl);
+      padding: var(--sp-5) var(--sp-6);
+      margin-bottom: var(--sp-6);
+    }
+    .readiness-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: var(--sp-4);
+    }
+    .readiness-title {
+      font-size: var(--fs-xs);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--text-3);
+      font-weight: var(--fw-semibold);
+    }
+    .readiness-grid {
+      display: grid;
+      grid-template-columns: 140px minmax(260px, 1fr) minmax(300px, 1.2fr);
+      gap: var(--sp-6);
+      align-items: center;
+    }
+    @media (max-width: 960px) {
+      .readiness-grid {
+        grid-template-columns: 1fr;
+        gap: var(--sp-4);
+      }
+    }
+    .rings-svg-wrap { flex-shrink: 0; display: flex; justify-content: center; align-items: center; }
     .rings-svg { display: block; overflow: visible; }
     .ring-track { fill: none; stroke: var(--line); opacity: 0.35; }
     .ring-fill {
@@ -88,10 +117,10 @@
       letter-spacing: 0.08em;
     }
 
-    .rings-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
+    .rings-meta { display: flex; flex-direction: column; gap: var(--sp-2); }
     .ring-item {
       display: flex; align-items: flex-start; gap: var(--sp-2);
-      font-size: var(--fs-xs); padding: var(--sp-2);
+      font-size: var(--fs-xs); padding: var(--sp-2) var(--sp-3);
       border-radius: var(--r-md); background: var(--surface-1);
       border: 1px solid var(--line-faint);
     }
@@ -143,11 +172,8 @@
     }
 
     .readiness-all-done {
-      background: var(--tint-success, rgba(13, 148, 136, 0.08));
-      border: 1px solid var(--teal);
-      border-radius: var(--r-lg);
-      padding: var(--sp-4);
-      display: flex; align-items: center; gap: var(--sp-3);
+      display: flex; align-items: center; justify-content: space-between;
+      gap: var(--sp-4); padding: var(--sp-2) var(--sp-1);
     }
   </style>
 </head>
@@ -161,6 +187,15 @@
 
     <!-- The one thing worth doing next, if there is one. -->
     <div id="nextAction"></div>
+
+    <!-- The three activity rings: Profile, Available Time, Channels & Consent -->
+    <section class="readiness-panel" id="readinessSection">
+      <div class="readiness-header">
+        <div class="readiness-title">Setup &amp; Readiness</div>
+        <span class="badge" id="readinessBadge">3 rings</span>
+      </div>
+      <div id="readinessContent"></div>
+    </section>
 
     <div class="home">
 
@@ -191,15 +226,6 @@
       </div>
 
       <div class="stack">
-        <!-- The three activity rings: Profile, Available Time, Channels & Consent -->
-        <section class="panel-card" id="readinessSection">
-          <div class="panel-title" style="display:flex;align-items:center;justify-content:space-between">
-            <span>Setup & Readiness</span>
-            <span class="badge" id="readinessBadge">3 rings</span>
-          </div>
-          <div id="readinessContent"></div>
-        </section>
-
         <!-- Twelve weeks of taking part, as a record rather than a score. -->
         <section class="panel-card">
           <div class="panel-title">Your engagement</div>
@@ -316,15 +342,18 @@
     const off2 = (c2 * (1 - (r2.percentage || 0) / 100)).toFixed(2);
     const off3 = (c3 * (1 - (r3.percentage || 0) / 100)).toFixed(2);
 
-    let statusMarkup = '';
+    let contentHtml = '';
     if (is_complete) {
-      statusMarkup = `
+      contentHtml = `
         <div class="readiness-all-done">
-          <div style="color:var(--teal);font-size:var(--fs-lg);font-weight:var(--fw-bold)">✓</div>
-          <div>
-            <div style="font-weight:var(--fw-semibold);color:var(--teal);font-size:var(--fs-sm)">All 3 rings complete</div>
-            <div class="text-xs dim">Your profile, available time, and contact permissions are 100% up to date.</div>
+          <div class="row align-center gap-3">
+            <div style="width:36px;height:36px;border-radius:50%;background:rgba(13,148,136,0.15);color:var(--teal);display:flex;align-items:center;justify-content:center;font-size:var(--fs-lg);font-weight:var(--fw-bold);flex-shrink:0">✓</div>
+            <div>
+              <div style="font-weight:var(--fw-semibold);color:var(--teal);font-size:var(--fs-sm)">All 3 setup rings complete · 100% Ready</div>
+              <div class="text-xs dim">Your profile, available time, and contact permissions are completely up to date.</div>
+            </div>
           </div>
+          <a class="btn btn-sm btn-ghost" href="/member/profile.html">Edit preferences</a>
         </div>`;
     } else {
       const isAvailIncomplete = !r2.is_complete;
@@ -346,45 +375,25 @@
         action_label: 'Update available time'
       };
 
-      statusMarkup = `
-        <div class="readiness-blocker">
-          <div class="readiness-blocker-head">
-            <div class="readiness-blocker-title">
-              <span class="readiness-check-dot"></span>
-              <span>${completed_rings} of 3 rings closed</span>
-            </div>
-            <span class="dim font-mono">${overall_percentage}%</span>
-          </div>
-          <p class="readiness-blocker-text">${escapeHtml(blockerMsg)}</p>
-          <div class="readiness-checklist">
-            ${tasksHtml}
-          </div>
-          <div style="margin-top:var(--sp-2)">
-            <a class="btn btn-sm btn-primary" href="${primaryAction.action_url}">${escapeHtml(primaryAction.action_label)} →</a>
-          </div>
-        </div>`;
-    }
-
-    el.innerHTML = `
-      <div class="rings-widget">
-        <div class="rings-row">
+      contentHtml = `
+        <div class="readiness-grid">
           <div class="rings-svg-wrap">
-            <svg class="rings-svg" viewBox="0 0 160 160" width="124" height="124">
+            <svg class="rings-svg" viewBox="0 0 160 160" width="136" height="136">
               <!-- Ring 1 (Outer - Profile) -->
-              <circle cx="80" cy="80" r="64" class="ring-track" stroke-width="8"></circle>
-              <circle cx="80" cy="80" r="64" class="ring-fill" stroke-width="8"
+              <circle cx="80" cy="80" r="64" class="ring-track" stroke-width="9"></circle>
+              <circle cx="80" cy="80" r="64" class="ring-fill" stroke-width="9"
                 stroke-dasharray="${c1}" stroke-dashoffset="${off1}" stroke="${r1.color}"
                 transform="rotate(-90 80 80)"></circle>
 
               <!-- Ring 2 (Middle - Available Time) -->
-              <circle cx="80" cy="80" r="50" class="ring-track" stroke-width="8"></circle>
-              <circle cx="80" cy="80" r="50" class="ring-fill" stroke-width="8"
+              <circle cx="80" cy="80" r="50" class="ring-track" stroke-width="9"></circle>
+              <circle cx="80" cy="80" r="50" class="ring-fill" stroke-width="9"
                 stroke-dasharray="${c2}" stroke-dashoffset="${off2}" stroke="${r2.color}"
                 transform="rotate(-90 80 80)"></circle>
 
               <!-- Ring 3 (Inner - Channels & Consent) -->
-              <circle cx="80" cy="80" r="36" class="ring-track" stroke-width="8"></circle>
-              <circle cx="80" cy="80" r="36" class="ring-fill" stroke-width="8"
+              <circle cx="80" cy="80" r="36" class="ring-track" stroke-width="9"></circle>
+              <circle cx="80" cy="80" r="36" class="ring-fill" stroke-width="9"
                 stroke-dasharray="${c3}" stroke-dashoffset="${off3}" stroke="${r3.color}"
                 transform="rotate(-90 80 80)"></circle>
 
@@ -401,7 +410,7 @@
                   <span class="ring-item-title">${escapeHtml(r1.name)}</span>
                   <span class="ring-item-score ${r1.is_complete ? 'text-teal' : 'dim'}">${r1.is_complete ? '✓ 100%' : r1.percentage + '%'}</span>
                 </div>
-                <div class="text-xs dim">${escapeHtml(r1.subtitle)}</div>
+                <div class="text-xs dim">${escapeHtml(r1.subtitle)} · Name, phone, company, sector</div>
               </div>
             </div>
 
@@ -412,7 +421,7 @@
                   <span class="ring-item-title">${escapeHtml(r2.name)}</span>
                   <span class="ring-item-score ${r2.is_complete ? 'text-teal' : 'text-warn'}">${r2.is_complete ? '✓ 100%' : 'Incomplete (' + r2.percentage + '%)'}</span>
                 </div>
-                <div class="text-xs dim">${escapeHtml(r2.subtitle)}</div>
+                <div class="text-xs dim">${escapeHtml(r2.subtitle)} · Weekdays &amp; time window</div>
               </div>
             </div>
 
@@ -423,14 +432,31 @@
                   <span class="ring-item-title">${escapeHtml(r3.name)}</span>
                   <span class="ring-item-score ${r3.is_complete ? 'text-teal' : 'dim'}">${r3.is_complete ? '✓ 100%' : r3.percentage + '%'}</span>
                 </div>
-                <div class="text-xs dim">${escapeHtml(r3.subtitle)}</div>
+                <div class="text-xs dim">${escapeHtml(r3.subtitle)} · Channels &amp; permissions</div>
               </div>
             </div>
           </div>
-        </div>
 
-        ${statusMarkup}
-      </div>`;
+          <div class="readiness-blocker">
+            <div class="readiness-blocker-head">
+              <div class="readiness-blocker-title">
+                <span class="readiness-check-dot"></span>
+                <span>${completed_rings} of 3 rings closed</span>
+              </div>
+              <span class="dim font-mono">${overall_percentage}%</span>
+            </div>
+            <p class="readiness-blocker-text">${escapeHtml(blockerMsg)}</p>
+            <div class="readiness-checklist">
+              ${tasksHtml}
+            </div>
+            <div style="margin-top:var(--sp-2)">
+              <a class="btn btn-sm btn-primary" href="${primaryAction.action_url}">${escapeHtml(primaryAction.action_label)} →</a>
+            </div>
+          </div>
+        </div>`;
+    }
+
+    el.innerHTML = contentHtml;
   }
 
   function renderMasthead({ user, stats }) {

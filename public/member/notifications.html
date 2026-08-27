@@ -37,6 +37,10 @@
 <div class="portal">
   <div class="portal-body">
 
+    <div class="mb-4">
+      <a class="btn btn-sm btn-ghost" href="/member/dashboard.html">← Back to dashboard</a>
+    </div>
+
     <header class="mb-6">
       <h1 class="page-title-lg">Notifications</h1>
       <p class="lede">What we have sent you, and how you would like to be reached from here on.</p>
@@ -82,7 +86,10 @@
             <input type="time" class="input" id="quietEnd">
           </div>
         </div>
-        <button class="btn btn-primary" onclick="savePreferences()">Save preferences</button>
+        <div class="row align-center gap-3">
+          <button class="btn btn-primary" onclick="savePreferences(true)">Save &amp; return to dashboard →</button>
+          <button class="btn btn-secondary" onclick="savePreferences(false)">Save preferences</button>
+        </div>
       </section>
     </div>
 
@@ -250,7 +257,7 @@
     } catch (err) { showToast(err.message, 'error'); }
   }
 
-  async function savePreferences() {
+  async function savePreferences(returnHome = false) {
     try {
       const saved = await api.put('/users/notification-preferences', {
         categories: preferences,
@@ -263,7 +270,13 @@
       // regardless of what the toggles were set to.
       saved.categories.forEach(c => { preferences[c.key] = c.enabled; });
       renderCategories(saved.categories);
-      showToast('Preferences saved');
+
+      if (returnHome) {
+        showToast('Preferences saved! Returning to dashboard...');
+        setTimeout(() => { window.location.href = '/member/dashboard.html'; }, 800);
+      } else {
+        showToast('Preferences saved');
+      }
     } catch (err) { showToast(err.message, 'error'); }
   }
 

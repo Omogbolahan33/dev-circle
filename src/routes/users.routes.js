@@ -208,8 +208,38 @@ router.put('/profile', requireAuth, async (req, res) => {
 
   await db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).run(...params);
 
-  const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
-  res.json({ user: sanitizeUser(user) });
+  // When a member sets their preferred engagement channels, they automatically
+  // grant consent for them too — so choosing a channel never leaves it inactive.
+  if (Array.isArray(preferred_channels)) {
+    for (const channel of preferred_channels) {
+      if (notifications.CHANNELS.includes(channel)) {
+        const existing = await db.prepare('SELECT id, status FROM consent WHERE user_id = ? AND channel = ?')
+          .get(req.user.id, channel);
+        if (existing) {
+          if (existing.status !== 'granted') {
+            await db.prepare("UPDATE consent SET status = 'granted', granted_at = datetime('now'), withdrawn_at = NULL WHERE id = ?")
+              .run(existing.id);
+            engagement.log(req.user.id, 'consent_granted', { metadata: { channel, source: 'preferred_channels' } });
+          }
+        } else {
+          await db.prepare("INSERT INTO consent (id, user_id, channel, status, granted_at) VALUES (?, ?, ?, 'granted', datetime('now'))")
+            .run(uuid(), req.user.id, channel);
+          engagement.log(req.user.id, 'consent_granted', { metadata: { channel, source: 'preferred_channels' } });
+        }
+      }
+    }
+  }
+
+  const [user, consent] = await Promise.all([
+    db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id),
+    db.prepare('SELECT channel, status, granted_at, withdrawn_at FROM consent WHERE user_id = ?').all(req.user.id)
+  ]);
+
+  res.json({
+    user: sanitizeUser(user),
+    consent,
+    readiness: readiness.computeReadiness(user, consent)
+  });
 });
 
 // ─── Consent ────────────────────────────────────────────────
