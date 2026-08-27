@@ -614,6 +614,10 @@
             Your answers are held by Credit Direct while this is reviewed. Nothing is sent to you
             on a channel you did not agree to.
           </p>
+          ${!embedded && !result.redirect_url ? `
+            <div class="row gap-3 justify-center mt-4">
+              <a class="btn btn-primary" href="/index.html">Go to Dev Circle →</a>
+            </div>` : ''}
         </div>`;
       reportHeight();
 

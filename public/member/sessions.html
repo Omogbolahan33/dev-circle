@@ -39,6 +39,12 @@
       color: var(--cd-gold);
     }
     .clash-note a { color: var(--cd-gold); text-decoration: underline; }
+
+    @media (max-width: 600px) {
+      .page-head-block { margin-bottom: var(--sp-3) !important; }
+      .page-title-lg { font-size: var(--fs-xl); }
+      .lede { display: none; }
+    }
   </style>
 </head>
 <body>
@@ -46,11 +52,13 @@
 <div class="portal">
   <div class="portal-body">
 
-    <div class="mb-4">
-      <a class="btn btn-sm btn-ghost" href="/member/dashboard.html">← Back to dashboard</a>
-    </div>
+    <nav class="breadcrumb mb-3">
+      <a href="/member/dashboard.html">Home</a>
+      <span class="sep">/</span>
+      <span>Sessions</span>
+    </nav>
 
-    <header class="mb-6">
+    <header class="page-head-block mb-6">
       <h1 class="page-title-lg">Sessions</h1>
       <p class="lede">
         Office hours, workshops and 1-on-1s you are invited to. Times are West Africa Time.

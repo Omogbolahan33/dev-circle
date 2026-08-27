@@ -85,6 +85,11 @@
       border-radius: var(--r-xl);
       padding: var(--sp-4);
     }
+
+    @media (max-width: 600px) {
+      .identity-head { margin-bottom: var(--sp-3) !important; gap: var(--sp-3); }
+      .identity-title { font-size: var(--fs-lg); }
+    }
   </style>
 </head>
 <body>
@@ -92,9 +97,11 @@
 <div class="portal">
   <div class="portal-body">
 
-    <div class="mb-4">
-      <a class="btn btn-sm btn-ghost" href="/member/dashboard.html">← Back to dashboard</a>
-    </div>
+    <nav class="breadcrumb mb-3">
+      <a href="/member/dashboard.html">Home</a>
+      <span class="sep">/</span>
+      <span>Profile</span>
+    </nav>
 
     <header class="identity-head" id="identity"></header>
 
@@ -382,8 +389,32 @@
         return;
       }
 
-      showToast('Profile saved');
-      load();
+      const currentHash = window.location.hash;
+      const rings = res.readiness?.rings || [];
+      const r2 = rings.find(r => r.id === 'availability');
+      const r3 = rings.find(r => r.id === 'channels');
+
+      if ((!currentHash || currentHash === '#about') && r2 && !r2.is_complete) {
+        showToast('Profile saved! Next step: Set your available time');
+        setTimeout(() => {
+          window.location.hash = '#availability';
+          handleHash();
+        }, 500);
+        return;
+      }
+
+      if (currentHash === '#availability' && r3 && !r3.is_complete) {
+        showToast('Availability saved! Next step: Set your engagement channels');
+        setTimeout(() => {
+          window.location.hash = '#channels';
+          handleHash();
+        }, 500);
+        return;
+      }
+
+      // If finished current section or all rings complete, naturally return home
+      showToast('Preferences saved! Returning to dashboard...');
+      setTimeout(() => { window.location.href = '/member/dashboard.html'; }, 800);
     } catch (err) { showToast(err.message, 'error'); }
   }
 

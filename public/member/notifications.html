@@ -30,6 +30,12 @@
     .consent-row:last-child { border-bottom: none; }
     .consent-channel { font-size: var(--fs-sm); font-weight: var(--fw-medium); }
     .consent-note { font-size: var(--fs-xs); color: var(--ash-dim); margin-top: 2px; }
+
+    @media (max-width: 600px) {
+      .page-head-block { margin-bottom: var(--sp-3) !important; }
+      .page-title-lg { font-size: var(--fs-xl); }
+      .lede { display: none; }
+    }
   </style>
 </head>
 <body>
@@ -37,11 +43,13 @@
 <div class="portal">
   <div class="portal-body">
 
-    <div class="mb-4">
-      <a class="btn btn-sm btn-ghost" href="/member/dashboard.html">← Back to dashboard</a>
-    </div>
+    <nav class="breadcrumb mb-3">
+      <a href="/member/dashboard.html">Home</a>
+      <span class="sep">/</span>
+      <span>Notifications</span>
+    </nav>
 
-    <header class="mb-6">
+    <header class="page-head-block mb-6">
       <h1 class="page-title-lg">Notifications</h1>
       <p class="lede">What we have sent you, and how you would like to be reached from here on.</p>
     </header>
@@ -66,6 +74,10 @@
         time — it takes effect immediately, including for messages already queued.
       </p>
       <div id="consent"></div>
+      <div class="mt-6 row align-center gap-3">
+        <a class="btn btn-primary" href="/member/dashboard.html">Done · Return to dashboard →</a>
+        <a class="btn btn-ghost" href="/member/profile.html#channels">Edit preferred channels in profile</a>
+      </div>
     </div>
 
     <div class="panel" id="panel-prefs">
@@ -271,6 +283,13 @@
       saved.categories.forEach(c => { preferences[c.key] = c.enabled; });
       renderCategories(saved.categories);
 
+      const redirect = new URLSearchParams(window.location.search).get('redirect');
+      if (redirect) {
+        showToast('Preferences saved! Redirecting...');
+        setTimeout(() => { window.location.href = redirect; }, 800);
+        return;
+      }
+
       if (returnHome) {
         showToast('Preferences saved! Returning to dashboard...');
         setTimeout(() => { window.location.href = '/member/dashboard.html'; }, 800);
@@ -280,14 +299,29 @@
     } catch (err) { showToast(err.message, 'error'); }
   }
 
-  document.querySelectorAll('.tab[data-panel]').forEach(tab => {
-    tab.addEventListener('click', () => {
+  function activateTab(name) {
+    const tab = document.querySelector(`.tab[data-panel="${name}"]`);
+    const panel = document.getElementById('panel-' + name);
+    if (tab && panel) {
       document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
       document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
       tab.classList.add('active');
-      document.getElementById('panel-' + tab.dataset.panel).classList.add('active');
+      panel.classList.add('active');
+    }
+  }
+
+  document.querySelectorAll('.tab[data-panel]').forEach(tab => {
+    tab.addEventListener('click', () => {
+      activateTab(tab.dataset.panel);
     });
   });
+
+  const queryTab = new URLSearchParams(window.location.search).get('tab');
+  const hashTab = (window.location.hash || '').replace('#', '');
+  const initialTab = queryTab || hashTab;
+  if (initialTab && ['inbox', 'channels', 'prefs'].includes(initialTab)) {
+    activateTab(initialTab);
+  }
 
   load();
 </script>

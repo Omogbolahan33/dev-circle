@@ -29,6 +29,12 @@
     /* Locked rewards state their price in plain terms rather than teasing. */
     .reward.locked { opacity: 0.62; }
     .requirement { font-size: var(--fs-xs); color: var(--cd-gold); text-align: right; max-width: 220px; }
+
+    @media (max-width: 600px) {
+      .page-head-block { margin-bottom: var(--sp-3) !important; }
+      .page-title-lg { font-size: var(--fs-xl); }
+      .lede { display: none; }
+    }
   </style>
 </head>
 <body>
@@ -36,11 +42,13 @@
 <div class="portal">
   <div class="portal-body">
 
-    <div class="mb-4">
-      <a class="btn btn-sm btn-ghost" href="/member/dashboard.html">← Back to dashboard</a>
-    </div>
+    <nav class="breadcrumb mb-3">
+      <a href="/member/dashboard.html">Home</a>
+      <span class="sep">/</span>
+      <span>Rewards</span>
+    </nav>
 
-    <header class="mb-6">
+    <header class="page-head-block mb-6">
       <h1 class="page-title-lg">Rewards</h1>
       <p class="lede">Small thanks for the time you put in. Nothing here is a prize draw — each one has a clear condition, and it is either met or it is not.</p>
     </header>

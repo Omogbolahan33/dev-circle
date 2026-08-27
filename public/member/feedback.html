@@ -31,6 +31,12 @@
     /* A complaint raised in Feex is mirrored here, marked as belonging to
        another system so its status is never mistaken for ours. */
     .submission.feex { border-left: 2px solid var(--cd-clay); padding-left: var(--sp-4); }
+
+    @media (max-width: 600px) {
+      .page-head-block { margin-bottom: var(--sp-3) !important; }
+      .page-title-lg { font-size: var(--fs-xl); }
+      .lede { display: none; }
+    }
   </style>
 </head>
 <body>
@@ -38,11 +44,13 @@
 <div class="portal">
   <div class="portal-body">
 
-    <div class="mb-4">
-      <a class="btn btn-sm btn-ghost" href="/member/dashboard.html">← Back to dashboard</a>
-    </div>
+    <nav class="breadcrumb mb-3">
+      <a href="/member/dashboard.html">Home</a>
+      <span class="sep">/</span>
+      <span>Feedback</span>
+    </nav>
 
-    <header class="mb-6">
+    <header class="page-head-block mb-6">
       <h1 class="page-title-lg">Feedback</h1>
       <p class="lede">
         Tell us what is working and what is not. This goes to the team that builds the

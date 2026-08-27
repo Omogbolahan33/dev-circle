@@ -14,6 +14,12 @@
     .page-title-lg { font-family: var(--font-display); font-weight: var(--fw-bold); font-size: var(--fs-2xl); letter-spacing: -0.03em; }
     .lede { color: var(--ash); font-size: var(--fs-sm); margin-top: var(--sp-1); max-width: 52ch; }
     .provenance { font-size: 10px; font-family: var(--font-mono); color: var(--cd-clay); text-transform: uppercase; letter-spacing: 0.06em; }
+
+    @media (max-width: 600px) {
+      .page-head-block { margin-bottom: var(--sp-3) !important; }
+      .page-title-lg { font-size: var(--fs-xl); }
+      .lede { display: none; }
+    }
   </style>
 </head>
 <body>
@@ -21,11 +27,13 @@
 <div class="portal">
   <div class="portal-body">
 
-    <div class="mb-4">
-      <a class="btn btn-sm btn-ghost" href="/member/dashboard.html">← Back to dashboard</a>
-    </div>
+    <nav class="breadcrumb mb-3">
+      <a href="/member/dashboard.html">Home</a>
+      <span class="sep">/</span>
+      <span>Activity</span>
+    </nav>
 
-    <header class="mb-6">
+    <header class="page-head-block mb-6">
       <h1 class="page-title-lg">Your history with Credit Direct</h1>
       <p class="lede">Everything you have done here, and everything we have recorded about your integration. Nobody else can see this.</p>
     </header>

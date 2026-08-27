@@ -642,7 +642,10 @@ async function approve(submissionId, { adminId = null, note = null } = {}) {
 
   const form = await db.prepare('SELECT * FROM onboarding_forms WHERE id = ?').get(submission.form_id);
   const profile = parseJSON(submission.profile, {});
-  const consent = parseJSON(submission.consent_channels, []);
+  const directConsent = parseJSON(submission.consent_channels, []);
+  const preferredChannels = parseJSON(profile.preferred_channels, []);
+  // Setting engagement channel automatically grants consent too
+  const consent = Array.from(new Set([...directConsent, ...preferredChannels]));
 
   const email = identity.normalizeEmail(profile.email);
   const phone = identity.normalizePhone(profile.phone);

@@ -680,17 +680,15 @@ const surveyStmt = db.prepare(`
 
   let consentCount = 0;
   for (const [i, dev] of developers.entries()) {
-    for (const ch of ['email', 'in_portal']) {
+    const userPrefs = JSON.parse(channels[i % channels.length] || '[]');
+    // Setting engagement channels automatically grants consent for them
+    const grantedChs = new Set(['email', 'in_portal', ...userPrefs]);
+    for (const ch of grantedChs) {
       grantStmt.run(uuid(), dev._id, ch);
       consentCount++;
     }
-    // A realistic mix: some members granted WhatsApp, some withdrew it, so the
-    // consent checks in the send path have something real to enforce.
-    if (i % 3 === 0) {
-      grantStmt.run(uuid(), dev._id, 'whatsapp');
-      consentCount++;
-    } else if (i % 3 === 1) {
-      withdrawStmt.run(uuid(), dev._id, 'whatsapp');
+    if (!grantedChs.has('sms') && i % 3 === 1) {
+      withdrawStmt.run(uuid(), dev._id, 'sms');
       consentCount++;
     }
   }
