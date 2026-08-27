@@ -30,6 +30,12 @@
     .consent-row:last-child { border-bottom: none; }
     .consent-channel { font-size: var(--fs-sm); font-weight: var(--fw-medium); }
     .consent-note { font-size: var(--fs-xs); color: var(--ash-dim); margin-top: 2px; }
+
+    @media (max-width: 600px) {
+      .page-head-block { margin-bottom: var(--sp-3) !important; }
+      .page-title-lg { font-size: var(--fs-xl); }
+      .lede { display: none; }
+    }
   </style>
 </head>
 <body>
@@ -37,7 +43,13 @@
 <div class="portal">
   <div class="portal-body">
 
-    <header class="mb-6">
+    <nav class="breadcrumb mb-3">
+      <a href="/member/dashboard.html">Home</a>
+      <span class="sep">/</span>
+      <span>Notifications</span>
+    </nav>
+
+    <header class="page-head-block mb-6">
       <h1 class="page-title-lg">Notifications</h1>
       <p class="lede">What we have sent you, and how you would like to be reached from here on.</p>
     </header>
@@ -62,6 +74,10 @@
         time — it takes effect immediately, including for messages already queued.
       </p>
       <div id="consent"></div>
+      <div class="mt-6 row align-center gap-3">
+        <a class="btn btn-primary" href="/member/dashboard.html">Done · Return to dashboard →</a>
+        <a class="btn btn-ghost" href="/member/profile.html#channels">Edit preferred channels in profile</a>
+      </div>
     </div>
 
     <div class="panel" id="panel-prefs">
@@ -82,7 +98,10 @@
             <input type="time" class="input" id="quietEnd">
           </div>
         </div>
-        <button class="btn btn-primary" onclick="savePreferences()">Save preferences</button>
+        <div class="row align-center gap-3">
+          <button class="btn btn-primary" onclick="savePreferences(true)">Save &amp; return to dashboard →</button>
+          <button class="btn btn-secondary" onclick="savePreferences(false)">Save preferences</button>
+        </div>
       </section>
     </div>
 
@@ -250,7 +269,7 @@
     } catch (err) { showToast(err.message, 'error'); }
   }
 
-  async function savePreferences() {
+  async function savePreferences(returnHome = false) {
     try {
       const saved = await api.put('/users/notification-preferences', {
         categories: preferences,
@@ -263,18 +282,46 @@
       // regardless of what the toggles were set to.
       saved.categories.forEach(c => { preferences[c.key] = c.enabled; });
       renderCategories(saved.categories);
-      showToast('Preferences saved');
+
+      const redirect = new URLSearchParams(window.location.search).get('redirect');
+      if (redirect) {
+        showToast('Preferences saved! Redirecting...');
+        setTimeout(() => { window.location.href = redirect; }, 800);
+        return;
+      }
+
+      if (returnHome) {
+        showToast('Preferences saved! Returning to dashboard...');
+        setTimeout(() => { window.location.href = '/member/dashboard.html'; }, 800);
+      } else {
+        showToast('Preferences saved');
+      }
     } catch (err) { showToast(err.message, 'error'); }
+  }
+
+  function activateTab(name) {
+    const tab = document.querySelector(`.tab[data-panel="${name}"]`);
+    const panel = document.getElementById('panel-' + name);
+    if (tab && panel) {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+      tab.classList.add('active');
+      panel.classList.add('active');
+    }
   }
 
   document.querySelectorAll('.tab[data-panel]').forEach(tab => {
     tab.addEventListener('click', () => {
-      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-      document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
-      tab.classList.add('active');
-      document.getElementById('panel-' + tab.dataset.panel).classList.add('active');
+      activateTab(tab.dataset.panel);
     });
   });
+
+  const queryTab = new URLSearchParams(window.location.search).get('tab');
+  const hashTab = (window.location.hash || '').replace('#', '');
+  const initialTab = queryTab || hashTab;
+  if (initialTab && ['inbox', 'channels', 'prefs'].includes(initialTab)) {
+    activateTab(initialTab);
+  }
 
   load();
 </script>

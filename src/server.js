@@ -46,9 +46,9 @@ async function boot() {
     }
   }
 
-  const server = app.listen(config.port, () => {
+  const server = app.listen(config.port, '0.0.0.0', () => {
     logger.info('Dev Circle API listening', {
-      url: `http://localhost:${config.port}`,
+      url: `http://0.0.0.0:${config.port}`,
       env: config.env,
       database: config.isPostgres ? 'postgres' : 'sqlite',
       uploads: config.uploads.backend

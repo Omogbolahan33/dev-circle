@@ -2767,6 +2767,73 @@ const paths = {
     })
   },
 
+  '/admin/admins/invite': {
+    post: op({
+      tag: 'Admin · Access control',
+      permission: 'roles.write',
+      operationId: 'inviteAdmin',
+      summary: 'Invite a staff colleague by email',
+      description: [
+        'Creates an internal administrator account with a secure temporary password and',
+        'sends an invitation email. The new admin must change their password on first sign-in.'
+      ].join('\n'),
+      requestBody: jsonBody(object({
+        email: str('Credit Direct address', { format: 'email' }),
+        name: str('Full name'),
+        role_id: str('Role to assign', { format: 'uuid' }),
+        is_global: bool('Whether this admin spans all circles', { default: false })
+      }, { required: ['email', 'name', 'role_id'] }), {
+        email: 'colleague@creditdirect.ng',
+        name: 'New Colleague',
+        role_id: 'r_rep'
+      }),
+      responses: {
+        201: json('Invited.', object({
+          admin: ref('AdminUser'),
+          invited: bool('Whether an invitation was issued'),
+          delivery: object({ status: str('Delivery status'), provider: str('Provider used') })
+        }), {
+          admin: { id: 'a3', email: 'colleague@creditdirect.ng', name: 'New Colleague', status: 'active', role_id: 'r_rep' },
+          invited: true
+        }),
+        400: json('Missing fields or non-Credit Direct address.', ref('Error'), {
+          error: 'A valid email, name, and role_id are required'
+        }),
+        409: json('That address already has an account.', ref('Error'), {
+          error: 'An admin with that email already exists'
+        })
+      }
+    })
+  },
+
+  '/admin/admins/{id}/reinvite': {
+    post: op({
+      tag: 'Admin · Access control',
+      permission: 'roles.write',
+      operationId: 'reinviteAdmin',
+      summary: 'Resend staff invitation email',
+      description: [
+        'Generates a fresh temporary password, invalidates any existing sessions, and',
+        'resends the invitation email to the administrator.'
+      ].join('\n'),
+      parameters: [path('id', 'Admin id')],
+      responses: {
+        200: json('Invitation resent.', object({
+          message: str('Status message'),
+          delivery: object({ status: str('Delivery status'), provider: str('Provider used') })
+        }), {
+          message: 'Invitation resent to colleague@creditdirect.ng'
+        }),
+        400: json('Cannot reinvite inactive admin.', ref('Error'), {
+          error: 'Cannot reinvite inactive admin'
+        }),
+        404: json('Admin not found.', ref('Error'), {
+          error: 'Admin not found'
+        })
+      }
+    })
+  },
+
   '/admin/admins/{id}': {
     put: op({
       tag: 'Admin · Access control',
@@ -2903,6 +2970,37 @@ const paths = {
           keys: { total: 4, live: 2, expired: 1, revoked: 1, never_used: 1, last_used_at: '2026-08-14 06:58:10' },
           sandbox: { enabled: true, header: 'X-Devcircle-Sandbox' }
         })
+      }
+    })
+  },
+
+  '/admin/credentials/test-email': {
+    post: op({
+      tag: 'Admin · Credentials',
+      permission: 'credentials.write',
+      operationId: 'testEmailDelivery',
+      summary: 'Send a test email',
+      description: [
+        'Dispatches a sample test email to verify credentials and connectivity for Termii,',
+        'Simpu, Customer.io, or whichever email service provider is currently active.'
+      ].join('\n'),
+      requestBody: jsonBody(object({
+        to: str('Recipient email address', { format: 'email' }),
+        provider: str('Optional specific provider to test (termii, simpu, customer_io, simulated)')
+      }, { required: ['to'] }), {
+        to: 'operator@creditdirect.ng',
+        provider: 'termii'
+      }),
+      responses: {
+        200: json('Dispatched.', object({
+          message: str('Confirmation message'),
+          delivery: object({ status: str('Delivery status'), provider: str('Provider used') })
+        }), {
+          message: 'Test email dispatched via termii',
+          delivery: { status: 'sent', provider: 'termii', ref: 'msg_123' }
+        }),
+        400: json('Missing recipient address.', ref('Error'), { error: 'Recipient "to" address is required' }),
+        502: json('Provider rejected the test send.', ref('Error'), { error: 'Provider "termii" is not configured with credentials' })
       }
     })
   },

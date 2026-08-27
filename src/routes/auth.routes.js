@@ -8,7 +8,8 @@ const identity = require('../utils/identity');
 const circles = require('../services/circles');
 const {
   createSession, destroySession, requireAuth,
-  signSSOToken, verifySSOToken, permissionsFor, flagOn
+  signSSOToken, verifySSOToken, permissionsFor, flagOn,
+  hashToken, PASSWORD_CHANGE_SCOPE
 } = require('../middleware/auth');
 const { rememberGet } = require('../middleware/cache');
 
@@ -203,11 +204,22 @@ async function staffLogin(req, res, who) {
 
   clearFailures(key);
 
-  const token = await createSession(admin.id, true, { userAgent: req.headers['user-agent'] });
+  const scope = admin.must_change_password ? PASSWORD_CHANGE_SCOPE : 'full';
+  const token = await createSession(admin.id, true, {
+    userAgent: req.headers['user-agent'],
+    scope
+  });
   const safe = safeUser(admin);
 
   // The client needs the permission list to hide actions the role cannot perform
-  res.json({ token, admin: safe, user: safe, isAdmin: true, permissions: await permissionsFor(admin) });
+  res.json({
+    token,
+    admin: safe,
+    user: safe,
+    isAdmin: true,
+    must_change_password: Boolean(admin.must_change_password),
+    permissions: await permissionsFor(admin)
+  });
 }
 
 // POST /api/auth/login          (and /api/auth/admin/login, kept for callers
@@ -306,6 +318,39 @@ router.post('/logout', requireAuth, async (req, res) => {
   const token = req.headers.authorization.slice(7);
   await destroySession(token);
   res.json({ message: 'Logged out' });
+});
+
+// POST /api/auth/password
+// Allows staff who signed in with a temporary password (or want to update their password)
+// to set their new password, clearing must_change_password and upgrading their session to 'full'.
+router.post('/password', requireAuth, async (req, res) => {
+  if (!req.isAdmin) {
+    return res.status(403).json({ error: 'Only staff accounts manage passwords' });
+  }
+
+  const { new_password, current_password } = req.body;
+  if (!new_password || String(new_password).length < 10) {
+    return res.status(400).json({ error: 'New password must be at least 10 characters' });
+  }
+
+  // If session is already full, optionally verify current password
+  if (req.session.scope === 'full' && current_password) {
+    const admin = await db.prepare('SELECT password_hash FROM admin_users WHERE id = ?').get(req.admin.id);
+    if (!admin || !bcrypt.compareSync(current_password, admin.password_hash)) {
+      return res.status(401).json({ error: 'Current password is incorrect' });
+    }
+  }
+
+  const token = req.headers.authorization.slice(7);
+  const tokenHash = hashToken(token);
+
+  await db.prepare('UPDATE admin_users SET password_hash = ?, must_change_password = 0 WHERE id = ?')
+    .run(bcrypt.hashSync(new_password, 10), req.admin.id);
+
+  // Upgrade the active session scope to full
+  await db.prepare("UPDATE sessions SET scope = 'full' WHERE token_hash = ?").run(tokenHash);
+
+  res.json({ message: 'Password updated successfully' });
 });
 
 // GET /api/auth/me

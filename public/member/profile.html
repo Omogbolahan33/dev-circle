@@ -42,6 +42,54 @@
       padding: var(--sp-4) 0;
       background: linear-gradient(transparent, var(--surface-0) 30%);
     }
+
+    /* ── Readiness Ring Tags & Banner ── */
+    .ring-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 10px;
+      border-radius: var(--r-full);
+      font-size: var(--fs-xs);
+      font-weight: var(--fw-semibold);
+      font-family: var(--font-mono);
+      margin-left: auto;
+    }
+    .ring-tag.done { background: rgba(13, 148, 136, 0.15); color: var(--teal); border: 1px solid var(--teal); }
+    .ring-tag.warn { background: rgba(230, 180, 115, 0.15); color: var(--gold-ink, #E6B473); border: 1px solid var(--gold-dim, #E6B473); }
+
+    .readiness-banner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--sp-4);
+      padding: var(--sp-3) var(--sp-5);
+      border-radius: var(--r-lg);
+      font-size: var(--fs-sm);
+      margin-bottom: var(--sp-6);
+    }
+    .readiness-banner.done {
+      background: var(--tint-success, rgba(13, 148, 136, 0.08));
+      border: 1px solid var(--teal);
+      color: var(--teal);
+    }
+    .readiness-banner.warn {
+      background: var(--tint-warn, rgba(230, 180, 115, 0.08));
+      border: 1px solid var(--gold-dim, rgba(230, 180, 115, 0.3));
+      color: var(--text-1);
+    }
+
+    .section.highlight-section {
+      outline: 2px solid var(--cd-gold);
+      box-shadow: 0 0 0 6px rgba(230, 180, 115, 0.18);
+      border-radius: var(--r-xl);
+      padding: var(--sp-4);
+    }
+
+    @media (max-width: 600px) {
+      .identity-head { margin-bottom: var(--sp-3) !important; gap: var(--sp-3); }
+      .identity-title { font-size: var(--fs-lg); }
+    }
   </style>
 </head>
 <body>
@@ -49,9 +97,17 @@
 <div class="portal">
   <div class="portal-body">
 
+    <nav class="breadcrumb mb-3">
+      <a href="/member/dashboard.html">Home</a>
+      <span class="sep">/</span>
+      <span>Profile</span>
+    </nav>
+
     <header class="identity-head" id="identity"></header>
 
     <div class="figures" id="figures"></div>
+
+    <div id="readinessBanner"></div>
 
     <!-- What Credit Direct holds about this developer's integration, and which
          groups decide what reaches them. Read-only: these are set by the
@@ -62,8 +118,11 @@
       <div class="membership mt-4" id="membership"></div>
     </section>
 
-    <section class="section">
-      <div class="section-head"><h2 class="section-title">About you</h2></div>
+    <section class="section" id="about">
+      <div class="section-head">
+        <h2 class="section-title">About you</h2>
+        <span class="ring-tag" id="ringTagAbout">Ring 1</span>
+      </div>
       <div class="field-row">
         <div class="field">
           <label class="label">Name</label>
@@ -98,8 +157,11 @@
       </div>
     </section>
 
-    <section class="section">
-      <div class="section-head"><h2 class="section-title">When to reach you</h2></div>
+    <section class="section" id="availability">
+      <div class="section-head">
+        <h2 class="section-title">When to reach you</h2>
+        <span class="ring-tag" id="ringTagAvail">Ring 2</span>
+      </div>
       <p class="text-sm muted mb-4" style="max-width:54ch">
         We schedule sessions and send messages inside these windows. Outside them, anything
         due is held rather than sent.
@@ -122,8 +184,11 @@
       </div>
     </section>
 
-    <section class="section">
-      <div class="section-head"><h2 class="section-title">How to reach you</h2></div>
+    <section class="section" id="channels">
+      <div class="section-head">
+        <h2 class="section-title">How to reach you</h2>
+        <span class="ring-tag" id="ringTagChannels">Ring 3</span>
+      </div>
       <p class="text-sm muted mb-4" style="max-width:54ch">
         Your preference is where we would like to reach you. Consent is your permission to do
         it at all — manage that under
@@ -139,7 +204,9 @@
     </section>
 
     <div class="save-bar">
-      <button class="btn btn-primary" onclick="saveProfile()">Save changes</button>
+      <a class="btn btn-ghost" href="/member/dashboard.html">← Back to dashboard</a>
+      <button type="button" class="btn btn-secondary" onclick="saveProfile(false)">Save changes</button>
+      <button type="button" class="btn btn-primary" onclick="saveProfile(true)">Save &amp; return to dashboard →</button>
     </div>
 
   </div>
@@ -189,7 +256,8 @@
 
   async function load() {
     try {
-      const { user, stats, consent, circles, cohorts } = await api.get('/users/profile');
+      const profile = await api.get('/users/profile');
+      const { user, stats, consent, circles, cohorts, readiness } = profile;
       renderStanding(user, circles, cohorts);
 
       document.getElementById('identity').innerHTML = `
@@ -220,27 +288,80 @@
       renderChoices('dayGroup', Object.fromEntries(DAYS.map(d => [d, d])), user.preferred_days || []);
       renderChoices('channelGroup', CHANNELS, user.preferred_channels || []);
 
-      // A preference for a channel you have not consented to would never be
-      // honoured, so say so here rather than letting it look active.
-      const granted = consent.filter(c => c.status === 'granted').map(c => c.channel);
-      const preferredWithoutConsent = (user.preferred_channels || []).filter(c => !granted.includes(c));
+      // Selecting preferred channels automatically grants consent for them
+      const granted = (consent || []).filter(c => c.status === 'granted').map(c => c.channel);
+      document.getElementById('consentSummary').innerHTML = `
+        <p class="hint">
+          Selecting preferred channels automatically grants permission to reach you on them.
+          ${granted.length ? `Currently allowed: <strong>${granted.map(c => CHANNELS[c] || c).join(', ')}</strong>.` : ''}
+          Manage channel permissions anytime under <a href="/member/notifications.html">notifications</a>.
+        </p>`;
 
-      document.getElementById('consentSummary').innerHTML = preferredWithoutConsent.length
-        ? `<p class="hint" style="color:var(--cd-gold)">
-             You prefer ${preferredWithoutConsent.map(c => CHANNELS[c]).join(', ')}, but have not allowed
-             ${preferredWithoutConsent.length === 1 ? 'it' : 'them'} yet — so we will not use
-             ${preferredWithoutConsent.length === 1 ? 'it' : 'them'}.
-             <a href="/member/notifications.html">Allow now</a>.
-           </p>`
-        : `<p class="hint">Allowed: ${granted.length ? granted.map(c => CHANNELS[c] || c).join(', ') : 'nothing yet'}.</p>`;
+      renderReadinessTags(readiness);
+      handleHash();
     } catch (err) {
       showToast('Failed to load profile: ' + err.message, 'error');
     }
   }
 
-  async function saveProfile() {
+  function renderReadinessTags(readiness) {
+    if (!readiness) return;
+    const r1 = readiness.rings.find(r => r.id === 'profile');
+    const r2 = readiness.rings.find(r => r.id === 'availability');
+    const r3 = readiness.rings.find(r => r.id === 'channels');
+
+    const tagAbout = document.getElementById('ringTagAbout');
+    const tagAvail = document.getElementById('ringTagAvail');
+    const tagChannels = document.getElementById('ringTagChannels');
+
+    if (tagAbout && r1) {
+      tagAbout.textContent = r1.is_complete ? '✓ Ring 1 done' : `Ring 1 · ${r1.percentage}%`;
+      tagAbout.className = `ring-tag ${r1.is_complete ? 'done' : 'warn'}`;
+    }
+    if (tagAvail && r2) {
+      tagAvail.textContent = r2.is_complete ? '✓ Ring 2 done' : 'Ring 2 · Incomplete';
+      tagAvail.className = `ring-tag ${r2.is_complete ? 'done' : 'warn'}`;
+    }
+    if (tagChannels && r3) {
+      tagChannels.textContent = r3.is_complete ? '✓ Ring 3 done' : `Ring 3 · ${r3.percentage}%`;
+      tagChannels.className = `ring-tag ${r3.is_complete ? 'done' : 'warn'}`;
+    }
+
+    const banner = document.getElementById('readinessBanner');
+    if (banner) {
+      if (readiness.is_complete) {
+        banner.innerHTML = `
+          <div class="readiness-banner done">
+            <strong style="color:var(--teal)">✓ All 3 rings closed (100%)</strong>
+            <span class="dim">Your profile, available time, and contact permissions are completely up to date.</span>
+          </div>`;
+      } else {
+        const availIncomplete = r2 && !r2.is_complete;
+        banner.innerHTML = `
+          <div class="readiness-banner warn">
+            <div>
+              <strong>${readiness.completed_rings} of 3 rings complete (${readiness.overall_percentage}%)</strong>
+              <div class="text-xs dim">${availIncomplete ? 'Updating your available time below finishes Ring 2 and unlocks clash-free scheduling.' : 'Complete the missing fields below to finish your profile setup.'}</div>
+            </div>
+            ${availIncomplete ? '<a class="btn btn-sm btn-primary" href="#availability">Jump to availability ↓</a>' : ''}
+          </div>`;
+      }
+    }
+  }
+
+  function handleHash() {
+    if (window.location.hash) {
+      const el = document.querySelector(window.location.hash);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        el.classList.add('highlight-section');
+      }
+    }
+  }
+
+  async function saveProfile(returnHome = false) {
     try {
-      await api.put('/users/profile', {
+      const res = await api.put('/users/profile', {
         name: document.getElementById('fName').value.trim(),
         phone: document.getElementById('fPhone').value.trim(),
         company: document.getElementById('fCompany').value.trim(),
@@ -250,8 +371,50 @@
         preferred_time_start: document.getElementById('fTimeStart').value,
         preferred_time_end: document.getElementById('fTimeEnd').value
       });
-      showToast('Profile saved');
-      load();
+
+      const params = new URLSearchParams(window.location.search);
+      const redirectUrl = params.get('redirect');
+
+      if (redirectUrl) {
+        showToast('Profile and preferences saved! Redirecting...');
+        setTimeout(() => { window.location.href = redirectUrl; }, 800);
+        return;
+      }
+
+      if (returnHome || (res.readiness && res.readiness.is_complete)) {
+        showToast(res.readiness && res.readiness.is_complete
+          ? 'All 3 rings complete! Returning to dashboard...'
+          : 'Saved! Returning to dashboard...');
+        setTimeout(() => { window.location.href = '/member/dashboard.html'; }, 800);
+        return;
+      }
+
+      const currentHash = window.location.hash;
+      const rings = res.readiness?.rings || [];
+      const r2 = rings.find(r => r.id === 'availability');
+      const r3 = rings.find(r => r.id === 'channels');
+
+      if ((!currentHash || currentHash === '#about') && r2 && !r2.is_complete) {
+        showToast('Profile saved! Next step: Set your available time');
+        setTimeout(() => {
+          window.location.hash = '#availability';
+          handleHash();
+        }, 500);
+        return;
+      }
+
+      if (currentHash === '#availability' && r3 && !r3.is_complete) {
+        showToast('Availability saved! Next step: Set your engagement channels');
+        setTimeout(() => {
+          window.location.hash = '#channels';
+          handleHash();
+        }, 500);
+        return;
+      }
+
+      // If finished current section or all rings complete, naturally return home
+      showToast('Preferences saved! Returning to dashboard...');
+      setTimeout(() => { window.location.href = '/member/dashboard.html'; }, 800);
     } catch (err) { showToast(err.message, 'error'); }
   }
 

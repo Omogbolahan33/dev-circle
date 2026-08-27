@@ -11,17 +11,17 @@
   <link rel="stylesheet" href="/assets/css/app.css">
   <script src="/assets/js/theme.js"></script>
   <style>
-    /* Home is two columns on a desktop: what we are asking of you on the
-       left, what you have built up on the right. It collapses to one column
+    /* Home is two columns on a desktop: what you have built up on the
+       left, actions and participation on the right. It collapses to one column
        in the order a phone should read it. */
-    .home { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: var(--sp-6); align-items: start; }
-    @media (max-width: 900px) { .home { grid-template-columns: minmax(0, 1fr); } }
+    .home { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: var(--sp-5); align-items: start; }
+    @media (max-width: 880px) { .home { grid-template-columns: minmax(0, 1fr); gap: var(--sp-4); } }
 
     .panel-card {
       background: var(--surface-2);
       border: 1px solid var(--line-faint);
       border-radius: var(--r-xl);
-      padding: var(--sp-6);
+      padding: var(--sp-5);
     }
     .panel-title {
       font-size: var(--fs-xs);
@@ -29,7 +29,30 @@
       letter-spacing: 0.1em;
       color: var(--text-3);
       font-weight: var(--fw-semibold);
-      margin-bottom: var(--sp-4);
+      margin-bottom: var(--sp-3);
+    }
+
+    .masthead {
+      display: flex;
+      align-items: center;
+      gap: var(--sp-4);
+      padding: var(--sp-4) 0 var(--sp-3);
+    }
+    .masthead-name {
+      font-family: var(--font-display);
+      font-weight: var(--fw-black);
+      font-size: var(--fs-2xl);
+      letter-spacing: -0.03em;
+      line-height: 1.1;
+    }
+    .masthead-line {
+      display: flex;
+      align-items: center;
+      gap: var(--sp-2);
+      flex-wrap: wrap;
+      margin-top: var(--sp-1);
+      font-size: var(--fs-xs);
+      color: var(--text-2);
     }
 
     /* Sandbox → KYB → production as one continuous track rather than four
@@ -61,12 +84,121 @@
     .track-note { color: var(--text-3); font-size: var(--fs-xs); }
     .track-step.done .track-name { color: var(--teal-ink); }
     .track-step.now .track-name { color: var(--gold-ink); }
+
+    /* ── Three Concentric Activity Rings & Staged Readiness ── */
+    .rings-card-body { display: flex; flex-direction: column; gap: var(--sp-3); }
+    .rings-overview { display: flex; align-items: center; gap: var(--sp-4); }
+    @media (max-width: 480px) { .rings-overview { flex-direction: column; text-align: center; } }
+    .rings-svg-wrap { flex-shrink: 0; display: flex; justify-content: center; align-items: center; }
+    .rings-svg { display: block; overflow: visible; }
+    .ring-track { fill: none; stroke: var(--line); opacity: 0.35; }
+    .ring-fill {
+      fill: none;
+      stroke-linecap: round;
+      transition: stroke-dashoffset 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .ring-center-percent {
+      font-family: var(--font-display);
+      font-weight: var(--fw-bold);
+      fill: var(--text-1);
+      font-size: 20px;
+    }
+    .ring-center-label {
+      font-family: var(--font-mono);
+      font-size: 9px;
+      font-weight: var(--fw-semibold);
+      fill: var(--text-3);
+      letter-spacing: 0.08em;
+    }
+
+    .rings-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
+    .ring-item {
+      display: flex; align-items: flex-start; gap: var(--sp-2);
+      font-size: var(--fs-xs); padding: var(--sp-1) var(--sp-2);
+      border-radius: var(--r-md); background: var(--surface-1);
+      border: 1px solid var(--line-faint);
+    }
+    .ring-swatch { width: 8px; height: 8px; border-radius: 50%; margin-top: 4px; flex-shrink: 0; }
+    .ring-item-body { flex: 1; min-width: 0; }
+    .ring-item-head { display: flex; justify-content: space-between; align-items: baseline; gap: var(--sp-2); }
+    .ring-item-title { font-weight: var(--fw-semibold); color: var(--text-1); font-size: var(--fs-xs); }
+    .ring-item-score { font-family: var(--font-mono); font-size: var(--fs-xs); }
+    .text-teal { color: var(--teal) !important; font-weight: var(--fw-semibold); }
+    .text-warn { color: var(--gold-ink, #E6B473) !important; font-weight: var(--fw-semibold); }
+
+    .readiness-blocker {
+      background: var(--tint-warn, rgba(230, 180, 115, 0.08));
+      border: 1px solid var(--gold-dim, rgba(230, 180, 115, 0.3));
+      border-radius: var(--r-lg);
+      padding: var(--sp-3);
+      display: flex; flex-direction: column; gap: var(--sp-2);
+    }
+    .readiness-blocker-head {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: var(--sp-2); font-size: var(--fs-xs);
+    }
+    .readiness-blocker-title {
+      font-weight: var(--fw-semibold);
+      color: var(--gold-ink, #E6B473);
+      display: flex; align-items: center; gap: var(--sp-2);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-size: var(--fs-xs);
+    }
+    .readiness-blocker-text {
+      font-size: var(--fs-xs);
+      color: var(--text-2);
+      line-height: var(--lh-normal);
+      margin: 0;
+    }
+    .readiness-checklist { display: flex; flex-direction: column; gap: var(--sp-1); margin-top: var(--sp-1); }
+    .readiness-check-item {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: var(--sp-2); font-size: var(--fs-xs);
+      padding: var(--sp-1) var(--sp-2);
+      border-radius: var(--r-sm);
+      background: var(--surface-0);
+      border: 1px solid var(--line-faint);
+    }
+    .readiness-check-label { display: flex; align-items: center; gap: var(--sp-2); color: var(--text-1); font-size: var(--fs-xs); }
+    .readiness-check-dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: var(--cd-gold); flex-shrink: 0;
+    }
+
+    .mobile-breadcrumb {
+      display: none;
+    }
+    @media (max-width: 600px) {
+      .mobile-breadcrumb {
+        display: flex;
+        margin-bottom: var(--sp-3);
+      }
+      .masthead {
+        display: none !important;
+      }
+    }
+
+    .readiness-all-done {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: var(--sp-3); padding: var(--sp-2) var(--sp-3);
+      background: var(--tint-success, rgba(13, 148, 136, 0.08));
+      border: 1px solid var(--teal);
+      border-radius: var(--r-md);
+    }
   </style>
 </head>
 <body>
 
 <div class="portal">
   <div class="portal-body">
+
+    <!-- Mobile breadcrumb replacing large masthead on phones -->
+    <nav class="breadcrumb mobile-breadcrumb" id="mobileBreadcrumb">
+      <a href="/member/dashboard.html">Home</a>
+      <span class="sep">/</span>
+      <span id="mobileUserName">Dashboard</span>
+    </nav>
 
     <!-- Who we think you are, before anything is asked of you. -->
     <header class="masthead" id="masthead"></header>
@@ -77,44 +209,18 @@
     <div class="home">
 
       <div class="stack">
-        <section id="invitesSection" hidden>
-          <div class="section-head">
-            <h2 class="section-title">Waiting for you</h2>
-            <a href="/member/surveys.html" class="section-link">All surveys →</a>
-          </div>
-          <div id="invites"></div>
-        </section>
-
-        <section id="sessionsSection" hidden>
-          <div class="section-head">
-            <h2 class="section-title">Coming up</h2>
-            <a href="/member/sessions.html" class="section-link">All sessions →</a>
-          </div>
-          <div id="sessions"></div>
-        </section>
-
-        <section>
-          <div class="section-head">
-            <h2 class="section-title">Recent activity</h2>
-            <a href="/member/engagement.html" class="section-link">Full history →</a>
-          </div>
-          <div class="timeline" id="timeline"></div>
-        </section>
-      </div>
-
-      <div class="stack">
         <!-- Twelve weeks of taking part, as a record rather than a score. -->
         <section class="panel-card">
           <div class="panel-title">Your engagement</div>
-          <div class="row" style="align-items:baseline;gap:var(--sp-4);margin-bottom:var(--sp-5)">
+          <div class="row" style="align-items:baseline;gap:var(--sp-4);margin-bottom:var(--sp-4)">
             <div>
               <div class="big-figure" id="streakValue">—</div>
-              <div class="text-xs dim mt-2" id="streakLabel">day streak</div>
+              <div class="text-xs dim mt-1" id="streakLabel">day streak</div>
             </div>
             <div class="spacer"></div>
             <div class="text-right">
               <div class="big-figure" style="font-size:var(--fs-xl)" id="answeredValue">—</div>
-              <div class="text-xs dim mt-2">answered</div>
+              <div class="text-xs dim mt-1">answered</div>
             </div>
           </div>
           <div class="heat" id="heat"></div>
@@ -153,6 +259,41 @@
         </section>
       </div>
 
+      <div class="stack">
+        <!-- The three activity rings: Profile, Available Time, Channels & Consent -->
+        <section class="panel-card" id="readinessSection">
+          <div class="panel-title" style="display:flex;align-items:center;justify-content:space-between">
+            <span>Setup &amp; Readiness</span>
+            <span class="badge" id="readinessBadge">3 rings</span>
+          </div>
+          <div id="readinessContent"></div>
+        </section>
+
+        <section id="invitesSection" hidden>
+          <div class="section-head">
+            <h2 class="section-title">Waiting for you</h2>
+            <a href="/member/surveys.html" class="section-link">All surveys →</a>
+          </div>
+          <div id="invites"></div>
+        </section>
+
+        <section id="sessionsSection" hidden>
+          <div class="section-head">
+            <h2 class="section-title">Coming up</h2>
+            <a href="/member/sessions.html" class="section-link">All sessions →</a>
+          </div>
+          <div id="sessions"></div>
+        </section>
+
+        <section>
+          <div class="section-head">
+            <h2 class="section-title">Recent activity</h2>
+            <a href="/member/engagement.html" class="section-link">Full history →</a>
+          </div>
+          <div class="timeline" id="timeline"></div>
+        </section>
+      </div>
+
     </div>
   </div>
 </div>
@@ -183,6 +324,7 @@
 
       renderMasthead(profile);
       renderNextAction(profile, surveys.surveys, sessions.sessions);
+      renderReadiness(profile.readiness);
       renderHeat(engagement.history, profile.stats);
       renderTrack(profile.user);
       renderMembership(profile);
@@ -194,9 +336,212 @@
     }
   }
 
+  function renderReadiness(readiness) {
+    const el = document.getElementById('readinessContent');
+    const badgeEl = document.getElementById('readinessBadge');
+    if (!el || !readiness) return;
+
+    const { overall_percentage, completed_rings, rings, unfinished_tasks, is_complete } = readiness;
+
+    if (badgeEl) {
+      badgeEl.textContent = `${completed_rings}/3 closed`;
+      badgeEl.className = `badge ${is_complete ? 'active' : 'warn'}`;
+    }
+
+    const r1 = rings.find(r => r.id === 'profile') || { percentage: 0, is_complete: false, color: '#0D9488', name: 'Profile Details', subtitle: 'About you' };
+    const r2 = rings.find(r => r.id === 'availability') || { percentage: 0, is_complete: false, color: '#E84E1B', name: 'Available Time', subtitle: 'When to reach you' };
+    const r3 = rings.find(r => r.id === 'channels') || { percentage: 0, is_complete: false, color: '#E6B473', name: 'Reachability & Consent', subtitle: 'How to reach you' };
+
+    const c1 = 402.12;
+    const c2 = 314.16;
+    const c3 = 226.19;
+
+    const off1 = (c1 * (1 - (r1.percentage || 0) / 100)).toFixed(2);
+    const off2 = (c2 * (1 - (r2.percentage || 0) / 100)).toFixed(2);
+    const off3 = (c3 * (1 - (r3.percentage || 0) / 100)).toFixed(2);
+
+    let contentHtml = '';
+    if (is_complete) {
+      contentHtml = `
+        <div class="rings-card-body">
+          <div class="rings-overview">
+            <div class="rings-svg-wrap">
+              <svg class="rings-svg" viewBox="0 0 160 160" width="112" height="112">
+                <circle cx="80" cy="80" r="64" class="ring-track" stroke-width="9"></circle>
+                <circle cx="80" cy="80" r="64" class="ring-fill" stroke-width="9"
+                  stroke-dasharray="${c1}" stroke-dashoffset="${off1}" stroke="${r1.color}"
+                  transform="rotate(-90 80 80)"></circle>
+                <circle cx="80" cy="80" r="50" class="ring-track" stroke-width="9"></circle>
+                <circle cx="80" cy="80" r="50" class="ring-fill" stroke-width="9"
+                  stroke-dasharray="${c2}" stroke-dashoffset="${off2}" stroke="${r2.color}"
+                  transform="rotate(-90 80 80)"></circle>
+                <circle cx="80" cy="80" r="36" class="ring-track" stroke-width="9"></circle>
+                <circle cx="80" cy="80" r="36" class="ring-fill" stroke-width="9"
+                  stroke-dasharray="${c3}" stroke-dashoffset="${off3}" stroke="${r3.color}"
+                  transform="rotate(-90 80 80)"></circle>
+                <text x="80" y="75" text-anchor="middle" class="ring-center-percent">100%</text>
+                <text x="80" y="93" text-anchor="middle" class="ring-center-label">3/3 RINGS</text>
+              </svg>
+            </div>
+
+            <div class="rings-meta">
+              <div class="ring-item">
+                <span class="ring-swatch" style="background:${r1.color}"></span>
+                <div class="ring-item-body">
+                  <div class="ring-item-head">
+                    <span class="ring-item-title">${escapeHtml(r1.name)}</span>
+                    <span class="ring-item-score text-teal">✓ 100%</span>
+                  </div>
+                  <div class="text-xs dim">Name, phone, company, sector</div>
+                </div>
+              </div>
+
+              <div class="ring-item">
+                <span class="ring-swatch" style="background:${r2.color}"></span>
+                <div class="ring-item-body">
+                  <div class="ring-item-head">
+                    <span class="ring-item-title">${escapeHtml(r2.name)}</span>
+                    <span class="ring-item-score text-teal">✓ 100%</span>
+                  </div>
+                  <div class="text-xs dim">Weekdays &amp; hours</div>
+                </div>
+              </div>
+
+              <div class="ring-item">
+                <span class="ring-swatch" style="background:${r3.color}"></span>
+                <div class="ring-item-body">
+                  <div class="ring-item-head">
+                    <span class="ring-item-title">${escapeHtml(r3.name)}</span>
+                    <span class="ring-item-score text-teal">✓ 100%</span>
+                  </div>
+                  <div class="text-xs dim">Channels &amp; permissions</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="readiness-all-done">
+            <div class="row align-center gap-2">
+              <span style="color:var(--teal);font-weight:bold;font-size:var(--fs-sm)">✓ All 3 rings closed (100%)</span>
+              <span class="dim text-xs">Ready for sessions &amp; survey matching</span>
+            </div>
+            <a class="btn btn-sm btn-ghost" href="/member/profile.html" style="font-size:var(--fs-xs);padding:2px 8px">Edit profile</a>
+          </div>
+        </div>`;
+    } else {
+      const isAvailIncomplete = !r2.is_complete;
+      const blockerMsg = isAvailIncomplete
+        ? 'Updating your available time is required so sessions and 1-on-1 calls don\'t clash with your day. That unfinished progress keeps you back from scheduled sessions and survey matching.'
+        : 'You have unfinished profile tasks keeping you back from full circle participation.';
+
+      const tasksHtml = (unfinished_tasks || []).slice(0, 3).map(t => `
+        <div class="readiness-check-item">
+          <div class="readiness-check-label">
+            <span class="readiness-check-dot" style="background:${t.color}"></span>
+            <span>${escapeHtml(t.label)}</span>
+          </div>
+          <a class="btn btn-sm btn-ghost" href="${t.action_url}" style="padding:2px 8px;font-size:var(--fs-xs)">${escapeHtml(t.action_label)}</a>
+        </div>`).join('');
+
+      const primaryAction = readiness.next_action || {
+        action_url: '/member/profile.html#availability',
+        action_label: 'Update available time'
+      };
+
+      contentHtml = `
+        <div class="rings-card-body">
+          <div class="rings-overview">
+            <div class="rings-svg-wrap">
+              <svg class="rings-svg" viewBox="0 0 160 160" width="112" height="112">
+                <!-- Ring 1 (Outer - Profile) -->
+                <circle cx="80" cy="80" r="64" class="ring-track" stroke-width="9"></circle>
+                <circle cx="80" cy="80" r="64" class="ring-fill" stroke-width="9"
+                  stroke-dasharray="${c1}" stroke-dashoffset="${off1}" stroke="${r1.color}"
+                  transform="rotate(-90 80 80)"></circle>
+
+                <!-- Ring 2 (Middle - Available Time) -->
+                <circle cx="80" cy="80" r="50" class="ring-track" stroke-width="9"></circle>
+                <circle cx="80" cy="80" r="50" class="ring-fill" stroke-width="9"
+                  stroke-dasharray="${c2}" stroke-dashoffset="${off2}" stroke="${r2.color}"
+                  transform="rotate(-90 80 80)"></circle>
+
+                <!-- Ring 3 (Inner - Channels & Consent) -->
+                <circle cx="80" cy="80" r="36" class="ring-track" stroke-width="9"></circle>
+                <circle cx="80" cy="80" r="36" class="ring-fill" stroke-width="9"
+                  stroke-dasharray="${c3}" stroke-dashoffset="${off3}" stroke="${r3.color}"
+                  transform="rotate(-90 80 80)"></circle>
+
+                <text x="80" y="75" text-anchor="middle" class="ring-center-percent">${overall_percentage}%</text>
+                <text x="80" y="93" text-anchor="middle" class="ring-center-label">${completed_rings}/3 RINGS</text>
+              </svg>
+            </div>
+
+            <div class="rings-meta">
+              <div class="ring-item">
+                <span class="ring-swatch" style="background:${r1.color}"></span>
+                <div class="ring-item-body">
+                  <div class="ring-item-head">
+                    <span class="ring-item-title">${escapeHtml(r1.name)}</span>
+                    <span class="ring-item-score ${r1.is_complete ? 'text-teal' : 'dim'}">${r1.is_complete ? '✓ 100%' : r1.percentage + '%'}</span>
+                  </div>
+                  <div class="text-xs dim">${escapeHtml(r1.subtitle)} · Name, phone, company</div>
+                </div>
+              </div>
+
+              <div class="ring-item">
+                <span class="ring-swatch" style="background:${r2.color}"></span>
+                <div class="ring-item-body">
+                  <div class="ring-item-head">
+                    <span class="ring-item-title">${escapeHtml(r2.name)}</span>
+                    <span class="ring-item-score ${r2.is_complete ? 'text-teal' : 'text-warn'}">${r2.is_complete ? '✓ 100%' : 'Incomplete (' + r2.percentage + '%)'}</span>
+                  </div>
+                  <div class="text-xs dim">${escapeHtml(r2.subtitle)} · Weekdays &amp; hours</div>
+                </div>
+              </div>
+
+              <div class="ring-item">
+                <span class="ring-swatch" style="background:${r3.color}"></span>
+                <div class="ring-item-body">
+                  <div class="ring-item-head">
+                    <span class="ring-item-title">${escapeHtml(r3.name)}</span>
+                    <span class="ring-item-score ${r3.is_complete ? 'text-teal' : 'dim'}">${r3.is_complete ? '✓ 100%' : r3.percentage + '%'}</span>
+                  </div>
+                  <div class="text-xs dim">${escapeHtml(r3.subtitle)} · Channels &amp; permissions</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="readiness-blocker">
+            <div class="readiness-blocker-head">
+              <div class="readiness-blocker-title">
+                <span class="readiness-check-dot"></span>
+                <span>${completed_rings} of 3 rings closed</span>
+              </div>
+              <span class="dim font-mono">${overall_percentage}%</span>
+            </div>
+            <p class="readiness-blocker-text">${escapeHtml(blockerMsg)}</p>
+            <div class="readiness-checklist">
+              ${tasksHtml}
+            </div>
+            <div style="margin-top:var(--sp-2)">
+              <a class="btn btn-sm btn-primary" href="${primaryAction.action_url}">${escapeHtml(primaryAction.action_label)} →</a>
+            </div>
+          </div>
+        </div>`;
+    }
+
+    el.innerHTML = contentHtml;
+  }
+
   function renderMasthead({ user, stats }) {
     const hour = new Date().getHours();
     const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+
+    const mobileName = document.getElementById('mobileUserName');
+    if (mobileName) {
+      mobileName.textContent = `${user.name.split(' ')[0]}${user.company ? ' · ' + user.company : ''}`;
+    }
 
     document.getElementById('masthead').innerHTML = `
       ${orbitAvatar(user.name, orbitLevel(stats.streak),
@@ -283,30 +628,12 @@
   }
 
   // Exactly one call to action, chosen by what actually matters most:
-  // consent we never got, then a session today, then a waiting survey.
-  function renderNextAction({ consent }, surveys, sessions) {
+  // a session today, then a waiting survey.
+  function renderNextAction(profile, surveys, sessions) {
     const el = document.getElementById('nextAction');
-    const pending = consent.filter(c => c.status === 'pending');
-    const waiting = surveys.filter(s => !s.completed);
+    const waiting = (surveys || []).filter(s => !s.completed);
 
-    if (pending.length) {
-      el.innerHTML = `
-        <div class="next-action">
-          <div class="eyebrow">Before we contact you</div>
-          <div class="headline">Tell us how we may reach you</div>
-          <p class="detail">
-            We will not message you on a channel you have not agreed to. Choose the ones
-            that suit you — you can withdraw any of them at any time.
-          </p>
-          <div class="row-tight wrap">
-            <button class="btn btn-primary" onclick="grantConsent()">Allow ${pending.map(c => c.channel.replace('_', '-')).join(', ')}</button>
-            <a class="btn btn-ghost" href="/member/notifications.html">Choose individually</a>
-          </div>
-        </div>`;
-      return;
-    }
-
-    const soon = sessions[0];
+    const soon = (sessions || [])[0];
     if (soon) {
       el.innerHTML = `
         <div class="next-action">

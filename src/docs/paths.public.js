@@ -262,6 +262,30 @@ const paths = {
     })
   },
 
+  '/auth/password': {
+    post: op({
+      tag: 'Authentication',
+      operationId: 'changePassword',
+      summary: 'Change staff password',
+      description: [
+        'Allows staff who signed in with a temporary handover password (or want to update their password)',
+        'to set their new password, clearing must_change_password and upgrading their session to full scope.'
+      ].join('\n'),
+      requestBody: jsonBody(object({
+        new_password: str('At least 10 characters', { format: 'password', minLength: 10 }),
+        current_password: str('Current password (optional if forced change)', { format: 'password' })
+      }, { required: ['new_password'] }), {
+        new_password: 'a-new-secure-password-123'
+      }),
+      responses: {
+        200: json('Password updated.', object({ message: str('Confirmation') }), { message: 'Password updated successfully' }),
+        400: json('Password too short or missing.', ref('Error'), { error: 'New password must be at least 10 characters' }),
+        401: json('Current password incorrect.', ref('Error'), { error: 'Current password is incorrect' }),
+        403: json('Not a staff account.', ref('Error'), { error: 'Only staff accounts manage passwords' })
+      }
+    })
+  },
+
   '/auth/me': {
     get: op({
       tag: 'Authentication',
@@ -378,14 +402,24 @@ const paths = {
             streak: int('Current engagement streak'),
             best_streak: int('Longest streak reached')
           }),
-          unread_notifications: int('Unread items in the portal inbox')
+          unread_notifications: int('Unread items in the portal inbox'),
+          readiness: ref('Readiness')
         }), {
           user: MEMBER_EXAMPLE,
           cohorts: [{ id: 'c1', name: 'All Members', type: 'system', color: '#107EBC' }],
           circles: [{ id: 'r1', name: 'Dev Circle', slug: 'dev-circle', is_root: 1 }],
           consent: [{ id: 'k1', user_id: MEMBER_EXAMPLE.id, channel: 'email', status: 'granted', granted_at: '2026-02-11 14:21:40' }],
           stats: { surveys_completed: 3, surveys_invited: 5, gifts_claimed: 1, feedback_submitted: 2, streak: 4, best_streak: 9 },
-          unread_notifications: 2
+          unread_notifications: 2,
+          readiness: {
+            overall_percentage: 67,
+            completed_rings: 2,
+            total_rings: 3,
+            is_complete: false,
+            summary: '2 of 3 rings complete · 1 incomplete ring (Available Time) keeps you back.',
+            rings: [],
+            unfinished_tasks: []
+          }
         })
       }
     }),
@@ -439,6 +473,103 @@ const paths = {
           circles: [
             { id: 'r1', name: 'Dev Circle', slug: 'dev-circle', is_root: 1, color: '#107EBC' },
             { id: 'p2', name: 'Payments guild', slug: 'payments-guild', is_root: 0, color: '#7C3AED' }
+          ]
+        })
+      }
+    })
+  },
+
+  '/users/readiness': {
+    get: op({
+      tag: 'Member profile',
+      operationId: 'getReadiness',
+      summary: 'Member setup readiness and the three activity rings',
+      description: [
+        'Evaluates completion of required member information across 3 staged rings:',
+        '1. Profile Details (Name, Phone, Company, Work Sector)',
+        '2. Available Time (Days that work, Daily time window)',
+        '3. Reachability & Consent (Preferred channels, Granted permissions)',
+        'Unfinished tasks (such as updating available time) leave their ring incomplete,',
+        'keeping the member back from full participation and showing how close they are to completion.'
+      ].join('\n'),
+      responses: {
+        200: json('The member\'s 3 staged rings and unfinished tasks.', ref('Readiness'), {
+          overall_percentage: 67,
+          completed_rings: 2,
+          total_rings: 3,
+          is_complete: false,
+          summary: '2 of 3 rings complete · 1 incomplete ring (Available Time) keeps you back.',
+          next_action: {
+            ring_id: 'availability',
+            ring_name: 'Available Time',
+            headline: 'Set your available time to unlock session invites',
+            detail: 'Unfinished availability keeps you back from scheduled sessions and 1-on-1 interviews.',
+            action_url: '/member/profile.html#availability',
+            action_label: 'Update available time'
+          },
+          rings: [
+            {
+              id: 'profile',
+              index: 1,
+              name: 'Profile Details',
+              subtitle: 'About you',
+              percentage: 100,
+              is_complete: true,
+              color: '#0D9488',
+              action_url: '/member/profile.html',
+              action_label: 'Edit profile',
+              impact: 'Ensures you are matched to relevant surveys and developer cohorts.',
+              tasks: [
+                { key: 'name', label: 'Full name', done: true, description: 'Chidi Nwosu' },
+                { key: 'phone', label: 'Phone number', done: true, description: '+2348035550142' },
+                { key: 'company', label: 'Company or team', done: true, description: 'Paystack' },
+                { key: 'work_sector', label: 'Work sector', done: true, description: 'Payments' }
+              ]
+            },
+            {
+              id: 'availability',
+              index: 2,
+              name: 'Available Time',
+              subtitle: 'When to reach you',
+              percentage: 50,
+              is_complete: false,
+              color: '#E84E1B',
+              action_url: '/member/profile.html#availability',
+              action_label: 'Update available time',
+              impact: 'Unfinished availability keeps you back from scheduled sessions and 1-on-1 interviews.',
+              tasks: [
+                { key: 'preferred_days', label: 'Days that work', done: false, description: 'Select weekdays you are free' },
+                { key: 'preferred_time', label: 'Time window', done: true, description: '10:00 – 14:00 WAT' }
+              ]
+            },
+            {
+              id: 'channels',
+              index: 3,
+              name: 'Reachability & Consent',
+              subtitle: 'How to reach you',
+              percentage: 100,
+              is_complete: true,
+              color: '#E6B473',
+              action_url: '/member/profile.html#channels',
+              action_label: 'Set channels & consent',
+              impact: 'Required to deliver survey links and gift claim updates without delay.',
+              tasks: [
+                { key: 'preferred_channels', label: 'Preferred channels', done: true, description: 'email, whatsapp' },
+                { key: 'consent', label: 'Notification permissions', done: true, description: '1 channel(s) granted' }
+              ]
+            }
+          ],
+          unfinished_tasks: [
+            {
+              ring_id: 'availability',
+              ring_name: 'Available Time',
+              task_key: 'preferred_days',
+              label: 'Days that work',
+              description: 'Select weekdays you are free',
+              action_url: '/member/profile.html#availability',
+              action_label: 'Update available time',
+              color: '#E84E1B'
+            }
           ]
         })
       }

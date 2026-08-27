@@ -540,6 +540,55 @@ const schemas = {
     created_at: timestamp('When it was created')
   }),
 
+  // ── Member Setup & Staged Readiness Rings ──
+  ReadinessTask: object({
+    key: str('Task identifier', { example: 'preferred_days' }),
+    label: str('Short task description', { example: 'Days that work' }),
+    done: bool('Whether this task has been completed'),
+    description: str('Context or value', { example: 'Mon, Wed, Fri' })
+  }),
+
+  ReadinessRing: object({
+    id: str('Ring identifier', { enum: ['profile', 'availability', 'channels'] }),
+    index: int('1-based ring index (1: profile, 2: availability, 3: channels)'),
+    name: str('Ring title', { example: 'Available Time' }),
+    subtitle: str('Secondary title', { example: 'When to reach you' }),
+    percentage: int('Completion percentage for this ring, 0-100', { example: 100 }),
+    is_complete: bool('True when ring is 100% finished'),
+    tasks: arrayOf(ref('ReadinessTask'), 'Individual checklist items'),
+    color: str('Hex color for UI ring rendering', { example: '#E84E1B' }),
+    action_url: str('Target deep-link to complete the task', { example: '/member/profile.html#availability' }),
+    action_label: str('Action button text', { example: 'Update available time' }),
+    impact: str('Why this ring is important and how unfinished progress holds member back')
+  }),
+
+  Readiness: object({
+    overall_percentage: int('Overall readiness percentage across all 3 rings, 0-100', { example: 67 }),
+    completed_rings: int('Number of closed rings, 0-3', { example: 2 }),
+    total_rings: int('Total rings (always 3)', { example: 3 }),
+    is_complete: bool('True when all 3 rings are closed'),
+    summary: str('Human-readable readiness summary'),
+    next_action: object({
+      ring_id: str('Priority incomplete ring id'),
+      ring_name: str('Ring name'),
+      headline: str('Call to action headline'),
+      detail: str('Explanation of impact'),
+      action_url: str('Deep-link URL'),
+      action_label: str('Button label')
+    }, { nullable: true }),
+    rings: arrayOf(ref('ReadinessRing'), 'The 3 concentric staged rings'),
+    unfinished_tasks: arrayOf(object({
+      ring_id: str('Ring id'),
+      ring_name: str('Ring name'),
+      task_key: str('Task key'),
+      label: str('Task title'),
+      description: str('Description'),
+      action_url: str('Action URL'),
+      action_label: str('Action label'),
+      color: str('Hex color')
+    }), 'Pending items keeping the member from completing their rings')
+  }),
+
   AdminUser: object({
     id: id('Admin id'),
     email: str('Credit Direct address', { format: 'email', example: 'adaeze@creditdirect.ng' }),

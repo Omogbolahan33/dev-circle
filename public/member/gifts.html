@@ -29,6 +29,12 @@
     /* Locked rewards state their price in plain terms rather than teasing. */
     .reward.locked { opacity: 0.62; }
     .requirement { font-size: var(--fs-xs); color: var(--cd-gold); text-align: right; max-width: 220px; }
+
+    @media (max-width: 600px) {
+      .page-head-block { margin-bottom: var(--sp-3) !important; }
+      .page-title-lg { font-size: var(--fs-xl); }
+      .lede { display: none; }
+    }
   </style>
 </head>
 <body>
@@ -36,10 +42,18 @@
 <div class="portal">
   <div class="portal-body">
 
-    <header class="mb-6">
+    <nav class="breadcrumb mb-3">
+      <a href="/member/dashboard.html">Home</a>
+      <span class="sep">/</span>
+      <span>Rewards</span>
+    </nav>
+
+    <header class="page-head-block mb-6">
       <h1 class="page-title-lg">Rewards</h1>
       <p class="lede">Small thanks for the time you put in. Nothing here is a prize draw — each one has a clear condition, and it is either met or it is not.</p>
     </header>
+
+    <div id="claimSuccess"></div>
 
     <div class="figures" id="figures"></div>
 
@@ -123,6 +137,24 @@
     try {
       const res = await api.post(`/users/gifts/${id}/claim`, {});
       showToast(`${res.gift.name} claimed — we will be in touch with delivery details`);
+
+      const banner = document.getElementById('claimSuccess');
+      if (banner) {
+        banner.innerHTML = `
+          <div class="card p-4 mb-6" style="border:1px solid var(--teal);background:var(--tint-success, rgba(13,148,136,0.08));border-radius:var(--r-lg)">
+            <div class="row align-center justify-between wrap gap-3">
+              <div>
+                <strong style="color:var(--teal)">🎉 ${escapeHtml(res.gift.name)} claimed!</strong>
+                <div class="text-xs dim mt-1">We will contact you with delivery instructions shortly.</div>
+              </div>
+              <div class="row gap-2">
+                <a class="btn btn-sm btn-primary" href="/member/dashboard.html">Back to dashboard →</a>
+                <a class="btn btn-sm btn-secondary" href="/member/engagement.html">View history</a>
+              </div>
+            </div>
+          </div>`;
+      }
+
       load();
     } catch (err) {
       showToast(err.message, 'error');

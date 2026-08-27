@@ -202,6 +202,41 @@ const config = {
     }
   },
 
+  // ─── Outbound Email Interface ─────────────────────────────
+  // Configures external email service providers (Termii, Simpu, Customer.io)
+  // for survey invitations, session invitations, staff invites, codes, and broadcasts.
+  email: {
+    provider: process.env.EMAIL_PROVIDER || 'auto',
+    fromEmail: process.env.EMAIL_FROM || process.env.EMAIL_FROM_ADDRESS || 'devcircle@creditdirect.ng',
+    fromName: process.env.EMAIL_FROM_NAME || 'Credit Direct Dev Circle',
+    replyTo: process.env.EMAIL_REPLY_TO || 'devrelations@creditdirect.ng',
+    termii: {
+      apiKey: process.env.TERMII_API_KEY || null,
+      emailConfigurationId: process.env.TERMII_EMAIL_CONFIGURATION_ID || null,
+      baseUrl: (process.env.TERMII_BASE_URL || 'https://api.ng.termii.com').replace(/\/+$/, ''),
+      templateId: process.env.TERMII_TEMPLATE_ID || null,
+      get configured() {
+        return Boolean(this.apiKey && this.emailConfigurationId);
+      }
+    },
+    simpu: {
+      apiKey: process.env.SIMPU_API_KEY || null,
+      senderId: process.env.SIMPU_SENDER_ID || process.env.EMAIL_FROM || 'devcircle@creditdirect.ng',
+      fromName: process.env.SIMPU_FROM_NAME || process.env.EMAIL_FROM_NAME || 'Credit Direct Dev Circle',
+      baseUrl: (process.env.SIMPU_BASE_URL || 'https://api.simpu.co').replace(/\/+$/, ''),
+      get configured() {
+        return Boolean(this.apiKey);
+      }
+    },
+    get enabled() {
+      return Boolean(
+        (this.termii.apiKey && this.termii.emailConfigurationId) ||
+        this.simpu.apiKey ||
+        Boolean(process.env.CUSTOMERIO_SITE_ID && process.env.CUSTOMERIO_API_KEY)
+      );
+    }
+  },
+
   // Feex is inbound-only: it owns support tickets end to end and posts them
   // to Dev Circle for engagement visibility. There is no outbound credential
   // because Dev Circle never writes back.
@@ -212,6 +247,8 @@ const config = {
   get configured() {
     return {
       customer_io: Boolean(this.delivery.customerIoSiteId && this.delivery.customerIoApiKey),
+      termii: Boolean(this.email.termii.apiKey && this.email.termii.emailConfigurationId),
+      simpu: Boolean(this.email.simpu.apiKey),
       whatsapp: Boolean(this.delivery.whatsappToken),
       sms: Boolean(this.delivery.smsApiKey),
       // The SSO secret always has a value — outside production one is derived

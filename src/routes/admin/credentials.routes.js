@@ -2,6 +2,7 @@ const express = require('express');
 const db = require('../../db');
 const config = require('../../config');
 const { uuid, parseJSON } = require('../../utils/helpers');
+const emailService = require('../../services/email');
 const {
   requirePermission, generateApiKey, hashApiKey
 } = require('../../middleware/auth');
@@ -73,6 +74,22 @@ function providers() {
       configured: configured.customer_io,
       env: ['CUSTOMERIO_SITE_ID', 'CUSTOMERIO_API_KEY'],
       degraded: 'Outbound messages are recorded as "simulated" instead of being sent. Nothing is lost — the delivery log stays honest — but nobody receives anything.'
+    },
+    {
+      id: 'termii',
+      name: 'Termii',
+      purpose: 'African communications provider for sending email notifications, verification OTP codes, and invitations',
+      configured: configured.termii,
+      env: ['TERMII_API_KEY', 'TERMII_EMAIL_CONFIGURATION_ID'],
+      degraded: 'Termii email delivery is inactive. Outbound emails fall back to Simpu, Customer.io, or are recorded as simulated.'
+    },
+    {
+      id: 'simpu',
+      name: 'Simpu',
+      purpose: 'Omnichannel customer engagement platform for email invitations, announcements, and developer messaging',
+      configured: configured.simpu,
+      env: ['SIMPU_API_KEY', 'SIMPU_SENDER_ID'],
+      degraded: 'Simpu email delivery is inactive. Outbound emails fall back to Termii, Customer.io, or are recorded as simulated.'
     },
     {
       id: 'whatsapp',
@@ -162,6 +179,7 @@ router.get('/credentials', requirePermission('credentials.read'), async (req, re
 
   res.json({
     providers: providers(),
+    email: emailService.getStatus(),
     scopes: SCOPES,
     keys: {
       total: keys.length,
@@ -177,6 +195,32 @@ router.get('/credentials', requirePermission('credentials.read'), async (req, re
       enabled: config.sandbox.enabled,
       header: 'X-Devcircle-Sandbox'
     }
+  });
+});
+
+// POST /api/admin/credentials/test-email
+// Dispatches a sample email to verify credentials and delivery for the active or named provider
+router.post('/credentials/test-email', requirePermission('credentials.write'), async (req, res) => {
+  const { to, provider } = req.body;
+  if (!to || !String(to).trim()) {
+    return res.status(400).json({ error: 'Recipient "to" address is required' });
+  }
+
+  const outcome = await emailService.sendTestEmail({
+    to: String(to).trim(),
+    providerName: provider || null
+  });
+
+  if (outcome.status === 'failed') {
+    return res.status(502).json({
+      error: outcome.error || 'Failed to dispatch test email',
+      provider: outcome.provider
+    });
+  }
+
+  res.json({
+    message: `Test email dispatched via ${outcome.provider}`,
+    delivery: outcome
   });
 });
 

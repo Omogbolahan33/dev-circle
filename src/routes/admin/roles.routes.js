@@ -1,9 +1,11 @@
 const express = require('express');
+const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const db = require('../../db');
 const config = require('../../config');
 const { uuid, parseJSON } = require('../../utils/helpers');
 const identity = require('../../utils/identity');
+const emailService = require('../../services/email');
 const { requirePermission, destroyAllSessionsFor, PERMISSIONS } = require('../../middleware/auth');
 
 const router = express.Router();
@@ -113,14 +115,26 @@ router.get('/admins', requirePermission('roles.read'), async (req, res) => {
   res.json({ admins: admins || [] });
 });
 
-// POST /api/admin/admins — create an internal user and assign a role
-router.post('/admins', requirePermission('roles.write'), async (req, res) => {
-  const { name, password, role_id } = req.body;
+// Helper to generate temporary handover passwords for staff invitations
+function generateTemporaryPassword() {
+  return crypto.randomBytes(9).toString('base64url').slice(0, 12);
+}
+
+async function handleCreateAdmin(req, res, forceInvite = false) {
+  const { name, role_id, is_global, circle_id, send_invite } = req.body;
+  let { password } = req.body;
   const email = identity.normalizeEmail(req.body.email);
 
-  if (!email || !name || !password || !role_id) {
-    return res.status(400).json({ error: 'A valid email, name, password, and role_id are required' });
+  if (!email || !name || !role_id) {
+    return res.status(400).json({ error: 'A valid email, name, and role_id are required' });
   }
+
+  // If send_invite is true, forceInvite is true, or password is not supplied, generate a temporary handover password
+  const isInvited = Boolean(forceInvite || send_invite || !password);
+  if (isInvited && !password) {
+    password = generateTemporaryPassword();
+  }
+
   // The sign-in page reads the domain to decide whether to ask for a password
   // at all. An admin on any other domain would be sent down the one-time-code
   // path and could never get in, so the rule is enforced where the account is
@@ -133,7 +147,8 @@ router.post('/admins', requirePermission('roles.write'), async (req, res) => {
   if (String(password).length < 10) {
     return res.status(400).json({ error: 'Admin passwords must be at least 10 characters' });
   }
-  if (!await db.prepare('SELECT id FROM roles WHERE id = ?').get(role_id)) {
+  const role = await db.prepare('SELECT id, name FROM roles WHERE id = ?').get(role_id);
+  if (!role) {
     return res.status(400).json({ error: 'Unknown role_id' });
   }
   if (await db.prepare('SELECT id FROM admin_users WHERE email = ?').get(email)) {
@@ -141,12 +156,88 @@ router.post('/admins', requirePermission('roles.write'), async (req, res) => {
   }
 
   const id = uuid();
-  await db.prepare(`
-    INSERT INTO admin_users (id, email, name, password_hash, role_id) VALUES (?, ?, ?, ?, ?)
-  `).run(id, email, name, bcrypt.hashSync(password, 10), role_id);
+  const mustChangePassword = isInvited ? 1 : 0;
+  const invitedBy = isInvited ? req.admin.id : null;
+  const invitedAt = isInvited ? new Date().toISOString().replace('T', ' ').slice(0, 19) : null;
 
-  const admin = await db.prepare('SELECT id, email, name, status, role_id, created_at FROM admin_users WHERE id = ?').get(id);
-  res.status(201).json({ admin });
+  await db.prepare(`
+    INSERT INTO admin_users (id, email, name, password_hash, role_id, must_change_password, invited_by, invited_at, is_global)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    id, email, name, bcrypt.hashSync(password, 10), role_id,
+    mustChangePassword, invitedBy, invitedAt, is_global ? 1 : 0
+  );
+
+  // If assigned to a specific circle
+  const targetCircle = circle_id || req.circleId;
+  if (targetCircle) {
+    await db.prepare('INSERT OR IGNORE INTO circle_admins (circle_id, admin_id, role_id) VALUES (?, ?, ?)')
+      .run(targetCircle, id, role_id);
+  }
+
+  let emailDelivery = null;
+  if (isInvited) {
+    emailDelivery = await emailService.sendStaffInvite({
+      to: email,
+      recipientName: name,
+      roleName: role.name,
+      temporaryPassword: password,
+      invitedByName: req.admin.name || req.admin.email,
+      loginUrl: `${config.appUrl}/admin/login`
+    });
+  }
+
+  const admin = await db.prepare('SELECT id, email, name, status, role_id, must_change_password, invited_at, created_at FROM admin_users WHERE id = ?').get(id);
+  res.status(201).json({
+    admin,
+    invited: isInvited,
+    delivery: emailDelivery
+  });
+}
+
+// POST /api/admin/admins — create an internal user and assign a role
+router.post('/admins', requirePermission('roles.write'), async (req, res) => {
+  return handleCreateAdmin(req, res, false);
+});
+
+// POST /api/admin/admins/invite — explicitly invite an admin via email
+router.post('/admins/invite', requirePermission('roles.write'), async (req, res) => {
+  return handleCreateAdmin(req, res, true);
+});
+
+// POST /api/admin/admins/:id/reinvite — resend invitation email with a fresh temporary password
+router.post('/admins/:id/reinvite', requirePermission('roles.write'), async (req, res) => {
+  const target = await db.prepare('SELECT a.*, r.name as role_name FROM admin_users a LEFT JOIN roles r ON r.id = a.role_id WHERE a.id = ?').get(req.params.id);
+  if (!target) return res.status(404).json({ error: 'Admin not found' });
+  if (target.status !== 'active') {
+    return res.status(400).json({ error: `Cannot reinvite ${target.status} admin` });
+  }
+
+  const newTempPassword = generateTemporaryPassword();
+  const invitedAt = new Date().toISOString().replace('T', ' ').slice(0, 19);
+
+  await db.prepare(`
+    UPDATE admin_users
+    SET password_hash = ?, must_change_password = 1, invited_by = ?, invited_at = ?
+    WHERE id = ?
+  `).run(bcrypt.hashSync(newTempPassword, 10), req.admin.id, invitedAt, target.id);
+
+  // Invalidate any open sessions
+  await destroyAllSessionsFor(target.id);
+
+  const delivery = await emailService.sendStaffInvite({
+    to: target.email,
+    recipientName: target.name,
+    roleName: target.role_name || 'Administrator',
+    temporaryPassword: newTempPassword,
+    invitedByName: req.admin.name || req.admin.email,
+    loginUrl: `${config.appUrl}/admin/login`
+  });
+
+  res.json({
+    message: `Invitation resent to ${target.email}`,
+    delivery
+  });
 });
 
 // PUT /api/admin/admins/:id — change role or status
