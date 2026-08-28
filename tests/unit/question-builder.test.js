@@ -318,6 +318,22 @@ test('branching on an answer is drawn where it is allowed, and nowhere else', ()
   assert.ok(!plain.questions.innerHTML.includes('data-add-branch'));
 });
 
+test('a branch rule may send them on to the next question, and the button reads as branching', () => {
+  const { builder, state, el } = build([
+    { id: 'q1', type: 'boolean', text: 'First?' },
+    { id: 'q2', type: 'boolean', text: 'Do you agree?', branch_to: { rules: [{ op: 'is', value: true }] } }
+  ], { allowBranching: true });
+  state.openQuestion = 1;
+  builder.render();
+  const html = el.questions.innerHTML;
+
+  assert.ok(html.includes('data-add-logic>+ Branching<'), 'the show-sometimes button reads as branching');
+  assert.ok(html.includes('goes to the next question'), 'a rule may send them on to the next question');
+  assert.ok(/value="next" selected/.test(html), 'a rule that names no place is the next question');
+  assert.ok(html.includes('goes to a particular question'), 'a rule may name its landing question');
+  assert.ok(html.includes('ends the survey'), 'a rule may end the survey');
+});
+
 test('a branch rule asks the condition of its own answer and where the survey goes', () => {
   const { builder, el } = build([
     {

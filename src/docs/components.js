@@ -307,10 +307,10 @@ const schemas = {
         example: 'is'
       }),
       value: { description: 'What to compare against. Omitted for answered / not_answered', example: false },
-      goto: str('Id of a later question the survey jumps to when the rule holds. Exactly one of goto / end must be set', { example: 'q5_1c2d3e4f' }),
+      goto: str('Id of a later question the survey jumps to when the rule holds. At most one of goto / end is set; a rule with neither sends them on to the next question', { example: 'q5_1c2d3e4f' }),
       end: bool('End the survey when the rule holds', { example: true }),
       message: str('What the respondent reads when the survey ends here. Without one, it ends in its usual thank-you', { example: "We can't continue without your agreement." })
-    }), 'What the survey does once this question is answered. Checked in the order written; the first rule that holds decides. When none holds, the survey moves on to the next question')
+    }), 'What the survey does once this question is answered. Checked in the order written; the first rule that holds decides — a rule with neither goto nor end keeps the later rules from deciding. When no rule holds, the survey moves on to the next question')
   }, { description: 'The "then" of a branch, written where the "when" is: on the question whose answer decides it. A rule may only test this question\'s own answer (the same reason a visibility rule may only look backwards), and a jump may only land on a question later in the survey. visible_if decides what is asked; branch_to decides where it goes' }),
 
   SurveyTheme: object({

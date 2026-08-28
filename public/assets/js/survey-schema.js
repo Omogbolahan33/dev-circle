@@ -592,8 +592,9 @@ const SurveySchema = (() => {
   //
   // visible_if answers "what is asked"; branch_to answers "what happens next"
   // — the designer's "then": when the answer to this question holds a rule,
-  // the survey goes where the rule says it goes. A later question, or the
-  // end of the survey, with the words the author wrote for that ending.
+  // the survey goes where the rule says it goes. The next question, a later
+  // question, or the end of the survey, with the words the author wrote for
+  // that ending.
   // Both halves are decided by the same walk, so a member can never be shown
   // a question the branch took them past, or one the survey already ended.
 
@@ -771,10 +772,12 @@ const SurveySchema = (() => {
 
       const ends = rule.end === true || rule.end === 'true';
       const gotoId = trimmed(rule.goto);
-      // A rule that neither ends the survey nor goes anywhere decides
-      // nothing, and one that does both has no single place to go.
-      if (ends === (gotoId !== '')) {
-        at('branch_to', 'A branch says where the survey goes: it ends, or it goes to a later question');
+      // A rule that names no place still decides: it says "when this holds,
+      // go on to the next question" — which matters when a rule after it
+      // would have ended or jumped. Only a rule that does two things at
+      // once has no single place to go.
+      if (ends && gotoId) {
+        at('branch_to', 'A branch says where the survey goes: the next question, a later question, or the end — not two of those at once');
         continue;
       }
 
@@ -782,13 +785,19 @@ const SurveySchema = (() => {
         kept.push(coerced.value === undefined
           ? { op, goto: gotoId }
           : { op, value: coerced.value, goto: gotoId });
-      } else {
+      } else if (ends) {
         // What the member sees when the survey ends here. Without one, it
         // ends in the same thank-you it ends in anywhere else.
         const message = isBlank(rule.message) ? null : trimmed(rule.message).slice(0, 200);
         kept.push(coerced.value === undefined
           ? { op, end: true, ...(message ? { message } : {}) }
           : { op, value: coerced.value, end: true, ...(message ? { message } : {}) });
+      } else {
+        // A "next" rule carries no action at all: its decision is that the
+        // survey goes on, rather than any of the rules after it deciding.
+        kept.push(coerced.value === undefined
+          ? { op }
+          : { op, value: coerced.value });
       }
     }
 
@@ -921,7 +930,10 @@ const SurveySchema = (() => {
       const action = branchAction(question, live);
       if (action) {
         if (action.goto) landing = action.goto;
-        else ending = { question, message: action.message || null };
+        else if (action.end) ending = { question, message: action.message || null };
+        // A rule that sends them on to the next question decides only that
+        // the walk goes on — which is what it does anyway; its work is
+        // shadowing the rules written after it.
       }
     }
 

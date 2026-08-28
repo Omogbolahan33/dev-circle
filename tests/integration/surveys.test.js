@@ -294,6 +294,47 @@ test('a yes to the consent question still asks the rest, and the rest still has 
   assert.equal(done.body.end_message, null);
 });
 
+test('a rule that names no place sends them on, and the ending written after it does not decide', async () => {
+  const res = await create({
+    status: 'active',
+    questions: [
+      {
+        id: 'q1', type: 'boolean', text: 'Do you agree to the [Terms](https://example.com/terms)?',
+        required: true,
+        branch_to: {
+          rules: [
+            { op: 'is', value: true },
+            { op: 'answered', end: true, message: 'The survey ends here, in its own words.' }
+          ]
+        }
+      },
+      { id: 'q2', type: 'text', text: 'Tell us about your integration.', required: true }
+    ]
+  });
+  assert.equal(res.status, 201, JSON.stringify(res.body));
+  const survey = res.body.survey;
+  const { token } = await answering(survey);
+  const [consent, followup] = survey.questions;
+
+  // yes: the next rule holds first — the survey goes on, the ending after it
+  // never decides, and the rest of the survey is still asked
+  const refused = await respond(survey, token, { [consent.id]: true });
+  assert.equal(refused.status, 400);
+  assert.deepEqual(refused.body.missing, [followup.id], 'the survey went on, so the rest is still asked');
+
+  const done = await respond(survey, token, { [consent.id]: true, [followup.id]: 'Payments' });
+  assert.equal(done.status, 200, JSON.stringify(done.body));
+  assert.equal(done.body.ended, false, 'no ending fired, because the first rule sent them on');
+  assert.equal(done.body.end_message, null);
+
+  // no: the next rule does not hold — the ending one does
+  const { token: noToken } = await answering(survey);
+  const doneNo = await respond(survey, noToken, { [consent.id]: false });
+  assert.equal(doneNo.status, 200, JSON.stringify(doneNo.body));
+  assert.equal(doneNo.body.ended, true);
+  assert.equal(doneNo.body.end_message, 'The survey ends here, in its own words.');
+});
+
 test('an option can carry a line under it — text, a link, a picture — and the answer stays the word', async () => {
   const res = await create({
     status: 'active',

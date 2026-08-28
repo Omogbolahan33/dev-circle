@@ -585,7 +585,7 @@ const QuestionBuilder = (() => {
       }
 
       if (!question.visible_if) {
-        return `<div class="logic"><button class="btn btn-sm btn-ghost" data-add-logic>+ Only show this sometimes</button></div>`;
+        return `<div class="logic"><button class="btn btn-sm btn-ghost" data-add-logic>+ Branching</button></div>`;
       }
 
       const rules = question.visible_if.rules || [];
@@ -682,7 +682,7 @@ const QuestionBuilder = (() => {
         <div class="logic">
           <div class="row" style="gap:var(--sp-2);margin-bottom:var(--sp-3)">
             <span class="logic-lead">When the answer to this question holds, the survey
-              <span class="tip" data-tip="Checked in the order written — the first rule that holds decides. When none holds, the survey simply moves on to the next question.">?</span></span>
+              <span class="tip" data-tip="Checked in the order written — the first rule that holds decides, and a rule that sends them on to the next question keeps the rules after it from deciding. When none holds, the survey simply moves on.">?</span></span>
             <span class="spacer"></span>
             <button class="icon-btn" data-drop-branch aria-label="The survey always moves on from here">×</button>
           </div>
@@ -703,7 +703,8 @@ const QuestionBuilder = (() => {
           </select>
           ${operator && operator.needsValue !== false ? branchValueInput(rule, question) : '<span class="spacer"></span>'}
           <select class="input" data-branch-action style="width:auto">
-            <option value="goto"${rule.goto ? ' selected' : ''}>goes to a later question</option>
+            <option value="next"${!rule.goto && !rule.end ? ' selected' : ''}>goes to the next question</option>
+            <option value="goto"${rule.goto ? ' selected' : ''}>goes to a particular question</option>
             <option value="end"${rule.end && !rule.goto ? ' selected' : ''}>ends the survey</option>
           </select>
           ${rule.goto ? `
@@ -1061,12 +1062,14 @@ const QuestionBuilder = (() => {
           delete rule.message;
           if (e.target.value === 'end') {
             rule.end = true;
-          } else {
+          } else if (e.target.value === 'goto') {
             // A jump needs a landing place; the nearest later question is the
             // least surprising one to offer.
             rule.goto = (later[0] || {}).id;
             if (!rule.goto) rule.end = true;   // nothing later to jump to
           }
+          // "next" leaves the rule with no action: it says the survey goes on,
+          // and the rules written after it do not decide.
           redraw();
         });
 

@@ -441,12 +441,35 @@ test('a branch rule is held to the question it sits on', () => {
   assert.ok(messages(result).some(m => /cannot be asked of a text/i.test(m)));
 });
 
-test('a rule that neither ends the survey nor goes anywhere is refused', () => {
+test('a rule that names no place is the next question, kept without an action', () => {
   const result = normalize([
     { id: 'q1', type: 'boolean', text: 'Agree?', branch_to: { rules: [{ op: 'is', value: true }] } }
   ]);
-  assert.equal(result.questions[0].branch_to, undefined);
-  assert.ok(messages(result).some(m => /where the survey goes/i.test(m)));
+  assert.deepEqual(result.questions[0].branch_to.rules, [{ op: 'is', value: true }]);
+  assert.equal(messages(result).length, 0);
+});
+
+test('a next rule sends them on, and keeps the rules after it from deciding', () => {
+  const questions = normalize([
+    {
+      id: 'q1', type: 'boolean', text: 'Agree?',
+      branch_to: { rules: [
+        { op: 'is', value: true },
+        { op: 'answered', end: true, message: 'No answers, no access.' }
+      ]}
+    },
+    { id: 'q2', type: 'text', text: 'Tell us more.' }
+  ]).questions;
+
+  // yes: the first rule holds and sends them on — the ending written after
+  // it never decides
+  assert.equal(schema.ending(questions, { q1: true }), null);
+  assert.deepEqual(schema.visible(questions, { q1: true }).map(q => q.id), ['q1', 'q2']);
+
+  // no: the first rule does not hold, the ending one does
+  const ending = schema.ending(questions, { q1: false });
+  assert.equal(ending.question.id, 'q1');
+  assert.equal(ending.message, 'No answers, no access.');
 });
 
 test('a rule that does both has no single place to go', () => {
