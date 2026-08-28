@@ -194,8 +194,6 @@ const QuestionBuilder = (() => {
 
           ${coreEditor(question)}
           ${moreOptions(question, index)}
-          ${logicEditor(question, index)}
-          ${SurveySchema.isAnswerable(question) && opts.allowBranching ? branchEditor(question, index) : ''}
 
           ${issues.length ? `<div class="issue-list">${issues
             .map(i => `<p class="issue">⚠ ${escapeHtml(i.message)}</p>`).join('')}</div>` : ''}
@@ -484,13 +482,18 @@ const QuestionBuilder = (() => {
       }
     }
 
-    // The fold the settings sit under, with whatever this kind of form adds to
-    // a card — onboarding tags its questions, and a tag is a setting of the
-    // question, so it goes in the fold rather than out in the open. The fold
-    // is drawn only when there is something to put in it.
+    // The fold everything else on a card sits under: the type's settings,
+    // whatever this kind of form adds to a card (onboarding tags its
+    // questions, and a tag is a setting of the question), and the question's
+    // own show-sometimes and branch-on-answer controls. A card should read as
+    // a question — its wording and what it is made of — and one fold named
+    // after the rest. It is drawn only when there is something to put in it.
     function moreOptions(question, index) {
       const body = settingsEditor(question)
-        + (opts.extraFields ? opts.extraFields(question, index) : '');
+        + (opts.extraFields ? opts.extraFields(question, index) : '')
+        + logicEditor(question, index)
+        + (SurveySchema.isAnswerable(question) && opts.allowBranching
+          ? branchEditor(question, index) : '');
       if (!body.trim()) return '';
 
       const summary = moreSummary(question);

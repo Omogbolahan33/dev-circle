@@ -101,6 +101,9 @@
 }
 .q-more-body { display: none; margin-top: var(--sp-2); }
 .q-more.open .q-more-body { display: block; }
+/* The logic block carries its own top border. When it opens the fold, that
+   border is the fold's edge — the fold does not need a second one. */
+.q-more-body > .logic:first-child { border-top: 0; margin-top: 0; padding-top: 0; }
 
 .option-item { margin-bottom: var(--sp-2); }
 .option-row { display: flex; align-items: center; gap: var(--sp-2); }

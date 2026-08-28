@@ -150,6 +150,28 @@ test('the type settings sit under one “More options” fold, and the fold says
   html = e5.questions.innerHTML;
   assert.ok(html.includes('data-toggle-more'), 'the tag gives the fold its reason');
   assert.ok(html.indexOf('data-toggle-more') < html.indexOf('data-maps-to'), 'the tag sits inside the fold');
+
+  // The show-sometimes button is a setting of the question too, so it is
+  // inside the fold — and it is what gives a question with no settings of its
+  // own a fold at all
+  const { builder: b6, state: s6, el: e6 } = build([
+    { id: 'q1', type: 'text', text: 'Have you reached production?' },
+    { id: 'q2', type: 'ranking', text: 'Order these', options: ['A', 'B'] }
+  ]);
+  s6.openQuestion = 1;
+  b6.render();
+  html = e6.questions.innerHTML;
+  assert.ok(html.includes('data-toggle-more'), 'the button gives the fold its reason');
+  assert.ok(html.indexOf('data-toggle-more') < html.indexOf('data-add-logic'), 'the button is inside the fold');
+
+  // Same for the survey's branching button
+  const { builder: b7, el: e7 } = build([
+    { id: 'q1', type: 'boolean', text: 'Do you agree?', true_label: 'Yes', false_label: 'No' }
+  ], { allowBranching: true });
+  b7.render();
+  html = e7.questions.innerHTML;
+  assert.ok(html.indexOf('data-toggle-more') < html.indexOf('data-add-branch'),
+    'the branching button is inside the fold');
 });
 
 test('only one card is open at a time, and the closed ones show their wording', () => {
