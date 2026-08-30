@@ -1,4 +1,4 @@
-const { Pool } = require('pg');
+const { Pool, types } = require('pg');
 const dns = require('dns');
 const config = require('../config');
 const { logger } = require('../utils/logger');
@@ -134,6 +134,23 @@ async function withRetry(run, label) {
 
   throw lastError;
 }
+
+// ─── COUNT(*) is a number ───────────────────────────────────
+// Postgres returns COUNT() as int8, and node-postgres hands int8 back as a
+// *string* by default — because an int8 can exceed what a JS number holds
+// safely. For a row count it never will, and the string costs more than it
+// saves:
+//
+//   "0" is truthy, so `count ? badge(count) : ''` drew a badge reading 0
+//   "0" + "0" + "0" is "000", so summing counts concatenated them
+//
+// Both of those reached the screen. The codebase is already dotted with
+// Number(...) around individual counts, which is the same fix applied one call
+// site at a time and forgotten at the next one.
+//
+// 20 is int8. Left alone: numeric/decimal (1700), where the precision is the
+// point and a float would quietly round money.
+types.setTypeParser(20, value => (value === null ? null : Number(value)));
 
 function getPool() {
   if (pool) return pool;

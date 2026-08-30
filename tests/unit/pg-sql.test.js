@@ -181,3 +181,36 @@ describe('SQLite → Postgres SQL', () => {
   });
 
 });
+
+  // ─── COUNT(*) is a number ─────────────────────────────────
+  // node-postgres returns int8 as a *string*, because an int8 can exceed what a
+  // JS number holds safely. A row count never will, and the string reached the
+  // screen twice: `count ? badge(count) : ''` drew a badge reading 0, because
+  // "0" is truthy, and summing counts concatenated them into "000".
+
+  test('a count comes back as a number, so zero is falsy', () => {
+    require('../../src/db/pg');
+    const { types } = require('pg');
+    const int8 = types.getTypeParser(20);
+
+    assert.strictEqual(int8('0'), 0);
+    assert.strictEqual(int8('42'), 42);
+    assert.equal(typeof int8('7'), 'number');
+
+    assert.equal(Boolean(int8('0')), false, 'a badge keyed on truthiness must not draw for zero');
+  });
+
+  test('counts add up instead of concatenating', () => {
+    require('../../src/db/pg');
+    const int8 = require('pg').types.getTypeParser(20);
+
+    const counts = ['0', '0', '0'].map(int8);
+    assert.strictEqual(counts.reduce((n, v) => n + v, 0), 0, 'this produced the string "000"');
+
+    assert.strictEqual(['3', '4'].map(int8).reduce((n, v) => n + v, 0), 7);
+  });
+
+  test('numeric is left alone, because rounding money is worse', () => {
+    require('../../src/db/pg');
+    assert.equal(typeof require('pg').types.getTypeParser(1700)('12.50'), 'string');
+  });

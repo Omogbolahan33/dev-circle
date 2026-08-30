@@ -68,7 +68,12 @@
           </section>
 
           <section class="step hide" id="step-audience">
-            <div class="card">
+            <div class="card hide" id="statusCard">
+              <div class="card-title mb-4">Status</div>
+              <div id="statusBody"></div>
+            </div>
+
+            <div class="card mt-4">
               <div class="card-title mb-4">About this survey</div>
               <div class="field">
                 <label class="label">Title</label>
@@ -180,6 +185,8 @@
     theme: {},
     circleTheme: null,
     locked: false,             // answers exist, so questions cannot change
+    status: 'draft',
+    completed: 0,
     issues: [],
     publicPath: null,          // set once a link audience has been saved
     openQuestion: 0            // only one question is expanded at a time
@@ -278,7 +285,12 @@
       importLink.style.display = '';
       document.title = `Dev Circle — ${survey.title}`;
       document.getElementById('publishBtn').textContent =
-        survey.status === 'active' ? 'Save changes' : 'Publish';
+        survey.status === 'active' ? 'Save changes'
+          : survey.status === 'closed' ? 'Reopen' : 'Publish';
+
+      state.status = survey.status;
+      state.completed = data.completed_count || 0;
+      renderStatus();
 
       if (state.locked) {
         // Rewriting a question that has been answered would leave the answers
@@ -352,6 +364,74 @@
       document.getElementById('shareUrl').select();
       showToast('Press ⌘C to copy', 'warning');
     }
+  }
+
+  // ─── Status ───────────────────────────────────────────────
+  // Where the survey stands, and the one lifecycle action that goes with it.
+  //
+  // The lock notice has always told authors to "close this survey and write a
+  // new version" and there has never been a button to do it — closing was only
+  // reachable through the API. It sits here rather than in the toolbar because
+  // stopping a live survey deserves a sentence, and because one pixel from Save
+  // is the wrong place for it.
+
+  function renderStatus() {
+    const card = document.getElementById('statusCard');
+    if (!state.id) { card.classList.add('hide'); return; }
+    card.classList.remove('hide');
+
+    const answered = state.completed
+      ? `${state.completed} ${state.completed === 1 ? 'person has' : 'people have'} answered.`
+      : 'Nobody has answered yet.';
+
+    const where = state.publicPath
+      ? `at <span class="mono">${escapeHtml(location.origin + state.publicPath)}</span>`
+      : 'to the audience it targets';
+
+    const views = {
+      draft: {
+        badge: badge('draft', 'warn'),
+        text: 'Not published. Nobody is invited and nobody can answer until you publish, ' +
+              'which is the gold button at the top of this page.',
+        action: ''
+      },
+      active: {
+        badge: badge('live', 'active'),
+        text: `Open and taking responses ${where}. ${answered} ` +
+              'Closing stops it taking any more, and you can open it again afterwards.',
+        action: '<button class="btn btn-sm btn-secondary" onclick="closeSurvey()">Stop taking responses</button>'
+      },
+      closed: {
+        badge: badge('closed', 'inactive'),
+        text: `Not taking responses. ${answered} Everything it collected is kept — ` +
+              'reopen it from the top of this page to start taking them again.',
+        action: ''
+      }
+    };
+
+    const view = views[state.status] || views.draft;
+
+    document.getElementById('statusBody').innerHTML = `
+      <div class="row" style="gap:var(--sp-3);align-items:flex-start">
+        <div style="flex:1;min-width:0">
+          <div class="mb-2">${view.badge}</div>
+          <p class="hint" style="margin:0">${view.text}</p>
+        </div>
+        ${view.action}
+      </div>`;
+  }
+
+  async function closeSurvey() {
+    const ok = await Shell.confirm({
+      title: 'Stop taking responses?',
+      text: 'Nobody can answer it after this, and any link to it stops working. Everything it ' +
+            'has already collected is kept, and you can reopen it later.',
+      ok: 'Stop it',
+      danger: true
+    });
+    if (!ok) return;
+
+    await saveSurvey('closed');
   }
 
   // ─── The question editor ──────────────────────────────────
@@ -453,7 +533,23 @@
         state.id = saved.survey.id;
       }
 
-      showToast(`Survey ${status === 'active' ? 'published' : 'saved as draft'}`);
+      showToast(
+        status === 'active' ? 'Survey published'
+          : status === 'closed' ? 'Closed — it is not taking responses'
+          : 'Survey saved as draft'
+      );
+
+      // Stopping a survey is not a reason to leave the page. Stay, and show
+      // the state it is now in.
+      if (status === 'closed') {
+        state.status = 'closed';
+        renderStatus();
+        document.getElementById('publishBtn').textContent = 'Reopen';
+        return;
+      }
+
+      state.status = status;
+      renderStatus();
 
       // A link audience has nothing to send, so the author's next act is to
       // copy the link. Leaving them on the page with it in front of them beats
