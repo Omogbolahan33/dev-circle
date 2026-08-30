@@ -102,24 +102,22 @@ app.get('/o/:token', async (req, res) => {
   res.sendFile(path.join(PUBLIC_DIR, 'onboarding', 'form.html'));
 });
 
-// Swagger UI ships as static assets in a package rather than in public/, and
-// the API reference page loads them from here. Only the two files that page
-// names are reachable: publishing a package directory wholesale would also
-// serve the vendor's own demo page, which points at an external petstore, and
-// its source maps. Serving them from our origin is what keeps the reference
-// inside the Content-Security-Policy — both files are self-contained.
-const SWAGGER_ASSETS = new Set(['/swagger-ui.css', '/swagger-ui-bundle.js']);
-
-app.use('/vendor/swagger-ui',
-  (req, res, next) => {
-    if (!SWAGGER_ASSETS.has(req.path)) return res.status(404).type('text/plain').send('Not found');
-    next();
-  },
-  express.static(require('swagger-ui-dist').getAbsoluteFSPath(), {
-    index: false,
-    maxAge: config.isProduction ? '7d' : 0
-  })
-);
+// Swagger UI's CSS and bundle are vendored into public/vendor/swagger-ui/ so
+// the API reference page loads them like every other asset — from the static
+// handler registered above — rather than through a route that depends on the
+// swagger-ui-dist package being installed at run time. A static or CDN-backed
+// deployment of public/ therefore renders the reference styled instead of as
+// bare HTML text, and the two files stay on our origin, inside the
+// Content-Security-Policy.
+//
+// Only the two files the page names are vendored, so anything else that would
+// have lived alongside them in the package — its own demo page (index.html),
+// source maps — must not be reachable. Any request under /vendor/swagger-ui
+// that reaches this point was not one of those vendored files (the static
+// handler served those already), so it is refused outright.
+app.use('/vendor/swagger-ui', (req, res) => {
+  res.status(404).type('text/plain').send('Not found');
+});
 
 app.use(requestLogger());
 
