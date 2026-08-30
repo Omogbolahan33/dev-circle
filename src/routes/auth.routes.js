@@ -368,7 +368,7 @@ router.get('/me', requireAuth, async (req, res) => {
         id: c.id, name: c.name, slug: c.slug, description: c.description,
         color: c.color, status: c.status, brand: circles.brandOf(c)
       })),
-      can_create_circles: flagOn(req.admin.is_global)
+      can_create_circles: Boolean(req.isGlobalAdmin)
     });
   }
   res.json({ user: safeUser(req.user), isAdmin: false });

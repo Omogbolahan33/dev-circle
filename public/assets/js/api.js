@@ -191,9 +191,49 @@ api.download = async (path, fallbackName = 'download') => {
 
 // ─── UI Helpers ─────────────────────────────────────────────
 
+// ─── Reading a timestamp ────────────────────────────────────
+// One parser, because the two databases hand the browser two different shapes
+// and every page that rolled its own got at least one of them wrong.
+//
+//   SQLite     "2026-08-26 22:14:19"        — datetime('now'), which is UTC
+//                                             but does not say so
+//   Postgres   "2026-08-26T22:14:19.041Z"   — TIMESTAMPTZ, a Date on the way
+//                                             through JSON, so already ISO
+//
+// Two bugs came out of that. Three pages wrote `.replace(' ','T') + 'Z'` to
+// force the SQLite form to UTC — which appended a second Z to the Postgres
+// form and produced the literal words "Invalid Date" on every session and
+// dashboard time after the move to Postgres. And formatDate, which did the
+// replace without the Z, read the SQLite form as *local* time: correct-looking
+// and an hour out in WAT, which "Just now" quietly swallowed.
+//
+// So: normalise to ISO, assume UTC when no zone is stated, and hand back null
+// rather than an Invalid Date for anything unreadable — a caller can render a
+// dash for null, and cannot render anything sensible for NaN.
+function parseStamp(value) {
+  if (value === null || value === undefined || value === '') return null;
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+
+  const text = String(value).trim();
+  if (!text) return null;
+
+  // A date with no time is already UTC midnight by the spec, and appending a
+  // zone to it produces nothing a browser will parse.
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) {
+    const dateOnly = new Date(text);
+    return Number.isNaN(dateOnly.getTime()) ? null : dateOnly;
+  }
+
+  const iso = text.includes('T') ? text : text.replace(' ', 'T');
+  const zoned = /[Zz]$|[+-]\d{2}:?\d{2}$/.test(iso) ? iso : `${iso}Z`;
+
+  const parsed = new Date(zoned);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
 function formatDate(str) {
-  if (!str) return '—';
-  const d = new Date(str.replace(' ', 'T'));
+  const d = parseStamp(str);
+  if (!d) return '—';
   const now = new Date();
   const diff = now - d;
   const mins = Math.floor(diff / 60000);

@@ -6,6 +6,7 @@ const { resolveWorkflow } = require('./workflows');
 const TermiiEmailProvider = require('./providers/termii');
 const SimpuEmailProvider = require('./providers/simpu');
 const CustomerIoEmailProvider = require('./providers/customerio');
+const HttpEmailProvider = require('./providers/http');
 const SimulatedEmailProvider = require('./providers/simulated');
 
 // ─── Email Service ────────────────────────────────────────────────────
@@ -24,6 +25,7 @@ class EmailService {
     this.registerProvider('termii', new TermiiEmailProvider(config.email?.termii));
     this.registerProvider('simpu', new SimpuEmailProvider(config.email?.simpu));
     this.registerProvider('customer_io', new CustomerIoEmailProvider(config.delivery));
+    this.registerProvider('http', new HttpEmailProvider(config.email?.http));
     this.registerProvider('simulated', this.simulatedProvider);
   }
 
@@ -68,7 +70,17 @@ class EmailService {
       // If preferred is configured but missing credentials, fall through to auto/simulated
     }
 
-    // 3. Auto-detection: Termii -> Simpu -> Customer.io -> Simulated
+    // 3. Auto-detection: the configured one wins, in order.
+    //
+    // The generic HTTP provider comes first because it is only ever configured
+    // deliberately — EMAIL_HTTP_URL and a key have to be set by hand, and
+    // somebody who has set them has said which service they mean. The named
+    // providers below can be half-configured from a partially-filled .env, so
+    // preferring them would let a leftover key win over the choice actually
+    // made.
+    const http = this.getProvider('http');
+    if (http && http.isConfigured()) return http;
+
     const termii = this.getProvider('termii');
     if (termii && termii.isConfigured()) return termii;
 

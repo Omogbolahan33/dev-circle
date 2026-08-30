@@ -234,8 +234,13 @@ test('a circle can be archived once another exists', async () => {
   assert.equal(res.status, 200);
 });
 
-test('only staff who span circles may create one', async () => {
-  const role = h.makeRole('Circle Admin', ['*']);
+test('an admin scoped to one circle may not create another', async () => {
+  // A full set of capabilities *within* a circle is still a circle-scoped
+  // role. Reaching across them is the tier above.
+  const role = h.makeRole('Circle Admin', [
+    'members.read', 'members.write', 'cohorts.read', 'cohorts.write',
+    'surveys.read', 'surveys.write', 'circles.read'
+  ]);
   const scoped = h.makeAdmin({
     email: 'scoped@creditdirect.ng', roleId: role, global: false, circleId: rootCircle
   });
@@ -243,6 +248,51 @@ test('only staff who span circles may create one', async () => {
 
   const res = await h.post('/api/admin/circles', { name: 'Unauthorised Circle' }, { token: scopedToken });
   assert.equal(res.status, 403);
+});
+
+test('the super admin role spans circles, not just the account that was bootstrapped', async () => {
+  // is_global was a column set once, for the very first account, and by nothing
+  // afterwards — so a second super admin could do everything except see the
+  // circles. Holding `*` means holding every capability, and reaching across
+  // circles is one of them.
+  const role = h.makeRole('Super Admin (second)', ['*']);
+  const second = h.makeAdmin({
+    email: 'second.super@creditdirect.ng', roleId: role, global: false, circleId: rootCircle
+  });
+  const secondToken = await h.loginAdmin(second.email, second.password);
+
+  const made = await h.post('/api/admin/circles', { name: 'A Second Workspace' }, { token: secondToken });
+  assert.equal(made.status, 201, JSON.stringify(made.body));
+
+  // …and the console offers it, rather than hiding a button that would work
+  const me = await h.get('/api/auth/me', { token: secondToken });
+  assert.equal(me.body.can_create_circles, true);
+
+  const listed = await h.get('/api/admin/circles', { token: secondToken });
+  assert.equal(listed.body.can_create, true);
+});
+
+test('spanning circles means reaching the ones they were never added to', async () => {
+  // The gate and the data have to agree. Opening the button while the circle
+  // rows stay filtered to the ones they were explicitly granted would offer a
+  // list with nothing in it.
+  const other = await h.post('/api/admin/circles', { name: 'Merchant Circle' }, { token });
+
+  const role = h.makeRole('Super Admin (reaching)', ['*']);
+  const second = h.makeAdmin({
+    email: 'reaches@creditdirect.ng', roleId: role, global: false, circleId: rootCircle
+  });
+  const secondToken = await h.loginAdmin(second.email, second.password);
+
+  const reachable = (await h.get('/api/admin/circles', { token: secondToken })).body.circles.map(c => c.id);
+  assert.ok(reachable.includes(other.body.circle.id),
+    'a circle they were never added to is still theirs to work in');
+
+  // And they can actually work in it, rather than being offered it and refused
+  const inside = await h.call('GET', '/api/admin/members', {
+    token: secondToken, headers: { 'X-Circle-Id': other.body.circle.id }
+  });
+  assert.equal(inside.status, 200);
 });
 
 test('naming a circle you cannot reach is refused, not quietly answered', async () => {

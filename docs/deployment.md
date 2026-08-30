@@ -8,6 +8,57 @@ This app supports two durable options and one ephemeral demo option:
 
 The app switches automatically: if `DATABASE_URL` is set it uses `pg` + Postgres; otherwise it uses `better-sqlite3` + SQLite.
 
+## Sending email
+
+Without credentials nothing is actually delivered: every send is recorded in
+`message_deliveries` as `simulated`, so the platform is fully usable in
+development and a deploy that forgets its key fails visibly in the delivery log
+rather than silently dropping invitations.
+
+Four providers ship. Auto-detection picks the first one configured, and
+`EMAIL_PROVIDER` overrides that if you want to be explicit.
+
+| Provider | Set | Notes |
+|---|---|---|
+| **Any REST API** | `EMAIL_HTTP_URL`, `EMAIL_HTTP_API_KEY` | Vendor-neutral. Start here. |
+| Termii | `TERMII_API_KEY`, `TERMII_EMAIL_CONFIGURATION_ID` | |
+| Simpu | `SIMPU_API_KEY` | |
+| Customer.io | `CUSTOMERIO_SITE_ID`, `CUSTOMERIO_API_KEY` | Also fans out to WhatsApp and SMS |
+
+### The vendor-neutral one
+
+For whichever service you have been handed an API key for. Two variables is the
+whole of it when the vendor takes a bearer token and a flat JSON body — which
+Resend, MailerSend and most smaller services do:
+
+```sh
+EMAIL_PROVIDER=http
+EMAIL_HTTP_URL=https://api.resend.com/emails
+EMAIL_HTTP_API_KEY=re_...
+EMAIL_FROM=devcircle@creditdirect.ng
+EMAIL_FROM_NAME="Credit Direct Dev Circle"
+```
+
+Where a vendor spells things differently, say so — the header the key goes in,
+the names of the four fields, whether the recipient must be a list, and where
+they put the id of the message they accepted. `.env.example` carries the full
+list with worked examples for Postmark and Brevo.
+
+**What it does not cover, deliberately:** payloads that are not flat. SendGrid
+nests the recipient inside `personalizations[0].to[0].email` and Mailgun takes
+form encoding rather than JSON. A generic field mapping cannot express either,
+and a provider that half-worked would be worse than one that says so. Both need
+a provider of their own — `src/services/email/providers/simpu.js` is the worked
+example and it is about a hundred lines.
+
+### Checking it
+
+`GET /api/admin/integrations/status` reports which providers are configured and
+which one is active. In the console it is under **Credentials**.
+
+Nothing reaches a third-party API from the API sandbox: that context always uses
+the simulated provider, so exploring the admin surface cannot mail anybody.
+
 ## Schema changes on Postgres
 
 Worth understanding, because it does not work the way the SQLite side does.

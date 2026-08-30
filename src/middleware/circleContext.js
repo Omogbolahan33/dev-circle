@@ -64,7 +64,9 @@ async function circleContext(req, res, next) {
 
 // Creating circles, and reaching across them, is the tier above
 function requireGlobalAdmin(req, res, next) {
-  if (!req.admin?.is_global) {
+  // req.isGlobalAdmin is the column and the wildcard role together — see
+  // isGlobalAdmin in middleware/auth.js for why the column alone was wrong.
+  if (!req.isGlobalAdmin) {
     return res.status(403).json({
       error: 'Only Credit Direct staff with access across circles can do this.'
     });

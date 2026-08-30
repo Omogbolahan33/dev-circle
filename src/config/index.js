@@ -219,6 +219,54 @@ const config = {
         return Boolean(this.apiKey && this.emailConfigurationId);
       }
     },
+    // ── Whichever REST email API this deployment has a key for ──
+    // Configured from the environment rather than from code, because the shape
+    // of "send an email" is nearly the same everywhere and the differences are
+    // mostly what each vendor calls the four fields. Covers the flat-payload
+    // services — Resend, Postmark, Brevo, MailerSend and most smaller ones.
+    // See providers/http.js for what it deliberately does not cover.
+    http: {
+      url: process.env.EMAIL_HTTP_URL || null,
+      apiKey: process.env.EMAIL_HTTP_API_KEY || null,
+      method: process.env.EMAIL_HTTP_METHOD || 'POST',
+
+      // `Authorization: Bearer <key>` by default. A vendor-specific header
+      // holding the bare key is the other common shape: set the header name and
+      // an empty scheme.
+      authHeader: process.env.EMAIL_HTTP_AUTH_HEADER || 'Authorization',
+      authScheme: process.env.EMAIL_HTTP_AUTH_SCHEME === undefined
+        ? 'Bearer'
+        : process.env.EMAIL_HTTP_AUTH_SCHEME,
+
+      fieldTo: process.env.EMAIL_HTTP_FIELD_TO || 'to',
+      fieldFrom: process.env.EMAIL_HTTP_FIELD_FROM || 'from',
+      fieldSubject: process.env.EMAIL_HTTP_FIELD_SUBJECT || 'subject',
+      fieldHtml: process.env.EMAIL_HTTP_FIELD_HTML || 'html',
+      fieldText: process.env.EMAIL_HTTP_FIELD_TEXT || 'text',
+      fieldReplyTo: process.env.EMAIL_HTTP_FIELD_REPLY_TO || 'reply_to',
+
+      fromWithName: process.env.EMAIL_HTTP_FROM_WITH_NAME !== 'false',
+      toAsArray: process.env.EMAIL_HTTP_TO_AS_ARRAY === 'true',
+
+      // Where the vendor puts the id of the message it accepted, as a dotted
+      // path — `id`, `data.id`, `MessageID`.
+      refPath: process.env.EMAIL_HTTP_REF_PATH || 'id',
+
+      // Anything the vendor requires on every send that the flat mapping
+      // cannot express — a template id, a message stream, a sending domain.
+      extra: (() => {
+        if (!process.env.EMAIL_HTTP_EXTRA) return {};
+        try { return JSON.parse(process.env.EMAIL_HTTP_EXTRA); } catch { return {}; }
+      })(),
+
+      fromEmail: process.env.EMAIL_FROM || 'devcircle@creditdirect.ng',
+      fromName: process.env.EMAIL_FROM_NAME || 'Credit Direct Dev Circle',
+      replyTo: process.env.EMAIL_REPLY_TO || 'devrelations@creditdirect.ng',
+
+      get configured() {
+        return Boolean(this.url && this.apiKey);
+      }
+    },
     simpu: {
       apiKey: process.env.SIMPU_API_KEY || null,
       senderId: process.env.SIMPU_SENDER_ID || process.env.EMAIL_FROM || 'devcircle@creditdirect.ng',
@@ -230,6 +278,7 @@ const config = {
     },
     get enabled() {
       return Boolean(
+        (this.http.url && this.http.apiKey) ||
         (this.termii.apiKey && this.termii.emailConfigurationId) ||
         this.simpu.apiKey ||
         Boolean(process.env.CUSTOMERIO_SITE_ID && process.env.CUSTOMERIO_API_KEY)

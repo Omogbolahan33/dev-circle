@@ -99,10 +99,11 @@
   const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
-  // Stored UTC, read in WAT — the same conversion the admin console makes.
+  // Stored UTC, read in WAT — the same conversion the admin console makes,
+  // through the same parser.
   function toWat(stored) {
-    const utc = new Date(String(stored).replace(' ', 'T') + 'Z');
-    return new Date(utc.getTime() + 3600000);
+    const utc = parseStamp(stored);
+    return utc ? new Date(utc.getTime() + 3600000) : null;
   }
 
   async function load() {
@@ -118,9 +119,11 @@
           return `
             <article class="session">
               <div class="when">
-                <div class="when-day">${DAYS[when.getUTCDay()]}</div>
-                <div class="when-date">${when.getUTCDate()} ${MONTHS[when.getUTCMonth()]}</div>
-                <div class="when-time">${String(when.getUTCHours()).padStart(2, '0')}:${String(when.getUTCMinutes()).padStart(2, '0')}</div>
+                ${when ? `
+                  <div class="when-day">${DAYS[when.getUTCDay()]}</div>
+                  <div class="when-date">${when.getUTCDate()} ${MONTHS[when.getUTCMonth()]}</div>
+                  <div class="when-time">${String(when.getUTCHours()).padStart(2, '0')}:${String(when.getUTCMinutes()).padStart(2, '0')}</div>`
+                  : '<div class="when-day">—</div><div class="when-date">Undated</div>'}
               </div>
               <div style="flex:1;min-width:0">
                 <div class="session-title">${escapeHtml(s.title)}</div>

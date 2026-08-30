@@ -799,8 +799,9 @@ function money(value, currency = 'NGN') {
 }
 
 function fmtDateTime(str) {
-  if (!str) return '—';
-  return new Date(str.replace(' ', 'T')).toLocaleString('en-NG', {
+  const d = parseStamp(str);
+  if (!d) return '—';
+  return d.toLocaleString('en-NG', {
     day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'
   });
 }

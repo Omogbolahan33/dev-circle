@@ -153,6 +153,29 @@ function flagOn(value) {
   return value === 1 || value === true || value === '1' || value === 't' || value === 'true';
 }
 
+// ─── Reaching across circles ────────────────────────────────
+// Creating a circle, listing all of them, and granting staff access to one are
+// the tier above an ordinary admin. Which staff hold that tier was decided by
+// admin_users.is_global — a column, set once by the bootstrap for the very
+// first account and by nothing else afterwards.
+//
+// The result was that the Super Admin *role* — the one whose permission list is
+// `["*"]`, meaning every capability there is — did not carry the one capability
+// its name most implies. A second super admin could do everything except see
+// the circles. Only admin@creditdirect.ng, the bootstrapped account, could.
+//
+// So the permission is the source of truth and the column is an override on top
+// of it: holding `*` makes somebody global, and the column can still make
+// somebody global who does not. Migration 23 already read it this way once, as
+// a one-off backfill; this is the same rule applied continuously rather than at
+// a single moment.
+const WILDCARD = '*';
+
+function isGlobalAdmin(admin, permissions) {
+  if (flagOn(admin?.is_global)) return true;
+  return parsePermissions(permissions).includes(WILDCARD);
+}
+
 function userFromAccessRow(row) {
   if (!row.user_id) return null;
   return {
@@ -269,13 +292,19 @@ async function loadPrincipal(hash) {
     LEFT JOIN roles r ON r.id = a.role_id
     LEFT JOIN users u ON u.id = s.subject_id
       AND CAST(s.is_admin AS TEXT) NOT IN ('1', 'true', 't')
+    -- Global reach is the is_global column OR the wildcard role, and it has to
+    -- be both places: the gate in requireGlobalAdmin decides whether the button
+    -- is offered, and this decides whether there is anything behind it. Reading
+    -- the role here rather than joining a second time keeps it to one plan.
     LEFT JOIN circle_admins ca0 ON ca0.admin_id = a.id
       AND CAST(s.is_admin AS TEXT) IN ('1', 'true', 't')
       AND CAST(a.is_global AS TEXT) NOT IN ('1', 'true', 't')
+      AND COALESCE(r.permissions, '') NOT LIKE '%"*"%'
     LEFT JOIN circles c ON CAST(s.is_admin AS TEXT) IN ('1', 'true', 't')
       AND c.status = 'active'
       AND (
         CAST(a.is_global AS TEXT) IN ('1', 'true', 't')
+        OR COALESCE(r.permissions, '') LIKE '%"*"%'
         OR c.id = ca0.circle_id
       )
     LEFT JOIN circle_admins ca ON ca.admin_id = a.id AND ca.circle_id = c.id
@@ -326,7 +355,13 @@ async function loadPrincipal(hash) {
       user: null,
       circles: circlesFromAccessRows(rows, {
         role_id: row.admin_role_id,
-        is_global: row.admin_is_global
+        // The computed reach, not the raw column — otherwise a wildcard-role
+        // admin gets the circles listed and then loses their permissions in
+        // every one of them.
+        is_global: isGlobalAdmin(
+          { is_global: row.admin_is_global },
+          parsePermissions(row.role_permissions)
+        )
       })
     };
     return principal;
@@ -395,6 +430,9 @@ async function requireAuth(req, res, next) {
       req.admin = principal.admin;
       req.role = principal.role || null;
       req.availableCircles = principal.circles || [];
+      // Computed once here, from the column and the role together, so no gate
+      // downstream has to remember to check both.
+      req.isGlobalAdmin = isGlobalAdmin(principal.admin, principal.permissions);
     } else {
       req.user = principal.user;
     }
@@ -550,6 +588,7 @@ module.exports = {
   signSSOToken,
   verifySSOToken,
   permissionsFor,
+  isGlobalAdmin,
   parsePermissions,
   hasPermission,
   PERMISSIONS,

@@ -46,7 +46,7 @@ router.get('/', async (req, res) => {
       member_count: counts.has(c.id) ? counts.get(c.id) : 0
     })),
     current: { id: req.circle.id, name: req.circle.name, slug: req.circle.slug },
-    can_create: flagOn(req.admin.is_global)
+    can_create: Boolean(req.isGlobalAdmin)
   });
 });
 
@@ -95,7 +95,7 @@ router.get('/:id', requirePermission('circles.read'), async (req, res) => {
 
   // What the role row permits decides whether the branding editor opens. A
   // global admin always can; everyone else is gated on circles.write.
-  const perms = req.admin.is_global
+  const perms = req.isGlobalAdmin
     ? ['*']
     : (await circles.forAdmin(req.admin)).find(c => c.id === circle.id)?.role_permissions || [];
   const canBrand = Boolean(perms.includes('*') || perms.includes('circles.write'));

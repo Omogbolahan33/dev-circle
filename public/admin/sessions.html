@@ -152,10 +152,12 @@
   const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
-  // Timestamps are stored UTC; members and admins both think in WAT (UTC+1)
+  // Timestamps are stored UTC; members and admins both think in WAT (UTC+1).
+  // parseStamp is what reads them — the two databases hand over two different
+  // shapes and normalising here got the Postgres one wrong.
   function toWat(stored) {
-    const utc = new Date(String(stored).replace(' ', 'T') + 'Z');
-    return new Date(utc.getTime() + 60 * 60 * 1000);
+    const utc = parseStamp(stored);
+    return utc ? new Date(utc.getTime() + 60 * 60 * 1000) : null;
   }
 
   function formatLead(minutes) {
@@ -192,9 +194,11 @@
     return `
       <article class="session">
         <div class="when">
-          <div class="when-day">${DAYS[when.getUTCDay()]}</div>
-          <div class="when-date">${when.getUTCDate()} ${MONTHS[when.getUTCMonth()]}</div>
-          <div class="when-time">${String(when.getUTCHours()).padStart(2, '0')}:${String(when.getUTCMinutes()).padStart(2, '0')}</div>
+          ${when ? `
+            <div class="when-day">${DAYS[when.getUTCDay()]}</div>
+            <div class="when-date">${when.getUTCDate()} ${MONTHS[when.getUTCMonth()]}</div>
+            <div class="when-time">${String(when.getUTCHours()).padStart(2, '0')}:${String(when.getUTCMinutes()).padStart(2, '0')}</div>`
+            : '<div class="when-day">—</div><div class="when-date">Undated</div>'}
         </div>
         <div style="flex:1;min-width:0">
           <div class="row-tight wrap">
@@ -228,8 +232,13 @@
         .map(c => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('');
 
       const now = Date.now();
-      const upcoming = sessions.sessions.filter(s =>
-        s.status !== 'completed' && toWat(s.scheduled_for).getTime() > now - 3600000);
+      // A session with a date nobody can read is shown as upcoming rather than
+      // dropped into the past, where it would be out of sight and unfixable.
+      const upcoming = sessions.sessions.filter(s => {
+        if (s.status === 'completed') return false;
+        const when = toWat(s.scheduled_for);
+        return !when || when.getTime() > now - 3600000;
+      });
       const past = sessions.sessions.filter(s => !upcoming.includes(s));
 
       document.getElementById('panel-upcoming').innerHTML = upcoming.length

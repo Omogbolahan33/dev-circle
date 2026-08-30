@@ -36,8 +36,8 @@ function activityInfo(type) {
 
 // Groups events under Today / Yesterday / a date, so long histories scan.
 function activityDayLabel(str) {
-  if (!str) return 'Undated';
-  const d = new Date(str.replace(' ', 'T'));
+  const d = parseStamp(str);
+  if (!d) return 'Undated';
   const today = new Date();
   const yesterday = new Date(Date.now() - 86400000);
   const same = (a, b) => a.toDateString() === b.toDateString();
