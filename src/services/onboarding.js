@@ -369,8 +369,11 @@ async function normalizeDefinition(body, { createdBy = null, allowEmpty = false 
     // Options that fold to nothing would be ticked by an applicant and mean
     // nothing to us — consent most of all, where the cost of losing one is
     // that we may not lawfully contact somebody who said we could.
+    // The options of a choice are the words the member picks — the label of
+    // each option, whether the option is a bare word or a card with subtext.
+    const optionWords = (question.options || []).map(o => surveyForm.optionLabel(o));
     if (field.channels) {
-      const unknown = (question.options || []).filter(option => !foldChannel(option));
+      const unknown = optionWords.filter(option => !foldChannel(option));
       if (unknown.length) {
         at(`${unknown.map(o => `"${o}"`).join(', ')} ${unknown.length === 1 ? 'is not a channel' : 'are not channels'} we can message on — use Email, WhatsApp, SMS, Calls or In-portal`);
         return;
@@ -378,7 +381,7 @@ async function normalizeDefinition(body, { createdBy = null, allowEmpty = false 
     }
 
     if (wanted === 'preferred_days') {
-      const unknown = (question.options || []).filter(option => !foldDay(option));
+      const unknown = optionWords.filter(option => !foldDay(option));
       if (unknown.length) {
         at(`${unknown.map(o => `"${o}"`).join(', ')} ${unknown.length === 1 ? 'is not a day' : 'are not days'} of the week`);
         return;
@@ -410,6 +413,29 @@ async function normalizeDefinition(body, { createdBy = null, allowEmpty = false 
 // the save response carries them as warnings. The one place the platform still
 // insists is at the point a decision is made — approving an application with
 // no way to reach anybody reports that plainly.
+
+// The questions whose branch can get the form past this field without
+// asking it: an earlier question whose branch ends the form, or jumps to a
+// question that sits past the field. The position of the questions is what
+// makes a branch able to do that, so this reads the whole list rather than
+// one question.
+function branchesPast(list, key) {
+  const fieldIndex = list.findIndex(q => q.maps_to === key);
+  if (fieldIndex === -1) return [];
+
+  const targets = new Map(list.map((q, i) => [q.id, i]));
+
+  return list
+    .map((q, i) => ({ q, i }))
+    .filter(({ q, i }) => q.branch_to && i < fieldIndex)
+    .filter(({ q }) => q.branch_to.rules.some(rule => {
+      if (rule.end) return true;
+      if (!rule.goto) return false;
+      const target = targets.get(rule.goto);
+      return target !== undefined && target > fieldIndex;
+    }))
+    .map(({ i }) => i);
+}
 
 function canGoOut(questions) {
   const list = Array.isArray(questions) ? questions : [];
@@ -444,6 +470,12 @@ function canGoOut(questions) {
       issues.push({
         index, number: index + 1, field: 'visible_if',
         message: `The ${noun} is only asked on a branch, so an application can arrive without one`
+      });
+    }
+    for (const branchIndex of branchesPast(list, key)) {
+      issues.push({
+        index: branchIndex, number: branchIndex + 1, field: 'branch_to',
+        message: `This branch can end the form, or jump past, before the ${noun} is asked, so an application can arrive without one`
       });
     }
     if (!question.required) {
@@ -493,6 +525,12 @@ function advice(questions) {
       notes.push({
         ...at(question), field: 'visible_if', key,
         message: `The ${noun} is only asked on a branch, so an application can arrive without one.`
+      });
+    }
+    for (const branchIndex of branchesPast(list, key)) {
+      notes.push({
+        index: branchIndex, number: branchIndex + 1, field: 'branch_to', key,
+        message: `This branch can end the form, or jump past, before the ${noun} is asked, so an application can arrive without one.`
       });
     }
     if (!question.required) {

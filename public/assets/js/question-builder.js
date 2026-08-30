@@ -46,6 +46,18 @@ const QuestionBuilder = (() => {
     // walks their own branches.
     let previewAnswers = {};
 
+    // Which option description is open for editing. The list redraws as a
+    // whole the moment anything in it changes, so the open row has to outlive
+    // the redraw — keyed by the question and the option's place in its list.
+    const descExpanded = new Set();
+    const descKey = (questionId, list, i) => `${questionId}|${list}|${i}`;
+
+    // Which cards have their "More options" fold open. The same redraw
+    // problem: the choice is the author's, so it is kept across the redraws
+    // their typing causes — keyed by the question's id, so a moved card
+    // carries its fold with it.
+    const moreExpanded = new Set();
+
     // Whatever the page calls the thing being built, for the preview's heading.
     if (!opts.title) opts.title = () => '';
 
@@ -79,7 +91,10 @@ const QuestionBuilder = (() => {
     // added and the preview has something to show.
     function blank(type) {
       const question = { id: newId(), type, text: '', required: false };
-      if (['choice', 'dropdown', 'multi_choice', 'ranking'].includes(type)) {
+      if (['choice', 'multi_choice'].includes(type)) {
+        // Options a member reads as cards — a word, and the subtext under it
+        question.options = [{ label: '', subtext: '' }, { label: '', subtext: '' }];
+      } else if (['dropdown', 'ranking'].includes(type)) {
         question.options = ['', ''];
       }
       if (type === 'rating') { question.scale = 5; question.style = 'numbers'; }
@@ -140,6 +155,7 @@ const QuestionBuilder = (() => {
           <span class="q-kind">${escapeHtml(type.label)}</span>
           ${question.required ? '<span class="q-flag">required</span>' : ''}
           ${question.visible_if ? '<span class="q-branching">conditional</span>' : ''}
+          ${question.branch_to ? '<span class="q-branches">branches on its answer</span>' : ''}
           ${opts.cardFlags ? opts.cardFlags(question, index) : ''}
           <span class="spacer"></span>
           <button class="icon-btn" data-move="up" ${index === 0 ? 'disabled' : ''} aria-label="Move up">↑</button>
@@ -165,7 +181,8 @@ const QuestionBuilder = (() => {
           ${head}
 
           <div class="field">
-            <label class="label">${question.type === 'section' ? 'Heading' : 'Question'}</label>
+            <label class="label">${question.type === 'section' ? 'Heading' : 'Question'}
+              <span class="tip" data-tip="A word can be a link: [Terms &amp; Conditions](https://example.com/terms)">?</span></label>
             <input type="text" class="input q-text" value="${escapeHtml(question.text || '')}"
                    placeholder="${escapeHtml(placeholderFor(question.type))}">
           </div>
@@ -175,9 +192,8 @@ const QuestionBuilder = (() => {
               <span class="check${question.required ? ' on' : ''}" data-required>✓</span> An answer is required
             </label>` : ''}
 
-          ${editor(question, index)}
-          ${opts.extraFields ? opts.extraFields(question, index) : ''}
-          ${logicEditor(question, index)}
+          ${coreEditor(question)}
+          ${moreOptions(question, index)}
 
           ${issues.length ? `<div class="issue-list">${issues
             .map(i => `<p class="issue">⚠ ${escapeHtml(i.message)}</p>`).join('')}</div>` : ''}
@@ -203,25 +219,93 @@ const QuestionBuilder = (() => {
     }
 
     // ─── Per-type settings ────────────────────────────────────
+    // A type's editor is two things. The core is what the question is made of
+    // — its options, its rows, its columns — and it stays out in the open
+    // under the wording, because a choice question whose options are hidden is
+    // not a question but a promise. The settings are what tune the question:
+    // the form its answer may take, how long it may be, the order its options
+    // come in. They do not sit as separate rows, one per setting, making the
+    // card a form about a question instead of a question — they sit under one
+    // fold, and the fold's label carries what has already been decided.
 
-    function editor(question, index) {
-      const options = list => `
+    function optionsList(question, list) {
+      const isCards = question.type === 'choice' || question.type === 'multi_choice';
+      const optionTip = isCards
+        ? `The pen beside an option adds the line the member reads under it — a sentence, a link, or a picture.`
+          + (question.type === 'multi_choice'
+            ? ` Mark an option “only” when it cannot be true alongside the others — “None of these”.`
+            : '')
+        : '';
+      return `
         <div class="field" style="margin-bottom:0">
-          <label class="label">Options</label>
+          <label class="label">Options${optionTip ? `
+            <span class="tip" data-tip="${escapeHtml(optionTip)}">?</span>` : ''}</label>
           <div class="options">
-            ${(question[list] || []).map((option, i) => `
-              <div class="option-row" data-list="${list}" data-option="${i}">
-                <span class="handle">${i + 1}</span>
-                <input type="text" class="input" value="${escapeHtml(option)}" placeholder="Option ${i + 1}">
-                ${question.type === 'multi_choice' && list === 'options' ? `
-                  <button class="exclusive-flag${(question.exclusive_options || []).includes(option) ? ' on' : ''}"
+            ${(question[list] || []).map((option, i) => {
+              const word = isCards
+                ? (option && typeof option === 'object' ? option.label : option)
+                : option;
+              const subtext = isCards && option && typeof option === 'object'
+                ? (option.subtext || '') : '';
+              const descOpen = isCards && descExpanded.has(descKey(question.id, list, i));
+              return `
+              <div class="option-item" data-list="${list}" data-option="${i}">
+                <div class="option-row">
+                  <span class="handle">${i + 1}</span>
+                  <div class="option-fields">
+                    <input type="text" class="input option-word" value="${escapeHtml(word)}" placeholder="Option ${i + 1}">
+                    ${isCards && subtext ? `
+                    <button type="button" class="option-desc-preview" data-toggle-desc
+                            title="The line the member reads under this option — click to edit">
+                      ${escapeHtml(subtext)}</button>` : ''}
+                  </div>
+                  ${isCards ? `
+                  <button type="button" class="icon-btn option-desc-toggle${subtext ? ' on' : ''}"
+                          data-toggle-desc aria-label="Add or edit the line shown under this option"
+                          title="A line under this option as the member reads it — words, a link, a picture">✎</button>` : ''}
+                  ${question.type === 'multi_choice' && list === 'options' ? `
+                  <button class="exclusive-flag${(question.exclusive_options || []).includes(word) ? ' on' : ''}"
                           data-exclusive="${i}" title="Cannot be picked with anything else">only</button>` : ''}
-                <button class="icon-btn" data-drop-option="${i}" aria-label="Remove option">×</button>
-              </div>`).join('')}
+                  <button class="icon-btn" data-drop-option="${i}" aria-label="Remove option">×</button>
+                </div>
+                ${isCards ? `
+                <div class="option-desc-wrap${descOpen ? ' open' : ''}">
+                  <div class="option-desc-edit">
+                    <input type="text" class="input option-subtext" maxlength="300" value="${escapeHtml(subtext)}"
+                           placeholder="Shown under the option — text, [link](https://…), or a picture with ＋ picture">
+                    <button type="button" class="btn btn-sm btn-ghost option-attach" data-attach-subtext
+                            title="Upload a picture from your device — it is served from here, and its words come from the file name">＋ picture</button>
+                  </div>
+                </div>` : ''}
+              </div>`;
+            }).join('')}
           </div>
           <button class="btn btn-sm btn-ghost mt-2" data-add-option="${list}">+ Add option</button>
         </div>`;
+    }
 
+    // What the question is made of: out in the open, under the wording.
+    function coreEditor(question) {
+      switch (question.type) {
+        case 'choice':
+        case 'dropdown':
+        case 'multi_choice':
+        case 'ranking':
+          return optionsList(question, 'options');
+        case 'matrix':
+          return `
+            <div class="field-row">
+              <div>${optionsList(question, 'rows').replace('>Options<', '>Rows<')}</div>
+              <div>${optionsList(question, 'columns').replace('>Options<', '>Columns<')}</div>
+            </div>`;
+        default:
+          return '';
+      }
+    }
+
+    // What tunes the question: the answer's form and bounds, the options'
+    // order, the scale's ends. One per type, all of it under the fold.
+    function settingsEditor(question) {
       switch (question.type) {
         case 'text':
           return `
@@ -248,8 +332,7 @@ const QuestionBuilder = (() => {
         case 'choice':
         case 'dropdown':
           return `
-            ${options('options')}
-            <div class="row wrap mt-3" style="gap:var(--sp-4)">
+            <div class="row wrap" style="gap:var(--sp-4)">
               <label class="row-tight text-sm" style="cursor:pointer">
                 <span class="check${question.allow_other ? ' on' : ''}" data-set-check="allow_other">✓</span>
                 Offer "something else"
@@ -262,8 +345,7 @@ const QuestionBuilder = (() => {
 
         case 'multi_choice':
           return `
-            ${options('options')}
-            <div class="field-row mt-3">
+            <div class="field-row">
               <div class="field" style="margin-bottom:0">
                 <label class="label">Pick at least</label>
                 <input type="number" class="input" data-set="min_select" min="0" max="20"
@@ -275,7 +357,7 @@ const QuestionBuilder = (() => {
                        value="${question.max_select || ''}" placeholder="No limit">
               </div>
             </div>
-            <div class="row wrap mt-3" style="gap:var(--sp-4)">
+            <div class="row wrap" style="gap:var(--sp-4);margin-top:var(--sp-2)">
               <label class="row-tight text-sm" style="cursor:pointer">
                 <span class="check${question.allow_other ? ' on' : ''}" data-set-check="allow_other">✓</span>
                 Offer "something else"
@@ -284,11 +366,7 @@ const QuestionBuilder = (() => {
                 <span class="check${question.randomize ? ' on' : ''}" data-set-check="randomize">✓</span>
                 Shuffle the order
               </label>
-            </div>
-            <p class="hint">Mark an option <strong>only</strong> when it cannot be true alongside the others — "None of these".</p>`;
-
-        case 'ranking':
-          return options('options');
+            </div>`;
 
         case 'rating':
           return `
@@ -323,10 +401,10 @@ const QuestionBuilder = (() => {
 
         case 'nps':
           return `
-            <p class="hint mb-3">Fixed at 0–10 and scored as promoters minus detractors, which is the only thing that makes it comparable with anyone else's NPS.</p>
             <div class="field-row" style="margin-bottom:0">
               <div class="field" style="margin-bottom:0">
-                <label class="label">0 means</label>
+                <label class="label">0 means
+                  <span class="tip" data-tip="Fixed at 0–10 and scored as promoters minus detractors, which is the only thing that makes it comparable with anyone else's NPS.">?</span></label>
                 <input type="text" class="input" data-set="label_low" placeholder="Not at all likely"
                        value="${escapeHtml(question.label_low || '')}">
               </div>
@@ -339,10 +417,6 @@ const QuestionBuilder = (() => {
 
         case 'matrix':
           return `
-            <div class="field-row">
-              <div>${options('rows').replace('>Options<', '>Rows<')}</div>
-              <div>${options('columns').replace('>Options<', '>Columns<')}</div>
-            </div>
             <label class="row-tight text-sm" style="margin-bottom:0;cursor:pointer">
               <span class="check${question.multi ? ' on' : ''}" data-set-check="multi">✓</span>
               Allow more than one per row
@@ -408,6 +482,93 @@ const QuestionBuilder = (() => {
       }
     }
 
+    // The fold everything else on a card sits under: the type's settings,
+    // whatever this kind of form adds to a card (onboarding tags its
+    // questions, and a tag is a setting of the question), and the question's
+    // own show-sometimes and branch-on-answer controls. A card should read as
+    // a question — its wording and what it is made of — and one fold named
+    // after the rest. It is drawn only when there is something to put in it.
+    function moreOptions(question, index) {
+      const body = settingsEditor(question)
+        + (opts.extraFields ? opts.extraFields(question, index) : '')
+        + logicEditor(question, index)
+        + (SurveySchema.isAnswerable(question) && opts.allowBranching
+          ? branchEditor(question, index) : '');
+      if (!body.trim()) return '';
+
+      const summary = moreSummary(question);
+
+      return `
+        <div class="q-more${moreExpanded.has(question.id) ? ' open' : ''}">
+          <button type="button" class="q-more-toggle" data-toggle-more>
+            <span class="q-more-caret">▸</span>
+            <span class="q-more-label">More options</span>
+            ${summary ? `<span class="q-more-summary">${escapeHtml(summary)}</span>` : ''}
+          </button>
+          <div class="q-more-body">${body}</div>
+        </div>`;
+    }
+
+    // What the fold says while it is closed: every setting that is not at its
+    // default, in one quiet line. A closed fold must not be a black box — the
+    // card should read as what the question is, and this is the rest of it.
+    function moreSummary(question) {
+      const parts = [];
+      switch (question.type) {
+        case 'text': {
+          const format = (schema.text_formats || []).find(f => f.value === question.format);
+          if (question.format && question.format !== 'none') parts.push(format ? format.label : question.format);
+          if (question.max_length) parts.push(question.max_length + ' characters');
+          if (question.multiline !== false) parts.push('paragraph');
+          break;
+        }
+        case 'choice':
+        case 'dropdown':
+          if (question.allow_other) parts.push('an “other” option');
+          if (question.randomize) parts.push('shuffled');
+          break;
+        case 'multi_choice':
+          if (question.min_select) parts.push('pick at least ' + question.min_select);
+          if (question.max_select) parts.push('pick at most ' + question.max_select);
+          if (question.allow_other) parts.push('an “other” option');
+          if (question.randomize) parts.push('shuffled');
+          break;
+        case 'rating':
+          parts.push('1–' + (question.scale || 5) + ' ' + (question.style || 'numbers'));
+          if (question.label_low) parts.push('low: ' + question.label_low);
+          if (question.label_high) parts.push('high: ' + question.label_high);
+          break;
+        case 'nps':
+          if (question.label_low) parts.push('0 = ' + question.label_low);
+          if (question.label_high) parts.push('10 = ' + question.label_high);
+          break;
+        case 'matrix':
+          if (question.multi) parts.push('more than one per row');
+          break;
+        case 'number':
+          if (question.min != null && question.max != null) parts.push(question.min + '–' + question.max);
+          else if (question.min != null) parts.push('from ' + question.min);
+          else if (question.max != null) parts.push('to ' + question.max);
+          if (question.unit) parts.push(question.unit);
+          if (question.integer) parts.push('whole numbers');
+          break;
+        case 'date':
+          if (question.min) parts.push('no earlier than ' + question.min);
+          if (question.max) parts.push('no later than ' + question.max);
+          break;
+        case 'boolean':
+          if ((question.true_label && question.true_label !== 'Yes')
+            || (question.false_label && question.false_label !== 'No')) {
+            parts.push((question.true_label || 'Yes') + ' / ' + (question.false_label || 'No'));
+          }
+          break;
+        case 'section':
+          if (question.description) parts.push('a note');
+          break;
+      }
+      return parts.join(' · ');
+    }
+
     // ─── Branching ────────────────────────────────────────────
     // Only earlier questions can be depended on. That is not a limitation of the
     // editor — a question whose visibility depends on an answer not yet given
@@ -424,7 +585,7 @@ const QuestionBuilder = (() => {
       }
 
       if (!question.visible_if) {
-        return `<div class="logic"><button class="btn btn-sm btn-ghost" data-add-logic>+ Only show this sometimes</button></div>`;
+        return `<div class="logic"><button class="btn btn-sm btn-ghost" data-add-logic>+ Branching</button></div>`;
       }
 
       const rules = question.visible_if.rules || [];
@@ -476,8 +637,10 @@ const QuestionBuilder = (() => {
       if (source.options) {
         return `
           <select class="input" data-rule-value>
-            ${(source.options || []).filter(Boolean).map(o => `
-              <option value="${escapeHtml(o)}"${o === rule.value ? ' selected' : ''}>${escapeHtml(o)}</option>`).join('')}
+            ${(source.options || []).filter(o => SurveySchema.optionLabel(o)).map(o => {
+              const word = SurveySchema.optionLabel(o);
+              return `<option value="${escapeHtml(word)}"${word === rule.value ? ' selected' : ''}>${escapeHtml(word)}</option>`;
+            }).join('')}
             ${source.allow_other ? `<option value="__other__"${rule.value === '__other__' ? ' selected' : ''}>Something else</option>` : ''}
           </select>`;
       }
@@ -495,6 +658,97 @@ const QuestionBuilder = (() => {
         return `<input type="number" class="input" data-rule-value value="${escapeHtml(rule.value ?? '')}">`;
       }
       return `<input type="text" class="input" data-rule-value value="${escapeHtml(rule.value ?? '')}" placeholder="…">`;
+    }
+
+    // ─── What happens next ────────────────────────────────────
+    // The "then" of a branch, configured where the "when" is: on the question
+    // whose answer decides it. Each rule says what the survey does when the
+    // answer to this question holds the condition — go to a later question,
+    // or end the survey, in the words written for that ending. The rules are
+    // read in order and the first that holds decides, so the editor draws
+    // them as a list, not a combination.
+    //
+    // Only the kind of form that may branch offers it at all; a profile form
+    // that ends early, or jumps past a credential field, is a half-built
+    // member.
+    function branchEditor(question, index) {
+      if (!question.branch_to) {
+        return `<div class="logic"><button class="btn btn-sm btn-ghost" data-add-branch>+ Branch on the answer to this question</button></div>`;
+      }
+
+      const later = state.questions.slice(index + 1);
+
+      return `
+        <div class="logic">
+          <div class="row" style="gap:var(--sp-2);margin-bottom:var(--sp-3)">
+            <span class="logic-lead">When the answer to this question holds, the survey
+              <span class="tip" data-tip="Checked in the order written — the first rule that holds decides, and a rule that sends them on to the next question keeps the rules after it from deciding. When none holds, the survey simply moves on.">?</span></span>
+            <span class="spacer"></span>
+            <button class="icon-btn" data-drop-branch aria-label="The survey always moves on from here">×</button>
+          </div>
+          ${question.branch_to.rules.map((rule, r) => branchRuleRow(rule, r, question, later)).join('')}
+          <button class="btn btn-sm btn-ghost mt-2" data-add-branch-rule>+ Add a rule</button>
+        </div>`;
+    }
+
+    function branchRuleRow(rule, r, question, later) {
+      const allowed = SurveySchema.operatorsFor(question.type);
+      const operator = schema.operators.find(o => o.op === rule.op);
+
+      return `
+        <div class="logic-rule" data-branch-rule="${r}">
+          <select class="input" data-branch-op style="max-width:150px">
+            ${schema.operators.filter(o => allowed.includes(o.op)).map(o => `
+              <option value="${o.op}"${o.op === rule.op ? ' selected' : ''}>${escapeHtml(o.label)}</option>`).join('')}
+          </select>
+          ${operator && operator.needsValue !== false ? branchValueInput(rule, question) : '<span class="spacer"></span>'}
+          <select class="input" data-branch-action style="width:auto">
+            <option value="next"${!rule.goto && !rule.end ? ' selected' : ''}>goes to the next question</option>
+            <option value="goto"${rule.goto ? ' selected' : ''}>goes to a particular question</option>
+            <option value="end"${rule.end && !rule.goto ? ' selected' : ''}>ends the survey</option>
+          </select>
+          ${rule.goto ? `
+            <select class="input" data-branch-target style="width:auto">
+              ${later.map(q => `
+                <option value="${q.id}"${q.id === rule.goto ? ' selected' : ''}>
+                  ${escapeHtml((q.text || 'Untitled').slice(0, 40))}${(q.text || '').length > 40 ? '…' : ''}</option>`).join('')}
+            </select>` : ''}
+          ${rule.end && !rule.goto ? `
+            <input type="text" class="input" data-branch-message maxlength="200" style="flex:2"
+                   placeholder="What to say when it ends, e.g. We can't continue without your agreement."
+                   value="${escapeHtml(rule.message || '')}">` : ''}
+          <button class="icon-btn" data-drop-branch-rule="${r}" aria-label="Remove rule">×</button>
+        </div>`;
+    }
+
+    // The value control follows the question being tested, which is the one
+    // being edited: options come from its own list, and a rule compared
+    // against a value the member cannot produce is a branch that never fires.
+    function branchValueInput(rule, question) {
+      if ((question.options || []).length) {
+        return `
+          <select class="input" data-branch-value>
+            ${(question.options || []).filter(o => SurveySchema.optionLabel(o)).map(o => {
+              const word = SurveySchema.optionLabel(o);
+              return `<option value="${escapeHtml(word)}"${word === rule.value ? ' selected' : ''}>${escapeHtml(word)}</option>`;
+            }).join('')}
+            ${question.allow_other ? `<option value="__other__"${rule.value === '__other__' ? ' selected' : ''}>Something else</option>` : ''}
+          </select>`;
+      }
+      if (question.type === 'boolean') {
+        return `
+          <select class="input" data-branch-value>
+            <option value="true"${rule.value === true ? ' selected' : ''}>${escapeHtml(question.true_label || 'Yes')}</option>
+            <option value="false"${rule.value === false ? ' selected' : ''}>${escapeHtml(question.false_label || 'No')}</option>
+          </select>`;
+      }
+      if (question.type === 'date') {
+        return `<input type="date" class="input" data-branch-value value="${escapeHtml(rule.value || '')}">`;
+      }
+      if (['rating', 'nps', 'number'].includes(question.type)) {
+        return `<input type="number" class="input" data-branch-value value="${escapeHtml(rule.value ?? '')}">`;
+      }
+      return `<input type="text" class="input" data-branch-value value="${escapeHtml(rule.value ?? '')}" placeholder="…">`;
     }
 
     // ─── Wiring one card ──────────────────────────────────────
@@ -581,14 +835,58 @@ const QuestionBuilder = (() => {
         });
       });
 
-      // Options, rows and columns
-      cardEl.querySelectorAll('.option-row').forEach(row => {
-        const list = row.dataset.list;
-        const i = Number(row.dataset.option);
+      // The fold is the author's choice about what they are looking at, so it
+      // survives the redraws their typing causes — but opening it changes the
+      // definition nothing, so it redraws without marking the form dirty.
+      cardEl.querySelector('[data-toggle-more]')?.addEventListener('click', () => {
+        if (moreExpanded.has(question.id)) moreExpanded.delete(question.id);
+        else moreExpanded.add(question.id);
+        render();
+      });
 
-        row.querySelector('input').addEventListener('input', e => {
-          const before = question[list][i];
-          question[list][i] = e.target.value;
+      // Options, rows and columns
+      const isCards = question.type === 'choice' || question.type === 'multi_choice';
+      cardEl.querySelectorAll('.option-item').forEach(item => {
+        const list = item.dataset.list;
+        const i = Number(item.dataset.option);
+        const row = item.querySelector('.option-row');
+
+        const wordOf = () => isCards
+          ? (question[list][i] && typeof question[list][i] === 'object'
+            ? question[list][i].label : question[list][i])
+          : question[list][i];
+        const asCard = () => {
+          if (!question[list][i] || typeof question[list][i] !== 'object') {
+            question[list][i] = { label: question[list][i] || '', subtext: '' };
+          }
+          return question[list][i];
+        };
+
+        // The line under an option is opened with the pen rather than sitting
+        // there in every row: the member meets it only if it was written, and
+        // the editor meets it only if it is opened.
+        const key = descKey(question.id, list, i);
+        const openDesc = () => {
+          // One open editor at a time: opening a line closes the one already
+          // open, the way the pen is a single thing in the author's hand
+          for (const open of [...descExpanded]) if (open !== key) descExpanded.delete(open);
+          descExpanded.add(key);
+          redraw();
+          const now = el.questions.querySelector(`.q-card[data-index="${index}"]`);
+          now?.querySelector(`.option-item[data-list="${list}"][data-option="${i}"] .option-subtext`)?.focus();
+        };
+        const closeDesc = () => { descExpanded.delete(key); redraw(); };
+
+        row.querySelectorAll('[data-toggle-desc]').forEach(toggle => {
+          toggle.addEventListener('click', () => {
+            if (descExpanded.has(key)) closeDesc(); else openDesc();
+          });
+        });
+
+        row.querySelector('.option-word').addEventListener('input', e => {
+          const before = wordOf();
+          if (isCards) asCard().label = e.target.value;
+          else question[list][i] = e.target.value;
           // An option marked exclusive keeps that mark when it is renamed
           if (question.exclusive_options) {
             question.exclusive_options = question.exclusive_options
@@ -597,13 +895,37 @@ const QuestionBuilder = (() => {
           touch();
         });
 
+        item.querySelector('.option-subtext')?.addEventListener('input', e => {
+          asCard().subtext = e.target.value;
+          touch();
+        });
+        item.querySelector('.option-subtext')?.addEventListener('keydown', e => {
+          if (e.key === 'Enter') { e.preventDefault(); closeDesc(); }
+        });
+
+        item.querySelector('[data-attach-subtext]')?.addEventListener('click', () => {
+          const picker = document.createElement('input');
+          picker.type = 'file';
+          picker.accept = 'image/png,image/jpeg,image/gif,image/webp';
+          picker.style.display = 'none';
+          picker.addEventListener('change', () => {
+            const file = picker.files && picker.files[0];
+            if (picker.parentNode) picker.parentNode.removeChild(picker);
+            if (!file) return;
+            attachSubtextPicture(file, item.querySelector('.option-subtext'));
+          });
+          document.body.appendChild(picker);
+          picker.click();
+        });
+
         row.querySelector('[data-drop-option]')?.addEventListener('click', () => {
+          descExpanded.delete(key);
           question[list].splice(i, 1);
           redraw();
         });
 
         row.querySelector('[data-exclusive]')?.addEventListener('click', () => {
-          const option = question[list][i];
+          const option = wordOf();
           const held = question.exclusive_options || [];
           question.exclusive_options = held.includes(option)
             ? held.filter(o => o !== option)
@@ -615,7 +937,8 @@ const QuestionBuilder = (() => {
       cardEl.querySelectorAll('[data-add-option]').forEach(button => {
         button.addEventListener('click', () => {
           const list = button.dataset.addOption;
-          question[list] = (question[list] || []).concat('');
+          question[list] = (question[list] || []).concat(
+            isCards ? { label: '', subtext: '' } : '');
           redraw();
         });
       });
@@ -694,14 +1017,125 @@ const QuestionBuilder = (() => {
         });
       });
 
+      // What happens next
+      cardEl.querySelector('[data-add-branch]')?.addEventListener('click', () => {
+        question.branch_to = {
+          rules: [{
+            op: SurveySchema.operatorsFor(question.type)[0],
+            value: firstValue(question),
+            end: true
+          }]
+        };
+        redraw();
+      });
+
+      cardEl.querySelector('[data-drop-branch]')?.addEventListener('click', () => {
+        delete question.branch_to;
+        redraw();
+      });
+
+      cardEl.querySelector('[data-add-branch-rule]')?.addEventListener('click', () => {
+        question.branch_to.rules.push({
+          op: SurveySchema.operatorsFor(question.type)[0],
+          value: firstValue(question),
+          end: true
+        });
+        redraw();
+      });
+
+      cardEl.querySelectorAll('[data-branch-rule]').forEach(row => {
+        const r = Number(row.dataset.branchRule);
+        const rule = question.branch_to.rules[r];
+        const later = state.questions.slice(index + 1);
+
+        row.querySelector('[data-branch-op]')?.addEventListener('change', e => {
+          rule.op = e.target.value;
+          // The value belongs to the comparison: a rule that stops needing
+          // one stops carrying a stale one.
+          rule.value = firstValue(question);
+          redraw();
+        });
+
+        row.querySelector('[data-branch-action]')?.addEventListener('change', e => {
+          delete rule.end;
+          delete rule.goto;
+          delete rule.message;
+          if (e.target.value === 'end') {
+            rule.end = true;
+          } else if (e.target.value === 'goto') {
+            // A jump needs a landing place; the nearest later question is the
+            // least surprising one to offer.
+            rule.goto = (later[0] || {}).id;
+            if (!rule.goto) rule.end = true;   // nothing later to jump to
+          }
+          // "next" leaves the rule with no action: it says the survey goes on,
+          // and the rules written after it do not decide.
+          redraw();
+        });
+
+        row.querySelector('[data-branch-target]')?.addEventListener('change', e => {
+          rule.goto = e.target.value;
+          touch();
+        });
+
+        row.querySelector('[data-branch-message]')?.addEventListener('input', e => {
+          rule.message = e.target.value;
+          touch();
+        });
+
+        row.querySelector('[data-branch-value]')?.addEventListener('input', e => {
+          rule.value = question.type === 'boolean' ? e.target.value === 'true'
+            : e.target.type === 'number' ? Number(e.target.value)
+            : e.target.value;
+          touch();
+        });
+        row.querySelector('[data-branch-value]')?.addEventListener('change', e => {
+          rule.value = question.type === 'boolean' ? e.target.value === 'true'
+            : e.target.type === 'number' ? Number(e.target.value)
+            : e.target.value;
+          touch();
+        });
+
+        row.querySelector('[data-drop-branch-rule]')?.addEventListener('click', () => {
+          question.branch_to.rules.splice(r, 1);
+          if (!question.branch_to.rules.length) delete question.branch_to;
+          redraw();
+        });
+      });
+
       // Whatever this kind of form adds to a card, wired with the same redraw
       // and touch the rest of it uses — so an extension cannot get the two
       // confused and leave the preview showing the previous state.
       if (opts.bindExtra) opts.bindExtra(cardEl, question, index, { redraw, touch });
     }
 
+    // A picture under an option, straight from the author's device. It is
+    // uploaded the same way a brand asset is — the bytes decide what it is,
+    // it is served from here under the name they earned — and lands in the
+    // line as the image it is, with the file name as the words for the
+    // people who cannot see it.
+    function attachSubtextPicture(file, input) {
+      if (!input) return;
+
+      new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result).split(',')[1]);
+        reader.onerror = () => reject(new Error('That picture could not be read'));
+        reader.readAsDataURL(file);
+      })
+        .then(base64 => api.post('/admin/uploads', { file: base64, kind: 'image', filename: file.name }))
+        .then(({ asset }) => {
+          const words = String(file.name || '').replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' ').trim() || 'A picture';
+          const current = input.value.replace(/\s+$/, '');
+          input.value = (current ? current + ' ' : '') + `![${words}](${asset.path})`;
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+          showToast('Picture added — it is served from here');
+        })
+        .catch(err => showToast(err.message || 'The picture could not be uploaded', 'error'));
+    }
+
     function firstValue(source) {
-      if (source.options) return (source.options.filter(Boolean)[0]) || '';
+      if (source.options) return (source.options.map(o => SurveySchema.optionLabel(o)).find(Boolean)) || '';
       if (source.type === 'boolean') return true;
       if (['rating', 'nps', 'number'].includes(source.type)) return 0;
       return '';
@@ -723,8 +1157,11 @@ const QuestionBuilder = (() => {
 
     async function remove(index) {
       const question = state.questions[index];
+      // A question is depended on two ways: a later question shown only
+      // because of it, or an earlier question whose branch jumps to it.
       const dependents = state.questions.filter(q =>
-        (q.visible_if?.rules || []).some(rule => rule.question === question.id));
+        (q.visible_if?.rules || []).some(rule => rule.question === question.id) ||
+        (q.branch_to?.rules || []).some(rule => rule.goto === question.id));
 
       if (dependents.length) {
         const ok = await Shell.confirm({
@@ -755,10 +1192,19 @@ const QuestionBuilder = (() => {
 
     function pruneLogic() {
       state.questions.forEach((question, index) => {
-        if (!question.visible_if) return;
-        const before = new Set(state.questions.slice(0, index).map(q => q.id));
-        question.visible_if.rules = question.visible_if.rules.filter(rule => before.has(rule.question));
-        if (!question.visible_if.rules.length) delete question.visible_if;
+        if (question.visible_if) {
+          const before = new Set(state.questions.slice(0, index).map(q => q.id));
+          question.visible_if.rules = question.visible_if.rules.filter(rule => before.has(rule.question));
+          if (!question.visible_if.rules.length) delete question.visible_if;
+        }
+        // A jump whose landing place was removed, or moved ahead of the
+        // question it jumps from, can no longer land — the rule goes with it
+        // rather than sitting in the definition pointing at nothing.
+        if (question.branch_to) {
+          const after = new Set(state.questions.slice(index + 1).map(q => q.id));
+          question.branch_to.rules = question.branch_to.rules.filter(rule => !rule.goto || after.has(rule.goto));
+          if (!question.branch_to.rules.length) delete question.branch_to;
+        }
       });
     }
 
@@ -803,20 +1249,38 @@ const QuestionBuilder = (() => {
       const shown = SurveySchema.visible(questions, previewAnswers);
       const hidden = questions.length - shown.length;
 
+      // A paged layout shows the author where the member's pages break — cut
+      // from what is actually asked, the same way the survey cuts them.
+      const paged = theme.layout === 'n_per_page' || theme.layout === 'by_section';
+      const pages = paged ? SurveyRender.pages(shown, { layout: theme.layout, size: theme.page_size }) : [shown];
+
+      let running = 0;
+      const numberFor = new Map();
+      for (const q of shown) {
+        if (SurveySchema.isAnswerable(q)) { running++; numberFor.set(q.id, running); }
+      }
+
+      const questionHtml = q => `
+          <div class="pv-q">
+            ${SurveySchema.isAnswerable(q)
+              ? SurveyRender.heading(q, { number: numberFor.get(q.id) })
+              : `<div class="sv-section-mark">Section</div><h2 class="sv-ask">${SurveySchema.linkify(q.text)}</h2>`}
+            <div class="sv-control" data-preview="${escapeHtml(q.id)}"></div>
+          </div>`;
+
+      // The opening image sits on the opening screen, so a kind of form that
+      // has no opening screen of its own shows no header image here either.
+      const hasOpeningScreen = opts.screens !== false;
       frame.innerHTML = `
-        ${theme.header_image ? `<img src="${escapeHtml(theme.header_image)}" alt=""
+        ${hasOpeningScreen && theme.header_image ? `<img src="${escapeHtml(theme.header_image)}" alt=""
            style="width:100%;max-height:110px;object-fit:cover;border-radius:var(--r-md);margin-bottom:var(--sp-4);display:block">` : ''}
         ${theme.logo_url ? `<img src="${escapeHtml(theme.logo_url)}" alt="" style="max-height:28px;margin-bottom:var(--sp-4)">` : ''}
         <div class="sv-ask" style="font-size:var(--fs-md);margin-bottom:var(--sp-4)">
           ${escapeHtml(opts.title() || 'Untitled')}
         </div>
-        ${shown.map((q, i) => `
-          <div class="pv-q">
-            ${SurveySchema.isAnswerable(q)
-              ? SurveyRender.heading(q, { number: shown.slice(0, i + 1).filter(x => SurveySchema.isAnswerable(x)).length })
-              : `<div class="sv-section-mark">Section</div><h2 class="sv-ask">${escapeHtml(q.text)}</h2>`}
-            <div class="sv-control" data-preview="${escapeHtml(q.id)}"></div>
-          </div>`).join('')}
+        ${pages.map((group, gi) => `
+          ${gi > 0 ? `<div class="pv-page-break">Page ${gi + 1}</div>` : ''}
+          ${group.map(questionHtml).join('')}`).join('')}
         ${hidden ? `<p class="hint mt-4">${hidden} question${hidden === 1 ? '' : 's'} hidden by the answers above.</p>` : ''}`;
 
       for (const question of shown) {

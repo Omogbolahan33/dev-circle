@@ -229,6 +229,228 @@ test('an answer to a question the survey does not contain is rejected outright',
   assert.deepEqual(res.body.questions, ['q_made_up']);
 });
 
+// ─── Ending early ───────────────────────────────────────────
+// The use case that called for this: a consent question that carries the
+// terms as a link and ends the survey, in its own words, when the answer is
+// no.
+const CONSENT = [
+  {
+    id: 'q1', type: 'boolean', text: 'Do you agree to the [Terms & Conditions](https://example.com/terms)?',
+    required: true, true_label: 'Yes, I agree', false_label: 'No',
+    branch_to: {
+      rules: [{
+        op: 'is', value: false, end: true,
+        message: 'We can\'t continue without your agreement with the Terms & Conditions.'
+      }]
+    }
+  },
+  { id: 'q2', type: 'text', text: 'Tell us about your integration.', required: true }
+];
+
+test('a link in the wording is stored as written, and one that is not a web address is refused', async () => {
+  const ok = await create({ questions: CONSENT });
+  assert.equal(ok.status, 201, JSON.stringify(ok.body));
+  assert.match(ok.body.survey.questions[0].text, /\[Terms & Conditions\]\(https:\/\/example\.com\/terms\)/);
+
+  const bad = await create({
+    questions: [{ type: 'boolean', text: 'Agree to the [Terms](javascript:alert(1))?' }]
+  });
+  assert.equal(bad.status, 400);
+  assert.match(bad.body.error, /http/i);
+});
+
+test('a no to the consent question ends the survey there, in its own words', async () => {
+  const res = await create({ questions: CONSENT, status: 'active' });
+  assert.equal(res.status, 201, JSON.stringify(res.body));
+  const survey = res.body.survey;
+  const { token, user } = await answering(survey);
+  const [consent] = survey.questions;
+
+  const done = await respond(survey, token, { [consent.id]: false });
+  assert.equal(done.status, 200, JSON.stringify(done.body));
+  assert.equal(done.body.answered, 1, 'the rest of the survey was never asked');
+  assert.equal(done.body.ended, true);
+  assert.equal(done.body.end_message, 'We can\'t continue without your agreement with the Terms & Conditions.');
+
+  const stored = JSON.parse(h.db.prepare(
+    'SELECT answers FROM survey_responses WHERE user_id = ?'
+  ).get(user.id).answers);
+  assert.deepEqual(stored, { [consent.id]: false }, 'only what was asked is recorded');
+});
+
+test('a yes to the consent question still asks the rest, and the rest still has to be answered', async () => {
+  const res = await create({ questions: CONSENT, status: 'active' });
+  const survey = res.body.survey;
+  const { token } = await answering(survey);
+  const [consent, followup] = survey.questions;
+
+  const refused = await respond(survey, token, { [consent.id]: true });
+  assert.equal(refused.status, 400);
+  assert.deepEqual(refused.body.missing, [followup.id], 'the branch they took still has to be answered');
+
+  const done = await respond(survey, token, { [consent.id]: true, [followup.id]: 'Sandbox to production' });
+  assert.equal(done.status, 200, JSON.stringify(done.body));
+  assert.equal(done.body.ended, false, 'the survey ran to its end');
+  assert.equal(done.body.end_message, null);
+});
+
+test('a rule that names no place sends them on, and the ending written after it does not decide', async () => {
+  const res = await create({
+    status: 'active',
+    questions: [
+      {
+        id: 'q1', type: 'boolean', text: 'Do you agree to the [Terms](https://example.com/terms)?',
+        required: true,
+        branch_to: {
+          rules: [
+            { op: 'is', value: true },
+            { op: 'answered', end: true, message: 'The survey ends here, in its own words.' }
+          ]
+        }
+      },
+      { id: 'q2', type: 'text', text: 'Tell us about your integration.', required: true }
+    ]
+  });
+  assert.equal(res.status, 201, JSON.stringify(res.body));
+  const survey = res.body.survey;
+  const { token } = await answering(survey);
+  const [consent, followup] = survey.questions;
+
+  // yes: the next rule holds first — the survey goes on, the ending after it
+  // never decides, and the rest of the survey is still asked
+  const refused = await respond(survey, token, { [consent.id]: true });
+  assert.equal(refused.status, 400);
+  assert.deepEqual(refused.body.missing, [followup.id], 'the survey went on, so the rest is still asked');
+
+  const done = await respond(survey, token, { [consent.id]: true, [followup.id]: 'Payments' });
+  assert.equal(done.status, 200, JSON.stringify(done.body));
+  assert.equal(done.body.ended, false, 'no ending fired, because the first rule sent them on');
+  assert.equal(done.body.end_message, null);
+
+  // no: the next rule does not hold — the ending one does
+  const { token: noToken } = await answering(survey);
+  const doneNo = await respond(survey, noToken, { [consent.id]: false });
+  assert.equal(doneNo.status, 200, JSON.stringify(doneNo.body));
+  assert.equal(doneNo.body.ended, true);
+  assert.equal(doneNo.body.end_message, 'The survey ends here, in its own words.');
+});
+
+test('an option can carry a line under it — text, a link, a picture — and the answer stays the word', async () => {
+  const res = await create({
+    status: 'active',
+    theme: { layout: 'n_per_page', page_size: 2 },
+    questions: [
+      {
+        id: 'q1', type: 'choice', required: true,
+        text: 'Which environment do you use most?',
+        options: [
+          { label: 'Sandbox', subtext: 'Staging for tests — see [the docs](https://example.com/sandbox)' },
+          { label: 'Production', subtext: 'Live traffic · ![the flow](https://example.com/flow.png)' },
+          { label: 'Both', subtext: 'Pick one · ![the diagram](/uploads/the-diagram-ab12cd34ef56.png)' }
+        ]
+      },
+      { id: 'q2', type: 'text', text: 'Anything else?', required: false }
+    ]
+  });
+  assert.equal(res.status, 201, JSON.stringify(res.body));
+  const survey = res.body.survey;
+  const { token } = await answering(survey);
+
+  const served = (await h.post(`/api/users/surveys/${survey.id}/start`, {}, { token })).body.survey
+    .questions.find(q => q.id === 'q1');
+  assert.equal(served.options[1].subtext, 'Live traffic · ![the flow](https://example.com/flow.png)',
+    'the subtext goes out as it was written');
+  assert.equal(served.options[2].subtext, 'Pick one · ![the diagram](/uploads/the-diagram-ab12cd34ef56.png)',
+    'a picture uploaded from the device goes out the same way');
+
+  // and an address that is neither a web address nor one of the platform's
+  // uploads is refused at save, with the option named
+  const notOurs = await create({
+    status: 'draft',
+    questions: [{
+      id: 'q1', type: 'choice', text: 'Pick',
+      options: [
+        { label: 'A', subtext: '![x](/etc/passwd)' },
+        { label: 'B' }
+      ]
+    }]
+  });
+  assert.equal(notOurs.status, 400, JSON.stringify(notOurs.body));
+  assert.match(notOurs.body.error, /Option "A"/);
+
+  const done = await respond(survey, token, { q1: 'Production' });
+  assert.equal(done.status, 200, JSON.stringify(done.body));
+  assert.equal(done.body.answered, 2);
+});
+
+test('"N per page" without its N is refused — the number is set by the person writing the questions', async () => {
+  const res = await create({
+    status: 'active',
+    theme: { layout: 'n_per_page' },
+    questions: [{ type: 'text', text: 'One question?' }]
+  });
+  assert.equal(res.status, 400);
+  assert.match(res.body.error, /needs N/i);
+});
+
+test('a branch can jump the survey to a later question, and the skipped ones are not asked', async () => {
+  const res = await create({
+    status: 'active',
+    questions: [
+      {
+        id: 'q1', type: 'choice', text: 'What are you building?', options: ['Public API', 'Internal tool'],
+        required: true,
+        branch_to: { rules: [{ op: 'is', value: 'Internal tool', goto: 'q4' }] }
+      },
+      { id: 'q2', type: 'text', text: 'Which endpoint first?', required: true },
+      { id: 'q3', type: 'text', text: 'Sandbox or production?', required: true },
+      { id: 'q4', type: 'text', text: 'What breaks in your setup first?', required: true }
+    ]
+  });
+  assert.equal(res.status, 201, JSON.stringify(res.body));
+  const survey = res.body.survey;
+  const { token } = await answering(survey);
+
+  // The jump lands on q4, so q2 and q3 were never asked and do not block
+  const done = await respond(survey, token, { q1: 'Internal tool', q4: 'The CI step' });
+  assert.equal(done.status, 200, JSON.stringify(done.body));
+  assert.equal(done.body.answered, 2, 'only the questions the jump left behind were asked');
+  assert.equal(done.body.ended, false);
+
+  const open = await create({
+    status: 'active',
+    questions: [
+      {
+        id: 'p1', type: 'choice', text: 'What are you building?', options: ['Public API', 'Internal tool'],
+        required: true,
+        branch_to: { rules: [{ op: 'is', value: 'Internal tool', goto: 'p4' }] }
+      },
+      { id: 'p2', type: 'text', text: 'Which endpoint first?', required: true },
+      { id: 'p3', type: 'text', text: 'Sandbox or production?', required: true },
+      { id: 'p4', type: 'text', text: 'What breaks in your setup first?', required: true }
+    ]
+  });
+  const survey2 = open.body.survey;
+  const { token: token2 } = await answering(survey2);
+
+  // The jump can be declined by answering the other way — then the skipped
+  // questions are asked again, and they are required
+  const refused = await respond(survey2, token2, { p1: 'Public API', p4: 'x' });
+  assert.equal(refused.status, 400);
+  assert.deepEqual(refused.body.missing, ['p2', 'p3']);
+});
+
+test('a jump that points past the end of the survey is refused at save time', async () => {
+  const res = await create({
+    status: 'active',
+    questions: [
+      { id: 'q1', type: 'boolean', text: 'Branch?', branch_to: { rules: [{ op: 'is', value: true, goto: 'no_such_question' }] } }
+    ]
+  });
+  assert.equal(res.status, 400);
+  assert.match(res.body.error, /later in the survey/i);
+});
+
 // ─── Coming back to it ──────────────────────────────────────
 
 test('answers are kept between sittings', async () => {
@@ -493,6 +715,20 @@ test('someone with no account can answer, and it is recorded as anonymous', asyn
   assert.equal(stored.user_id, null, 'no member is invented to hold it');
   assert.equal(stored.respondent_kind, 'anonymous');
   assert.equal(h.db.prepare('SELECT COUNT(*) c FROM users').get().c, 0, 'and no account is created');
+});
+
+test('a link survey can end early too, with the same words on the same ending', async () => {
+  const survey = await openToAnyone(CONSENT);
+  const started = await link(survey, '/start', {});
+  assert.equal(started.status, 200);
+
+  const done = await link(survey, '/respond', {
+    response_key: started.body.response_key,
+    answers: { q1: false }
+  });
+  assert.equal(done.status, 200, JSON.stringify(done.body));
+  assert.equal(done.body.ended, true);
+  assert.equal(done.body.end_message, 'We can\'t continue without your agreement with the Terms & Conditions.');
 });
 
 test('what an anonymous respondent writes is still filed as evidence', async () => {

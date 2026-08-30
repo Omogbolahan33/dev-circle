@@ -108,6 +108,17 @@ function copyQuestions(questions) {
       };
     }
 
+    // A jump points at a slot too. Left to the original's id it would land on
+    // a question this copy does not have, and the branch would silently go
+    // nowhere — the same way a left-over visibility rule never fires.
+    if (copy.branch_to && Array.isArray(copy.branch_to.rules)) {
+      copy.branch_to = {
+        rules: copy.branch_to.rules.map(rule => rule.goto
+          ? { ...rule, goto: renamed.get(rule.goto) || rule.goto }
+          : { ...rule })
+      };
+    }
+
     return copy;
   });
 }

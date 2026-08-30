@@ -1,7 +1,18 @@
 // ─── The theme panel ────────────────────────────────────────
 // Every control that decides how a form looks to the person filling it in:
-// colours and the contrast between them, type, corners, imagery, layout, the
-// shape of its progress, and the words on its opening and closing screens.
+// colours and the contrast between them, type, corners, imagery, the shape
+// of its progress, and the words on its opening and closing screens.
+//
+// A kind of form whose own fields hold those words may pass `screens: false`
+// and get the panel without the opening and closing sections — an onboarding
+// form opens on its name and description and closes on its own submitted
+// message, so a second set of words for the same two screens is a place an
+// author writes and never sees.
+//
+// How the questions are shown is not here: that is the display control
+// (ThemePanel.display), mounted beside the questions, because it is a
+// decision the person writing the questions makes — with a number that is
+// theirs to set, not one the look picks for them.
 //
 // Shared between the survey builder and the onboarding builder for the same
 // reason the question editor is — see the top of question-builder.js. A
@@ -29,6 +40,11 @@ const ThemePanel = (() => {
   function create(opts) {
     const { schema, state, mount } = opts;
     const noun = opts.noun || 'form';
+    // Whether the words on the two screens belong to this panel at all. A form
+    // whose own fields are those words passes screens: false — see the top of
+    // this file for why the alternative is a place an author writes and never
+    // sees.
+    const screens = opts.screens !== false;
 
     // The look changed. Redrawing the preview is the caller's business, because
     // what a preview looks like differs between a survey and an onboarding form
@@ -58,28 +74,26 @@ const ThemePanel = (() => {
     // to somebody else's server, and what stops an approved image being swapped
     // for something else after the fact.
 
-    function assetRow(key, current, kind = 'image') {
+    // One line: what it is, what was uploaded, and what to do about it. The
+    // reason it exists rides in the tooltip, because a row of explanation for
+    // every control is how a panel becomes a document.
+    function assetRow(key, current, kind = 'image', label = '', hint = '') {
       const accept = kind === 'font'
         ? '.woff2,.woff,.ttf,.otf,font/woff2,font/woff,font/ttf,font/otf'
         : 'image/png,image/jpeg,image/gif,image/webp';
 
       return `
-        <div class="asset" data-asset="${key}" data-kind="${kind}">
+        <div class="asset-line" data-asset="${key}" data-kind="${kind}"${hint ? ` title="${escapeHtml(hint)}"` : ''}>
+          ${label ? `<span class="asset-line-label">${escapeHtml(label)}</span>` : ''}
           ${current && kind === 'image'
-            ? `<img class="asset-thumb" src="${escapeHtml(current)}" alt="">`
-            : `<span class="asset-thumb empty">${kind === 'font' ? 'Aa' : '+'}</span>`}
-          <div class="asset-meta">
-            ${current
-              ? `<span class="asset-name mono">${escapeHtml(current.split('/').pop())}</span>`
-              : `<span class="asset-name dim">Nothing uploaded</span>`}
-            <div class="row" style="gap:var(--sp-2);margin-top:4px">
-              <label class="btn btn-sm btn-secondary">
-                ${current ? 'Replace' : 'Upload'}
-                <input type="file" accept="${accept}" hidden data-upload="${key}" data-upload-kind="${kind}">
-              </label>
-              ${current ? `<button class="btn btn-sm btn-ghost" data-clear-asset="${key}">Remove</button>` : ''}
-            </div>
-          </div>
+            ? `<img class="asset-thumb-sm" src="${escapeHtml(current)}" alt="">`
+            : `<span class="asset-thumb-sm empty">${kind === 'font' ? 'Aa' : '+'}</span>`}
+          <span class="asset-name mono" title="${current ? escapeHtml(current) : ''}">${current ? escapeHtml(current.split('/').pop()) : 'Nothing uploaded'}</span>
+          <label class="btn btn-sm btn-secondary">
+            ${current ? 'Replace' : 'Upload'}
+            <input type="file" accept="${accept}" hidden data-upload="${key}" data-upload-kind="${kind}">
+          </label>
+          ${current ? `<button class="btn btn-sm btn-ghost" data-clear-asset="${key}">Remove</button>` : ''}
         </div>`;
     }
 
@@ -93,13 +107,6 @@ const ThemePanel = (() => {
       const theme = SurveyTheme.resolve(state.theme, state.circleTheme);
       const panel = mount;
 
-      const asset = (key, label, hint = '') => `
-        <div class="field">
-          <label class="label">${escapeHtml(label)}</label>
-          ${assetRow(key, theme[key])}
-          ${hint ? `<p class="hint">${escapeHtml(hint)}</p>` : ''}
-        </div>`;
-
       const choose = (key, values, labels) => `
         <select class="input" data-theme="${key}">
           ${values.map(v => `<option value="${v}"${theme[key] === v ? ' selected' : ''}>
@@ -110,7 +117,8 @@ const ThemePanel = (() => {
       // brand guide, which is how these actually arrive.
       const colour = (key, label, { hint = '', clearable = false } = {}) => `
         <div class="field">
-          <label class="label">${escapeHtml(label)}</label>
+          <label class="label">${escapeHtml(label)}${hint ? `
+            <span class="tip" data-tip="${escapeHtml(hint)}">?</span>` : ''}</label>
           <div class="row" style="gap:var(--sp-2)">
             <input type="color" class="input" data-theme="${key}"
                    value="${theme[key] || fallbackFor(key)}" style="width:46px;padding:2px;height:36px;flex:none">
@@ -118,10 +126,17 @@ const ThemePanel = (() => {
                    value="${escapeHtml(theme[key] || '')}" style="font-family:var(--font-mono)">
             ${clearable ? `<button class="icon-btn" data-clear-theme="${key}" title="Back to the default">×</button>` : ''}
           </div>
-          ${hint ? `<p class="hint">${hint}</p>` : ''}
         </div>`;
 
       const chosenFont = schema.theme.fonts.find(f => f.value === theme.font) || {};
+      // What a font choice needs saying: its note, and for a font that lives
+      // on the reader's machine, why it is worth uploading one instead
+      const fontTip = [
+        chosenFont.note,
+        chosenFont.device
+          ? `This one is not sent with the ${noun} — it renders only for readers who already have it. To be certain everyone sees it, upload the font file and it will be served from here.`
+          : null
+      ].filter(Boolean).join(' ');
 
       // What is on screen right now, so a warning is about the combination the
       // member will see rather than about one colour in isolation
@@ -137,7 +152,7 @@ const ThemePanel = (() => {
       const customised = {
         colours: has('accent', 'background_color', 'text_color', 'surface_color', 'muted_color', 'background'),
         type: has('font', 'brand_font', 'scale') || has('brand_font_name'),
-        layout: has('mode', 'layout', 'progress', 'corner'),
+        layout: has('mode', 'layout', 'page_size', 'progress', 'corner'),
         images: has('logo_url', 'header_image', 'background_image'),
         opening: hasCopy('intro'),
         closing: hasCopy('thank_you')
@@ -164,7 +179,8 @@ const ThemePanel = (() => {
       // ── Colours ──────────────────────────────────────────
       const coloursBody = `
         <div class="field">
-          <label class="label">Accent</label>
+          <label class="label">Accent
+            <span class="tip" data-tip="Buttons and progress take this. Text on it is worked out from its brightness, so a pale accent gets dark type rather than white on white.">?</span></label>
           <div class="row" style="gap:var(--sp-3)">
             <input type="color" class="input" data-theme="accent" value="${theme.accent}" style="width:52px;padding:2px;height:36px">
             <input type="text" class="input" data-theme-hex="accent" value="${theme.accent}" style="font-family:var(--font-mono)">
@@ -174,15 +190,9 @@ const ThemePanel = (() => {
               <button class="swatch${theme.accent.toLowerCase() === hex.toLowerCase() ? ' on' : ''}"
                       style="background:${hex}" data-swatch="${hex}" aria-label="${hex}"></button>`).join('')}
           </div>
-          <p class="hint">Buttons and progress take this. Text on it is worked out from its brightness, so a pale accent gets dark type rather than white on white.</p>
         </div>
 
-        <p class="hint" style="margin-top:0;margin-bottom:var(--sp-3)">
-          Leave the brand colours empty and the ${noun} follows the member's light or dark setting.
-          Name a background and everything between it and the text — cards, borders,
-          secondary labels — is worked out from the pair.
-        </p>
-        ${colour('background_color', 'Background', { clearable: true })}
+        ${colour('background_color', 'Background', { clearable: true, hint: `Leave the brand colours empty and the ${noun} follows the member's light or dark setting. Name a background and everything between it and the text — cards, borders, secondary labels — is worked out from the pair.` })}
         ${colour('text_color', 'Text', { clearable: true })}
 
         ${ratio ? `
@@ -213,7 +223,8 @@ const ThemePanel = (() => {
       // Grouped, because fifteen names in a flat list is a wall.
       const typeBody = `
         <div class="field">
-          <label class="label">Font</label>
+          <label class="label">Font${fontTip ? `
+            <span class="tip" data-tip="${escapeHtml(fontTip)}">?</span>` : ''}</label>
           <select class="input font-select" id="fontSelect"
                   style="font-family:${(schema.theme.fonts.find(f => f.value === theme.font) || {}).stack || 'inherit'}">
             ${['sans', 'serif', 'mono', 'device', 'custom'].map(group => {
@@ -234,21 +245,13 @@ const ThemePanel = (() => {
             (schema.theme.fonts.find(f => f.value === theme.font) || {}).stack || 'inherit'}">
             How clear is our API documentation?
           </p>
-          ${chosenFont.note ? `<p class="hint">${escapeHtml(chosenFont.note)}</p>` : ''}
-          ${chosenFont.device ? `
-            <p class="hint" style="color:var(--gold-ink)">
-              This one is not sent with the ${noun} — it renders only for readers who already have it.
-              To be certain everyone sees it, upload the font file and it will be served from here.
-            </p>` : ''}
         </div>
 
         ${theme.font === 'brand' || theme.brand_font ? `
-          <div class="field">
-            <label class="label">Font file</label>
-            ${assetRow('brand_font', theme.brand_font, 'font')}
-            <input type="text" class="input mt-2" data-theme="brand_font_name" placeholder="What to call it, e.g. Acme Grotesk"
+          <div>
+            ${assetRow('brand_font', theme.brand_font, 'font', 'Font file', 'A .woff2 loads fastest. Whatever you upload is served from here, so nothing about the member reaches its foundry.')}
+            <input type="text" class="input mt-1" style="margin-left:${'var(--sp-2)'}" data-theme="brand_font_name" placeholder="What to call it, e.g. Acme Grotesk"
                    value="${escapeHtml(theme.brand_font_name || '')}">
-            <p class="hint">A .woff2 loads fastest. Whatever you upload is served from here, so nothing about the member reaches its foundry.</p>
           </div>` : ''}
 
         <div class="field-row">
@@ -259,7 +262,11 @@ const ThemePanel = (() => {
           </div>
         </div>`;
 
-      // ── Layout ───────────────────────────────────────────
+      // ── Shape ───────────────────────────────────────────────────
+      // Corners, light/dark and progress are appearance — how the surface
+      // reads. How the questions are shown (one at a time, all at once, N per
+      // page, or divided by section) is not: it is the display control, which
+      // the builders mount beside the questions.
       const layoutBody = `
         <div class="field-row">
           <div class="field">
@@ -273,33 +280,34 @@ const ThemePanel = (() => {
         </div>
         <div class="field-row">
           <div class="field">
-            <label class="label">One page or one question</label>
-            ${choose('layout', schema.theme.layouts, { one_per_page: 'One at a time', all_at_once: 'All on one page' })}
-          </div>
-          <div class="field">
             <label class="label">Progress</label>
             ${choose('progress', schema.theme.progress, { bar: 'Bar', steps: 'Steps', count: 'Count only', none: 'None' })}
           </div>
         </div>`;
 
       // ── Images ───────────────────────────────────────────
+      // The opening image sits on the opening screen, so it goes with it: a
+      // form that has no opening screen of its own has no place for it to sit.
       const imagesBody = `
-        ${asset('logo_url', 'Wordmark', 'Replaces the Dev Circle mark in the bar and on the opening screen.')}
-        ${asset('header_image', 'Opening image', 'Sits above the headline on the first screen.')}
-        ${asset('background_image', 'Background image')}
+        ${assetRow('logo_url', theme.logo_url, 'image', 'Wordmark', screens
+          ? 'Replaces the Dev Circle mark in the bar and on the opening screen.'
+          : 'Replaces the Dev Circle mark in the bar.')}
+        ${screens ? assetRow('header_image', theme.header_image, 'image', 'Opening image', 'Sits above the headline on the first screen.') : ''}
+        ${assetRow('background_image', theme.background_image, 'image', 'Background image')}
         ${theme.background_image ? `
-          <div class="field-row">
-            <div class="field">
-              <label class="label">How it sits</label>
-              ${choose('background_fit', schema.theme.fits, { cover: 'Fills the screen', contain: 'Fits inside', tile: 'Tiles' })}
-            </div>
-            <div class="field">
-              <label class="label">Dimmed by ${Math.round((theme.background_overlay ?? 0.55) * 100)}%</label>
-              <input type="range" min="0" max="95" step="5" data-theme-range="background_overlay"
-                     value="${Math.round((theme.background_overlay ?? 0.55) * 100)}" style="width:100%">
-            </div>
+          <div class="asset-line" title="A photograph behind text is the quickest way to make a ${noun} unreadable, so it is dimmed unless you say otherwise.">
+            <span class="asset-line-label">How it sits</span>
+            <select class="input asset-line-select" data-theme="background_fit">
+              ${Object.entries({ cover: 'Fills the screen', contain: 'Fits inside', tile: 'Tiles' })
+                .filter(([v]) => (schema.theme.fits || []).includes(v))
+                .map(([v, l]) => `<option value="${v}"${theme.background_fit === v ? ' selected' : ''}>${escapeHtml(l)}</option>`).join('')}
+            </select>
           </div>
-          <p class="hint">A photograph behind text is the quickest way to make a ${noun} unreadable, so it is dimmed unless you say otherwise.</p>` : ''}`;
+          <div class="asset-line">
+            <span class="asset-line-label">Dimmed by ${Math.round((theme.background_overlay ?? 0.55) * 100)}%</span>
+            <input type="range" class="asset-line-range" min="0" max="95" step="5" data-theme-range="background_overlay"
+                   value="${Math.round((theme.background_overlay ?? 0.55) * 100)}">
+          </div>` : ''}`;
 
       // ── Opening / closing screens ────────────────────────
       const openingBody = `
@@ -327,10 +335,11 @@ const ThemePanel = (() => {
       panel.innerHTML = `
         ${section('colours', 'Colours', 'Accent, background and text', coloursBody, { open: true, marked: customised.colours })}
         ${section('type', 'Type', 'Font and text size', typeBody, { marked: customised.type })}
-        ${section('layout', 'Shape & layout', 'Corners, light/dark, paging and progress', layoutBody, { marked: customised.layout })}
-        ${section('images', 'Images', 'Wordmark, opening image and background', imagesBody, { marked: customised.images })}
-        ${section('opening', 'Opening screen', 'Shown before the first question', openingBody, { marked: customised.opening })}
-        ${section('closing', 'Closing screen', 'Shown after the last answer', closingBody, { marked: customised.closing })}
+        ${section('layout', 'Shape', 'Corners, light/dark and progress', layoutBody, { marked: customised.layout })}
+        ${section('images', 'Images', screens ? 'Wordmark, opening image and background' : 'Wordmark and background',
+          imagesBody, { marked: customised.images })}
+        ${screens ? section('opening', 'Opening screen', 'Shown before the first question', openingBody, { marked: customised.opening }) : ''}
+        ${screens ? section('closing', 'Closing screen', 'Shown after the last answer', closingBody, { marked: customised.closing }) : ''}
 
         <div class="row wrap" style="gap:var(--sp-2);margin-top:var(--sp-4)">
           <button class="btn btn-sm btn-secondary" data-theme-reset>Reset to the workspace look</button>
@@ -503,7 +512,77 @@ const ThemePanel = (() => {
     return { render, reset, saveAsCircleDefault };
   }
 
-  return { create };
+  // ── The display control ───────────────────────────
+  // How the questions are shown: one at a time, all at once, N per page, or
+  // divided where a section is introduced. It is not part of the look, so it
+  // is not in the look — it is mounted beside the questions, where the person
+  // setting them decides it. And where the look only ever has to be legible,
+  // the N is a number the author types: the control offers no default of its
+  // own, and saving without one is refused — here, and on the server.
+  //
+  //   const display = ThemePanel.display({
+  //     schema, state,
+  //     mount: document.getElementById('displayCard'),
+  //     onChange: () => preview()
+  //   });
+  //   display.render();
+
+  function display(opts) {
+    const { schema, state, mount } = opts;
+
+    const LABELS = {
+      one_per_page: 'One question at a time',
+      all_at_once: 'All on one page',
+      n_per_page: 'N per page',
+      by_section: 'Sections split the pages'
+    };
+
+    function render() {
+      const theme = SurveyTheme.resolve(state.theme, state.circleTheme);
+      const bounds = schema.theme.page_size || { min: 2, max: 10 };
+      const { min, max } = bounds;
+
+      mount.innerHTML = `
+        <div class="field-row">
+          <div class="field" style="margin-bottom:0">
+            <label class="label">How the questions are shown${theme.layout === 'by_section' ? `
+              <span class="tip" data-tip="The point where a section is introduced is where the page is divided — the section opens its page and the questions under it stay with it. Questions before the first section make up the first page.">?</span>` : ''}</label>
+            <select class="input" data-display="layout">
+              ${schema.theme.layouts.map(v => `
+                <option value="${v}"${theme.layout === v ? ' selected' : ''}>${escapeHtml(LABELS[v] || v)}</option>`).join('')}
+            </select>
+          </div>
+          ${theme.layout === 'n_per_page' ? `
+          <div class="field" style="margin-bottom:0">
+            <label class="label">N — questions per page
+              <span class="tip" data-tip="N is the number you set (${min}–${max}); it is not chosen for you.">?</span></label>
+            <input type="number" class="input" data-display="page_size"
+                   min="${min}" max="${max}"
+                   value="${state.theme.page_size ?? ''}" placeholder="${min}–${max}">
+          </div>` : ''}
+        </div>`;
+
+      mount.querySelector('[data-display="layout"]').addEventListener('change', e => {
+        if (e.target.value === SurveyTheme.DEFAULTS.layout) delete state.theme.layout;
+        else state.theme.layout = e.target.value;
+        render();
+        if (opts.onChange) opts.onChange();
+      });
+
+      const sizeInput = mount.querySelector('[data-display="page_size"]');
+      if (sizeInput) {
+        sizeInput.addEventListener('input', () => {
+          if (sizeInput.value === '') delete state.theme.page_size;
+          else state.theme.page_size = sizeInput.value;
+          if (opts.onChange) opts.onChange();
+        });
+      }
+    }
+
+    return { render };
+  }
+
+  return { create, display };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = ThemePanel;

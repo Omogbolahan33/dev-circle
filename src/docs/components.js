@@ -249,12 +249,16 @@ const schemas = {
       ],
       example: 'rating'
     }),
-    text: str('The question as the member reads it', { example: 'How clear is our API documentation?' }),
-    description: str('A note under the question'),
+    text: str('The question as the member reads it. Wording may carry [words](https://…) a link, ![words](https://…) an image, or be a bare https address — the only mark-up allowed, checked at save time', { example: 'How clear is our API documentation?' }),
+    description: str('A note under the question. May carry links and images like the wording'),
     required: bool('Whether an answer must be given. Only enforced if the member is shown the question'),
     visible_if: ref('SurveyLogic'),
+    branch_to: ref('SurveyBranch'),
 
-    options: arrayOf({ type: 'string' }, 'Choices — choice, multi_choice, dropdown and ranking'),
+    options: arrayOf(object({
+      label: str('The word of the option — the word is what is stored in the answer'),
+      subtext: str('A line under the option, as the member reads it: text, [words](https://…) a link, ![words](https://…) an image from the web, ![words](/uploads/…) a picture uploaded from the builder, or a bare address. Only for choice and multi_choice', { nullable: true, example: 'See [our rate limits](https://docs.example.com/limits)' })
+    }), 'Choices — choice, multi_choice, dropdown and ranking. Dropdown and ranking take the bare words; choice and multi_choice take a word or a card with subtext under it'),
     allow_other: bool('Offer a free-text "something else" alongside the options'),
     randomize: bool('Shuffle the options, to take the edge off order effects'),
     min_select: int('Fewest choices accepted — multi_choice'),
@@ -296,6 +300,19 @@ const schemas = {
     }), 'Conditions on answers already given')
   }, { description: 'Shows a question only when earlier answers say it is worth asking' }),
 
+  SurveyBranch: object({
+    rules: arrayOf(object({
+      op: str('The comparison, asked of this question\'s own answer', {
+        enum: ['is', 'is_not', 'includes', 'not_includes', 'gt', 'gte', 'lt', 'lte', 'answered', 'not_answered'],
+        example: 'is'
+      }),
+      value: { description: 'What to compare against. Omitted for answered / not_answered', example: false },
+      goto: str('Id of a later question the survey jumps to when the rule holds. At most one of goto / end is set; a rule with neither sends them on to the next question', { example: 'q5_1c2d3e4f' }),
+      end: bool('End the survey when the rule holds', { example: true }),
+      message: str('What the respondent reads when the survey ends here. Without one, it ends in its usual thank-you', { example: "We can't continue without your agreement." })
+    }), 'What the survey does once this question is answered. Checked in the order written; the first rule that holds decides — a rule with neither goto nor end keeps the later rules from deciding. When no rule holds, the survey moves on to the next question')
+  }, { description: 'The "then" of a branch, written where the "when" is: on the question whose answer decides it. A rule may only test this question\'s own answer (the same reason a visibility rule may only look backwards), and a jump may only land on a question later in the survey. visible_if decides what is asked; branch_to decides where it goes' }),
+
   SurveyTheme: object({
     accent: str('Brand colour, as hex. Text drawn on it is worked out from its luminance', { example: '#107EBC' }),
     background: str('Canvas treatment', { enum: ['plain', 'tinted', 'gradient'] }),
@@ -317,7 +334,8 @@ const schemas = {
       enum: ['small', 'regular', 'large', 'larger'], default: 'regular'
     }),
     corner: str('Corner radius', { enum: ['sharp', 'soft', 'round'] }),
-    layout: str('One question per screen, or the whole survey on one page', { enum: ['one_per_page', 'all_at_once'] }),
+    layout: str('How the questions are shown: one per screen, all on one page, N per page, or a section heading as the page break — decided beside the questions in the builder, where they are written', { enum: ['one_per_page', 'all_at_once', 'n_per_page', 'by_section'] }),
+    page_size: int('N — how many questions a page holds. Set by the person writing the questions; required (2–10) when layout is n_per_page, refused without it', { example: 4 }),
     progress: str('How progress is shown', { enum: ['bar', 'steps', 'count', 'none'] }),
     mode: str('Force a light or dark look, or follow the member\'s own setting', { enum: ['auto', 'light', 'dark'] }),
 

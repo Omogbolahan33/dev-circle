@@ -63,10 +63,71 @@
   padding: 2px var(--sp-2);
   border-radius: var(--r-sm);
 }
+.q-branches {
+  font-size: var(--fs-xs);
+  color: var(--cd-blue);
+  background: var(--cd-blue-dim);
+  padding: 2px var(--sp-2);
+  border-radius: var(--r-sm);
+}
 
-.option-row { display: flex; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-2); }
+/* The settings a question type can carry, under one fold rather than as a
+   separate row each. The card should read as a question, not as a form about
+   a question; the fold starts closed, and its label carries what has already
+   been decided, so what is closed is never a black box. */
+.q-more {
+  border-top: 1px dashed var(--line-faint);
+  margin-top: var(--sp-3);
+  padding-top: var(--sp-2);
+}
+.q-more-toggle {
+  display: flex; align-items: baseline; gap: var(--sp-2);
+  width: 100%;
+  background: none; border: 0; padding: var(--sp-1) 0;
+  font: inherit; font-size: var(--fs-sm); color: var(--ash);
+  cursor: pointer; text-align: left;
+}
+.q-more-toggle:hover .q-more-label { color: var(--white); }
+.q-more-caret {
+  font-size: 10px; color: var(--ash-dim); align-self: center;
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+.q-more.open .q-more-caret { transform: rotate(90deg); }
+.q-more-label { font-weight: var(--fw-medium); }
+.q-more-summary {
+  font-size: var(--fs-xs); color: var(--ash-dim);
+  min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.q-more-body { display: none; margin-top: var(--sp-2); }
+.q-more.open .q-more-body { display: block; }
+/* The logic block carries its own top border. When it opens the fold, that
+   border is the fold's edge — the fold does not need a second one. */
+.q-more-body > .logic:first-child { border-top: 0; margin-top: 0; padding-top: 0; }
+
+.option-item { margin-bottom: var(--sp-2); }
+.option-row { display: flex; align-items: center; gap: var(--sp-2); }
 .option-row input { flex: 1; }
 .option-row .handle { color: var(--ash-dim); font-family: var(--font-mono); font-size: var(--fs-xs); width: 18px; }
+/* An option is its word. The line under it is not a field in every row —
+   it is opened with the pen, and once written it reads the way the member
+   will read it: smaller, quieter, one line */
+.option-fields { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 0; }
+.option-row .option-fields input { flex: none; width: 100%; }
+.option-desc-toggle { width: 24px; height: 24px; font-size: var(--fs-sm); }
+.option-desc-toggle.on { color: var(--cd-blue); }
+.option-desc-preview {
+  display: block; width: 100%; padding: 0; border: 0; background: none;
+  text-align: left; color: var(--ash-dim); font-size: var(--fs-sm); line-height: 1.4;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer;
+}
+.option-desc-preview:hover { color: var(--ash); }
+.option-desc-wrap { display: none; margin: 4px 0 0 26px; }
+.option-desc-wrap.open { display: block; }
+.option-desc-edit { display: flex; align-items: center; gap: var(--sp-2); }
+.option-desc-edit .input { flex: 1; }
+.option-subtext { font-size: var(--fs-sm); }
+.option-attach { flex-shrink: 0; white-space: nowrap; }
 .exclusive-flag { font-size: 10px; padding: 2px var(--sp-2); border-radius: var(--r-sm); color: var(--ash-dim); border: 1px solid var(--line); }
 .exclusive-flag.on { color: var(--gold-ink); border-color: var(--cd-gold); background: var(--gold-dim); }
 
@@ -110,6 +171,24 @@
 .preview-frame .sv-rate-mark { width: 40px; height: 40px; font-size: var(--fs-sm); }
 .preview-frame .sv-option { min-height: 40px; padding: var(--sp-2) var(--sp-3); font-size: var(--fs-sm); }
 .pv-q + .pv-q { margin-top: var(--sp-6); padding-top: var(--sp-6); border-top: 1px solid var(--line-faint); }
+/* Where the member's pages break, drawn in the preview the way they cut the
+   survey: a marked line, so the author sees the division before it goes out. */
+.pv-page-break {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  margin-top: var(--sp-6);
+  margin-bottom: var(--sp-6);
+  font-size: var(--fs-xs);
+  color: var(--ash-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.pv-page-break::before, .pv-page-break::after {
+  content: '';
+  flex: 1;
+  border-top: 1px dashed var(--line);
+}
 
 .swatches { display: flex; gap: var(--sp-2); flex-wrap: wrap; margin-top: var(--sp-2); }
 .swatch { width: 26px; height: 26px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; }
@@ -131,24 +210,60 @@
 .contrast.warn { background: var(--gold-dim); color: var(--gold-ink); }
 .contrast.bad  { background: var(--rose-dim); color: var(--rose-ink); }
 
-/* An uploaded asset shows what was uploaded, not the path it landed at */
-.asset { display: flex; gap: var(--sp-3); align-items: center; }
-.asset.busy { opacity: 0.5; pointer-events: none; }
-.asset-thumb {
-  width: 46px; height: 46px;
-  border-radius: var(--r-md);
-  object-fit: contain;
+/* An uploaded asset is one line: what it is, what was uploaded, and what to
+   do about it. The reason it exists is the line's tooltip, not a row below. */
+.asset-line { display: flex; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-2); }
+.asset-line.busy { opacity: 0.5; pointer-events: none; }
+.asset-line-label { font-size: var(--fs-sm); color: var(--ash); flex-shrink: 0; min-width: 118px; }
+.asset-thumb-sm {
+  width: 26px; height: 26px;
+  border-radius: var(--r-sm);
+  object-fit: cover;
   background: var(--surface-0);
   border: 1px solid var(--line);
   flex-shrink: 0;
 }
-.asset-thumb.empty {
+.asset-thumb-sm.empty {
   display: flex; align-items: center; justify-content: center;
-  color: var(--ash-dim); border-style: dashed; font-size: var(--fs-sm);
+  color: var(--ash-dim); border-style: dashed; font-size: var(--fs-xs);
 }
-.asset-meta { min-width: 0; flex: 1; }
-.asset-name { font-size: var(--fs-xs); display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.asset label.btn { cursor: pointer; }
+.asset-name { font-size: var(--fs-xs); color: var(--ash-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.asset-line label.btn { cursor: pointer; flex-shrink: 0; }
+.asset-line .btn-ghost { flex-shrink: 0; }
+.asset-line-select { width: auto; flex-shrink: 0; }
+.asset-line-range { flex: 1; min-width: 60px; }
+
+/* A question mark beside what it explains. The sentence lives in the hover
+   rather than under every control: it is there when it is wanted and takes
+   no space when it is not. */
+.tip {
+  position: relative;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 15px; height: 15px;
+  margin-left: var(--sp-1);
+  border: 1px solid var(--line); border-radius: 50%;
+  font-size: 10px; line-height: 1; color: var(--ash-dim);
+  cursor: help; flex-shrink: 0;
+}
+.tip:hover { color: var(--white); border-color: var(--ash-dim); }
+.tip::after {
+  content: attr(data-tip);
+  position: absolute;
+  bottom: calc(100% + 6px); left: 0;
+  width: max-content; max-width: 300px;
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--surface-1);
+  color: var(--text-1);
+  font-size: var(--fs-xs); font-weight: var(--fw-regular);
+  line-height: var(--lh-loose);
+  text-align: left; white-space: normal;
+  border: 1px solid var(--line); border-radius: var(--r-md);
+  box-shadow: var(--shadow-md);
+  opacity: 0; pointer-events: none;
+  transition: opacity var(--duration-fast) var(--ease-out);
+  z-index: 60;
+}
+.tip:hover::after { opacity: 1; }
 
 /* The picker is set in whatever is selected, and a line of real wording
    under it shows the choice at the size a question is actually read. */

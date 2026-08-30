@@ -17,6 +17,8 @@
 //   SurveySchema.normalizeQuestions(draft)   → { questions, issues }  (authoring)
 //   SurveySchema.visible(questions, answers) → the questions actually asked
 //   SurveySchema.checkResponse(qs, answers)  → { ok, errors, answers }  (submitting)
+//   SurveySchema.linkify(warding)            → wording as the respondent reads it
+//   SurveySchema.ending(qs, answers)          → where the survey goes: its end, or null
 
 const SurveySchema = (() => {
 
@@ -182,6 +184,130 @@ const SurveySchema = (() => {
     return date.getUTCFullYear() === y && date.getUTCMonth() === m - 1 && date.getUTCDate() === d;
   }
 
+  // ─── Links ────────────────────────────────────────────────
+  // Wording may point outside the survey. The standing case is a consent
+  // question whose "Terms & Conditions" must be the thing the member clicks,
+  // not words they have to go find. An option's subtext carries the same
+  // things — and an image, because a picture of the thing you are asking
+  // about is often the answer to "which one?".
+  //
+  // There is no rich text: a link is written [label](https://…), an image
+  // ![words](https://…), and a whole piece of wording that is nothing but
+  // an address is a link whose label is itself — and nothing else is. Raw
+  // HTML in a question would reach the respondent's screen as whatever the
+  // author typed; a mark-up the schema can check at save time is the only
+  // door wide enough for a link and an image and narrow enough to trust.
+  //
+  // The same file stays the law: the wording is checked when it is written,
+  // and linkify() is the only place wording becomes HTML — everything is
+  // escaped first, and the only tags that can come out of a question are the
+  // anchor and the image this writes.
+
+  // A link or an image as it is meant to be written, and something reaching
+  // for one. The second exists because a word in brackets followed by an
+  // address in parentheses is one the author meant to write — and a
+  // fragment that cannot be parsed is worse off refused than saved, because
+  // saved it reaches the member as words with brackets in them and nothing
+  // on screen says why.
+  const RICH_RE = /(!?)\[([^\[\]\n]*)\]\(([^()]*)\)/g;
+  const RICH_ATTEMPT_RE = /!?\[[^\[\]\n]*\]\([^)]*\)/g;
+  const RICH_LABEL_MAX = 80;
+  const RICH_URL_MAX = 500;
+
+  const htmlEscape = value => str(value)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+
+  // Where a picture in the wording may come from: the web, or this
+  // platform's own uploads — the path a picture uploaded from the builder
+  // lands at. The shape is the one uploads.js writes, nothing else, because
+  // the address of an image a member's browser fetches is a door, and this
+  // is the only door with a lock the schema can check at save time.
+  const STORED_PATH = /^\/uploads\/(?:[a-z0-9_-]+\/)*[a-z0-9]+(?:-[a-z0-9]+)*\.[a-z0-9]+$/;
+  const imageAddress = url => TEXT_FORMATS.url.test(url) || STORED_PATH.test(url);
+
+  // Every link and image in a piece of wording, held to what a question is
+  // allowed to say: words the member can read, an address that is a web
+  // address, and — for an image — words for the people who cannot see it. A
+  // bracket that is not a link — "[Enter] to continue" — matches nothing and
+  // stays the words it is.
+  function checkLinks(text, field, at) {
+    const value = str(text);
+    if (!value.includes('[')) return;
+
+    let attempt;
+    RICH_ATTEMPT_RE.lastIndex = 0;
+    while ((attempt = RICH_ATTEMPT_RE.exec(value))) {
+      const span = attempt[0];
+      const isImage = span[0] === '!';
+      const label = span.slice(isImage ? 2 : 1, span.indexOf(']')).trim();
+      const url = span.slice(span.indexOf('](') + 2, -1).trim();
+
+      if (isImage) {
+        if (!label) {
+          at(field, 'An image in the wording needs words for the people who cannot see it');
+        } else if (label.length > RICH_LABEL_MAX) {
+          at(field, `The words under the image are ${label.length} characters; keep them under ${RICH_LABEL_MAX}`);
+        } else if (url.length > RICH_URL_MAX) {
+          at(field, `The address of the image is ${url.length} characters long; keep it under ${RICH_URL_MAX}`);
+        } else if (!imageAddress(url)) {
+          at(field, `The image comes from "${url}" — an image may only come from an http:// or https:// address, or a picture uploaded here`);
+        }
+      } else if (!label) {
+        at(field, 'A link with nothing to click on — a link needs its words and its address');
+      } else if (label.length > RICH_LABEL_MAX) {
+        at(field, `The link label in the wording is ${label.length} characters; keep it under ${RICH_LABEL_MAX}`);
+      } else if (url.length > RICH_URL_MAX) {
+        at(field, `The address behind the link is ${url.length} characters long; keep it under ${RICH_URL_MAX}`);
+      } else if (!TEXT_FORMATS.url.test(url)) {
+        at(field, `The link points at "${url}" — a link may only go to an http:// or https:// address`);
+      }
+    }
+  }
+
+  // Wording into what a respondent sees. A fragment that fails to parse stays
+  // the literal words the author typed — however it got stored, it is not
+  // made into a link or an image at render time, because a link is a promise
+  // about where a click goes and this is the only place that promise is kept.
+  function linkify(text) {
+    const value = str(text);
+    const whole = trimmed(value);
+
+    // Wording that is nothing but an address is a link whose label is
+    // itself — the "URL" way of saying it.
+    if (!value.includes('[')) {
+      if (whole && TEXT_FORMATS.url.test(whole)) {
+        return `<a href="${htmlEscape(whole)}" target="_blank" rel="noopener noreferrer">${htmlEscape(whole)}</a>`;
+      }
+      return htmlEscape(value);
+    }
+
+    let out = '';
+    let last = 0;
+    let match;
+    RICH_RE.lastIndex = 0;
+
+    while ((match = RICH_RE.exec(value))) {
+      out += htmlEscape(value.slice(last, match.index));
+      const isImage = match[1] === '!';
+      const label = match[2].trim();
+      const url = match[3].trim();
+
+      if (isImage) {
+        out += (label && imageAddress(url))
+          ? `<img class="sv-wording-img" src="${htmlEscape(url)}" alt="${htmlEscape(label)}" loading="lazy">`
+          : htmlEscape(match[0]);
+      } else if (label && TEXT_FORMATS.url.test(url)) {
+        out += `<a href="${htmlEscape(url)}" target="_blank" rel="noopener noreferrer">${htmlEscape(label)}</a>`;
+      } else {
+        out += htmlEscape(match[0]);
+      }
+      last = match.index + match[0].length;
+    }
+
+    return out + htmlEscape(value.slice(last));
+  }
+
   // ─── Authoring: normalizing a written survey ──────────────
   // Takes what the builder posted and returns the survey as it will be stored,
   // plus every reason it cannot be. Nothing here guesses at intent: a rating
@@ -189,12 +315,21 @@ const SurveySchema = (() => {
   // means something other than what was written is worse than one that refuses
   // to save.
 
+  // The word of an option, whichever shape it is held in. Answers, rules and
+  // comparisons work on words, never on shapes — an option is held as a
+  // plain word (dropdowns, rankings, grid rows, where there is no room to
+  // say more) or as a card with a word and a subtext under it (single and
+  // multiple choice, where the member reads each option and a link or a
+  // picture belongs under the word).
+  const optionLabel = option => trimmed(
+    option && typeof option === 'object' ? (option.label ?? option.text) : option);
+
   function normalizeOptions(raw) {
     if (!Array.isArray(raw)) return [];
     const seen = new Set();
     const options = [];
     for (const option of raw) {
-      const text = trimmed(option && typeof option === 'object' ? option.text : option);
+      const text = optionLabel(option);
       if (!text) continue;                       // blank rows are the builder's, not the author's
       const fold = foldOption(text);
       if (seen.has(fold)) continue;              // a list with the same option twice cannot be tallied
@@ -202,6 +337,35 @@ const SurveySchema = (() => {
       options.push(text);
     }
     return options;
+  }
+
+  // The choice cards: the word, and under it the subtext — text, a link,
+  // an image or a bare address, held to the same rules as any other wording.
+  const SUBTEXT_MAX = 300;
+
+  function normalizeOptionCards(raw, at) {
+    if (!Array.isArray(raw)) return [];
+    const seen = new Set();
+    const cards = [];
+    for (const option of raw) {
+      const label = optionLabel(option);
+      if (!label) continue;
+      const fold = foldOption(label);
+      if (seen.has(fold)) continue;
+      seen.add(fold);
+
+      const card = { label };
+      const subtext = option && typeof option === 'object'
+        ? trimmed(option.subtext ?? option.description ?? option.hint)
+        : '';
+      if (subtext) {
+        const written = subtext.slice(0, SUBTEXT_MAX);
+        checkLinks(written, 'options', (field, message) => at(field, `Option "${label}" — ${message}`));
+        card.subtext = written;
+      }
+      cards.push(card);
+    }
+    return cards;
   }
 
   function normalizeQuestion(raw, index, earlier) {
@@ -222,10 +386,15 @@ const SurveySchema = (() => {
 
     if (!question.text) {
       at('text', 'Every question needs its wording');
+    } else {
+      checkLinks(question.text, 'text', at);
     }
 
     if (raw.question_id) question.question_id = trimmed(raw.question_id);
-    if (!isBlank(raw.description)) question.description = trimmed(raw.description).slice(0, 500);
+    if (!isBlank(raw.description)) {
+      question.description = trimmed(raw.description).slice(0, 500);
+      checkLinks(question.description, 'description', at);
+    }
 
     // Whether an answer is compulsory. Only meaningful for something you can
     // answer — a required section heading is a contradiction that would block
@@ -263,11 +432,12 @@ const SurveySchema = (() => {
       case 'dropdown':
       case 'multi_choice':
       case 'ranking': {
-        question.options = normalizeOptions(raw.options);
+        const cards = type === 'choice' || type === 'multi_choice';
+        question.options = cards ? normalizeOptionCards(raw.options, at) : normalizeOptions(raw.options);
         if (question.options.length < 2) {
           at('options', 'Needs at least two options to choose between');
         }
-        if (Array.isArray(raw.options) && raw.options.filter(o => !isBlank(o)).length > question.options.length) {
+        if (Array.isArray(raw.options) && raw.options.filter(o => !isBlank(optionLabel(o))).length > question.options.length) {
           at('options', 'Two options are the same');
         }
 
@@ -300,7 +470,7 @@ const SurveySchema = (() => {
           // Options that cannot be held together with any other — "None of
           // the above" ticked alongside three things is not an answer.
           const exclusive = normalizeOptions(raw.exclusive_options)
-            .filter(o => question.options.some(opt => foldOption(opt) === foldOption(o)));
+            .filter(o => question.options.some(opt => foldOption(optionLabel(opt)) === foldOption(o)));
           if (exclusive.length) question.exclusive_options = exclusive;
         }
         break;
@@ -401,6 +571,9 @@ const SurveySchema = (() => {
     const logic = normalizeLogic(raw.visible_if, earlier, at);
     if (logic) question.visible_if = logic;
 
+    const branchTo = normalizeBranchTo(raw.branch_to, question, at);
+    if (branchTo) question.branch_to = branchTo;
+
     return { question, issues };
   }
 
@@ -416,6 +589,14 @@ const SurveySchema = (() => {
   // And a value compared against a fixed list must be on that list, because
   // "Nigeria " with a trailing space is a condition that can never be true and
   // nothing on screen would ever say so.
+  //
+  // visible_if answers "what is asked"; branch_to answers "what happens next"
+  // — the designer's "then": when the answer to this question holds a rule,
+  // the survey goes where the rule says it goes. The next question, a later
+  // question, or the end of the survey, with the words the author wrote for
+  // that ending.
+  // Both halves are decided by the same walk, so a member can never be shown
+  // a question the branch took them past, or one the survey already ended.
 
   const OPERATORS = [
     { op: 'is', label: 'is', needsValue: true },
@@ -496,41 +677,131 @@ const SurveySchema = (() => {
         continue;
       }
 
-      const needsValue = OPERATORS_BY_OP.get(op).needsValue;
-      if (!needsValue) { kept.push({ question: questionId, op }); continue; }
+      const coerced = ruleValue(op, source, rule.value, 'visible_if', at);
+      if (!coerced) continue;
 
-      let value = rule.value;
-
-      if (source.options && ['is', 'is_not', 'includes', 'not_includes'].includes(op)) {
-        const matchOption = source.options.find(o => foldOption(o) === foldOption(value));
-        const other = source.allow_other && foldOption(value) === '__other__';
-        if (!matchOption && !other) {
-          at('visible_if', `"${trimmed(value)}" is not one of the options for "${source.text}"`);
-          continue;
-        }
-        value = other ? '__other__' : matchOption;
-      } else if (source.type === 'boolean') {
-        value = value === true || value === 'true' || foldOption(value) === foldOption(source.true_label);
-      } else if (OPERATORS_BY_OP.get(op).numeric && source.type !== 'date') {
-        const n = toNumber(value);
-        if (n === null) {
-          at('visible_if', 'A "more than" or "at least" rule needs a number to compare with');
-          continue;
-        }
-        value = n;
-      } else if (source.type === 'date') {
-        const d = trimmed(value);
-        if (!isRealDate(d)) { at('visible_if', 'A date rule needs a real date'); continue; }
-        value = d;
-      } else {
-        value = trimmed(value);
-        if (!value) { at('visible_if', 'A rule needs something to compare with'); continue; }
-      }
-
-      kept.push({ question: questionId, op, value });
+      kept.push(coerced.value === undefined
+        ? { question: questionId, op }
+        : { question: questionId, op, value: coerced.value });
     }
 
     return kept.length ? { match, rules: kept } : null;
+  }
+
+  // What a rule compares against, held in the shape the answer will be held
+  // in — the option as offered, the boolean as a boolean, the number as a
+  // number — because a rule stored in one shape and an answer arriving in
+  // another is a branch that never fires. A branch and an early exit hold
+  // their values to the same shapes, so both go through here.
+  function ruleValue(op, source, value, field, at) {
+    if (!OPERATORS_BY_OP.get(op).needsValue) return { value: undefined };
+
+    if (source.options && ['is', 'is_not', 'includes', 'not_includes'].includes(op)) {
+      const matchOption = source.options.find(o => foldOption(optionLabel(o)) === foldOption(value));
+      const other = source.allow_other && foldOption(value) === '__other__';
+      if (!matchOption && !other) {
+        at(field, `"${trimmed(value)}" is not one of the options for "${source.text}"`);
+        return null;
+      }
+      // The rule holds the word the answer will be held in — the label,
+      // never the card around it.
+      return { value: other ? '__other__' : optionLabel(matchOption) };
+    }
+    if (source.type === 'boolean') {
+      return { value: value === true || value === 'true' || foldOption(value) === foldOption(source.true_label) };
+    }
+    if (OPERATORS_BY_OP.get(op).numeric && source.type !== 'date') {
+      const n = toNumber(value);
+      if (n === null) {
+        at(field, 'A "more than" or "at least" rule needs a number to compare with');
+        return null;
+      }
+      return { value: n };
+    }
+    if (source.type === 'date') {
+      const d = trimmed(value);
+      if (!isRealDate(d)) { at(field, 'A date rule needs a real date'); return null; }
+      return { value: d };
+    }
+    const text = trimmed(value);
+    if (!text) { at(field, 'A rule needs something to compare with'); return null; }
+    return { value: text };
+  }
+
+  // The "then" of a branch: what the survey does once this question is
+  // answered. The "when" is a rule on this question's own answer, held to the
+  // same shapes a visibility rule is; the "then" is exactly one of two
+  // places: the end of the survey (with the words the author wrote for that
+  // ending — a consent question answered "no" is the standing case), or a
+  // later question.
+  //
+  // The rules are checked in the order they were written and the first one
+  // that holds decides what happens — an if / else if, not a combination —
+  // and none holding is not a branch at all, it is the survey simply moving
+  // on to the next question.
+  //
+  // A rule may look only at this question's own answer, for the same reason
+  // a visibility rule may only look backwards: a condition on an answer not
+  // yet given has no defined state. And a jump may only land on a question
+  // later in the survey — a jump to one already answered would re-ask it,
+  // and two questions jumping at each other is a loop a member cannot leave.
+  // So a rule carries no id of its own except the jump's target: the thing
+  // tested is fixed by where the rule sits.
+  function normalizeBranchTo(raw, question, at) {
+    if (!raw || typeof raw !== 'object') return null;
+
+    const rules = Array.isArray(raw.rules) ? raw.rules : [];
+    if (!rules.length) return null;
+
+    const allowed = operatorsFor(question.type);
+    const kept = [];
+
+    for (const rule of rules) {
+      const op = trimmed(rule && rule.op) || 'is';
+      if (!OPERATORS_BY_OP.has(op)) {
+        at('branch_to', `Unknown condition "${op}"`);
+        continue;
+      }
+      if (!allowed.includes(op)) {
+        at('branch_to', `"${OPERATORS_BY_OP.get(op).label}" cannot be asked of a ${question.type} question`);
+        continue;
+      }
+
+      const coerced = ruleValue(op, question, rule && rule.value, 'branch_to', at);
+      if (!coerced) continue;
+
+      const ends = rule.end === true || rule.end === 'true';
+      const gotoId = trimmed(rule.goto);
+      // A rule that names no place still decides: it says "when this holds,
+      // go on to the next question" — which matters when a rule after it
+      // would have ended or jumped. Only a rule that does two things at
+      // once has no single place to go.
+      if (ends && gotoId) {
+        at('branch_to', 'A branch says where the survey goes: the next question, a later question, or the end — not two of those at once');
+        continue;
+      }
+
+      if (gotoId) {
+        kept.push(coerced.value === undefined
+          ? { op, goto: gotoId }
+          : { op, value: coerced.value, goto: gotoId });
+      } else if (ends) {
+        // What the member sees when the survey ends here. Without one, it
+        // ends in the same thank-you it ends in anywhere else.
+        const message = isBlank(rule.message) ? null : trimmed(rule.message).slice(0, 200);
+        kept.push(coerced.value === undefined
+          ? { op, end: true, ...(message ? { message } : {}) }
+          : { op, value: coerced.value, end: true, ...(message ? { message } : {}) });
+      } else {
+        // A "next" rule carries no action at all: its decision is that the
+        // survey goes on, rather than any of the rules after it deciding.
+        kept.push(coerced.value === undefined
+          ? { op }
+          : { op, value: coerced.value });
+      }
+    }
+
+    return kept.length ? { rules: kept } : null;
   }
 
   // Does one rule hold, given the answers so far? `answers` here holds only
@@ -585,17 +856,61 @@ const SurveySchema = (() => {
     return foldOption(a) === foldOption(b);
   }
 
-  // The questions this member is actually being asked, given what they have
-  // answered. Walked in order, carrying only the answers to questions that
-  // were themselves shown: an answer given on a path the member later backed
-  // out of must not keep a downstream question alive.
-  function visible(questions, answers = {}) {
+  // The branch a question's own answer takes: the first rule whose condition
+  // holds, or null when none does — which is not a branch, it is the survey
+  // moving on.
+  //
+  // Evaluated against the same live answers a visibility rule sees, so a
+  // branch fired by an answer the member later retracted does not fire
+  // either — the survey cannot jump from a question the member was never
+  // shown.
+  function branchAction(question, answers = {}) {
+    const logic = question && question.branch_to;
+    if (!logic || !Array.isArray(logic.rules) || !logic.rules.length) return null;
+
+    const value = Object.prototype.hasOwnProperty.call(answers, question.id)
+      ? answers[question.id] : undefined;
+
+    for (const rule of logic.rules) {
+      if (ruleHolds({ ...rule, question: question.id }, question, { [question.id]: value })) {
+        return rule;
+      }
+    }
+    return null;
+  }
+
+  // The one walk that decides what a member is being asked, given what they
+  // have answered, and where the survey goes.
+  //
+  // Walked in order, carrying only the answers to questions that were
+  // themselves shown: an answer given on a path the member later backed out
+  // of must not keep a downstream question alive — and must not fire a
+  // branch at a question the member was never shown.
+  //
+  // Three things decide the walk. A question whose visibility condition does
+  // not hold is skipped over. A question whose branch jumps carries the walk
+  // forward to the landing question — the questions in between are not asked,
+  // and the landing question still answers to its own conditions, so a jump
+  // onto a hidden question lands on whatever is asked next after it. And a
+  // question whose branch ends the survey stops the walk there: the last
+  // question asked, because it is what the member is answering when the
+  // survey stops.
+  function resolveFlow(questions, answers = {}) {
     const shown = [];
     const live = {};
     const byId = new Map();
+    let landing = null;   // a jump in flight: where the walk resumes
+    let ending = null;    // where the survey stops, with the words for it
 
     for (const question of questions || []) {
       byId.set(question.id, question);
+
+      if (ending) break;
+
+      if (landing) {
+        if (question.id !== landing) continue;
+        landing = null;
+      }
 
       const logic = question.visible_if;
       let show = true;
@@ -611,9 +926,31 @@ const SurveySchema = (() => {
       if (Object.prototype.hasOwnProperty.call(answers, question.id)) {
         live[question.id] = answers[question.id];
       }
+
+      const action = branchAction(question, live);
+      if (action) {
+        if (action.goto) landing = action.goto;
+        else if (action.end) ending = { question, message: action.message || null };
+        // A rule that sends them on to the next question decides only that
+        // the walk goes on — which is what it does anyway; its work is
+        // shadowing the rules written after it.
+      }
     }
 
-    return shown;
+    return { shown, live, ending };
+  }
+
+  function visible(questions, answers = {}) {
+    return resolveFlow(questions, answers).shown;
+  }
+
+  // Where the survey goes, given these answers: the question at which it
+  // ends, with the words the author wrote for that ending — or null when it
+  // ran to the end. The respond endpoints report it, so the member gets the
+  // ending that was written for it rather than a thank-you that assumes the
+  // whole survey was walked.
+  function ending(questions, answers = {}) {
+    return resolveFlow(questions, answers).ending;
   }
 
   const visibleIds = (questions, answers) => new Set(visible(questions, answers).map(q => q.id));
@@ -690,8 +1027,8 @@ const SurveySchema = (() => {
       case 'choice':
       case 'dropdown': {
         const text = trimmed(value);
-        const known = (question.options || []).find(o => foldOption(o) === foldOption(text));
-        if (known) return pass(known);
+        const known = (question.options || []).find(o => foldOption(optionLabel(o)) === foldOption(text));
+        if (known) return pass(optionLabel(known));
         // An unlisted value is the "Other" box when the author allowed one,
         // and a rejected answer when they did not — otherwise a choice
         // question tallies values nobody was ever offered.
@@ -707,9 +1044,10 @@ const SurveySchema = (() => {
         for (const entry of value) {
           const text = trimmed(entry);
           if (!text) continue;
-          const known = (question.options || []).find(o => foldOption(o) === foldOption(text));
+          const known = (question.options || []).find(o => foldOption(optionLabel(o)) === foldOption(text));
           if (known) {
-            if (!picked.some(p => foldOption(p) === foldOption(known))) picked.push(known);
+            const word = optionLabel(known);
+            if (!picked.some(p => foldOption(p) === foldOption(word))) picked.push(word);
             continue;
           }
           if (!question.allow_other) return fail('Pick from the options');
@@ -740,12 +1078,13 @@ const SurveySchema = (() => {
         if (!Array.isArray(value)) return fail('Put the options in order');
         const ordered = [];
         for (const entry of value) {
-          const known = (question.options || []).find(o => foldOption(o) === foldOption(entry));
+          const known = (question.options || []).find(o => foldOption(optionLabel(o)) === foldOption(entry));
           if (!known) return fail('That is not one of the options');
-          if (ordered.some(o => foldOption(o) === foldOption(known))) {
+          const word = optionLabel(known);
+          if (ordered.some(o => foldOption(o) === foldOption(word))) {
             return fail('Each option can only take one position');
           }
-          ordered.push(known);
+          ordered.push(word);
         }
         // A partial ranking is not comparable with a complete one, so the
         // whole list is the answer or none of it is.
@@ -931,6 +1270,28 @@ const SurveySchema = (() => {
       }
     });
 
+    // A jump must land somewhere later in the survey — and that "later" can
+    // only be checked once every slot has its id. A rule that jumps to a
+    // question that is not there, or that is not later, cannot fire, so it is
+    // dropped with a reason rather than kept to sit in the definition doing
+    // nothing.
+    questions.forEach((question, index) => {
+      if (!question.branch_to) return;
+      const later = new Set(questions.slice(index + 1).map(q => q.id));
+      question.branch_to.rules = question.branch_to.rules.filter(rule => {
+        if (!rule.goto) return true;
+        if (!later.has(rule.goto)) {
+          issues.push({
+            index, number: index + 1, field: 'branch_to',
+            message: 'A jump can only land on a question later in the survey'
+          });
+          return false;
+        }
+        return true;
+      });
+      if (!question.branch_to.rules.length) delete question.branch_to;
+    });
+
     return { questions, issues };
   }
 
@@ -987,9 +1348,10 @@ const SurveySchema = (() => {
     OPERATORS, operatorsFor, CONDITIONABLE,
     normalizeQuestion, normalizeQuestions,
     visible, visibleIds, isAnswered, isEmpty, validateAnswer, checkResponse,
+    linkify, ending, branchAction,
     answerToText, npsScore,
     // exported for callers that need the same folding rules
-    foldOption, toNumber, isRealDate
+    foldOption, toNumber, isRealDate, optionLabel, SUBTEXT_MAX
   };
 })();
 

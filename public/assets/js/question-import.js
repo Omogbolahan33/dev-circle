@@ -278,7 +278,9 @@ const QuestionImport = (() => {
 <aside class="drawer drawer-lg" id="qiDrawer">
   <div class="drawer-head">
     <div>
-      <div class="drawer-title">Import questions in bulk</div>
+      <div class="drawer-title">Import questions in bulk
+        <span class="tip" data-tip="Import brings in wording, type, whether it is required, options and grid/scale columns. Branching (“show this if…”) and per-field mapping are set in the builder afterwards — a sheet cannot describe those clearly.">?</span>
+      </div>
       <div class="drawer-sub">Paste or upload a CSV — one question per row. Valid rows are added; rows with a problem are listed, not added.</div>
     </div>
     <button class="icon-btn" onclick="QuestionImport.close()">×</button>
@@ -287,8 +289,8 @@ const QuestionImport = (() => {
     <div class="field">
       <label class="label">Start from the template</label>
       <div class="field-row">
-        <button class="btn btn-sm btn-secondary" onclick="QuestionImport.downloadTemplate()">Download template (CSV)</button>
-        <span class="hint" style="margin:0">Shows the columns and an example of each question type.</span>
+        <button class="btn btn-sm btn-secondary" onclick="QuestionImport.downloadTemplate()">Download template (CSV)
+          <span class="tip" data-tip="Shows the columns and an example of each question type.">?</span></button>
       </div>
     </div>
 
@@ -298,23 +300,17 @@ const QuestionImport = (() => {
     </div>
 
     <div class="field mt-6">
-      <label class="label" for="qiData">…or paste the rows</label>
+      <label class="label" for="qiData">…or paste the rows
+        <span class="tip" data-tip="Nothing is added until you confirm.">?</span></label>
       <textarea class="input mono text-xs" id="qiData" style="min-height:160px"
         placeholder="question,type,required,options,description&#10;How was onboarding?,rating,yes,,,Rate 1-5&#10;Which channel?,choice,no,Email | WhatsApp | SMS"></textarea>
     </div>
 
     <div class="field-row">
       <button class="btn btn-sm btn-secondary" onclick="QuestionImport.parse()">Check rows</button>
-      <span class="hint" style="margin:0">Nothing is added until you confirm.</span>
     </div>
 
     <div id="qiResult" class="mt-6"></div>
-
-    <p class="hint mt-6">
-      Import brings in wording, type, whether it is required, options and
-      grid/scale columns. Branching (“show this if…”) and per-field mapping are
-      set in the builder afterwards — a sheet cannot describe those clearly.
-    </p>
   </div>
   <div class="drawer-foot">
     <button class="btn btn-secondary" onclick="QuestionImport.close()">Cancel</button>

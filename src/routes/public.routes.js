@@ -192,6 +192,12 @@ router.post('/surveys/:token/respond', writing, async (req, res) => {
     UPDATE survey_responses SET answers = ?, completed_at = datetime('now') WHERE id = ?
   `).run(JSON.stringify(checked.answers), response.id);
 
+  // The survey may have branched to its end before it was over — a consent
+  // question answered "no" ends it there — and the ending the author wrote
+  // for that is what the end of the link should carry, not a thank-you that
+  // assumes the whole survey was walked.
+  const ending = surveyForm.ending(questions, checked.answers);
+
   // Written answers are filed as feedback the same way a member's are. The
   // alternative — dropping them because there is no account to file them
   // against — would lose exactly the words this whole feature exists to
@@ -202,7 +208,9 @@ router.post('/surveys/:token/respond', writing, async (req, res) => {
     message: 'Survey completed',
     answered: checked.asked.length,
     discarded: checked.dropped.length,
-    verbatims: filed
+    verbatims: filed,
+    ended: !!ending,
+    end_message: ending ? ending.message : null
   });
 });
 

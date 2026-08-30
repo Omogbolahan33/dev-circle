@@ -120,12 +120,6 @@
     .done-text { color: var(--ash); font-size: var(--fs-sm); line-height: var(--lh-loose); margin-bottom: var(--sp-2); }
     .done-meta { font-size: var(--fs-xs); color: var(--ash-dim); margin-bottom: var(--sp-6); }
 
-    .intro { max-width: 520px; }
-    .intro-logo { max-height: 44px; margin-bottom: var(--sp-6); }
-    .intro-header { width: 100%; max-height: 200px; object-fit: cover; border-radius: var(--r-lg); margin-bottom: var(--sp-6); display: block; }
-    .intro-title { font-family: var(--font-display); font-weight: var(--fw-bold); font-size: var(--fs-2xl); letter-spacing: -0.02em; margin-bottom: var(--sp-4); }
-    .intro-body { color: var(--ash); font-size: var(--fs-base); line-height: var(--lh-loose); margin-bottom: var(--sp-6); }
-    .intro-facts { display: flex; gap: var(--sp-5); font-size: var(--fs-xs); color: var(--ash-dim); margin-bottom: var(--sp-8); }
 
     /* Said once, at the end, and small: the person filling this in is handing
        over their details, and they are owed a plain sentence about what
@@ -232,12 +226,21 @@
   let answers = {};
   let theme = SurveyTheme.DEFAULTS;
   let cursor = 0;
+  let pageCursor = 0;          // index into the pages, when the layout pages
   let errors = {};
   let saveTimer = null;
   let dirty = false;
 
   const asked = () => SurveySchema.visible(questions, answers);
   const answerable = () => asked().filter(SurveySchema.isAnswerable);
+
+  // The layouts that divide the form into pages: a fixed number of
+  // questions to a page, or a section heading as the page break. The pages
+  // are always cut from what is actually asked, so a branch that removes
+  // questions re-cuts the pages with them.
+  const paging = () => theme.layout === 'n_per_page' || theme.layout === 'by_section';
+  const pagesNow = () => SurveyRender.pages(asked(), { layout: theme.layout, size: theme.page_size });
+  const isLastPage = () => pageCursor >= pagesNow().length - 1;
 
   async function init() {
     if (!token) return fail('This page needs a form link.');
@@ -272,8 +275,9 @@
 
       tellHost('ready');
 
-      if (theme.intro && (theme.intro.headline || theme.intro.body)) showIntro();
-      else begin();
+      // No separate opening screen: the form opens on its own words — its
+      // name and description, set where the form goes, not in its look.
+      begin();
     } catch (err) {
       // Somebody who followed a link has no home here to be sent back to, and
       // an already-sent application is a reason rather than an error.
@@ -317,27 +321,6 @@
     }
   }
 
-  function showIntro() {
-    const count = answerable().length;
-    const about = questions.some(q => q.visible_if) ? 'About ' : '';
-    document.getElementById('stage').innerHTML = `
-      <div class="intro">
-        ${theme.header_image ? `<img src="${escapeHtml(theme.header_image)}" alt="" class="intro-header">` : ''}
-        ${theme.logo_url ? `<img src="${escapeHtml(theme.logo_url)}" alt="" class="intro-logo">` : ''}
-        <h1 class="intro-title">${escapeHtml(theme.intro.headline || form.name)}</h1>
-        ${theme.intro.body ? `<p class="intro-body">${escapeHtml(theme.intro.body)}</p>`
-          : form.description ? `<p class="intro-body">${escapeHtml(form.description)}</p>` : ''}
-        <div class="intro-facts">
-          <span>${about}${count} question${count === 1 && !about ? '' : 's'}</span>
-          ${Object.keys(answers).length ? '<span>Your earlier answers are saved</span>' : ''}
-        </div>
-        <button class="btn btn-primary btn-lg" onclick="begin()">
-          ${escapeHtml(theme.intro.button || (Object.keys(answers).length ? 'Pick up where you left off' : 'Start'))}
-        </button>
-      </div>`;
-    reportHeight();
-  }
-
   function begin() {
     document.getElementById('foot').classList.remove('hide');
     if (theme.progress !== 'none') document.getElementById('progressStrip').classList.remove('hide');
@@ -345,7 +328,15 @@
     const list = asked();
     const firstUnanswered = list.findIndex(q =>
       SurveySchema.isAnswerable(q) && !SurveySchema.isAnswered(q, answers[q.id]));
-    cursor = firstUnanswered === -1 ? 0 : firstUnanswered;
+
+    if (paging()) {
+      const pages = pagesNow();
+      pageCursor = firstUnanswered === -1 ? 0
+        : pages.findIndex(p => p.some(q => q.id === list[firstUnanswered].id));
+      if (pageCursor === -1) pageCursor = 0;
+    } else {
+      cursor = firstUnanswered === -1 ? 0 : firstUnanswered;
+    }
 
     render();
   }
@@ -357,6 +348,7 @@
 
   function render() {
     if (theme.layout === 'all_at_once') renderAll();
+    else if (paging()) renderPages();
     else renderOne();
     reportHeight();
   }
@@ -376,8 +368,8 @@
         ${SurveySchema.isAnswerable(question)
           ? SurveyRender.heading(question, { number })
           : `<div class="sv-section-mark">Section</div>
-             <h2 class="sv-ask">${escapeHtml(question.text)}</h2>
-             ${question.description ? `<p class="sv-note">${escapeHtml(question.description)}</p>` : ''}`}
+             <h2 class="sv-ask">${SurveySchema.linkify(question.text)}</h2>
+             ${question.description ? `<p class="sv-note">${SurveySchema.linkify(question.description)}</p>` : ''}`}
         <div class="sv-control" id="control"></div>
         <div id="questionError"></div>
       </div>`;
@@ -424,7 +416,7 @@
               ${isAnswerable
                 ? SurveyRender.heading(question, { number })
                 : `<div class="sv-section-mark">Section</div>
-                   <h2 class="sv-ask">${escapeHtml(question.text)}</h2>`}
+                   <h2 class="sv-ask">${SurveySchema.linkify(question.text)}</h2>`}
               ${isAnswerable ? `<div class="sv-control" data-control="${question.id}"></div>` : ''}
               <div data-error="${question.id}"></div>
             </div>`;
@@ -447,6 +439,66 @@
     document.getElementById('nextBtn').textContent = 'Send';
   }
 
+  // The paged layouts: a page of the form at a time. The questions a page
+  // holds are cut from what is actually asked — N of them, or everything up
+  // to the next section, which is where the page breaks — so a branch that
+  // adds or removes questions re-cuts the pages the member is walking.
+  function renderPages() {
+    const list = asked();
+    const pages = pagesNow();
+    if (pageCursor >= pages.length) pageCursor = Math.max(0, pages.length - 1);
+    const page = pages[pageCursor] || [];
+
+    const stage = document.getElementById('stage');
+    stage.classList.add('scrolling');
+
+    // A question's number is its number in the whole form, not its place on
+    // the page: a question that is third on page two is still question six.
+    let running = 0;
+    const numberFor = new Map();
+    for (const question of list) {
+      if (SurveySchema.isAnswerable(question)) {
+        running++;
+        numberFor.set(question.id, running);
+      }
+    }
+
+    stage.innerHTML = `
+      <div class="question-wrap">
+        <h1 class="sv-ask" style="font-size:var(--fs-2xl)">${escapeHtml(form.name)}</h1>
+        ${form.description ? `<p class="sv-note">${escapeHtml(form.description)}</p>` : ''}
+        ${page.some(q => q.required)
+          ? '<p class="legend"><span class="sv-required">*</span> Answering is required</p>' : ''}
+        ${page.map(question => {
+          const answerable = SurveySchema.isAnswerable(question);
+          return `
+            <div class="stack-q" data-question="${question.id}">
+              ${answerable
+                ? SurveyRender.heading(question, { number: numberFor.get(question.id) })
+                : `<div class="sv-section-mark">Section</div>
+                   <h2 class="sv-ask">${SurveySchema.linkify(question.text)}</h2>`}
+              ${answerable ? `<div class="sv-control" data-control="${question.id}"></div>` : ''}
+              <div data-error="${question.id}"></div>
+            </div>`;
+        }).join('')}
+      </div>`;
+
+    for (const question of page) {
+      const holder = stage.querySelector(`[data-control="${CSS.escape(question.id)}"]`);
+      if (!holder) continue;
+      SurveyRender.mount(holder, question, {
+        value: answers[question.id],
+        seed: form.id,
+        onChange: value => answer(question, value)
+      });
+      showError(question);
+    }
+
+    updateProgress();
+    document.getElementById('prevBtn').disabled = pageCursor === 0;
+    document.getElementById('nextBtn').textContent = isLastPage() ? 'Send' : 'Next page →';
+  }
+
   function answer(question, value) {
     const before = asked().map(q => q.id).join('|');
     answers[question.id] = value;
@@ -457,8 +509,9 @@
 
     if (after !== before) {
       if (theme.layout === 'all_at_once') { renderAll(); reportHeight(); return; }
+      if (paging()) { renderPages(); reportHeight(); return; }   // the pages re-cut with the set
       updateProgress();
-    } else if (theme.layout !== 'all_at_once') {
+    } else if (theme.layout !== 'all_at_once' && !paging()) {
       updateProgress();
       if (question.type === 'ranking') renderOne();
     }
@@ -469,7 +522,9 @@
   }
 
   function showError(question) {
-    const holder = theme.layout === 'all_at_once'
+    // A single screen has one error slot; a form of several questions per
+    // screen has one per question.
+    const holder = theme.layout === 'all_at_once' || paging()
       ? document.querySelector(`[data-error="${CSS.escape(question.id)}"]`)
       : document.getElementById('questionError');
     if (!holder) return;
@@ -485,7 +540,11 @@
     const position = Math.min(list.length, asked().slice(0, cursor + 1).filter(SurveySchema.isAnswerable).length);
     const track = document.getElementById('progressTrack');
 
-    if (theme.progress === 'steps' && list.length <= 20) {
+    // A step per question fills unevenly under a page, where the member
+    // navigates pages — so paged forms take the bar.
+    const stepMode = theme.progress === 'steps' && !paging() && list.length <= 20;
+
+    if (stepMode) {
       track.innerHTML = `<div class="steps">${list.map((q, i) => {
         const answered = SurveySchema.isAnswered(q, answers[q.id]);
         return `<span class="step${answered ? ' done' : i === position - 1 ? ' here' : ''}"></span>`;
@@ -498,11 +557,15 @@
     }
 
     // "of ~7" rather than "of 7": with branching, how many questions remain
-    // genuinely depends on answers not yet given.
-    const branching = questions.some(q => q.visible_if);
+    // genuinely depends on answers not yet given. The same honesty applies to
+    // the page count of a paged form.
+    const branching = questions.some(q => q.visible_if || q.branch_to);
+    const pages = paging() ? pagesNow() : null;
     document.getElementById('progressText').textContent = theme.layout === 'all_at_once'
       ? `${done} of ${branching ? '~' : ''}${list.length} answered`
-      : `Question ${position} of ${branching ? '~' : ''}${list.length}`;
+      : paging()
+        ? `Page ${Math.min(pageCursor + 1, pages.length)} of ${branching ? '~' : ''}${pages.length}`
+        : `Question ${position} of ${branching ? '~' : ''}${list.length}`;
   }
 
   // ─── Moving through ──────────────────────────────────────
@@ -510,6 +573,29 @@
   const isLast = () => cursor >= asked().length - 1;
 
   function goNext() {
+    if (paging()) {
+      const page = pagesNow()[pageCursor] || [];
+
+      // A required question anywhere on the page is where the page stops.
+      for (const question of page) {
+        if (!SurveySchema.isAnswerable(question)) continue;
+        const result = SurveySchema.validateAnswer(question, answers[question.id]);
+        if (!result.ok) errors[question.id] = result.error;
+      }
+      if (page.some(q => errors[q.id])) {
+        renderPages();
+        reportHeight();
+        return;
+      }
+
+      if (isLastPage()) return submit();
+      pageCursor++;
+      renderPages();
+      reportHeight();
+      if (!embedded) window.scrollTo({ top: 0 });
+      return;
+    }
+
     const list = asked();
     const question = list[cursor];
 
@@ -533,6 +619,14 @@
   }
 
   function goBack() {
+    if (paging()) {
+      if (pageCursor === 0) return;
+      pageCursor--;
+      renderPages();
+      reportHeight();
+      if (!embedded) window.scrollTo({ top: 0 });
+      return;
+    }
     if (cursor === 0) return;
     cursor--;
     render();
@@ -573,6 +667,16 @@
         renderAll();
         document.querySelector(`[data-question="${CSS.escape(list[first].id)}"]`)
           ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      } else if (paging()) {
+        // The error may be on a page the member is not on — submission walks
+        // the whole form, so take them to it.
+        const pages = pagesNow();
+        pageCursor = first === -1 ? pageCursor
+          : pages.findIndex(p => p.some(q => q.id === list[first].id));
+        if (pageCursor === -1) pageCursor = 0;
+        renderPages();
+        document.querySelector(`[data-question="${CSS.escape(list[first].id)}"]`)
+          ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       } else {
         cursor = first === -1 ? cursor : first;
         render();
@@ -599,17 +703,18 @@
       document.getElementById('progressStrip').classList.add('hide');
       document.getElementById('foot').classList.add('hide');
 
-      const closing = theme.thank_you || {};
+      // The closing words are the form's own — the message set where the form
+      // goes, not a line the look carries. There is no theme thank-you here.
       const firstName = String(answers[questions.find(q => q.maps_to === 'name')?.id] || '')
         .trim().split(' ')[0];
 
       document.getElementById('stage').innerHTML = `
         <div class="done">
           <div class="done-mark">✓</div>
-          <div class="done-title">${escapeHtml(closing.headline ||
-            (firstName ? `Thank you, ${firstName}` : 'Thank you'))}</div>
+          <div class="done-title">${escapeHtml(
+            firstName ? `Thank you, ${firstName}` : 'Thank you')}</div>
           <p class="done-text">${escapeHtml(
-            result.submitted_message || closing.body ||
+            result.submitted_message ||
             'We have your details. Someone will review this and you will hear from us at the address you gave.')}</p>
           <p class="fine-print">
             Your answers are held by Credit Direct while this is reviewed. Nothing is sent to you
@@ -661,6 +766,8 @@
 
   document.addEventListener('keydown', e => {
     if (['TEXTAREA', 'INPUT', 'SELECT'].includes(e.target.tagName)) return;
+    // On a paged form the arrows move the page instead of the question —
+    // still the same two keys, one level up.
     if (!questions.length || theme.layout === 'all_at_once') return;
     if (e.key === 'ArrowRight' || e.key === 'Enter') goNext();
     if (e.key === 'ArrowLeft') goBack();

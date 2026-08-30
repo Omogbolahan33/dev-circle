@@ -82,6 +82,7 @@ router.get('/onboarding/schema', requirePermission('onboarding.read'), async (re
       backgrounds: surveyForm.themes.BACKGROUNDS,
       corners: surveyForm.themes.CORNERS,
       layouts: surveyForm.themes.LAYOUTS,
+      page_size: surveyForm.themes.PAGE_SIZE,
       progress: surveyForm.themes.PROGRESS,
       modes: surveyForm.themes.MODES,
       fits: surveyForm.themes.FITS,

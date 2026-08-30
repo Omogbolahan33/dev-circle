@@ -416,10 +416,10 @@ function exampleAnswer(question, row = null) {
 
     case 'choice':
     case 'dropdown':
-      return (question.options || [])[0] || '';
+      return surveyForm.optionLabel((question.options || [])[0]) || '';
 
     case 'multi_choice': {
-      const options = question.options || [];
+      const options = (question.options || []).map(o => surveyForm.optionLabel(o));
       const exclusive = new Set((question.exclusive_options || []).map(surveyForm.foldOption));
       // An exclusive option cannot be shown alongside anything else, so the
       // ones that can be held together come first
@@ -433,7 +433,7 @@ function exampleAnswer(question, row = null) {
     }
 
     case 'ranking':
-      return (question.options || []).map((o, i) => `${i + 1}. ${o}`).join('; ');
+      return (question.options || []).map((o, i) => `${i + 1}. ${surveyForm.optionLabel(o)}`).join('; ');
 
     case 'rating': {
       const scale = question.scale || 5;
@@ -483,14 +483,14 @@ function accepts(question) {
   switch (question.type) {
     case 'choice':
     case 'dropdown':
-      return `One of: ${(question.options || []).join(', ')}.` +
+      return `One of: ${(question.options || []).map(o => surveyForm.optionLabel(o)).join(', ')}.` +
         (question.allow_other ? ' Anything else is kept as an "Other" answer.' : '');
     case 'multi_choice':
-      return `Any of: ${(question.options || []).join(', ')}. Separate several with a semicolon.` +
+      return `Any of: ${(question.options || []).map(o => surveyForm.optionLabel(o)).join(', ')}. Separate several with a semicolon.` +
         (question.min_select ? ` At least ${question.min_select}.` : '') +
         (question.max_select ? ` At most ${question.max_select}.` : '');
     case 'ranking':
-      return `Every one of ${(question.options || []).join(', ')}, in order, separated by ` +
+      return `Every one of ${(question.options || []).map(o => surveyForm.optionLabel(o)).join(', ')}, in order, separated by ` +
         'semicolons. A partial order is refused — it cannot be compared with a complete one.';
     case 'rating':
       return `A whole number from 1 to ${question.scale || 5}. "4/5" is read as 4.`;

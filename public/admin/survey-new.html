@@ -57,6 +57,7 @@
         <div class="stack">
           <section class="step" id="step-questions">
             <div class="hide" id="lockNotice"></div>
+            <div class="card mb-4" id="displayCard"></div>
             <div id="questions"></div>
 
             <div class="field-row mt-3">
@@ -143,9 +144,10 @@
 
         <aside class="rail">
           <section class="card">
-            <div class="card-title mb-4">What the member sees</div>
+            <div class="card-title mb-4">What the member sees
+              <span class="tip" data-tip="This is the real control — try answering it to see where the branching goes.">?</span>
+            </div>
             <div class="preview-frame" id="preview"></div>
-            <p class="hint">This is the real control — try answering it to see where the branching goes.</p>
           </section>
         </aside>
 
@@ -207,7 +209,12 @@
         preview:   document.getElementById('preview'),
         count:     document.getElementById('stepQCount')
       },
-      title: () => document.getElementById('sTitle').value.trim() || 'Untitled survey'
+      title: () => document.getElementById('sTitle').value.trim() || 'Untitled survey',
+      // A survey may branch on its answers: jump to a later question, or end
+      // early (a consent question answered "no" ends it there). An onboarding
+      // form must not: a form that ends early, or jumps past a credential
+      // field, is a half-built member.
+      allowBranching: true
     });
 
     themePanel = ThemePanel.create({
@@ -222,8 +229,19 @@
       onReset: () => builder?.resetPreview()
     });
 
+    // How the questions are shown is decided beside the questions, not in the
+    // look — and where the layout is "N per page", N is a number this page
+    // checks was actually set, because it is the designer's to set.
+    displayPanel = ThemePanel.display({
+      schema,
+      state,
+      mount: document.getElementById('displayCard'),
+      onChange: () => renderPreview()
+    });
+
     renderTypeMenu();
     renderThemePanel();
+    renderDisplay();
     loadCohorts();
 
     if (state.id) await loadExisting();
@@ -251,6 +269,7 @@
       document.getElementById('sTarget').value =
         ['cohort', 'anonymous'].includes(survey.target_type) ? survey.target_type : 'all';
       toggleCohortTarget();
+      renderDisplay();
 
       document.getElementById('crumb').textContent = survey.title;
       document.getElementById('pageTitle').textContent = `Edit: ${survey.title}`;
@@ -362,8 +381,10 @@
   // theme itself stays in state.theme, which is what saveSurvey posts.
 
   let themePanel = null;
+  let displayPanel = null;
 
   function renderThemePanel() { themePanel?.render(); }
+  function renderDisplay()    { displayPanel?.render(); }
 
 
   document.querySelectorAll('[data-step]').forEach(tab => {
@@ -394,6 +415,17 @@
       showToast(general ? general.message : `Question ${check.issues[0].number}: ${check.issues[0].message}`, 'warning');
       document.querySelector('.q-card.invalid')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       return;
+    }
+
+    // "N per page" without an N is a page size nobody chose. The server says
+    // the same thing; this is the version the author sees against the control.
+    if (state.theme && state.theme.layout === 'n_per_page') {
+      const n = parseInt(state.theme.page_size, 10);
+      const { min = 2, max = 10 } = (schema && schema.theme.page_size) || {};
+      if (!Number.isFinite(n) || n < min || n > max) {
+        showToast(`Set N — how many questions per page (${min}–${max})`, 'warning');
+        return;
+      }
     }
 
     const targetType = document.getElementById('sTarget').value;

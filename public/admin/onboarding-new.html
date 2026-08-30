@@ -16,13 +16,17 @@
     /* ─── The tag on a question ───────────────────────────
        What separates this from a survey: an answer can be a fact about the
        person rather than an opinion. The control sits under the question's own
-       settings and above its branching, because it is a property of the
-       question and not of the form. */
+       settings, above its branching, because it is a property of the question
+       and not of the form. */
     .maps {
       margin-top: var(--sp-4);
       padding-top: var(--sp-4);
       border-top: 1px dashed var(--line-faint);
     }
+    /* Both the settings and the tag sit inside the card's fold, so the
+       divider between them works at the fold's own scale rather than the
+       card's. */
+    .q-more-body > .maps { margin-top: var(--sp-3); padding-top: var(--sp-3); }
     .maps-lead { font-size: var(--fs-xs); color: var(--ash-dim); margin-bottom: var(--sp-2); }
     .maps-note { font-size: var(--fs-xs); color: var(--ash-dim); margin-top: var(--sp-2); line-height: var(--lh-loose); }
     .q-maps {
@@ -105,6 +109,7 @@
         <div class="stack">
           <section class="step" id="step-questions">
             <div class="hide" id="lockNotice"></div>
+            <div class="card mb-4" id="displayCard"></div>
             <div id="questions"></div>
 
             <div class="field-row mt-3">
@@ -118,9 +123,9 @@
             <div class="card">
               <div class="card-title mb-4">About this form</div>
               <div class="field">
-                <label class="label">Name</label>
+                <label class="label">Name
+                  <span class="tip" data-tip="For you, in the list. What the person filling it in sees is its opening screen.">?</span></label>
                 <input type="text" class="input" id="fName" placeholder="e.g. Partner developer intake">
-                <p class="hint">For you, in the list. What the person filling it in sees is its opening screen.</p>
               </div>
               <div class="field" style="margin-bottom:0">
                 <label class="label">Description</label>
@@ -135,39 +140,39 @@
                    letting an author point a form at another circle would move
                    people between workspaces from a dropdown. -->
               <div class="field">
-                <label class="label">Circle</label>
+                <label class="label">Circle
+                  <span class="tip" data-tip="Approved applicants become members of this circle. Switch workspace to write a form for another one.">?</span></label>
                 <input type="text" class="input" id="fCircle" readonly>
-                <p class="hint">Approved applicants become members of this circle. Switch workspace to write a form for another one.</p>
               </div>
 
               <div class="field">
-                <label class="label">Cohorts they join</label>
+                <label class="label">Cohorts they join
+                  <span class="tip" data-tip="On top of whatever the cohort rules put them in. A form is usually run for a reason — a programme, a partner, an event — and that reason is a cohort.">?</span></label>
                 <div id="cohortList"></div>
-                <p class="hint">On top of whatever the cohort rules put them in. A form is usually run for a reason — a programme, a partner, an event — and that reason is a cohort.</p>
               </div>
 
               <div class="field" style="margin-bottom:0">
-                <label class="label">If the same address applies twice</label>
+                <label class="label">If the same address applies twice
+                  <span class="tip" data-tip="Forms get posted in more than one place, and people forget they applied. Somebody who is already a member is always told so, whichever this is set to.">?</span></label>
                 <select class="input" id="fDuplicate">
                   <option value="replace">Keep the newer one, supersede the earlier</option>
                   <option value="reject">Refuse the second, tell them we have it</option>
                   <option value="allow">Keep both in the queue</option>
                 </select>
-                <p class="hint">Forms get posted in more than one place, and people forget they applied. Somebody who is already a member is always told so, whichever this is set to.</p>
               </div>
             </div>
 
             <div class="card mt-4">
               <div class="card-title mb-4">When they have sent it in</div>
               <div class="field">
-                <label class="label">What to say</label>
+                <label class="label">What to say
+                  <span class="tip" data-tip="Nobody is a member yet at this point, so this should not promise access. It should say somebody will read it.">?</span></label>
                 <textarea class="input" id="fMessage" placeholder="Thanks — we will be in touch once someone has looked at this."></textarea>
-                <p class="hint">Nobody is a member yet at this point, so this should not promise access. It should say somebody will read it.</p>
               </div>
               <div class="field" style="margin-bottom:0">
-                <label class="label">Then send them to (optional)</label>
+                <label class="label">Then send them to (optional)
+                  <span class="tip" data-tip="Embedded, the host page does the navigating — the form is in a frame and cannot move the page around it.">?</span></label>
                 <input type="text" class="input mono" id="fRedirect" placeholder="https://developers.partner.com/thanks">
-                <p class="hint">Embedded, the host page does the navigating — the form is in a frame and cannot move the page around it.</p>
               </div>
             </div>
           </section>
@@ -176,13 +181,9 @@
             <div class="card">
               <div class="card-title mb-4">Sites allowed to embed it</div>
               <div class="field">
-                <label class="label">One address per line</label>
+                <label class="label">One address per line
+                  <span class="tip" data-tip="The site, not the page — an embed is allowed by origin. A leading *. matches subdomains. Anything not listed is refused by the browser before the form loads, which is what stops somebody else wrapping this form in a page of their own.">?</span></label>
                 <textarea class="input origins" id="fOrigins" placeholder="https://developers.partner.com&#10;https://*.creditdirect.ng"></textarea>
-                <p class="hint">
-                  The site, not the page — an embed is allowed by origin. A leading <span class="mono">*.</span>
-                  matches subdomains. Anything not listed is refused by the browser before the form loads,
-                  which is what stops somebody else wrapping this form in a page of their own.
-                </p>
               </div>
             </div>
 
@@ -194,15 +195,9 @@
             </div>
 
             <div class="card mt-4">
-              <div class="card-title mb-4">What the host page can do</div>
-              <p class="hint">
-                The frame reports its height as questions branch, so it never needs one set.
-                When somebody sends the form in, the placeholder element is given a
-                <span class="mono">devcircle:onboarding:submitted</span> event — enough to hide the
-                section, show a confirmation of the host's own, or send an analytics event.
-                Nothing else crosses between the two pages: what is typed into the form is
-                readable only by this platform, which is the point of it being a frame.
-              </p>
+              <div class="card-title mb-4">What the host page can do
+                <span class="tip" data-tip="The frame reports its height as questions branch, so it never needs one set. When somebody sends the form in, the placeholder element is given a devcircle:onboarding:submitted event — enough to hide the section, show a confirmation of the host's own, or send an analytics event. Nothing else crosses between the two pages: what is typed into the form is readable only by this platform, which is the point of it being a frame.">?</span>
+              </div>
             </div>
           </section>
 
@@ -217,9 +212,10 @@
             <ul class="checklist" id="checklist"></ul>
           </section>
           <section class="card mt-4">
-            <div class="card-title mb-4">What they see</div>
+            <div class="card-title mb-4">What they see
+              <span class="tip" data-tip="This is the real control — try answering it to see where the branching goes.">?</span>
+            </div>
             <div class="preview-frame" id="preview"></div>
-            <p class="hint">This is the real control — try answering it to see where the branching goes.</p>
           </section>
         </aside>
 
@@ -268,6 +264,7 @@
   let fields = [];             // what a question can be tagged as collecting
   let builder = null;
   let themePanel = null;
+  let displayPanel = null;
 
   function renderQuestions()     { builder?.render(); }
   function renderPreview()       { builder?.preview(); }
@@ -307,6 +304,7 @@
     }
   }
   function renderThemePanel()    { themePanel?.render(); }
+  function renderDisplay()       { displayPanel?.render(); }
 
   // ─── Loading ──────────────────────────────────────────────
 
@@ -330,6 +328,10 @@
         count:     document.getElementById('stepQCount')
       },
       title: () => document.getElementById('fName').value.trim() || 'Untitled form',
+      // The words on the two screens live on the form — its name and
+      // description open it, its submitted message closes it — so the preview
+      // draws no opening screen of the theme's own.
+      screens: false,
       // Tagging changes what a question means but not what it looks like, so
       // the checklist is redrawn on every edit and the card is not.
       onChange: renderChecklist,
@@ -347,12 +349,28 @@
       state,
       mount: document.getElementById('rail-theme'),
       noun: 'form',
+      // This form's own fields hold the words on the opening and closing
+      // screens — "About this form" and "When they have sent it in" on the
+      // tab where it goes. A second copy of those words under Look would be a
+      // place an author writes and the member is shown from the other copy.
+      screens: false,
       onChange: () => renderPreview(),
       onReset: () => builder?.resetPreview()
     });
 
+    // How the questions are shown is decided beside the questions, not in
+    // the look — and where the layout is "N per page", N is a number this
+    // page checks was actually set, because it is the designer's to set.
+    displayPanel = ThemePanel.display({
+      schema,
+      state,
+      mount: document.getElementById('displayCard'),
+      onChange: () => renderPreview()
+    });
+
     renderTypeMenu();
     renderThemePanel();
+    renderDisplay();
     await loadCircle();
     await loadCohorts();
 
@@ -447,6 +465,7 @@
       state.questions = form.questions || [];
       state.theme = form.theme || {};
       state.cohortIds = form.cohort_ids || [];
+      renderDisplay();
       state.locked = data.questions_locked;
       if (data.circle_theme) state.circleTheme = data.circle_theme;
 
@@ -537,9 +556,19 @@
 
     const chosen = fields.find(f => f.value === question.maps_to);
 
+    // What is worth explaining about the tag rides the lead's question marks
+    // rather than paragraphs under the card. The two rose lines stay out in
+    // the open: they are not explanations, they are something to do.
+    const tips = [];
+    if (chosen?.hint) tips.push(chosen.hint);
+    if (chosen?.channels) tips.push(`Options have to name a channel we can message on: ${chosen.channels.join(', ').replace(/_/g, '-')}. An option that names none is refused when the form is saved, rather than losing somebody's consent quietly.`);
+    if (chosen?.days) tips.push('Options have to be days of the week.');
+    if (question.maps_to === 'phone' && question.format === 'phone') tips.push('Its last six digits are what they sign in with, so it is worth saying on the form why you are asking.');
+
     return `
       <div class="maps">
-        <p class="maps-lead">This answer is…</p>
+        <p class="maps-lead">This answer is…${tips
+          .map(t => `<span class="tip" data-tip="${escapeHtml(t)}">?</span>`).join('')}</p>
         <select class="input" data-maps-to>
           <option value="">just an answer</option>
           ${usable.map(f => `
@@ -549,18 +578,10 @@
                 taken.has(f.value) ? ' (already collected)' : ''}
             </option>`).join('')}
         </select>
-        ${chosen?.hint ? `<p class="maps-note">${escapeHtml(chosen.hint)}</p>` : ''}
-        ${chosen?.channels ? `<p class="maps-note">
-          Options have to name a channel we can message on: ${chosen.channels.join(', ').replace(/_/g, '-')}.
-          An option that names none is refused when the form is saved, rather than losing somebody's
-          consent quietly.</p>` : ''}
-        ${chosen?.days ? `<p class="maps-note">Options have to be days of the week.</p>` : ''}
         ${question.maps_to === 'email' && question.format !== 'email'
           ? '<p class="maps-note" style="color:var(--rose-ink)">Set the answer format to “Email address” — an address we cannot mail is an application nobody can act on.</p>' : ''}
         ${question.maps_to === 'phone' && question.format !== 'phone'
           ? '<p class="maps-note" style="color:var(--rose-ink)">Set the answer format to “Phone number”.</p>' : ''}
-        ${question.maps_to === 'phone' && question.format === 'phone'
-          ? '<p class="maps-note">Its last six digits are what they sign in with, so it is worth saying on the form why you are asking.</p>' : ''}
       </div>`;
   }
 
@@ -658,12 +679,12 @@
         <button class="btn btn-sm btn-secondary mt-3" onclick="copySnippet()">Copy</button>
       </div>
       <div class="field" style="margin-bottom:0">
-        <label class="label">Or hand out its own address</label>
+        <label class="label">Or hand out its own address
+          <span class="tip" data-tip="A QR code on a stand, a link in an email, a post. No account needed to open it.">?</span></label>
         <div class="row" style="gap:var(--sp-2)">
           <input class="input mono" id="ownLink" readonly value="${location.origin}${escapeHtml(form.public_path || '')}">
           <button class="btn btn-sm btn-secondary" onclick="copyOwnLink()">Copy</button>
         </div>
-        <p class="hint">A QR code on a stand, a link in an email, a post. No account needed to open it.</p>
       </div>`;
   }
 
@@ -713,6 +734,18 @@
         return;
       }
       state.issues = [];
+    }
+
+    // "N per page" without an N is a page size nobody chose. The server says
+    // the same thing; this is the version the author sees against the control.
+    if (state.theme && state.theme.layout === 'n_per_page') {
+      const n = parseInt(state.theme.page_size, 10);
+      const { min = 2, max = 10 } = (schema && schema.theme.page_size) || {};
+      if (!Number.isFinite(n) || n < min || n > max) {
+        showToast(`Set N — how many questions per page (${min}–${max})`, 'warning');
+        document.querySelector('[data-step="questions"]').click();
+        return;
+      }
     }
 
     const body = {

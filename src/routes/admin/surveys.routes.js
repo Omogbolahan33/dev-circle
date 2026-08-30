@@ -26,7 +26,7 @@ async function loadSurveyList(circleId) {
            COALESCE(sr.response_count, 0) as response_count,
            COALESCE(sr.completed_count, 0) as completed_count,
            COALESCE(json_array_length(s.questions), 0) as question_count,
-           CASE WHEN s.questions LIKE '%visible_if%' THEN 1 ELSE 0 END as has_branching
+           CASE WHEN s.questions LIKE '%visible_if%' OR s.questions LIKE '%branch_to%' THEN 1 ELSE 0 END as has_branching
     FROM surveys s
     LEFT JOIN (
       SELECT sr.survey_id,
@@ -90,6 +90,7 @@ router.get('/surveys/schema', requirePermission('surveys.read'), async (req, res
       backgrounds: surveyForm.themes.BACKGROUNDS,
       corners: surveyForm.themes.CORNERS,
       layouts: surveyForm.themes.LAYOUTS,
+      page_size: surveyForm.themes.PAGE_SIZE,
       progress: surveyForm.themes.PROGRESS,
       modes: surveyForm.themes.MODES,
       fits: surveyForm.themes.FITS,
