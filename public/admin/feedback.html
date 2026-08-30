@@ -51,7 +51,7 @@
             <button class="seg-btn active" data-view="grouped">Grouped</button>
             <button class="seg-btn" data-view="table">Table</button>
           </div>
-          <button class="btn btn-sm btn-secondary" onclick="openExport()">Export</button>
+          <button class="btn btn-sm btn-secondary" onclick="openExport(this)">Export</button>
         </div>
       </div>
     </header>
@@ -197,12 +197,15 @@
     const status = document.querySelector('#dStatus button.active')?.dataset.status;
     if (!status || !open) return;
 
-    try {
-      await api.put(`/admin/feedback/${open.id}`, { status, note: document.getElementById('dNote').value.trim() || undefined });
-      showToast('Triage saved');
-      Shell.closeDrawer('fbDrawer');
-      view === 'table' ? loadTable() : loadGroups();
-    } catch (err) { showToast(err.message, 'error'); }
+    const btn = document.getElementById('dSave');
+    await busy(btn, 'Saving…', async () => {
+      try {
+        await api.put(`/admin/feedback/${open.id}`, { status, note: document.getElementById('dNote').value.trim() || undefined });
+        showToast('Triage saved');
+        Shell.closeDrawer('fbDrawer');
+        view === 'table' ? loadTable() : loadGroups();
+      } catch (err) { showToast(err.message, 'error'); }
+    });
   }
 
   // ─── One body of feedback, cut whichever way answers the question ───
@@ -338,18 +341,20 @@
   }
 
   // Whatever is on screen is what leaves in the file
-  async function openExport() {
+  async function openExport(btn) {
     const grouped = view === 'grouped';
     const format = confirm(grouped
       ? 'OK for Excel (a sheet per group), Cancel for CSV'
       : 'OK for Excel, Cancel for CSV') ? 'xlsx' : 'csv';
-    try {
-      // A table view exports flat, the way it reads on screen
-      const params = query({ format });
-      if (!grouped) params.delete('group_by');
-      await api.download(`/admin/feedback/export?${params}`, `feedback.${format}`);
-      showToast('Exported');
-    } catch (err) { showToast(err.message, 'error'); }
+    await busy(btn, 'Exporting…', async () => {
+      try {
+        // A table view exports flat, the way it reads on screen
+        const params = query({ format });
+        if (!grouped) params.delete('group_by');
+        await api.download(`/admin/feedback/export?${params}`, `feedback.${format}`);
+        showToast('Exported');
+      } catch (err) { showToast(err.message, 'error'); }
+    });
   }
 
   // ─── Table view ─────────────────────────────────────────

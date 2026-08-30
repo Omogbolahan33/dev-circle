@@ -55,13 +55,20 @@
 
     <div id="claimSuccess"></div>
 
-    <div class="figures" id="figures"></div>
+    <div class="figures" id="figures">
+      <div><div class="skeleton" style="height:30px;width:60%;margin-bottom:6px"></div><div class="skeleton" style="height:12px;width:90%"></div></div>
+      <div><div class="skeleton" style="height:30px;width:60%;margin-bottom:6px"></div><div class="skeleton" style="height:12px;width:90%"></div></div>
+      <div><div class="skeleton" style="height:30px;width:60%;margin-bottom:6px"></div><div class="skeleton" style="height:12px;width:90%"></div></div>
+    </div>
 
     <section class="section">
       <div class="section-head">
         <h2 class="section-title">Ready to claim</h2>
       </div>
-      <div id="available"></div>
+      <div id="available">
+        <div class="reward"><div style="flex:1"><div class="skeleton" style="height:14px;width:45%;margin-bottom:6px"></div><div class="skeleton" style="height:12px;width:65%"></div></div><div class="skeleton" style="width:80px;height:32px;border-radius:var(--r-md)"></div></div>
+        <div class="reward"><div style="flex:1"><div class="skeleton" style="height:14px;width:40%;margin-bottom:6px"></div><div class="skeleton" style="height:12px;width:70%"></div></div><div class="skeleton" style="width:80px;height:32px;border-radius:var(--r-md)"></div></div>
+      </div>
     </section>
 
     <section class="section" id="lockedSection" hidden>
@@ -75,7 +82,10 @@
       <div class="section-head">
         <h2 class="section-title">Yours</h2>
       </div>
-      <div id="claimed"></div>
+      <div id="claimed">
+        <div class="skeleton" style="height:48px;width:100%;border-radius:var(--r-lg)"></div>
+        <div class="skeleton" style="height:48px;width:100%;border-radius:var(--r-lg);margin-top:var(--sp-2)"></div>
+      </div>
     </section>
 
   </div>
@@ -134,35 +144,33 @@
   }
 
   async function claim(id, button) {
-    button.disabled = true;
-    button.innerHTML = '<span class="spinner"></span>';
-    try {
-      const res = await api.post(`/users/gifts/${id}/claim`, {});
-      showToast(`${res.gift.name} claimed — we will be in touch with delivery details`);
+    await busy(button, 'Claiming…', async () => {
+      try {
+        const res = await api.post(`/users/gifts/${id}/claim`, {});
+        showToast(`${res.gift.name} claimed — we will be in touch with delivery details`);
 
-      const banner = document.getElementById('claimSuccess');
-      if (banner) {
-        banner.innerHTML = `
-          <div class="card p-4 mb-6" style="border:1px solid var(--teal);background:var(--tint-success, rgba(13,148,136,0.08));border-radius:var(--r-lg)">
-            <div class="row align-center justify-between wrap gap-3">
-              <div>
-                <strong style="color:var(--teal)">🎉 ${escapeHtml(res.gift.name)} claimed!</strong>
-                <div class="text-xs dim mt-1">We will contact you with delivery instructions shortly.</div>
+        const banner = document.getElementById('claimSuccess');
+        if (banner) {
+          banner.innerHTML = `
+            <div class="card p-4 mb-6" style="border:1px solid var(--teal);background:var(--tint-success, rgba(13,148,136,0.08));border-radius:var(--r-lg)">
+              <div class="row align-center justify-between wrap gap-3">
+                <div>
+                  <strong style="color:var(--teal)">🎉 ${escapeHtml(res.gift.name)} claimed!</strong>
+                  <div class="text-xs dim mt-1">We will contact you with delivery instructions shortly.</div>
+                </div>
+                <div class="row gap-2">
+                  <a class="btn btn-sm btn-primary" href="/member/dashboard.html">Back to dashboard ${icon('arrowRight', 13)}</a>
+                  <a class="btn btn-sm btn-secondary" href="/member/engagement.html">${icon('activity', 13)} View history</a>
+                </div>
               </div>
-              <div class="row gap-2">
-                <a class="btn btn-sm btn-primary" href="/member/dashboard.html">Back to dashboard ${icon('arrowRight', 13)}</a>
-                <a class="btn btn-sm btn-secondary" href="/member/engagement.html">${icon('activity', 13)} View history</a>
-              </div>
-            </div>
-          </div>`;
+            </div>`;
+        }
+
+        load();
+      } catch (err) {
+        showToast(err.message, 'error');
       }
-
-      load();
-    } catch (err) {
-      showToast(err.message, 'error');
-      button.disabled = false;
-      button.textContent = 'Claim';
-    }
+    });
   }
 
   load();

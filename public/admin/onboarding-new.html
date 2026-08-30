@@ -88,8 +88,8 @@
         <div class="page-actions">
           <a href="/admin/onboarding.html" class="btn btn-sm btn-secondary">Cancel</a>
           <a class="btn btn-sm btn-secondary" id="queueLink" style="display:none">Applications</a>
-          <button class="btn btn-sm btn-secondary" onclick="saveForm('draft')" id="draftBtn">Save draft</button>
-          <button class="btn btn-sm btn-gold" onclick="saveForm('active')" id="publishBtn">Publish</button>
+          <button class="btn btn-sm btn-secondary" onclick="saveForm('draft', this)" id="draftBtn">Save draft</button>
+          <button class="btn btn-sm btn-gold" onclick="saveForm('active', this)" id="publishBtn">Publish</button>
         </div>
       </div>
 
@@ -108,7 +108,11 @@
           <section class="step" id="step-questions">
             <div class="hide" id="lockNotice"></div>
             <div class="card mb-4" id="displayCard"></div>
-            <div id="questions"></div>
+            <div id="questions">
+              <div class="card"><div class="skeleton" style="width:40%;height:14px;margin-bottom:12px"></div><div class="skeleton" style="width:90%;height:120px"></div></div>
+              <div class="card" style="margin-top:12px"><div class="skeleton" style="width:40%;height:14px;margin-bottom:12px"></div><div class="skeleton" style="width:90%;height:120px"></div></div>
+              <div class="card" style="margin-top:12px"><div class="skeleton" style="width:40%;height:14px;margin-bottom:12px"></div><div class="skeleton" style="width:90%;height:120px"></div></div>
+            </div>
 
             <div class="field-row mt-3">
               <button class="btn btn-sm btn-secondary" id="addToggle" onclick="toggleTypeMenu()">+ Add a question</button>
@@ -218,7 +222,7 @@
             <div class="card-title mb-4">What they see
               <span class="tip" data-tip="This is the real control — try answering it to see where the branching goes.">?</span>
             </div>
-            <div class="preview-frame" id="preview"></div>
+            <div class="preview-frame" id="preview"><div class="skeleton" style="width:100%;height:160px"></div></div>
           </section>
         </aside>
 
@@ -704,7 +708,7 @@
 
   // ─── Saving ───────────────────────────────────────────────
 
-  async function saveForm(status) {
+  async function saveForm(status, btn) {
     const name = document.getElementById('fName').value.trim();
     // Closing is a status change, not a publish. Running it through the
     // readiness check below would refuse to close a form for the very reason
@@ -761,67 +765,66 @@
     };
 
     // Closing is driven from the status card, so there is no header button to
-    // put in a busy state for it.
+    // put in a busy state for it — busy(null, …) just runs the work.
     const button = status === 'closed'
       ? null
       : document.getElementById(status === 'active' ? 'publishBtn' : 'draftBtn');
-    const label = button?.textContent;
-    if (button) { button.disabled = true; button.textContent = 'Saving…'; }
+    const label = status === 'active' ? 'Publishing…' : status === 'closed' ? 'Closing…' : 'Saving…';
 
-    try {
-      const data = state.id
-        ? await api.put(`/admin/onboarding/${state.id}`, body)
-        : await api.post('/admin/onboarding', body);
+    await busy(button, label, async () => {
+      try {
+        const data = state.id
+          ? await api.put(`/admin/onboarding/${state.id}`, body)
+          : await api.post('/admin/onboarding', body);
 
-      state.id = data.form.id;
-      state.questions = data.form.questions;
+        state.id = data.form.id;
+        state.questions = data.form.questions;
 
-      if (data.warnings?.length) {
-        showToast(data.warnings[0].message, 'warning');
-      } else {
-        showToast(
-          status === 'active' ? 'Published — the form is live'
-            : status === 'closed' ? 'Closed — its link and any embed of it now show nothing'
-            : 'Draft saved'
-        );
+        if (data.warnings?.length) {
+          showToast(data.warnings[0].message, 'warning');
+        } else {
+          showToast(
+            status === 'active' ? 'Published — the form is live'
+              : status === 'closed' ? 'Closed — its link and any embed of it now show nothing'
+              : 'Draft saved'
+          );
+        }
+
+        state.status = data.form.status;
+        state.publicToken = data.form.public_token;
+        state.counts = state.counts || { pending: 0 };
+        renderStatus();
+        showEmbed(data.embed_snippet, data.form);
+
+        // Stopping a form is a state change, not the end of authoring it — stay
+        // and show what it is now.
+        if (status === 'closed') {
+          renderQuestions();
+          renderChecklist();
+          document.getElementById('publishBtn').textContent = 'Reopen';
+          return;
+        }
+
+        // Saving or publishing means done. Back to the list rather than leaving
+        // somebody parked in an editor they have finished with — and a publish
+        // lands with the share drawer open, because the snippet is the thing they
+        // came here to get and it only exists once the form does.
+        const back = publishing
+          ? `/admin/onboarding.html?share=${state.id}`
+          : '/admin/onboarding.html';
+
+        setTimeout(() => { window.location.href = back; }, data.warnings?.length ? 2600 : 700);
+      } catch (err) {
+        // The server reports issues per question too, so they land in the same
+        // place the local check would have put them.
+        if (err.body && Array.isArray(err.body.issues)) {
+          state.issues = err.body.issues;
+          renderQuestions();
+          document.querySelector('.q-card.invalid')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+        showToast(err.message, 'error');
       }
-
-      state.status = data.form.status;
-      state.publicToken = data.form.public_token;
-      state.counts = state.counts || { pending: 0 };
-      renderStatus();
-      showEmbed(data.embed_snippet, data.form);
-
-      // Stopping a form is a state change, not the end of authoring it — stay
-      // and show what it is now.
-      if (status === 'closed') {
-        renderQuestions();
-        renderChecklist();
-        document.getElementById('publishBtn').textContent = 'Reopen';
-        return;
-      }
-
-      // Saving or publishing means done. Back to the list rather than leaving
-      // somebody parked in an editor they have finished with — and a publish
-      // lands with the share drawer open, because the snippet is the thing they
-      // came here to get and it only exists once the form does.
-      const back = publishing
-        ? `/admin/onboarding.html?share=${state.id}`
-        : '/admin/onboarding.html';
-
-      setTimeout(() => { window.location.href = back; }, data.warnings?.length ? 2600 : 700);
-    } catch (err) {
-      // The server reports issues per question too, so they land in the same
-      // place the local check would have put them.
-      if (err.body && Array.isArray(err.body.issues)) {
-        state.issues = err.body.issues;
-        renderQuestions();
-        document.querySelector('.q-card.invalid')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }
-      showToast(err.message, 'error');
-    } finally {
-      if (button) { button.disabled = false; button.textContent = label; }
-    }
+    });
   }
 
   // ─── Status ───────────────────────────────────────────────
@@ -843,7 +846,7 @@
         text: 'Not published. Its link and any embed of it show nothing until you publish, ' +
               'which is the gold button at the top of this page.',
         action: state.locked ? '' :
-          '<button class="btn btn-sm btn-ghost" onclick="deleteForm()">Delete this form</button>'
+          '<button class="btn btn-sm btn-ghost" onclick="deleteForm(this)">Delete this form</button>'
       },
       active: {
         badge: badge('live', 'active'),
@@ -859,7 +862,7 @@
               'everything it already collected is still in the queue. Reopen it from the top ' +
               'of this page to start taking them again.',
         action: state.locked ? '' :
-          '<button class="btn btn-sm btn-ghost" onclick="deleteForm()">Delete this form</button>'
+          '<button class="btn btn-sm btn-ghost" onclick="deleteForm(this)">Delete this form</button>'
       }
     };
 
@@ -899,7 +902,7 @@
   // Only offered for a form nobody has filled in. One somebody has is closed
   // instead — deleting it would take their applications with it, and those are
   // the record of what people were asked and what they were told.
-  async function deleteForm() {
+  async function deleteForm(btn) {
     const ok = await Shell.confirm({
       title: 'Delete this form?',
       text: 'Nobody has filled it in, so there is nothing to lose but the questions. This cannot be undone.',
@@ -908,13 +911,15 @@
     });
     if (!ok) return;
 
-    try {
-      await api.del(`/admin/onboarding/${state.id}`);
-      showToast('Form deleted');
-      window.location.href = '/admin/onboarding.html';
-    } catch (err) {
-      showToast(err.message, 'error');
-    }
+    await busy(btn, 'Deleting…', async () => {
+      try {
+        await api.del(`/admin/onboarding/${state.id}`);
+        showToast('Form deleted');
+        window.location.href = '/admin/onboarding.html';
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    });
   }
 
   document.querySelectorAll('[data-step]').forEach(tab => {

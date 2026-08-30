@@ -71,22 +71,26 @@
         <aside class="rail">
           <section class="card">
             <div class="card-title mb-4">Details</div>
-            <div class="kv" id="details"></div>
+            <div class="kv" id="details">
+              <div class="kv-row"><span class="kv-key">Phone</span><span class="kv-val"><div class="skeleton" style="width:120px;height:12px"></div></span></div>
+              <div class="kv-row"><span class="kv-key">Sector</span><span class="kv-val"><div class="skeleton" style="width:90px;height:12px"></div></span></div>
+              <div class="kv-row"><span class="kv-key">State</span><span class="kv-val"><div class="skeleton" style="width:70px;height:12px"></div></span></div>
+            </div>
           </section>
 
           <section class="card">
             <div class="card-title mb-4">Cohorts</div>
-            <div class="row wrap" style="gap:var(--sp-2)" id="cohorts"></div>
+            <div class="row wrap" style="gap:var(--sp-2)" id="cohorts"><div class="skeleton" style="width:80px;height:22px"></div><div class="skeleton" style="width:60px;height:22px"></div></div>
           </section>
 
           <section class="card">
             <div class="card-title mb-4">Consent</div>
-            <div id="consent"></div>
+            <div id="consent"><div class="skeleton" style="width:60%;height:12px;margin-bottom:10px"></div><div class="skeleton" style="width:45%;height:12px"></div></div>
           </section>
 
           <section class="card">
             <div class="card-title mb-4">Preferences</div>
-            <div class="kv" id="preferences"></div>
+            <div class="kv" id="preferences"><div class="kv-row"><span class="kv-key">Channels</span><span class="kv-val"><div class="skeleton" style="width:100px;height:12px"></div></span></div></div>
           </section>
         </aside>
 
@@ -95,12 +99,12 @@
              was what made a person hard to see whole. -->
         <div>
           <div class="panel active" id="panel-everything">
-            <div class="ev-summary" id="everythingSummary"></div>
-            <div class="ev-stream" id="everything"></div>
+            <div class="ev-summary" id="everythingSummary"><div class="skeleton" style="width:55%;height:14px"></div></div>
+            <div class="ev-stream" id="everything"><div class="skeleton" style="width:100%;height:60px;margin-bottom:14px"></div><div class="skeleton" style="width:88%;height:60px"></div></div>
           </div>
 
           <div class="panel" id="panel-activity">
-            <div class="timeline" id="activity"></div>
+            <div class="timeline" id="activity"><div class="skeleton" style="width:70%;height:14px;margin-bottom:12px"></div><div class="skeleton" style="width:55%;height:14px"></div></div>
           </div>
 
           <div class="panel" id="panel-surveys">
@@ -196,9 +200,9 @@
       </div>`;
 
     document.getElementById('actions').innerHTML = `
-      <button class="btn btn-sm btn-secondary" onclick="signOutEverywhere()">Sign out everywhere</button>
+      <button class="btn btn-sm btn-secondary" onclick="signOutEverywhere(this)">Sign out everywhere</button>
       <button class="btn btn-sm ${u.status === 'active' ? 'btn-danger' : 'btn-primary'}"
-              onclick="toggleStatus('${u.status}')">${u.status === 'active' ? 'Deactivate' : 'Activate'}</button>`;
+              onclick="toggleStatus('${u.status}', this)">${u.status === 'active' ? 'Deactivate' : 'Activate'}</button>`;
   }
 
   function renderRail({ user: u, cohorts, consent }) {
@@ -334,7 +338,7 @@
   }
 
   // ─── Actions ────────────────────────────────────────────
-  async function toggleStatus(current) {
+  async function toggleStatus(current, btn) {
     const next = current === 'active' ? 'inactive' : 'active';
     const ok = await Shell.confirm({
       title: next === 'inactive' ? 'Deactivate this member?' : 'Reactivate this member?',
@@ -346,11 +350,13 @@
     });
     if (!ok) return;
 
-    try {
-      await api.put(`/admin/members/${memberId}`, { status: next });
-      showToast(`Member ${next === 'active' ? 'activated' : 'deactivated'}`);
-      load();
-    } catch (err) { showToast(err.message, 'error'); }
+    await busy(btn, next === 'inactive' ? 'Deactivating…' : 'Activating…', async () => {
+      try {
+        await api.put(`/admin/members/${memberId}`, { status: next });
+        showToast(`Member ${next === 'active' ? 'activated' : 'deactivated'}`);
+        load();
+      } catch (err) { showToast(err.message, 'error'); }
+    });
   }
 
   // ─── The number they sign in with ─────────────────────────
@@ -381,7 +387,7 @@
   // Members hold no password — they sign in with their address and the last six
   // digits of their number — so the recovery action is ending their live
   // sessions, not issuing a credential.
-  async function signOutEverywhere() {
+  async function signOutEverywhere(btn) {
     const ok = await Shell.confirm({
       title: 'Sign this member out everywhere?',
       text: 'Every device they are signed in on stops working immediately. They can sign back in ' +
@@ -390,10 +396,12 @@
     });
     if (!ok) return;
 
-    try {
-      await api.post(`/admin/members/${memberId}/sign-out`, {});
-      showToast('Signed out of every device');
-    } catch (err) { showToast(err.message, 'error'); }
+    await busy(btn, 'Signing out…', async () => {
+      try {
+        await api.post(`/admin/members/${memberId}/sign-out`, {});
+        showToast('Signed out of every device');
+      } catch (err) { showToast(err.message, 'error'); }
+    });
   }
 
   // ─── Tabs ───────────────────────────────────────────────

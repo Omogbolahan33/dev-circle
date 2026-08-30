@@ -36,8 +36,8 @@
                of last quarter's survey lands, and bringing that quarter's
                answers across is the next thing you want. -->
           <a class="btn btn-sm btn-secondary" id="importLink" style="display:none">Import responses</a>
-          <button class="btn btn-sm btn-secondary" onclick="saveSurvey('draft')" id="draftBtn">Save draft</button>
-          <button class="btn btn-sm btn-gold" onclick="saveSurvey('active')" id="publishBtn">Publish</button>
+          <button class="btn btn-sm btn-secondary" onclick="saveSurvey('draft', this)" id="draftBtn">Save draft</button>
+          <button class="btn btn-sm btn-gold" onclick="saveSurvey('active', this)" id="publishBtn">Publish</button>
         </div>
       </div>
 
@@ -58,7 +58,10 @@
           <section class="step" id="step-questions">
             <div class="hide" id="lockNotice"></div>
             <div class="card mb-4" id="displayCard"></div>
-            <div id="questions"></div>
+            <div id="questions">
+              <div class="card"><div class="skeleton" style="width:40%;height:14px;margin-bottom:12px"></div><div class="skeleton" style="width:90%;height:120px"></div></div>
+              <div class="card" style="margin-top:12px"><div class="skeleton" style="width:40%;height:14px;margin-bottom:12px"></div><div class="skeleton" style="width:90%;height:120px"></div></div>
+            </div>
 
             <div class="field-row mt-3">
               <button class="btn btn-sm btn-secondary" id="addToggle" onclick="toggleTypeMenu()">+ Add a question</button>
@@ -152,7 +155,7 @@
             <div class="card-title mb-4">What the member sees
               <span class="tip" data-tip="This is the real control — try answering it to see where the branching goes.">?</span>
             </div>
-            <div class="preview-frame" id="preview"></div>
+            <div class="preview-frame" id="preview"><div class="skeleton" style="width:100%;height:160px"></div></div>
           </section>
         </aside>
 
@@ -479,7 +482,7 @@
 
   // ─── Saving ───────────────────────────────────────────────
 
-  async function saveSurvey(status) {
+  async function saveSurvey(status, btn) {
     const title = document.getElementById('sTitle').value.trim();
     if (!title) { showToast('Title required', 'warning'); return; }
 
@@ -521,61 +524,64 @@
       status
     };
 
-    try {
-      let saved;
-      if (state.id) {
-        // A survey with answers keeps its questions; sending them back would
-        // be refused, and rightly so.
-        if (state.locked) delete body.questions;
-        saved = await api.put(`/admin/surveys/${state.id}`, body);
-      } else {
-        saved = await api.post('/admin/surveys', body);
-        state.id = saved.survey.id;
-      }
+    const label = btn ? (status === 'active' ? 'Publishing…' : status === 'closed' ? 'Closing…' : 'Saving…') : '';
+    await busy(btn, label, async () => {
+      try {
+        let saved;
+        if (state.id) {
+          // A survey with answers keeps its questions; sending them back would
+          // be refused, and rightly so.
+          if (state.locked) delete body.questions;
+          saved = await api.put(`/admin/surveys/${state.id}`, body);
+        } else {
+          saved = await api.post('/admin/surveys', body);
+          state.id = saved.survey.id;
+        }
 
-      showToast(
-        status === 'active' ? 'Survey published'
-          : status === 'closed' ? 'Closed — it is not taking responses'
-          : 'Survey saved as draft'
-      );
+        showToast(
+          status === 'active' ? 'Survey published'
+            : status === 'closed' ? 'Closed — it is not taking responses'
+            : 'Survey saved as draft'
+        );
 
-      // Stopping a survey is not a reason to leave the page. Stay, and show
-      // the state it is now in.
-      if (status === 'closed') {
-        state.status = 'closed';
+        // Stopping a survey is not a reason to leave the page. Stay, and show
+        // the state it is now in.
+        if (status === 'closed') {
+          state.status = 'closed';
+          renderStatus();
+          document.getElementById('publishBtn').textContent = 'Reopen';
+          return;
+        }
+
+        state.status = status;
         renderStatus();
-        document.getElementById('publishBtn').textContent = 'Reopen';
-        return;
+
+        // Saved, and still worth saying. A brand combination that is legible but
+        // tight is the author's call, so it is reported rather than refused — and
+        // they get a moment to read it before the page moves on.
+        (saved.warnings || []).forEach(w => showToast(w.message, 'warning'));
+
+        // Done means done: back to the list rather than parked in an editor. A
+        // link audience used to keep the author here so they could copy the
+        // address — the list carries a Copy link on the row instead, and lands
+        // with it already copied when the survey was just published.
+        state.publicPath = saved.survey?.public_path || state.publicPath;
+        const back = state.publicPath && status === 'active'
+          ? `/admin/surveys.html?link=${state.id}`
+          : '/admin/surveys.html';
+
+        setTimeout(() => { window.location.href = back; }, saved.warnings?.length ? 2600 : 700);
+      } catch (err) {
+        // The server reports issues per question too, so they land in the same
+        // place the local check would have put them.
+        if (err.body && Array.isArray(err.body.issues)) {
+          state.issues = err.body.issues;
+          renderQuestions();
+          document.querySelector('.q-card.invalid')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+        showToast(err.message, 'error');
       }
-
-      state.status = status;
-      renderStatus();
-
-      // Saved, and still worth saying. A brand combination that is legible but
-      // tight is the author's call, so it is reported rather than refused — and
-      // they get a moment to read it before the page moves on.
-      (saved.warnings || []).forEach(w => showToast(w.message, 'warning'));
-
-      // Done means done: back to the list rather than parked in an editor. A
-      // link audience used to keep the author here so they could copy the
-      // address — the list carries a Copy link on the row instead, and lands
-      // with it already copied when the survey was just published.
-      state.publicPath = saved.survey?.public_path || state.publicPath;
-      const back = state.publicPath && status === 'active'
-        ? `/admin/surveys.html?link=${state.id}`
-        : '/admin/surveys.html';
-
-      setTimeout(() => { window.location.href = back; }, saved.warnings?.length ? 2600 : 700);
-    } catch (err) {
-      // The server reports issues per question too, so they land in the same
-      // place the local check would have put them.
-      if (err.body && Array.isArray(err.body.issues)) {
-        state.issues = err.body.issues;
-        renderQuestions();
-        document.querySelector('.q-card.invalid')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }
-      showToast(err.message, 'error');
-    }
+    });
   }
 
   document.getElementById('sTitle').addEventListener('input', renderPreview);
