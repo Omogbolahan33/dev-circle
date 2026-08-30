@@ -70,15 +70,57 @@ const supabase = {
 };
 
 // Postgres pool tuning — overridable for Render / Supabase pgbouncer
+// ─── Is this a long-lived server or a function? ─────────────
+// The two want opposite pool settings and getting it wrong is invisible until
+// production is under load.
+//
+// A long-lived process (Render, Fly, a container) is one pool for the life of
+// the deployment: a handful of connections, held open, is exactly right.
+//
+// A serverless function is not. Every concurrent invocation is its own
+// container with its own pool, so `max` is not the number of connections — it
+// is the number *per container*, multiplied by however many the platform
+// decided to run. Ten looks modest and becomes eighty behind a traffic spike,
+// against a Supavisor pool of fifteen.
+const isServerless = Boolean(
+  process.env.AWS_LAMBDA_FUNCTION_NAME ||
+  process.env.VERCEL ||
+  process.env.FUNCTION_TARGET ||          // Google Cloud Functions
+  process.env.K_SERVICE ||                // Cloud Run
+  process.env.NETLIFY ||
+  process.env.LAMBDA_TASK_ROOT
+);
+
 const pgPool = {
-  // Supabase pgbouncer already pools, so keep Node pool small there
-  max: parseInt(process.env.PG_POOL_MAX, 10) || 10,
-  idleTimeoutMillis: parseInt(process.env.PG_IDLE_TIMEOUT_MS, 10) || 30000,
+  // One per container on serverless. A function handles one request at a time,
+  // so a second connection buys nothing and costs a slot in a pool everybody
+  // else is queueing for.
+  max: parseInt(process.env.PG_POOL_MAX, 10) || (isServerless ? 1 : 10),
+
+  // Returned quickly on serverless. A container that has finished its request
+  // is frozen, not exited — the timer that would reap an idle client does not
+  // run while it is frozen, so the connection sits held until the pooler itself
+  // times it out. A short window means fewer of them are held at the moment the
+  // next spike arrives.
+  idleTimeoutMillis: parseInt(process.env.PG_IDLE_TIMEOUT_MS, 10) || (isServerless ? 5000 : 30000),
+
   connectionTimeoutMillis: parseInt(process.env.PG_CONNECTION_TIMEOUT_MS, 10) || 10000,
+
+  // Let the pool stop holding the event loop open, so a finished invocation can
+  // actually settle rather than being frozen mid-connection.
+  allowExitOnIdle: isServerless,
+
+  // A 20-second `SELECT 1` keeps the socket warm and saves an SSL handshake on
+  // a long-lived server. On serverless it is a leak with a friendly name: it
+  // pins one connection per container that ever booted, for as long as the
+  // platform keeps that container around.
+  keepAlive: !isServerless,
+
   // Hosts without an IPv6 route (Render et al) fail with
   // `connect ENETUNREACH <ipv6>:5432` when DNS lists AAAA records first,
   // so prefer IPv4 answers unless PG_DNS_RESULT_ORDER overrides.
   dnsResultOrder: process.env.PG_DNS_RESULT_ORDER || 'ipv4first',
+  isServerless,
   // Supabase requires SSL; local Postgres does not
   ssl: process.env.PGSSLMODE === 'disable' || process.env.PG_SSL === 'false'
     ? false

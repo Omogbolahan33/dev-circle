@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const { createTtlCache } = require('../utils/ttlCache');
 const context = require('../db/context');
 
@@ -79,17 +80,6 @@ function dropMe() {
   pages.invalidate('s|/api/auth/me');
 }
 
-let rewarmTimer = null;
-function scheduleRewarm() {
-  if (process.env.NODE_ENV === 'test') return;
-  if (rewarmTimer) return;
-  rewarmTimer = setTimeout(() => {
-    rewarmTimer = null;
-    require('../services/warmCache').warm().catch(() => {});
-  }, 75);
-  if (typeof rewarmTimer.unref === 'function') rewarmTimer.unref();
-}
-
 function noteWrite(sql) {
   const text = String(sql || '');
   if (NOISE.test(text)) return;
@@ -105,23 +95,25 @@ function noteWrite(sql) {
   if (unknown) pages.clear();
   else dropPages([...paths]);
 
-  if (!AUTH_TABLE.test(text)) {
-    scheduleRewarm();
-    return;
-  }
+  // A write invalidates; it does not rebuild.
+  //
+  // Every write used to schedule a full rewarm 75ms later — and a rewarm is
+  // every page of every active circle, each a tree of parallel queries. A login
+  // inserts a session row, so signing in fired thirty-odd concurrent
+  // connections. Two people at once exhausted the pooler and failed every
+  // request, sign-in included, until the burst drained.
+  //
+  // Dropping the stale entries is the whole job. The next request that wants a
+  // page pays for it once, on one connection.
+  if (!AUTH_TABLE.test(text)) return;
+
   // A new session or member row is not a change to who is already signed in.
   // Logout, deactivation, role edits and circle grants still wipe principals.
-  if (/^\s*INSERT\b/i.test(text) && /\bsessions\b/i.test(text)) {
-    scheduleRewarm();
-    return;
-  }
-  if (/^\s*INSERT\b/i.test(text) && /\busers\b/i.test(text) && !/\badmin_users\b/i.test(text)) {
-    scheduleRewarm();
-    return;
-  }
+  if (/^\s*INSERT\b/i.test(text) && /\bsessions\b/i.test(text)) return;
+  if (/^\s*INSERT\b/i.test(text) && /\busers\b/i.test(text) && !/\badmin_users\b/i.test(text)) return;
+
   principals.clear();
   dropMe();
-  scheduleRewarm();
 }
 
 function clearAll() {
@@ -144,14 +136,35 @@ function queryKey(query) {
   return '?' + keys.sort().map(k => `${k}=${query[k]}`).join('&');
 }
 
+// What a cached page is allowed to be handed back to.
+//
+// rememberGet runs before the route, so it cannot know which permission the
+// route was going to require — it can only avoid handing a body to somebody
+// unlike whoever filled it. Two admins with the same capabilities are
+// interchangeable for this purpose; two with different ones are not.
+//
+// Without this the cache was an authorisation bypass: an admin holding only
+// cohorts.read got the full member list, emails included, as soon as an
+// entitled admin had loaded that page — and a revoked permission kept working
+// until the entry expired.
+function permissionKey(req) {
+  const held = Array.isArray(req.permissions) ? req.permissions : [];
+  if (held.includes('*')) return '*';
+  if (!held.length) return 'none';
+  return crypto.createHash('sha1').update(held.slice().sort().join(',')).digest('hex').slice(0, 12);
+}
+
 function pageKey(req) {
   const circle = req.circleId || req.headers['x-circle-id'] || req.query.circle_id || '';
   const subject = req.path === '/me' ? (req.admin?.id || req.user?.id || '') : '';
-  return `${ns()}|${req.baseUrl || ''}${req.path}${queryKey(req.query)}|${circle}|${subject}`;
+  return `${ns()}|${req.baseUrl || ''}${req.path}${queryKey(req.query)}|${circle}|${subject}|${permissionKey(req)}`;
 }
 
+// Warming has no requester, so what it loads is stored against `*` and read
+// only by admins who hold everything. Anyone narrower fills their own on first
+// request rather than being handed a page nobody checked they may see.
 function putPage(path, { circleId = '', query, body } = {}) {
-  pages.set(`l|/api/admin${path}${queryKey(query)}|${circleId}|`, body);
+  pages.set(`l|/api/admin${path}${queryKey(query)}|${circleId}||*`, body);
   return body;
 }
 

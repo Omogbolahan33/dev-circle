@@ -51,7 +51,10 @@ function makeAtomic({ isPostgres, sqlite, pg }) {
 
     const run = async () => {
       if (isPostgres) {
-        const client = await pg.getPool().connect();
+        // Acquiring the connection is the part that fails when the pooler is
+        // full, and it fails before any statement is sent — so waiting and
+        // trying again cannot apply anything twice. See withRetry in db/pg.js.
+        const client = await pg.withRetry(() => pg.getPool().connect(), 'BEGIN');
         try {
           await client.query('BEGIN');
           const result = await context.runInTransaction(client, fn);

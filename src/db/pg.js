@@ -84,32 +84,130 @@ function diagnoseConnectionError(err) {
 
 let pool = null;
 
+// ─── Waiting for a connection instead of failing ────────────
+// Every error listed here happens while *acquiring* a connection: the pool is
+// full, the server has too many clients, or the wait timed out. The statement
+// never reached Postgres, so trying again cannot apply anything twice — which
+// is what makes this safe for writes as well as reads. An error raised after a
+// statement was sent is deliberately not in this list.
+//
+// The shape of the problem it solves: a burst fills the pooler, every request
+// in flight fails at once — sign-in included — and a few hundred milliseconds
+// later there is plenty of room again. Failing the whole burst to a 500 when
+// the wait would have been a third of a second is a bad trade.
+const TRANSIENT = [
+  'EMAXCONNSESSION',              // Supavisor, session mode: pool is full
+  'max clients reached',          // the same, spelled out in the message
+  '53300',                        // Postgres too_many_connections
+  'too many clients already',
+  'Connection terminated due to connection timeout',
+  'timeout exceeded when trying to connect'
+];
+
+function isTransient(err) {
+  const text = `${err?.code || ''} ${err?.message || ''}`;
+  return TRANSIENT.some(marker => text.includes(marker));
+}
+
+const ATTEMPTS = Math.max(1, parseInt(process.env.PG_ACQUIRE_ATTEMPTS, 10) || 3);
+
+async function withRetry(run, label) {
+  let lastError;
+
+  for (let attempt = 1; attempt <= ATTEMPTS; attempt++) {
+    try {
+      return await run();
+    } catch (err) {
+      if (!isTransient(err) || attempt === ATTEMPTS) throw err;
+      lastError = err;
+
+      // Backing off with jitter, because every request that failed together
+      // would otherwise come back together and refill the pool in the same
+      // instant.
+      const wait = Math.round((2 ** (attempt - 1)) * 120 * (0.5 + Math.random()));
+      logger.warn('Waiting for a Postgres connection', {
+        attempt, of: ATTEMPTS, wait_ms: wait, statement: label, message: err.message
+      });
+      await new Promise(resolve => setTimeout(resolve, wait));
+    }
+  }
+
+  throw lastError;
+}
+
 function getPool() {
   if (pool) return pool;
   if (!config.databaseUrl) {
     throw new Error('DATABASE_URL is not set — postgres pool unavailable');
   }
+  const settings = config.database.pgPool;
+
   pool = new Pool({
     connectionString: config.databaseUrl,
-    max: config.database.pgPool.max,
-    idleTimeoutMillis: config.database.pgPool.idleTimeoutMillis,
-    connectionTimeoutMillis: config.database.pgPool.connectionTimeoutMillis,
-    keepAlive: true,
-    ssl: config.database.pgPool.ssl || undefined
+    max: settings.max,
+    idleTimeoutMillis: settings.idleTimeoutMillis,
+    connectionTimeoutMillis: settings.connectionTimeoutMillis,
+    allowExitOnIdle: settings.allowExitOnIdle || false,
+    keepAlive: settings.keepAlive !== false,
+    ssl: settings.ssl || undefined
   });
 
   pool.on('error', err => {
     logger.error('Postgres pool error', { message: err.message });
   });
 
-  // Hold a live connection so the next request is not an SSL handshake.
-  // Not a result cache — just keep the socket warm.
-  const keepAlive = setInterval(() => {
-    pool.query('SELECT 1').catch(() => {});
-  }, 20_000);
-  if (typeof keepAlive.unref === 'function') keepAlive.unref();
+  // Hold a live connection so the next request is not an SSL handshake. Worth
+  // it on a long-lived server, and a leak on serverless: it pins one connection
+  // per container that ever booted, for as long as the platform keeps that
+  // container warm — which is a slot in a shared pool that nothing is using.
+  if (settings.keepAlive !== false) {
+    const warm = setInterval(() => {
+      pool.query('SELECT 1').catch(() => {});
+    }, 20_000);
+    if (typeof warm.unref === 'function') warm.unref();
+  }
+
+  warnAboutSessionMode();
 
   return pool;
+}
+
+// ─── Session mode ───────────────────────────────────────────
+// Supabase's pooler answers on two ports and they behave very differently.
+// 6543 is transaction mode: a server connection is borrowed for the length of a
+// statement and handed straight back, so hundreds of clients share a small
+// pool. 5432 is session mode: one server connection is held for the whole
+// client session, so the pool size *is* the number of clients you may have at
+// once — fifteen, by default.
+//
+// A serverless deployment on 5432 runs out at fifteen concurrent containers and
+// then fails everything, including signing in, until they drain. The fix is one
+// character in the connection string, so it is worth saying out loud on boot
+// rather than leaving to be discovered under load.
+//
+// Said rather than done: rewriting somebody's connection string is not
+// something to do behind their back, and the direct port is the right one for
+// migrations.
+let warnedAboutSessionMode = false;
+
+function warnAboutSessionMode() {
+  if (warnedAboutSessionMode) return;
+  warnedAboutSessionMode = true;
+
+  const url = config.databaseUrl || '';
+  const pooled = /pooler\.supabase\.com|supabase\.co/i.test(url);
+  const sessionPort = /:5432(\/|\?|$)/.test(url);
+
+  if (!pooled || !sessionPort) return;
+
+  logger.warn(
+    'Postgres is connected on port 5432 (session mode). Each client holds a server ' +
+    'connection for its whole session, so the pool size is a hard ceiling on ' +
+    'concurrent clients — under load every request fails with EMAXCONNSESSION, ' +
+    'sign-in included. Use the transaction-mode pooler for the app: change :5432 ' +
+    'to :6543 in DATABASE_URL. Keep the 5432 string for migrations.',
+    { serverless: Boolean(config.database.pgPool.isServerless), pool_max: config.database.pgPool.max }
+  );
 }
 
 // Translate SQLite-flavoured SQL to Postgres where possible.
@@ -286,10 +384,12 @@ function prepare(sql) {
 
   async function execWith(params = []) {
     // Inside a transaction the statement has to go on the connection that
-    // opened it — see db/context.js. Outside one, any pooled connection will do.
-    const target = require('./context').txClient() || getPool();
-    const result = await target.query(translateSql(sql), params);
-    return result;
+    // opened it — see db/context.js. Outside one, any pooled connection will
+    // do, and waiting for one beats failing for want of one.
+    const bound = require('./context').txClient();
+    if (bound) return bound.query(translateSql(sql), params);
+
+    return withRetry(() => getPool().query(translateSql(sql), params), sql.slice(0, 60));
   }
 
   return {
@@ -353,9 +453,7 @@ async function exec(sql) {
 }
 
 async function query(sql, params = []) {
-  const p = getPool();
-  const res = await p.query(translateSql(sql), params);
-  return res;
+  return withRetry(() => getPool().query(translateSql(sql), params), sql.slice(0, 60));
 }
 
 // Transaction helper: BEGIN/COMMIT/ROLLBACK wrapper.
@@ -404,6 +502,8 @@ module.exports = {
   prepare,
   exec,
   statementsIn,
+  withRetry,
+  isTransient,
   query,
   transaction,
   ping,
