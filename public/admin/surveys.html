@@ -274,7 +274,15 @@
     });
   });
 
-  load();
+  // Publishing a link survey sends the author here with ?link=<id>. The link
+  // only exists once the survey does, and copying it is the next thing they
+  // were going to do — so it is on the clipboard when they land, instead of
+  // being a reason to keep them in the editor.
+  load().then(() => {
+    const id = param('link');
+    const survey = id && surveys.find(s => s.id === id);
+    if (survey?.public_path) copyLink(survey.public_path);
+  });
 </script>
 </body>
 </html>

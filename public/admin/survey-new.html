@@ -551,26 +551,21 @@
       state.status = status;
       renderStatus();
 
-      // A link audience has nothing to send, so the author's next act is to
-      // copy the link. Leaving them on the page with it in front of them beats
-      // returning to a list where they would have to find it again.
-      if (saved.survey?.public_path) {
-        state.publicPath = saved.survey.public_path;
-        toggleCohortTarget();
-        document.getElementById('shareUrl')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        (saved.warnings || []).forEach(w => showToast(w.message, 'warning'));
-        return;
-      }
-
       // Saved, and still worth saying. A brand combination that is legible but
-      // tight is the author's call, so it is reported rather than refused —
-      // and they get a moment to read it before the page moves on.
-      if (saved.warnings?.length) {
-        saved.warnings.forEach(w => showToast(w.message, 'warning'));
-        setTimeout(() => window.location.href = '/admin/surveys.html', 3200);
-        return;
-      }
-      setTimeout(() => window.location.href = '/admin/surveys.html', 900);
+      // tight is the author's call, so it is reported rather than refused — and
+      // they get a moment to read it before the page moves on.
+      (saved.warnings || []).forEach(w => showToast(w.message, 'warning'));
+
+      // Done means done: back to the list rather than parked in an editor. A
+      // link audience used to keep the author here so they could copy the
+      // address — the list carries a Copy link on the row instead, and lands
+      // with it already copied when the survey was just published.
+      state.publicPath = saved.survey?.public_path || state.publicPath;
+      const back = state.publicPath && status === 'active'
+        ? `/admin/surveys.html?link=${state.id}`
+        : '/admin/surveys.html';
+
+      setTimeout(() => { window.location.href = back; }, saved.warnings?.length ? 2600 : 700);
     } catch (err) {
       // The server reports issues per question too, so they land in the same
       // place the local check would have put them.

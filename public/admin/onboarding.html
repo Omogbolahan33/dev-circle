@@ -525,7 +525,14 @@
     render();
   });
 
-  load();
+  // Publishing sends the author here with ?share=<id>, because the snippet and
+  // the link only exist once the form does and getting them is what they came
+  // for. Opening it on arrival saves the hunt without keeping them in an editor
+  // they have finished with.
+  load().then(() => {
+    const share = param('share');
+    if (share && forms.some(f => f.id === share)) showShare(share);
+  });
 </script>
 </body>
 </html>

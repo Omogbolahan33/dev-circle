@@ -790,20 +790,26 @@
       state.publicToken = data.form.public_token;
       state.counts = state.counts || { pending: 0 };
       renderStatus();
-
       showEmbed(data.embed_snippet, data.form);
 
-      // The address only exists once the form does, and it is the thing an
-      // author came here for — so a first publish lands on it rather than
-      // leaving them to go looking.
-      if (publishing) document.querySelector('[data-step="embed"]').click();
+      // Stopping a form is a state change, not the end of authoring it — stay
+      // and show what it is now.
+      if (status === 'closed') {
+        renderQuestions();
+        renderChecklist();
+        document.getElementById('publishBtn').textContent = 'Reopen';
+        return;
+      }
 
-      renderQuestions();
-      renderChecklist();
-      history.replaceState(null, '', `/admin/onboarding-new.html?id=${state.id}`);
-      document.getElementById('publishBtn').textContent =
-        data.form.status === 'active' ? 'Save changes'
-          : data.form.status === 'closed' ? 'Reopen' : 'Publish';
+      // Saving or publishing means done. Back to the list rather than leaving
+      // somebody parked in an editor they have finished with — and a publish
+      // lands with the share drawer open, because the snippet is the thing they
+      // came here to get and it only exists once the form does.
+      const back = publishing
+        ? `/admin/onboarding.html?share=${state.id}`
+        : '/admin/onboarding.html';
+
+      setTimeout(() => { window.location.href = back; }, data.warnings?.length ? 2600 : 700);
     } catch (err) {
       // The server reports issues per question too, so they land in the same
       // place the local check would have put them.
