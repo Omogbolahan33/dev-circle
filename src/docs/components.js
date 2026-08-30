@@ -560,10 +560,11 @@ const schemas = {
 
   // ── Member Setup & Staged Readiness Rings ──
   ReadinessTask: object({
-    key: str('Task identifier', { example: 'preferred_days' }),
+    key: str('Task identifier. Matches the maps_to tag an onboarding question carries, which is what joins the two halves together', { example: 'preferred_days' }),
     label: str('Short task description', { example: 'Days that work' }),
     done: bool('Whether this task has been completed'),
-    description: str('Context or value', { example: 'Mon, Wed, Fri' })
+    description: str('The prompt while it is unanswered, and what they said once it is answered', { example: 'Mon, Wed, Fri' }),
+    asked_by_circle: bool('True when this task is here because an active onboarding form in one of the member\'s circles collects it, rather than because every member needs it. "Everyone needs this" and "your circle asks for this" are different sentences.')
   }),
 
   ReadinessRing: object({
@@ -573,7 +574,7 @@ const schemas = {
     subtitle: str('Secondary title', { example: 'When to reach you' }),
     percentage: int('Completion percentage for this ring, 0-100', { example: 100 }),
     is_complete: bool('True when ring is 100% finished'),
-    tasks: arrayOf(ref('ReadinessTask'), 'Individual checklist items'),
+    tasks: arrayOf(ref('ReadinessTask'), 'Individual checklist items. Not a fixed list — see GET /users/readiness for what decides which properties a member is asked for.'),
     color: str('Hex color for UI ring rendering', { example: '#E84E1B' }),
     action_url: str('Target deep-link to complete the task', { example: '/member/profile.html#availability' }),
     action_label: str('Action button text', { example: 'Update available time' }),
@@ -601,6 +602,7 @@ const schemas = {
       task_key: str('Task key'),
       label: str('Task title'),
       description: str('Description'),
+      asked_by_circle: bool('Whether a circle\'s onboarding form is what asks for this'),
       action_url: str('Action URL'),
       action_label: str('Action label'),
       color: str('Hex color')

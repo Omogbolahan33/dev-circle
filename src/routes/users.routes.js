@@ -99,7 +99,12 @@ router.get('/profile', requireAuth, async (req, res) => {
       best_streak: user.best_streak
     },
     unread_notifications: Number(byK.unread?.n || 0),
-    readiness: readiness.computeReadiness(user, consent),
+    // What the rings hold is not a fixed eight any more: a circle's onboarding
+    // form says what that circle needs to know, and anything it asks for and
+    // did not get is a task here. See readiness.wantedFor.
+    readiness: readiness.computeReadiness(user, consent, {
+      wanted: await readiness.wantedFor(req.user.id)
+    }),
     // The product families a member may record themselves, with display
     // labels — one canonical list shared with the picker on the dashboard.
     product_catalog: readiness.SELF_SERVE_PRODUCTS.map(p => ({
@@ -145,7 +150,9 @@ router.get('/readiness', requireAuth, async (req, res) => {
     }
   }
 
-  res.json(readiness.computeReadiness(user, consent));
+  res.json(readiness.computeReadiness(user, consent, {
+    wanted: await readiness.wantedFor(req.user.id)
+  }));
 });
 
 // ─── Circles ────────────────────────────────────────────────
@@ -351,7 +358,9 @@ router.put('/profile', requireAuth, async (req, res) => {
   res.json({
     user: sanitizeUser(user),
     consent,
-    readiness: readiness.computeReadiness(user, consent)
+    readiness: readiness.computeReadiness(user, consent, {
+      wanted: await readiness.wantedFor(req.user.id)
+    })
   });
 });
 

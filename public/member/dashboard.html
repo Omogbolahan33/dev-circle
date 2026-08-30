@@ -220,6 +220,17 @@
       border: 1px solid var(--line-faint);
     }
     .readiness-check-label { display: flex; align-items: center; gap: var(--sp-2); color: var(--text-1); font-size: var(--fs-xs); }
+    /* Why an unusual task is on the list. Quiet — it explains, it does not
+       shout, and most tasks do not carry it. */
+    .asked-by {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--ash-dim);
+      border: 1px solid var(--line);
+      border-radius: var(--r-sm);
+      padding: 0 4px;
+    }
     .readiness-check-dot {
       width: 6px; height: 6px; border-radius: 50%;
       background: var(--cd-gold); flex-shrink: 0;
@@ -513,11 +524,18 @@
         ? 'Updating your available time is required so sessions and 1-on-1 calls don\'t clash with your day. That unfinished progress keeps you back from scheduled sessions and survey matching.'
         : 'You have unfinished profile tasks keeping you back from full circle participation.';
 
+      // A task marked asked_by_circle is here because a circle's onboarding form
+      // says that circle needs to know it — not because every member does. Being
+      // asked for a date of birth with no idea who wants it is how a checklist
+      // gets ignored, so the reason travels with the row.
       const tasksHtml = (unfinished_tasks || []).slice(0, 3).map(t => `
         <div class="readiness-check-item">
           <div class="readiness-check-label">
             <span class="readiness-check-dot" style="background:${t.color}"></span>
             <span>${escapeHtml(t.label)}</span>
+            ${t.asked_by_circle
+              ? '<span class="asked-by" title="A circle you belong to asks for this on its onboarding form">your circle asks</span>'
+              : ''}
           </div>
           <a class="btn btn-sm btn-ghost" href="${t.action_url}" style="padding:2px 8px;font-size:var(--fs-xs)">${escapeHtml(t.action_label)} ${icon('chevron', 13)}</a>
         </div>`).join('');

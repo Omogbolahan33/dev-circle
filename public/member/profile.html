@@ -210,6 +210,35 @@
           <option value="Other">Other</option>
         </select>
       </div>
+
+      <!-- These three are only *asked* for when a circle's onboarding form
+           collects them — see readiness.wantedFor — but they are always
+           offered here, because a member who wants to fill something in should
+           not have to wait to be nagged about it. The hint under each says
+           which circle is asking, when one is. -->
+      <div class="field-row">
+        <div class="field">
+          <label class="label">Location</label>
+          <input type="text" class="input" id="fLocation" placeholder="Lagos">
+          <p class="hint asked-hint hide" data-asked="location_state"></p>
+        </div>
+        <div class="field">
+          <label class="label">Date of birth</label>
+          <input type="date" class="input" id="fBirth">
+          <p class="hint asked-hint hide" data-asked="date_of_birth"></p>
+        </div>
+      </div>
+
+      <div class="field">
+        <label class="label">Gender</label>
+        <select class="input" id="fGender">
+          <option value="">Prefer not to say</option>
+          <option value="female">Female</option>
+          <option value="male">Male</option>
+          <option value="other">Other</option>
+        </select>
+        <p class="hint asked-hint hide" data-asked="gender"></p>
+      </div>
     </section>
 
     <section class="section" id="availability">
@@ -327,6 +356,7 @@
         ? Object.fromEntries(profile.product_catalog.map(p => [p.key, p.label]))
         : FALLBACK_PRODUCTS;
       renderChoices('productGroup', catalog, user.api_products || []);
+      showWhoIsAsking(data.readiness);
 
       // Phone is a sign-in credential: once a number is on the account it is
       // locked here and can only be changed via the team after verification.
@@ -367,6 +397,9 @@
       document.getElementById('fPhone').value = user.phone || '';
       document.getElementById('fCompany').value = user.company || '';
       document.getElementById('fSector').value = user.work_sector || '';
+      document.getElementById('fLocation').value = user.location_state || '';
+      document.getElementById('fBirth').value = user.date_of_birth || '';
+      document.getElementById('fGender').value = user.gender || '';
       document.getElementById('fTimeStart').value = user.preferred_time_start || '10:00';
       document.getElementById('fTimeEnd').value = user.preferred_time_end || '14:00';
 
@@ -444,12 +477,38 @@
     }
   }
 
+  // ─── Why a field is on this page ──────────────────────────
+  // Most of what the profile asks for is asked of everybody. Some of it is
+  // asked because a circle this member belongs to said so on its onboarding
+  // form — and being prompted for a date of birth with no idea who wants it or
+  // why is how a profile page teaches people to ignore it.
+  //
+  // The readiness payload marks those tasks; this puts the reason next to the
+  // box. A field nobody is asking for stays quiet and stays fillable.
+  function showWhoIsAsking(readiness) {
+    const asked = new Set(
+      (readiness?.rings || [])
+        .flatMap(ring => ring.tasks || [])
+        .filter(task => task.asked_by_circle)
+        .map(task => task.key)
+    );
+
+    document.querySelectorAll('[data-asked]').forEach(hint => {
+      const wanted = asked.has(hint.dataset.asked);
+      hint.classList.toggle('hide', !wanted);
+      if (wanted) hint.textContent = 'Your circle asks for this — it is part of your rings.';
+    });
+  }
+
   async function saveProfile(returnHome = false) {
     try {
       const payload = {
         name: document.getElementById('fName').value.trim(),
         company: document.getElementById('fCompany').value.trim(),
         work_sector: document.getElementById('fSector').value,
+        location_state: document.getElementById('fLocation').value.trim(),
+        date_of_birth: document.getElementById('fBirth').value || null,
+        gender: document.getElementById('fGender').value,
         preferred_channels: getChoices('channelGroup'),
         preferred_days: getChoices('dayGroup'),
         preferred_time_start: document.getElementById('fTimeStart').value,
@@ -482,6 +541,8 @@
         setTimeout(() => { window.location.href = '/member/dashboard.html'; }, 800);
         return;
       }
+
+      showWhoIsAsking(res.readiness);
 
       const currentHash = window.location.hash;
       const rings = res.readiness?.rings || [];

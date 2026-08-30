@@ -316,6 +316,45 @@ it depends on where the form has been posted:
 
 Somebody who is **already a member** is always told so, whichever this is set to.
 
+## What the form did not collect
+
+Onboarding is a form, and a form is answered once. The properties a circle needs
+do not stop mattering because a question was optional, or because somebody
+arrived through a door that never asked — Developer Hub SSO, a spreadsheet
+import, the landing-page ingest. All three produce a member with gaps nobody
+ever mentions again.
+
+So the gaps become the member's own **three rings**, on their dashboard.
+
+The rings hold two kinds of thing:
+
+| | |
+|---|---|
+| **Asked of everybody** | name, phone, company, work sector, days that work, time window, preferred channels, consent |
+| **Asked by the circle** | any other property an **active** onboarding form in one of their circles is configured to collect |
+
+The second is the connection. A form's `maps_to` tags are that circle saying
+"this matters here", so a circle that asks applicants where they work has a ring
+task for it, and a circle that never asks about gender never nags anybody about
+it. Close the form and it stops asking.
+
+Tasks carry `asked_by_circle`, and both the dashboard and the profile page use
+it: an unusual prompt is labelled *your circle asks* rather than appearing from
+nowhere. Being asked for a date of birth with no idea who wants it is how a
+checklist gets ignored.
+
+Two rules keep it honest:
+
+- **Nothing lands there that a member cannot act on.** The Developer Hub id is
+  collectable by a form, written by the Hub, and editable by nobody — so it is
+  never made a task. A prompt with nowhere to go is worse than no prompt.
+- **A completed task shows what they said**, not the prompt that got it — except
+  the phone number, which is half the credential and is deliberately never
+  displayed anywhere it could be read off a screen by somebody who is not them.
+
+`GET /api/users/readiness` is the whole of it; `src/services/readiness.js` holds
+the property catalogue and `wantedFor()` is the query that asks the forms.
+
 ## Permissions
 
 | | |
