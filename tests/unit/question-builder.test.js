@@ -360,3 +360,44 @@ test('a branch rule asks the condition of its own answer and where the survey go
     'the condition names nothing: it tests the question it sits on');
   assert.ok(html.includes('q-branches'), 'the card reads as branching on its answer');
 });
+
+test('the preview draws the questions, and says so when there are none', () => {
+  // The builder's right-hand pane. It renders through SurveyTheme and
+  // SurveyRender, so it breaks whenever one of those grows an export the other
+  // has not got — and the only symptom is a blank panel.
+  const { builder, state, el } = build([]);
+
+  builder.preview();
+  assert.match(el.preview.innerHTML, /Write a question/, 'an empty form says why it is empty');
+
+  builder.add('text');
+  state.questions[0].text = 'What should we call you?';
+  builder.preview();
+
+  assert.match(el.preview.innerHTML, /What should we call you\?/, 'the preview should show the question');
+  assert.match(el.preview.innerHTML, /data-preview=/, 'and mount a real control against it');
+});
+
+test('the preview survives every question type', () => {
+  // One unhandled type throws and the whole panel goes blank, which reads as
+  // "no preview" rather than as an error.
+  for (const type of SurveySchema.TYPES.map(t => t.type)) {
+    const { builder, state, el } = build([]);
+    builder.add(type);
+    state.questions[0].text = `A ${type} question`;
+
+    assert.doesNotThrow(() => builder.preview(), `${type} broke the preview`);
+    assert.ok(el.preview.innerHTML.length, `${type} rendered nothing`);
+  }
+});
+
+test('the preview handles a tagged onboarding question', () => {
+  // maps_to is the one thing an onboarding question carries that a survey
+  // question does not.
+  const { builder, state, el } = build([]);
+  builder.add('text');
+  Object.assign(state.questions[0], { text: 'Your email', format: 'email', maps_to: 'email' });
+
+  assert.doesNotThrow(() => builder.preview());
+  assert.match(el.preview.innerHTML, /Your email/);
+});

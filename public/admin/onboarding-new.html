@@ -82,15 +82,13 @@
           <h1 class="page-title" id="pageTitle">New onboarding form</h1>
           <p class="page-subtitle">Ask what this circle needs to know. Tag the answers that are facts about the person, and the form can turn what comes back into a member.</p>
         </div>
+        <!-- Leaving and saving. Closing a live form and deleting one are
+             lifecycle changes with consequences worth a sentence, so they live
+             beside the form's status rather than one pixel from Save. -->
         <div class="page-actions">
           <a href="/admin/onboarding.html" class="btn btn-sm btn-secondary">Cancel</a>
           <a class="btn btn-sm btn-secondary" id="queueLink" style="display:none">Applications</a>
-          <button class="btn btn-sm btn-ghost hide" onclick="deleteForm()" id="deleteBtn">Delete</button>
           <button class="btn btn-sm btn-secondary" onclick="saveForm('draft')" id="draftBtn">Save draft</button>
-          <!-- Closing is how a form stops taking applications. Two other places
-               in this page tell an author to close a form; this is the button
-               they were being told about. -->
-          <button class="btn btn-sm btn-secondary hide" onclick="closeForm()" id="closeBtn">Close it</button>
           <button class="btn btn-sm btn-gold" onclick="saveForm('active')" id="publishBtn">Publish</button>
         </div>
       </div>
@@ -120,7 +118,12 @@
           </section>
 
           <section class="step hide" id="step-where">
-            <div class="card">
+            <div class="card hide" id="statusCard">
+              <div class="card-title mb-4">Status</div>
+              <div id="statusBody"></div>
+            </div>
+
+            <div class="card mt-4">
               <div class="card-title mb-4">About this form</div>
               <div class="field">
                 <label class="label">Name
@@ -481,23 +484,19 @@
       document.title = `Dev Circle — ${form.name}`;
       document.getElementById('publishBtn').textContent =
         form.status === 'active' ? 'Save changes' : form.status === 'closed' ? 'Reopen' : 'Publish';
+      state.publicToken = form.public_token;
 
-      const close = document.getElementById('closeBtn');
-      close.classList.toggle('hide', form.status !== 'active');
       state.status = form.status;
       state.counts = data.counts;
+      state.locked = data.questions_locked;
+      renderStatus();
 
       const queue = document.getElementById('queueLink');
       queue.href = `/admin/onboarding-applications.html?form_id=${form.id}`;
       queue.style.display = '';
       queue.innerHTML = `Applications${data.counts.pending ? `<span class="count">${data.counts.pending}</span>` : ''}`;
 
-      // Deleting is offered only while there is nothing to lose. Once anybody
-      // has filled it in, closing is the operation and the button above is it.
-      if (!data.questions_locked) {
-        const remove = document.getElementById('deleteBtn');
-        remove.classList.remove('hide');
-      }
+
 
       showEmbed(data.embed_snippet, form);
       syncCohortChecks();
@@ -761,12 +760,13 @@
       status
     };
 
-    const button = document.getElementById(
-      status === 'active' ? 'publishBtn' : status === 'closed' ? 'closeBtn' : 'draftBtn'
-    );
-    const label = button.textContent;
-    button.disabled = true;
-    button.textContent = 'Saving…';
+    // Closing is driven from the status card, so there is no header button to
+    // put in a busy state for it.
+    const button = status === 'closed'
+      ? null
+      : document.getElementById(status === 'active' ? 'publishBtn' : 'draftBtn');
+    const label = button?.textContent;
+    if (button) { button.disabled = true; button.textContent = 'Saving…'; }
 
     try {
       const data = state.id
@@ -787,7 +787,9 @@
       }
 
       state.status = data.form.status;
-      document.getElementById('closeBtn').classList.toggle('hide', data.form.status !== 'active');
+      state.publicToken = data.form.public_token;
+      state.counts = state.counts || { pending: 0 };
+      renderStatus();
 
       showEmbed(data.embed_snippet, data.form);
 
@@ -812,9 +814,59 @@
       }
       showToast(err.message, 'error');
     } finally {
-      button.disabled = false;
-      button.textContent = label;
+      if (button) { button.disabled = false; button.textContent = label; }
     }
+  }
+
+  // ─── Status ───────────────────────────────────────────────
+  // Where the form stands, and the one lifecycle action that goes with it.
+  // Each carries the consequence in a sentence, which a button in a toolbar
+  // cannot — and being here means Close is not one pixel from Save.
+
+  function renderStatus() {
+    const card = document.getElementById('statusCard');
+    if (!state.id) { card.classList.add('hide'); return; }
+    card.classList.remove('hide');
+
+    const waiting = state.counts?.pending || 0;
+    const link = `${location.origin}/o/${state.publicToken || ''}`;
+
+    const views = {
+      draft: {
+        badge: badge('draft', 'warn'),
+        text: 'Not published. Its link and any embed of it show nothing until you publish, ' +
+              'which is the gold button at the top of this page.',
+        action: state.locked ? '' :
+          '<button class="btn btn-sm btn-ghost" onclick="deleteForm()">Delete this form</button>'
+      },
+      active: {
+        badge: badge('live', 'active'),
+        text: `Open and taking responses at <span class="mono">${escapeHtml(link)}</span>` +
+              (waiting ? ` · ${waiting} waiting on a decision.` : '.') +
+              ' Closing stops it taking any more — the link and every embed of it go blank — ' +
+              'and you can open it again afterwards.',
+        action: '<button class="btn btn-sm btn-secondary" onclick="closeForm()">Stop taking responses</button>'
+      },
+      closed: {
+        badge: badge('closed', 'inactive'),
+        text: 'Not taking responses. Its link and any page embedding it show nothing, and ' +
+              'everything it already collected is still in the queue. Reopen it from the top ' +
+              'of this page to start taking them again.',
+        action: state.locked ? '' :
+          '<button class="btn btn-sm btn-ghost" onclick="deleteForm()">Delete this form</button>'
+      }
+    };
+
+    const view = views[state.status] || views.draft;
+
+    document.getElementById('statusBody').innerHTML = `
+      <div class="row" style="gap:var(--sp-3);align-items:flex-start">
+        <div style="flex:1;min-width:0">
+          <div class="mb-2">${view.badge}</div>
+          <p class="hint" style="margin:0">${view.text}</p>
+        </div>
+        ${view.action}
+      </div>`;
   }
 
   // ─── Closing it ───────────────────────────────────────────
@@ -825,12 +877,12 @@
     const waiting = state.counts?.pending || 0;
 
     const ok = await Shell.confirm({
-      title: 'Close this form?',
+      title: 'Stop taking responses?',
       text: 'Its link stops working and any page embedding it shows nothing. Everything it has ' +
             'already collected stays in the queue' +
             (waiting ? `, including ${waiting} application${waiting === 1 ? '' : 's'} still waiting on a decision.` : '.') +
             ' You can reopen it later.',
-      ok: 'Close it',
+      ok: 'Stop it',
       danger: true
     });
     if (!ok) return;
