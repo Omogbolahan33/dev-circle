@@ -130,6 +130,10 @@ app.use('/api', rateLimit({ name: 'api', windowMs: 60_000, max: 300 }));
 
 // Ahead of the routes and behind the rate limits: a request that asks for the
 // sandbox is served against a throwaway database from here down.
+// Schema before queries. See middleware/dbReady.js — this is what stops a
+// serverless cold start from answering with `relation "..." does not exist`.
+app.use('/api', require('./middleware/dbReady').dbReady());
+
 app.use('/api', require('./middleware/sandbox').sandboxContext);
 
 app.use('/api', require('./routes'));

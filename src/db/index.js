@@ -123,8 +123,100 @@ if (config.isPostgres) {
   let ready = null;
   let readyError = null;
 
+  // The JS migrations are SQLite's — they rebuild tables and speak PRAGMA — so
+  // on Postgres the schema is what carries their effect and they are recorded
+  // as applied rather than run. Cheap, and idempotent, so both boot paths call
+  // it: a container that skipped the schema pass still wants the ledger right.
+  async function recordMigrationLedger() {
+    await pg.exec(`
+      CREATE TABLE IF NOT EXISTS schema_migrations (
+        id INTEGER PRIMARY KEY,
+        name TEXT NOT NULL,
+        applied_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+    const migrations = require('./migrations');
+    const defined = migrations.define({
+      _isPostgres: true,
+      prepare: async () => ({ all: async () => [], get: async () => null }),
+      exec: () => {},
+      pragma: async () => null
+    });
+    for (const m of defined) {
+      await pg.query(
+        'INSERT INTO schema_migrations (id, name) VALUES ($1, $2) ON CONFLICT (id) DO NOTHING',
+        [m.id, m.name]
+      );
+    }
+    return defined.length;
+  }
+
+  async function ensureBootstrapAccounts() {
+    const bootstrap = require('./bootstrap');
+    const seeded = await bootstrap.ensureDemoAccounts(live);
+    if (!seeded.skipped) {
+      logger.info('Demo accounts ready', {
+        admin: 'admin@creditdirect.ng',
+        created: seeded.created
+      });
+    }
+  }
+
   async function initPostgres() {
     try {
+      const reconcile = require('./reconcile');
+      const expected = reconcile.tablesIn(SCHEMA_POSTGRES).map(t => t.name);
+
+      // ── 0. Has this exact schema already been applied here? ──
+      // Everything below is idempotent, and on a long-lived server running it
+      // on each boot costs a second once a day. On serverless it is charged to
+      // a request: ~97 schema statements and ~500 reconcile ALTERs, serialized
+      // on the single connection a function container is allowed, on every cold
+      // start. Long enough to be cut short — and a boot cut short leaves the
+      // tables near the end of the schema uncreated, which is how a new table
+      // can be deployed and still not exist.
+      //
+      // So the whole pass runs when it has something to do: the schema changed,
+      // or a table it declares is missing. Otherwise this is two queries.
+      const fingerprint = require('crypto')
+        .createHash('sha1').update(SCHEMA_POSTGRES).digest('hex').slice(0, 16);
+
+      await pg.exec(`
+        CREATE TABLE IF NOT EXISTS schema_state (
+          key TEXT PRIMARY KEY,
+          value TEXT NOT NULL,
+          updated_at TIMESTAMPTZ DEFAULT NOW()
+        );
+      `);
+
+      const stamp = await pg.query(
+        'SELECT value FROM schema_state WHERE key = $1', ['schema_fingerprint']
+      );
+      const applied = stamp.rows[0]?.value || null;
+
+      const seen = await pg.query(
+        `SELECT table_name FROM information_schema.tables
+         WHERE table_schema = current_schema() AND table_name = ANY($1)`,
+        [expected]
+      );
+      const have = new Set(seen.rows.map(r => r.table_name));
+      const absent = expected.filter(name => !have.has(name));
+
+      if (applied === fingerprint && !absent.length) {
+        logger.info('Postgres schema already current', {
+          tables: expected.length, fingerprint
+        });
+        await recordMigrationLedger();
+        await ensureBootstrapAccounts();
+        return;
+      }
+
+      if (absent.length) {
+        logger.warn('Applying schema — tables are missing', {
+          missing: absent.join(', '), fingerprint
+        });
+      }
+
       // ── 1. Every table and index the schema declares ──
       // Idempotent throughout, so this is what creates an empty database and a
       // no-op on one that is current.
@@ -140,7 +232,6 @@ if (config.isPostgres) {
       // Best effort, one statement at a time: a repair that cannot apply is
       // worth a line in the log and is not worth refusing to start over. What
       // is worth refusing to start over is checked below.
-      const reconcile = require('./reconcile');
       const repairs = reconcile.alterStatements(SCHEMA_POSTGRES);
       let repaired = 0;
 
@@ -159,7 +250,6 @@ if (config.isPostgres) {
       // in pg.exec, and the first anybody knew of it was a 500 from a table
       // that had never been created. A missing table is not something to
       // discover at request time.
-      const expected = reconcile.tablesIn(SCHEMA_POSTGRES).map(t => t.name);
       const present = await pg.query(
         `SELECT table_name FROM information_schema.tables
          WHERE table_schema = current_schema() AND table_name = ANY($1)`,
@@ -176,38 +266,23 @@ if (config.isPostgres) {
         );
       }
 
-      // ── 4. The ledger ──
-      // The JS migrations are SQLite's — they rebuild tables and speak PRAGMA —
-      // so on Postgres the schema above is what carries their effect, and they
-      // are recorded as applied rather than run.
-      await pg.exec(`
-        CREATE TABLE IF NOT EXISTS schema_migrations (
-          id INTEGER PRIMARY KEY,
-          name TEXT NOT NULL,
-          applied_at TIMESTAMPTZ DEFAULT NOW()
-        );
-      `);
-      const migrations = require('./migrations');
-      const defined = migrations.define({ _isPostgres: true, prepare: async () => ({ all: async () => [], get: async () => null }), exec: () => {}, pragma: async () => null });
-      for (const m of defined) {
-        await pg.query(
-          'INSERT INTO schema_migrations (id, name) VALUES ($1, $2) ON CONFLICT (id) DO NOTHING',
-          [m.id, m.name]
-        );
-      }
+      // ── 4. Remember that this exact schema landed ──
+      // What step 0 reads on the next cold start, so the pass above runs when
+      // the schema changes rather than on every container.
+      await pg.query(
+        `INSERT INTO schema_state (key, value, updated_at) VALUES ($1, $2, NOW())
+         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
+        ['schema_fingerprint', fingerprint]
+      );
+
+      const recorded = await recordMigrationLedger();
       logger.info('Postgres schema applied', {
         tables: expected.length,
         repairs_applied: repaired,
-        migrations_recorded: defined.length
+        migrations_recorded: recorded,
+        fingerprint
       });
-      const bootstrap = require('./bootstrap');
-      const seeded = await bootstrap.ensureDemoAccounts(live);
-      if (!seeded.skipped) {
-        logger.info('Demo accounts ready', {
-          admin: 'admin@creditdirect.ng',
-          created: seeded.created
-        });
-      }
+      await ensureBootstrapAccounts();
     } catch (err) {
       readyError = err;
       logger.error('Failed to init Postgres', { message: err.message, stack: err.stack });
