@@ -171,26 +171,68 @@ test('every page points at the favicon', async () => {
   }
 });
 
-test('a deployment that is not Credit Direct does not fly its logo', () => {
-  // The artwork is a trademark, so it stands only while this is Credit
-  // Direct's own deployment. mark() is evaluated at load, so this checks the
-  // rule rather than the cached token.
-  const { substitute } = require('../../src/middleware/brand');
-  assert.ok(substitute('{{brand.mark}}').includes('creditdirect.svg'),
-    'Credit Direct keeps its mark');
+test('with no logo configured, the mark is the Credit Direct lockup', () => {
+  // The default case, and the only one most deployments will ever be in.
+  assert.equal(config.brand.logoUrl, null, 'nothing is configured by default');
+  assert.ok(brand.substitute('{{brand.mark}}').includes('/assets/brand/creditdirect.svg'));
+});
 
-  // Re-require the module under a different organisation.
+test('a configured logo replaces it', () => {
   const path = require.resolve('../../src/middleware/brand');
-  const configPath = require.resolve('../../src/config');
-  const savedBrand = { ...require('../../src/config').brand };
-  require('../../src/config').brand.organisation = 'Someone Else';
+  const cfg = require('../../src/config');
+  const saved = cfg.brand.logoUrl;
+
+  cfg.brand.logoUrl = '/uploads/somebody-else.svg';
   delete require.cache[path];
   const rebranded = require(path);
-  assert.ok(!rebranded.TOKENS.get('brand.mark').includes('creditdirect'),
-    'a rebranded deployment must not show Credit Direct artwork');
 
-  // Put it back, and restore the module the rest of the suite shares.
-  Object.assign(require(configPath).brand, savedBrand);
+  const mark = rebranded.TOKENS.get('brand.mark');
+  assert.ok(mark.includes('/uploads/somebody-else.svg'), 'the configured logo is used');
+  assert.ok(!mark.includes('creditdirect'), 'and it replaces both Credit Direct inks');
+
+  cfg.brand.logoUrl = saved;
   delete require.cache[path];
   require(path);
+});
+
+// ─── Placeholders that would ship as written ─────────────────
+
+test('every token written into a page is one that actually resolves', () => {
+  // substitute() deliberately leaves an unknown name alone rather than blanking
+  // it, so a page saying {{something}} for its own reasons survives. The cost of
+  // that is that a typo — {{brand.produc}} — is not an error, it is text on the
+  // sign-in page. This is what catches it.
+  const fs = require('fs');
+  const path = require('path');
+
+  const known = new Set([...brand.TOKENS.keys()]);
+  const root = path.join(__dirname, '..', '..', 'public');
+  const offenders = [];
+
+  (function walk(dir) {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) { walk(full); continue; }
+      if (!/\.(html|js)$/.test(entry.name)) continue;
+      // The vendored bundle is third-party and never substituted.
+      if (full.includes(`${path.sep}vendor${path.sep}`)) continue;
+
+      const text = fs.readFileSync(full, 'utf8');
+      for (const m of text.matchAll(/\{\{\s*(brand[^}]*)\}\}/g)) {
+        const name = m[1].trim();
+        if (!known.has(name)) offenders.push(`${path.relative(root, full)}: {{${name}}}`);
+      }
+    }
+  })(root);
+
+  assert.deepEqual(offenders, [], 'these would be served to a person exactly as written');
+});
+
+test('the vendored swagger bundle is not dragged through substitution', async () => {
+  // It is 1.5MB and contains {{ inside a regular expression. It must be served
+  // by the static handler, untouched and uncached by this middleware.
+  const res = await h.call('GET', '/vendor/swagger-ui/swagger-ui-bundle.js', { raw: true });
+  assert.equal(res.status, 200);
+  assert.ok(res.text.length > 1_000_000, 'the whole bundle is served');
+  assert.ok(res.text.includes('{{[\\w\\W]*'), 'its own braces are left exactly as they are');
 });

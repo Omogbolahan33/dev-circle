@@ -33,7 +33,9 @@ function sanitize(value) {
 // on the dark one, which is the default and the sign-in panel. So both
 // variants are emitted and CSS shows whichever the current theme calls for —
 // the same reason Credit Direct publishes a white version of its own logo.
-// See public/assets/brand/NOTICE.txt.
+// See public/assets/brand/NOTICE.txt. The artwork is a trademark, so a
+// deployment that is not Credit Direct's should point BRAND_LOGO_URL at its
+// own — nothing here stops it flying this one.
 const LOCKUP =
   '<img src="/assets/brand/creditdirect.svg" alt="{alt}" class="brand-logo-img brand-logo-on-light">' +
   '<img src="/assets/brand/creditdirect-white.svg" alt="" aria-hidden="true" class="brand-logo-img brand-logo-on-dark">';
@@ -41,18 +43,13 @@ const LOCKUP =
 function mark() {
   const alt = sanitize(config.brand.full);
 
-  // An operator who supplied their own logo gets theirs, and owns the question
-  // of whether it reads on both themes.
+  // Two outcomes, no third. Set BRAND_LOGO_URL and you get your logo, and own
+  // the question of whether it reads on both themes. Set nothing — which is
+  // the normal case — and you get Credit Direct's.
   const logo = sanitize(config.brand.logoUrl);
   if (logo) return `<img src="${logo}" alt="${alt}" class="brand-logo-img">`;
 
-  // The shipped artwork is Credit Direct's, so it stands only while this is
-  // Credit Direct's deployment. Renamed, the mark steps aside for the name
-  // rather than putting somebody else's logo above their sign-in form.
-  if (sanitize(config.brand.organisation) === 'Credit Direct') {
-    return LOCKUP.replace('{alt}', alt);
-  }
-  return sanitize(config.brand.product);
+  return LOCKUP.replace('{alt}', alt);
 }
 
 const TOKENS = new Map([
@@ -116,6 +113,12 @@ function fileFor(publicDir, urlPath) {
   return direct + '.html';
 }
 
+// A page or a shell script is a few tens of kilobytes. Anything substantially
+// bigger is a vendored bundle — public/vendor/swagger-ui/swagger-ui-bundle.js is
+// 1.5MB — and reading it to look for a name it will never contain, then holding
+// it in memory, is pure cost. Over this, the static handler keeps it.
+const MAX_BYTES = 512 * 1024;
+
 function read(file) {
   let stat;
   try {
@@ -126,8 +129,17 @@ function read(file) {
   const held = cache.get(file);
   if (held && held.mtimeMs === stat.mtimeMs && held.size === stat.size) return held;
 
+  if (stat.size > MAX_BYTES) {
+    const entry = { mtimeMs: stat.mtimeMs, size: stat.size, passthrough: true };
+    cache.set(file, entry);
+    return entry;
+  }
+
   const raw = fs.readFileSync(file, 'utf8');
-  if (!raw.includes('{{')) {
+  // The namespace, not a bare brace. That swagger bundle carries `{{` inside a
+  // regular expression, and matching on that alone would drag every file with
+  // an incidental pair of braces through here.
+  if (!raw.includes('{{brand.')) {
     const entry = { mtimeMs: stat.mtimeMs, size: stat.size, passthrough: true };
     cache.set(file, entry);
     return entry;
