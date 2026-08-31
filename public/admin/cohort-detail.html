@@ -43,13 +43,17 @@
         <aside class="rail">
           <section class="card">
             <div class="card-title mb-4">Composition</div>
-            <div class="kv" id="composition"></div>
+            <div class="kv" id="composition">
+              <div class="kv-row"><span class="kv-key">Members</span><span class="kv-val"><div class="skeleton" style="width:34px;height:12px"></div></span></div>
+              <div class="kv-row"><span class="kv-key">Production</span><span class="kv-val"><div class="skeleton" style="width:34px;height:12px"></div></span></div>
+              <div class="kv-row"><span class="kv-key">KYB done</span><span class="kv-val"><div class="skeleton" style="width:34px;height:12px"></div></span></div>
+            </div>
           </section>
 
           <section class="card" id="ruleCard" hidden>
             <div class="card-title mb-4">Membership rule</div>
             <div class="rule-line" id="ruleText"></div>
-            <button class="btn btn-sm btn-secondary btn-block mt-4" onclick="syncCohort()">Re-run rule</button>
+            <button class="btn btn-sm btn-secondary btn-block mt-4" onclick="syncCohort(this)">Re-run rule</button>
           </section>
         </aside>
 
@@ -75,7 +79,7 @@
                     <th class="col-actions"></th>
                   </tr>
                 </thead>
-                <tbody id="rows"></tbody>
+                <tbody id="rows"><tr><td colspan="6"><div class="skeleton" style="width:100%;height:140px"></div></td></tr></tbody>
               </table>
             </div>
           </div>
@@ -104,7 +108,7 @@
   </div>
   <div class="drawer-foot">
     <button class="btn btn-secondary" onclick="Shell.closeDrawer('addDrawer')">Cancel</button>
-    <button class="btn btn-primary" onclick="addMember()">Add to cohort</button>
+    <button class="btn btn-primary" onclick="addMember(this)">Add to cohort</button>
   </div>
 </aside>
 
@@ -195,9 +199,9 @@
 
     document.getElementById('actions').innerHTML = `
       <button class="btn btn-sm btn-secondary" onclick="Shell.openDrawer('addDrawer')">Add member</button>
-      <button class="btn btn-sm btn-secondary" onclick="exportCohort()">Export CSV</button>
+      <button class="btn btn-sm btn-secondary" onclick="exportCohort(this)">Export CSV</button>
       <button class="btn btn-sm btn-gold" onclick="openBroadcast()">Message cohort</button>
-      ${cohort.type !== 'system' ? '<button class="btn btn-sm btn-ghost" onclick="deleteCohort()">Delete</button>' : ''}`;
+      ${cohort.type !== 'system' ? '<button class="btn btn-sm btn-ghost" onclick="deleteCohort(this)">Delete</button>' : ''}`;
 
     // A rule-backed cohort explains itself in words, so nobody has to guess
     // why a member is in it.
@@ -236,7 +240,7 @@
           <td class="text-xs muted nowrap">${formatDate(m.last_active_at)}</td>
           <td class="col-actions">
             <div class="row-actions">
-              <button class="btn btn-sm btn-ghost" onclick="removeMember('${m.id}', '${escapeHtml(m.name).replace(/'/g, '&#39;')}')">Remove</button>
+              <button class="btn btn-sm btn-ghost" onclick="removeMember('${m.id}', '${escapeHtml(m.name).replace(/'/g, '&#39;')}', this)">Remove</button>
             </div>
           </td>
         </tr>`).join('')
@@ -259,24 +263,26 @@
   });
 
   // ─── Actions ────────────────────────────────────────────
-  async function addMember() {
+  async function addMember(btn) {
     const email = document.getElementById('addEmail').value.trim();
     if (!email) { showToast('Enter an email', 'warning'); return; }
 
-    try {
-      const found = await api.get(`/admin/members?search=${encodeURIComponent(email)}&limit=1`);
-      if (!found.members.length) { showToast('No member with that email', 'error'); return; }
+    await busy(btn, 'Adding…', async () => {
+      try {
+        const found = await api.get(`/admin/members?search=${encodeURIComponent(email)}&limit=1`);
+        if (!found.members.length) { showToast('No member with that email', 'error'); return; }
 
-      const user = found.members[0];
-      await api.post(`/admin/cohorts/${cohortId}/members`, { user_ids: [user.id] });
-      Shell.closeDrawer('addDrawer');
-      document.getElementById('addEmail').value = '';
-      showToast(`${user.name} added`);
-      load();
-    } catch (err) { showToast(err.message, 'error'); }
+        const user = found.members[0];
+        await api.post(`/admin/cohorts/${cohortId}/members`, { user_ids: [user.id] });
+        Shell.closeDrawer('addDrawer');
+        document.getElementById('addEmail').value = '';
+        showToast(`${user.name} added`);
+        load();
+      } catch (err) { showToast(err.message, 'error'); }
+    });
   }
 
-  async function removeMember(userId, name) {
+  async function removeMember(userId, name, btn) {
     const ok = await Shell.confirm({
       title: `Remove ${name}?`,
       text: 'They stay in Dev Circle — this only takes them out of this cohort.',
@@ -284,14 +290,16 @@
     });
     if (!ok) return;
 
-    try {
-      await api.del(`/admin/cohorts/${cohortId}/members/${userId}`);
-      showToast(`${name} removed`);
-      load();
-    } catch (err) { showToast(err.message, 'error'); }
+    await busy(btn, 'Removing…', async () => {
+      try {
+        await api.del(`/admin/cohorts/${cohortId}/members/${userId}`);
+        showToast(`${name} removed`);
+        load();
+      } catch (err) { showToast(err.message, 'error'); }
+    });
   }
 
-  async function deleteCohort() {
+  async function deleteCohort(btn) {
     const ok = await Shell.confirm({
       title: 'Delete this cohort?',
       text: 'The cohort and its rule are removed. No member is deleted.',
@@ -299,19 +307,23 @@
     });
     if (!ok) return;
 
-    try {
-      await api.del(`/admin/cohorts/${cohortId}`);
-      showToast('Cohort deleted');
-      window.location.href = '/admin/cohorts.html';
-    } catch (err) { showToast(err.message, 'error'); }
+    await busy(btn, 'Deleting…', async () => {
+      try {
+        await api.del(`/admin/cohorts/${cohortId}`);
+        showToast('Cohort deleted');
+        window.location.href = '/admin/cohorts.html';
+      } catch (err) { showToast(err.message, 'error'); }
+    });
   }
 
-  async function syncCohort() {
-    try {
-      const res = await api.post(`/admin/cohorts/${cohortId}/sync`, {});
-      showToast(res.message || 'Rule re-run');
-      load();
-    } catch (err) { showToast(err.message, 'error'); }
+  async function syncCohort(btn) {
+    await busy(btn, 'Re-running…', async () => {
+      try {
+        const res = await api.post(`/admin/cohorts/${cohortId}/sync`, {});
+        showToast(res.message || 'Rule re-run');
+        load();
+      } catch (err) { showToast(err.message, 'error'); }
+    });
   }
 
   function openBroadcast() {
@@ -325,47 +337,52 @@
     if (!content) { showToast('Message required', 'warning'); return; }
 
     const btn = document.getElementById('bSend');
-    btn.disabled = true;
-    btn.innerHTML = '<span class="spinner"></span> Sending';
 
-    try {
-      const blast = await api.post('/admin/blasts', {
-        subject: document.getElementById('bSubject').value.trim(),
-        content,
-        channel: document.getElementById('bChannel').value,
-        target_type: 'cohort',
-        target_ids: [cohortId]
-      });
-      const result = await api.post(`/admin/blasts/${blast.blast.id}/send`);
-      Shell.closeDrawer('broadcastDrawer');
+    await busy(btn, 'Sending…', async () => {
+      try {
+        const blast = await api.post('/admin/blasts', {
+          subject: document.getElementById('bSubject').value.trim(),
+          content,
+          channel: document.getElementById('bChannel').value,
+          target_type: 'cohort',
+          target_ids: [cohortId]
+        });
+        const result = await api.post(`/admin/blasts/${blast.blast.id}/send`);
+        Shell.closeDrawer('broadcastDrawer');
 
-      const notes = [];
-      if (result.skipped) notes.push(`${result.skipped} skipped (consent or preference)`);
-      if (result.queued_for_quiet_hours) notes.push(`${result.queued_for_quiet_hours} held for quiet hours`);
-      if (result.failed) notes.push(`${result.failed} failed`);
-      showToast(`${result.delivered} delivered${notes.length ? ' · ' + notes.join(' · ') : ''}`,
-                result.failed ? 'warning' : 'success');
+        const notes = [];
+        if (result.skipped) notes.push(`${result.skipped} skipped (consent or preference)`);
+        if (result.queued_for_quiet_hours) notes.push(`${result.queued_for_quiet_hours} held for quiet hours`);
+        if (result.failed) notes.push(`${result.failed} failed`);
+        showToast(`${result.delivered} delivered${notes.length ? ' · ' + notes.join(' · ') : ''}`,
+                  result.failed ? 'warning' : 'success');
 
-      document.getElementById('bSubject').value = '';
-      document.getElementById('bContent').value = '';
-    } catch (err) {
-      showToast(err.message, 'error');
-    } finally {
-      btn.disabled = false;
-      btn.textContent = 'Send';
-    }
+        document.getElementById('bSubject').value = '';
+        document.getElementById('bContent').value = '';
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    });
   }
 
-  async function exportCohort() {
-    try {
-      const res = await fetch(`${API_BASE}/admin/export?format=csv&cohort_id=${cohortId}`, { headers: Auth.headers() });
-      const blob = await res.blob();
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = 'cohort-export.csv';
-      a.click();
-      showToast('Exported');
-    } catch { showToast('Export failed', 'error'); }
+  async function exportCohort(btn) {
+    await busy(btn, 'Exporting…', async () => {
+      try {
+        const res = await fetch(`${API_BASE}/admin/export?format=csv&cohort_id=${cohortId}`, { headers: Auth.headers() });
+        if (!res.ok) {
+          let msg = `Export failed (${res.status})`;
+          try { msg = (await res.json()).error || msg; } catch { /* not JSON */ }
+          throw new Error(msg);
+        }
+        const blob = await res.blob();
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'cohort-export.csv';
+        a.click();
+        URL.revokeObjectURL(a.href);
+        showToast('Exported');
+      } catch (err) { showToast(err.message || 'Export failed', 'error'); }
+    });
   }
 
   load();

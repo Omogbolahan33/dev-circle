@@ -62,7 +62,7 @@
         </div>
         <div class="page-actions">
           <a href="/admin/cohorts.html" class="btn btn-sm btn-secondary">Cancel</a>
-          <button class="btn btn-sm btn-primary" onclick="createCohort()">Create cohort</button>
+          <button class="btn btn-sm btn-primary" id="createCohortBtn" onclick="createCohort(this)">Create cohort</button>
         </div>
       </div>
     </header>
@@ -191,6 +191,10 @@
 
     // The same engine that will populate the cohort evaluates the preview, so
     // what you see here is what you get.
+    count.innerHTML = '<div class="skeleton" style="width:64px;height:34px"></div>';
+    list.textContent = 'Counting matches…';
+    faces.innerHTML = '';
+
     try {
       const data = await api.post('/admin/cohorts/preview', {
         filter_rules: { match: document.getElementById('matchMode').value, rules }
@@ -209,32 +213,34 @@
     }
   }
 
-  async function createCohort() {
+  async function createCohort(btn) {
     const name = document.getElementById('cName').value.trim();
     if (!name) { showToast('Name required', 'warning'); return; }
 
     const rules = getRules();
 
-    try {
-      const data = await api.post('/admin/cohorts', {
-        name,
-        description: document.getElementById('cDesc').value.trim(),
-        color: selectedColor,
-        type: 'custom',
-        filter_rules: rules.length ? { match: document.getElementById('matchMode').value, rules } : null,
-        auto_sync: true
-      });
+    await busy(btn, 'Creating…', async () => {
+      try {
+        const data = await api.post('/admin/cohorts', {
+          name,
+          description: document.getElementById('cDesc').value.trim(),
+          color: selectedColor,
+          type: 'custom',
+          filter_rules: rules.length ? { match: document.getElementById('matchMode').value, rules } : null,
+          auto_sync: true
+        });
 
-      // The server populates membership from the rules on create and reports
-      // how many members landed in the cohort.
-      showToast(data.sync && data.sync.rule_based
-        ? `"${name}" created with ${data.sync.added} member${data.sync.added === 1 ? '' : 's'}`
-        : `Cohort "${name}" created — add members manually`);
+        // The server populates membership from the rules on create and reports
+        // how many members landed in the cohort.
+        showToast(data.sync && data.sync.rule_based
+          ? `"${name}" created with ${data.sync.added} member${data.sync.added === 1 ? '' : 's'}`
+          : `Cohort "${name}" created — add members manually`);
 
-      setTimeout(() => window.location.href = `/admin/cohort-detail.html?id=${data.cohort.id}`, 900);
-    } catch (err) {
-      showToast(err.message, 'error');
-    }
+        setTimeout(() => window.location.href = `/admin/cohort-detail.html?id=${data.cohort.id}`, 900);
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    });
   }
 
   document.querySelectorAll('.swatch').forEach(s => {

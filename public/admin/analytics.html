@@ -35,7 +35,7 @@
           <p class="page-subtitle">Who the developer base is, and how deeply it engages.</p>
         </div>
         <div class="page-actions">
-          <button class="btn btn-sm btn-secondary" onclick="exportAll()">Export members</button>
+          <button class="btn btn-sm btn-secondary" onclick="exportAll(this)">Export members</button>
         </div>
       </div>
       <nav class="tabs">
@@ -46,63 +46,69 @@
     </header>
 
     <div class="app-body">
-      <div class="figures" id="figures"></div>
+      <div class="figures" id="figures">
+        <div><div class="figure-value"><div class="skeleton" style="width:70px;height:28px;margin:0 auto"></div></div><div class="figure-label">Members</div></div>
+        <div><div class="figure-value"><div class="skeleton" style="width:60px;height:28px;margin:0 auto"></div></div><div class="figure-label">Cohorts</div></div>
+        <div><div class="figure-value"><div class="skeleton" style="width:70px;height:28px;margin:0 auto"></div></div><div class="figure-label">Engagement rate</div></div>
+        <div><div class="figure-value"><div class="skeleton" style="width:66px;height:28px;margin:0 auto"></div></div><div class="figure-label">Surveys done</div></div>
+        <div><div class="figure-value"><div class="skeleton" style="width:52px;height:28px;margin:0 auto"></div></div><div class="figure-label">New this week</div></div>
+      </div>
 
-      <div class="chart-grid">
+      <div class="chart-grid" id="charts">
         <section class="card">
           <div class="card-title mb-4">Integration stage</div>
-          <div id="statusChart"></div>
+          <div id="statusChart"><div class="skeleton" style="width:100%;height:150px"></div></div>
         </section>
 
         <section class="card">
           <div class="card-title mb-4">KYB completion</div>
-          <div id="kybChart"></div>
+          <div id="kybChart"><div class="skeleton" style="width:100%;height:150px"></div></div>
         </section>
 
         <section class="card">
           <div class="card-title mb-4">Work sector</div>
-          <div id="sectorChart"></div>
+          <div id="sectorChart"><div class="skeleton" style="width:100%;height:150px"></div></div>
         </section>
 
         <section class="card">
           <div class="card-title mb-4">API products in use</div>
-          <div id="productChart"></div>
+          <div id="productChart"><div class="skeleton" style="width:100%;height:150px"></div></div>
         </section>
 
         <section class="card">
           <div class="card-title mb-4">Engagement depth</div>
-          <div id="depthChart"></div>
+          <div id="depthChart"><div class="skeleton" style="width:100%;height:150px"></div></div>
         </section>
 
         <section class="card">
           <div class="card-title mb-4">Streak distribution</div>
-          <div id="streakChart"></div>
+          <div id="streakChart"><div class="skeleton" style="width:100%;height:150px"></div></div>
         </section>
 
         <section class="card">
           <div class="card-title mb-4">Age band</div>
-          <div id="ageChart"></div>
+          <div id="ageChart"><div class="skeleton" style="width:100%;height:150px"></div></div>
           <div class="coverage" id="coverage"></div>
         </section>
 
         <section class="card">
           <div class="card-title mb-4">Location</div>
-          <div id="stateChart"></div>
+          <div id="stateChart"><div class="skeleton" style="width:100%;height:150px"></div></div>
         </section>
 
         <section class="card">
           <div class="card-title mb-4">Preferred channels</div>
-          <div id="channelChart"></div>
+          <div id="channelChart"><div class="skeleton" style="width:100%;height:150px"></div></div>
         </section>
 
         <section class="card">
           <div class="card-title mb-4">Available days</div>
-          <div id="dayChart"></div>
+          <div id="dayChart"><div class="skeleton" style="width:100%;height:150px"></div></div>
         </section>
 
         <section class="card">
           <div class="card-title mb-4">Cohort sizes</div>
-          <div id="cohortChart"></div>
+          <div id="cohortChart"><div class="skeleton" style="width:100%;height:150px"></div></div>
         </section>
       </div>
     </div>
@@ -193,16 +199,24 @@
       </div>`).join('');
   }
 
-  async function exportAll() {
-    try {
-      const res = await fetch(`${API_BASE}/admin/export?format=csv`, { headers: Auth.headers() });
-      const blob = await res.blob();
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = 'devcircle-members.csv';
-      a.click();
-      showToast('Exported');
-    } catch { showToast('Export failed', 'error'); }
+  async function exportAll(btn) {
+    await busy(btn, 'Exporting…', async () => {
+      try {
+        const res = await fetch(`${API_BASE}/admin/export?format=csv`, { headers: Auth.headers() });
+        if (!res.ok) {
+          let msg = `Export failed (${res.status})`;
+          try { msg = (await res.json()).error || msg; } catch { /* not JSON */ }
+          throw new Error(msg);
+        }
+        const blob = await res.blob();
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'devcircle-members.csv';
+        a.click();
+        URL.revokeObjectURL(a.href);
+        showToast('Exported');
+      } catch (err) { showToast(err.message || 'Export failed', 'error'); }
+    });
   }
 
   load();

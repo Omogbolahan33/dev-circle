@@ -49,7 +49,7 @@
                 <th class="col-actions"></th>
               </tr>
             </thead>
-            <tbody id="rows"></tbody>
+            <tbody id="rows"><tr><td colspan="6"><div class="skeleton" style="width:100%;height:140px"></div></td></tr></tbody>
           </table>
         </div>
       </div>
@@ -149,8 +149,8 @@
               ${s.status === 'active' && s.target_type === 'anonymous' ? `
                 <button class="btn btn-sm btn-ghost" onclick="copyLink('${s.public_path}')">Copy link</button>` : ''}
               ${s.status === 'active' && s.target_type !== 'anonymous' ? `
-                <button class="btn btn-sm btn-ghost" onclick="invite('${s.id}')">Invite</button>
-                <button class="btn btn-sm btn-ghost" onclick="remind('${s.id}')">Remind</button>` : ''}
+                <button class="btn btn-sm btn-ghost" onclick="invite('${s.id}', this)">Invite</button>
+                <button class="btn btn-sm btn-ghost" onclick="remind('${s.id}', this)">Remind</button>` : ''}
               <a class="btn btn-sm btn-ghost" href="/admin/survey-new.html?id=${s.id}">Edit</a>
               <button class="btn btn-sm btn-ghost" onclick="duplicate('${s.id}', this)">Duplicate</button>
               <a class="btn btn-sm btn-ghost" href="/admin/survey-responses.html?id=${s.id}">Responses</a>
@@ -174,7 +174,7 @@
     }
   }
 
-  async function invite(id) {
+  async function invite(id, btn) {
     const ok = await Shell.confirm({
       title: 'Send invitations?',
       text: 'Everyone in the survey audience who has consented will be invited on their preferred channel.',
@@ -183,11 +183,13 @@
     });
     if (!ok) return;
 
-    try {
-      const res = await api.post(`/admin/surveys/${id}/invite`, {});
-      showToast(`${res.invited} invited${res.skipped ? ` · ${res.skipped} skipped` : ''}`);
-      load();
-    } catch (err) { showToast(err.message, 'error'); }
+    await busy(btn, 'Inviting…', async () => {
+      try {
+        const res = await api.post(`/admin/surveys/${id}/invite`, {});
+        showToast(`${res.invited} invited${res.skipped ? ` · ${res.skipped} skipped` : ''}`);
+        load();
+      } catch (err) { showToast(err.message, 'error'); }
+    });
   }
 
   // Running the same round again means starting from the last one, not
@@ -196,25 +198,24 @@
   // The copy opens in the builder, because it is a draft that wants a name and
   // a date before it goes anywhere.
   async function duplicate(id, button) {
-    const label = button.textContent;
-    button.disabled = true;
-    button.textContent = 'Copying…';
-    try {
-      const res = await api.post(`/admin/surveys/${id}/duplicate`, {});
-      showToast(`Copied as a draft — ${res.questions} question${res.questions === 1 ? '' : 's'}`);
-      window.location.href = `/admin/survey-new.html?id=${res.survey.id}`;
-    } catch (err) {
-      showToast(err.message, 'error');
-      button.disabled = false;
-      button.textContent = label;
-    }
+    await busy(button, 'Copying…', async () => {
+      try {
+        const res = await api.post(`/admin/surveys/${id}/duplicate`, {});
+        showToast(`Copied as a draft — ${res.questions} question${res.questions === 1 ? '' : 's'}`);
+        window.location.href = `/admin/survey-new.html?id=${res.survey.id}`;
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    });
   }
 
-  async function remind(id) {
-    try {
-      const res = await api.post(`/admin/surveys/${id}/remind`, {});
-      showToast(`${res.reminded} reminded${res.skipped ? ` · ${res.skipped} skipped` : ''}`);
-    } catch (err) { showToast(err.message, 'error'); }
+  async function remind(id, btn) {
+    await busy(btn, 'Sending…', async () => {
+      try {
+        const res = await api.post(`/admin/surveys/${id}/remind`, {});
+        showToast(`${res.reminded} reminded${res.skipped ? ` · ${res.skipped} skipped` : ''}`);
+      } catch (err) { showToast(err.message, 'error'); }
+    });
   }
 
   // ─── Importing a round run elsewhere ────────────────────

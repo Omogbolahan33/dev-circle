@@ -72,7 +72,7 @@
                 <th class="col-actions"></th>
               </tr>
             </thead>
-            <tbody id="rows"></tbody>
+            <tbody id="rows"><tr><td colspan="6"><div class="skeleton" style="width:100%;height:140px"></div></td></tr></tbody>
           </table>
         </div>
       </div>
@@ -333,8 +333,8 @@
           each column accepts. Delete that row before you import.
         </p>
         <div class="row" style="gap:var(--sp-2)">
-          <button class="btn btn-sm btn-secondary" onclick="downloadTemplate('xlsx')">Excel</button>
-          <button class="btn btn-sm btn-secondary" onclick="downloadTemplate('csv')">CSV</button>
+          <button class="btn btn-sm btn-secondary" onclick="downloadTemplate('xlsx', this)">Excel</button>
+          <button class="btn btn-sm btn-secondary" onclick="downloadTemplate('csv', this)">CSV</button>
         </div>
       </div>
 
@@ -392,24 +392,26 @@
   // Served as an attachment behind the admin's bearer token, so it is fetched
   // rather than linked: a plain href carries no Authorization header and would
   // download a 401 as a file.
-  async function downloadTemplate(format) {
-    try {
-      const res = await fetch(
-        `${API_BASE}/admin/onboarding/${importing.id}/import/template?format=${format}`,
-        { headers: Auth.headers() }
-      );
-      if (!res.ok) throw new Error((await res.json()).error || 'Could not build the template');
+  async function downloadTemplate(format, btn) {
+    await busy(btn, 'Preparing…', async () => {
+      try {
+        const res = await fetch(
+          `${API_BASE}/admin/onboarding/${importing.id}/import/template?format=${format}`,
+          { headers: Auth.headers() }
+        );
+        if (!res.ok) throw new Error((await res.json()).error || 'Could not build the template');
 
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `${importing.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-applicants.${format}`;
-      link.click();
-      URL.revokeObjectURL(url);
-    } catch (err) {
-      showToast(err.message, 'error');
-    }
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `${importing.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-applicants.${format}`;
+        link.click();
+        URL.revokeObjectURL(url);
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    });
   }
 
   function stageFile(input) {
@@ -434,25 +436,21 @@
     if (!staged) return;
 
     const button = document.getElementById(dryRun ? 'checkBtn' : 'importBtn');
-    const label = button.textContent;
-    button.disabled = true;
-    button.textContent = dryRun ? 'Checking…' : 'Importing…';
 
-    try {
-      const result = await api.post(`/admin/onboarding/${importing.id}/import`, {
-        csv: staged.csv,
-        dry_run: dryRun,
-        approve: document.getElementById('approveOnImport')?.classList.contains('on') || false
-      });
-      renderImportResult(result, dryRun);
-      if (!dryRun) load();
-    } catch (err) {
-      document.getElementById('importResult').innerHTML =
-        `<p class="hint" style="color:var(--rose-ink)">${escapeHtml(err.message)}</p>`;
-    } finally {
-      button.disabled = false;
-      button.textContent = label;
-    }
+    await busy(button, dryRun ? 'Checking…' : 'Importing…', async () => {
+      try {
+        const result = await api.post(`/admin/onboarding/${importing.id}/import`, {
+          csv: staged.csv,
+          dry_run: dryRun,
+          approve: document.getElementById('approveOnImport')?.classList.contains('on') || false
+        });
+        renderImportResult(result, dryRun);
+        if (!dryRun) load();
+      } catch (err) {
+        document.getElementById('importResult').innerHTML =
+          `<p class="hint" style="color:var(--rose-ink)">${escapeHtml(err.message)}</p>`;
+      }
+    });
   }
 
   function renderImportResult(result, dryRun) {
@@ -503,17 +501,14 @@
   // opens in the builder as a draft, because it wants a name and a home before
   // it goes anywhere.
   async function duplicate(id, button) {
-    const label = button.textContent;
-    button.disabled = true;
-    button.textContent = 'Copying…';
-    try {
-      const data = await api.post(`/admin/onboarding/${id}/duplicate`, {});
-      window.location.href = `/admin/onboarding-new.html?id=${data.form.id}`;
-    } catch (err) {
-      button.disabled = false;
-      button.textContent = label;
-      showToast(err.message, 'error');
-    }
+    await busy(button, 'Copying…', async () => {
+      try {
+        const data = await api.post(`/admin/onboarding/${id}/duplicate`, {});
+        window.location.href = `/admin/onboarding-new.html?id=${data.form.id}`;
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    });
   }
 
   document.getElementById('tabs').addEventListener('click', e => {

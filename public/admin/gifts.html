@@ -47,7 +47,7 @@
                 <th class="col-actions"></th>
               </tr>
             </thead>
-            <tbody id="rows"></tbody>
+            <tbody id="rows"><tr><td colspan="5"><div class="skeleton" style="width:100%;height:120px"></div></td></tr></tbody>
           </table>
         </div>
       </div>
@@ -93,7 +93,7 @@
   </div>
   <div class="drawer-foot">
     <button class="btn btn-secondary" onclick="Shell.closeDrawer('giftDrawer')">Cancel</button>
-    <button class="btn btn-primary" onclick="createGift()">Create reward</button>
+    <button class="btn btn-primary" onclick="createGift(this)">Create reward</button>
   </div>
 </aside>
 
@@ -163,7 +163,7 @@
           </td>
           <td class="col-actions">
             <div class="row-actions">
-              ${g.status === 'claimed' ? `<button class="btn btn-sm btn-ghost" onclick="markDelivered('${g.id}')">Mark delivered</button>` : ''}
+              ${g.status === 'claimed' ? `<button class="btn btn-sm btn-ghost" onclick="markDelivered('${g.id}', this)">Mark delivered</button>` : ''}
             </div>
           </td>
         </tr>`;
@@ -175,32 +175,36 @@
     Shell.openDrawer('giftDrawer');
   }
 
-  async function createGift() {
+  async function createGift(btn) {
     const name = document.getElementById('gName').value.trim();
     if (!name) { showToast('Name required', 'warning'); return; }
 
     const targets = Array.from(document.getElementById('gCohorts').selectedOptions).map(o => o.value);
 
-    try {
-      await api.post('/admin/gifts', {
-        name,
-        description: document.getElementById('gDesc').value.trim(),
-        value: parseFloat(document.getElementById('gValue').value) || 0,
-        currency: document.getElementById('gCurrency').value,
-        target_cohort_ids: targets
-      });
-      Shell.closeDrawer('giftDrawer');
-      showToast(`"${name}" created`);
-      load();
-    } catch (err) { showToast(err.message, 'error'); }
+    await busy(btn, 'Creating…', async () => {
+      try {
+        await api.post('/admin/gifts', {
+          name,
+          description: document.getElementById('gDesc').value.trim(),
+          value: parseFloat(document.getElementById('gValue').value) || 0,
+          currency: document.getElementById('gCurrency').value,
+          target_cohort_ids: targets
+        });
+        Shell.closeDrawer('giftDrawer');
+        showToast(`"${name}" created`);
+        load();
+      } catch (err) { showToast(err.message, 'error'); }
+    });
   }
 
-  async function markDelivered(id) {
-    try {
-      await api.post(`/admin/gifts/${id}/deliver`, {});
-      showToast('Marked as delivered');
-      load();
-    } catch (err) { showToast(err.message, 'error'); }
+  async function markDelivered(id, btn) {
+    await busy(btn, 'Marking…', async () => {
+      try {
+        await api.post(`/admin/gifts/${id}/deliver`, {});
+        showToast('Marked as delivered');
+        load();
+      } catch (err) { showToast(err.message, 'error'); }
+    });
   }
 
   document.querySelectorAll('.tab[data-status]').forEach(tab => {

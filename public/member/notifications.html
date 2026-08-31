@@ -63,9 +63,14 @@
     <div class="panel active" id="panel-inbox">
       <div class="toolbar">
         <span class="spacer"></span>
-        <button class="btn btn-sm btn-secondary" id="readAllBtn" onclick="markAllRead()" hidden data-icon="check" data-icon-size="13">Mark all read</button>
+        <button class="btn btn-sm btn-secondary" id="readAllBtn" onclick="markAllRead(this)" hidden data-icon="check" data-icon-size="13">Mark all read</button>
       </div>
-      <div id="inbox"></div>
+      <div id="inbox">
+        <div class="note"><span class="skeleton" style="width:6px;height:6px;border-radius:50%;margin-top:7px"></span><div style="flex:1"><div class="skeleton" style="height:14px;width:55%;margin-bottom:6px"></div><div class="skeleton" style="height:12px;width:80%"></div></div></div>
+        <div class="note"><div style="flex:1;margin-left:var(--sp-3)"><div class="skeleton" style="height:14px;width:45%;margin-bottom:6px"></div><div class="skeleton" style="height:12px;width:70%"></div></div></div>
+        <div class="note"><div style="flex:1;margin-left:var(--sp-3)"><div class="skeleton" style="height:14px;width:60%;margin-bottom:6px"></div><div class="skeleton" style="height:12px;width:65%"></div></div></div>
+        <div class="note"><div style="flex:1;margin-left:var(--sp-3)"><div class="skeleton" style="height:14px;width:50%;margin-bottom:6px"></div><div class="skeleton" style="height:12px;width:75%"></div></div></div>
+      </div>
     </div>
 
     <div class="panel" id="panel-channels">
@@ -73,7 +78,11 @@
         We only contact you on channels you have agreed to. Withdraw any of them at any
         time — it takes effect immediately, including for messages already queued.
       </p>
-      <div id="consent"></div>
+      <div id="consent">
+        <div class="consent-row"><div style="flex:1"><div class="skeleton" style="height:14px;width:30%;margin-bottom:6px"></div><div class="skeleton" style="height:12px;width:60%"></div></div><div class="skeleton" style="width:90px;height:32px;border-radius:var(--r-md)"></div></div>
+        <div class="consent-row"><div style="flex:1"><div class="skeleton" style="height:14px;width:34%;margin-bottom:6px"></div><div class="skeleton" style="height:12px;width:55%"></div></div><div class="skeleton" style="width:90px;height:32px;border-radius:var(--r-md)"></div></div>
+        <div class="consent-row"><div style="flex:1"><div class="skeleton" style="height:14px;width:28%;margin-bottom:6px"></div><div class="skeleton" style="height:12px;width:64%"></div></div><div class="skeleton" style="width:90px;height:32px;border-radius:var(--r-md)"></div></div>
+      </div>
       <div class="mt-6 row align-center gap-3">
         <a class="btn btn-primary" href="/member/dashboard.html" data-icon="home" data-icon-size="15">Done · Return to dashboard</a>
         <a class="btn btn-ghost" href="/member/profile.html#channels" data-icon="edit" data-icon-size="14">Edit preferred channels in profile</a>
@@ -99,8 +108,8 @@
           </div>
         </div>
         <div class="row align-center gap-3">
-          <button class="btn btn-primary" onclick="savePreferences(true)" data-icon="check" data-icon-size="15">Save &amp; return to dashboard</button>
-          <button class="btn btn-secondary" onclick="savePreferences(false)" data-icon="check" data-icon-size="15">Save preferences</button>
+          <button class="btn btn-primary" onclick="savePreferences(true, this)" data-icon="check" data-icon-size="15">Save &amp; return to dashboard</button>
+          <button class="btn btn-secondary" onclick="savePreferences(false, this)" data-icon="check" data-icon-size="15">Save preferences</button>
         </div>
       </section>
     </div>
@@ -206,7 +215,7 @@
         });
       }
       const button = document.querySelector(`[data-read="${n.id}"]`);
-      if (button) button.addEventListener('click', () => markRead(n.id));
+      if (button) button.addEventListener('click', () => markRead(n.id, button));
     });
   }
 
@@ -219,18 +228,22 @@
     window.location.href = n.action_url;
   }
 
-  async function markRead(id) {
-    try {
-      await api.post(`/users/notifications/${id}/read`, {});
-      renderInbox(await api.get('/users/notifications?limit=25'));
-    } catch (err) { showToast(err.message, 'error'); }
+  async function markRead(id, btn) {
+    await busy(btn, 'Marking…', async () => {
+      try {
+        await api.post(`/users/notifications/${id}/read`, {});
+        renderInbox(await api.get('/users/notifications?limit=25'));
+      } catch (err) { showToast(err.message, 'error'); }
+    });
   }
 
-  async function markAllRead() {
-    try {
-      await api.post('/users/notifications/read-all', {});
-      renderInbox(await api.get('/users/notifications?limit=25'));
-    } catch (err) { showToast(err.message, 'error'); }
+  async function markAllRead(btn) {
+    await busy(btn, 'Marking…', async () => {
+      try {
+        await api.post('/users/notifications/read-all', {});
+        renderInbox(await api.get('/users/notifications?limit=25'));
+      } catch (err) { showToast(err.message, 'error'); }
+    });
   }
 
   function renderConsent(consent) {
@@ -252,55 +265,59 @@
             </div>
           </div>
           <button class="btn btn-sm ${granted ? 'btn-ghost' : 'btn-secondary'}"
-                  onclick="toggleConsent('${ch}', '${status}')">
+                  onclick="toggleConsent('${ch}', '${status}', this)">
             ${granted ? icon('close', 13) + ' Withdraw' : icon('check', 13) + ' Allow'}
           </button>
         </div>`;
     }).join('');
   }
 
-  async function toggleConsent(channel, status) {
-    try {
-      if (status === 'granted') {
-        await api.del(`/users/consent/${channel}`);
-        showToast(`${CHANNEL_LABELS[channel]} withdrawn`);
-      } else {
-        await api.post('/users/consent', { channel });
-        showToast(`${CHANNEL_LABELS[channel]} allowed`);
-      }
-      const data = await api.get('/users/consent');
-      renderConsent(data.consent);
-    } catch (err) { showToast(err.message, 'error'); }
+  async function toggleConsent(channel, status, btn) {
+    await busy(btn, status === 'granted' ? 'Withdrawing…' : 'Allowing…', async () => {
+      try {
+        if (status === 'granted') {
+          await api.del(`/users/consent/${channel}`);
+          showToast(`${CHANNEL_LABELS[channel]} withdrawn`);
+        } else {
+          await api.post('/users/consent', { channel });
+          showToast(`${CHANNEL_LABELS[channel]} allowed`);
+        }
+        const data = await api.get('/users/consent');
+        renderConsent(data.consent);
+      } catch (err) { showToast(err.message, 'error'); }
+    });
   }
 
-  async function savePreferences(returnHome = false) {
-    try {
-      const saved = await api.put('/users/notification-preferences', {
-        categories: preferences,
-        quiet_hours: {
-          start: document.getElementById('quietStart').value,
-          end: document.getElementById('quietEnd').value
+  async function savePreferences(returnHome = false, btn) {
+    await busy(btn, 'Saving…', async () => {
+      try {
+        const saved = await api.put('/users/notification-preferences', {
+          categories: preferences,
+          quiet_hours: {
+            start: document.getElementById('quietStart').value,
+            end: document.getElementById('quietEnd').value
+          }
+        });
+        // Reflect what the server actually stored — locked categories stay on
+        // regardless of what the toggles were set to.
+        saved.categories.forEach(c => { preferences[c.key] = c.enabled; });
+        renderCategories(saved.categories);
+
+        const redirect = new URLSearchParams(window.location.search).get('redirect');
+        if (redirect) {
+          showToast('Preferences saved! Redirecting...');
+          setTimeout(() => { window.location.href = redirect; }, 800);
+          return;
         }
-      });
-      // Reflect what the server actually stored — locked categories stay on
-      // regardless of what the toggles were set to.
-      saved.categories.forEach(c => { preferences[c.key] = c.enabled; });
-      renderCategories(saved.categories);
 
-      const redirect = new URLSearchParams(window.location.search).get('redirect');
-      if (redirect) {
-        showToast('Preferences saved! Redirecting...');
-        setTimeout(() => { window.location.href = redirect; }, 800);
-        return;
-      }
-
-      if (returnHome) {
-        showToast('Preferences saved! Returning to dashboard...');
-        setTimeout(() => { window.location.href = '/member/dashboard.html'; }, 800);
-      } else {
-        showToast('Preferences saved');
-      }
-    } catch (err) { showToast(err.message, 'error'); }
+        if (returnHome) {
+          showToast('Preferences saved! Returning to dashboard...');
+          setTimeout(() => { window.location.href = '/member/dashboard.html'; }, 800);
+        } else {
+          showToast('Preferences saved');
+        }
+      } catch (err) { showToast(err.message, 'error'); }
+    });
   }
 
   function activateTab(name) {
