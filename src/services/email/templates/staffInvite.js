@@ -7,7 +7,15 @@ function renderStaffInvite({
   temporaryPassword,
   invitedByName = 'A colleague',
   loginUrl,
-  appUrl
+  appUrl,
+  // Set by services/emailTemplates.js when this circle has overridden the
+  // wording. Every one is null unless somebody has actually typed something,
+  // which is what keeps an untouched workflow rendering exactly this code.
+  intro = null,
+  outro = null,
+  bodyHtml = null,
+  subjectOverride = null,
+  brand = null
 }) {
   const greeting = recipientName ? `Hello ${escapeHtml(recipientName)},` : 'Hello,';
 
@@ -54,18 +62,24 @@ function renderStaffInvite({
   const actionUrl = loginUrl || `${appUrl}/admin/login`;
 
   return {
-    subject: `You have been invited to Credit Direct Dev Circle`,
+    subject: subjectOverride || `You have been invited to Credit Direct Dev Circle`,
     previewText: `Join the Credit Direct Dev Circle admin console as ${roleName}`,
     html: wrapLayout({
-      title: `Dev Circle Admin Invitation`,
+      intro,
+      outro,
+      brand,
+      title: subjectOverride || `Dev Circle Admin Invitation`,
       previewText: `Join the Credit Direct Dev Circle admin console as ${roleName}`,
-      contentHtml,
+      contentHtml: bodyHtml || contentHtml,
       actionText: 'Sign In to Set Password',
       actionUrl,
       appUrl
     }),
     text: toPlainText({
-      title: `Dev Circle Admin Invitation`,
+      intro,
+      outro,
+      brand,
+      title: subjectOverride || `Dev Circle Admin Invitation`,
       contentText,
       actionText: 'Sign In to Set Password',
       actionUrl,

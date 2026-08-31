@@ -7,7 +7,15 @@ function renderGeneric({
   actionText = null,
   actionUrl = null,
   recipientName = null,
-  appUrl
+  appUrl,
+  // Set by services/emailTemplates.js when this circle has overridden the
+  // wording. Every one is null unless somebody has actually typed something,
+  // which is what keeps an untouched workflow rendering exactly this code.
+  intro = null,
+  outro = null,
+  bodyHtml = null,
+  subjectOverride = null,
+  brand = null
 }) {
   const displayTitle = title || `Notification from Credit Direct Dev Circle`;
   const greeting = recipientName ? `Hello ${escapeHtml(recipientName)},` : '';
@@ -27,18 +35,24 @@ function renderGeneric({
   `;
 
   return {
-    subject: displayTitle,
+    subject: subjectOverride || displayTitle,
     previewText: body ? String(body).slice(0, 100) : displayTitle,
     html: wrapLayout({
-      title: displayTitle,
+      intro,
+      outro,
+      brand,
+      title: subjectOverride || displayTitle,
       previewText: body ? String(body).slice(0, 100) : displayTitle,
-      contentHtml,
+      contentHtml: bodyHtml || contentHtml,
       actionText,
       actionUrl,
       appUrl
     }),
     text: toPlainText({
-      title: displayTitle,
+      intro,
+      outro,
+      brand,
+      title: subjectOverride || displayTitle,
       contentText: `${recipientName ? `Hello ${recipientName},\n\n` : ''}${body || ''}`,
       actionText,
       actionUrl,

@@ -107,5 +107,6 @@ router.use('/', require('./roles.routes'));
 router.use('/', require('./feedback.routes'));
 router.use('/', require('./integrations.routes'));
 router.use('/', require('./credentials.routes'));
+router.use('/', require('./communications.routes'));
 
 module.exports = router;

@@ -6,7 +6,15 @@ function renderSessionReminder({
   sessionTime = null,
   meetingUrl = null,
   recipientName = null,
-  appUrl
+  appUrl,
+  // Set by services/emailTemplates.js when this circle has overridden the
+  // wording. Every one is null unless somebody has actually typed something,
+  // which is what keeps an untouched workflow rendering exactly this code.
+  intro = null,
+  outro = null,
+  bodyHtml = null,
+  subjectOverride = null,
+  brand = null
 }) {
   const greeting = recipientName ? `Hello ${escapeHtml(recipientName)},` : 'Hello,';
   const timeDisplay = sessionTime || (scheduledAt ? new Date(scheduledAt).toLocaleString('en-NG', { timeZone: 'Africa/Lagos' }) + ' WAT' : null);
@@ -35,18 +43,24 @@ function renderSessionReminder({
   ].filter(Boolean).join('\n');
 
   return {
-    subject: `Upcoming: ${sessionTitle}`,
+    subject: subjectOverride || `Upcoming: ${sessionTitle}`,
     previewText: `Reminder: ${sessionTitle} is starting soon`,
     html: wrapLayout({
-      title: `Upcoming: ${sessionTitle}`,
+      intro,
+      outro,
+      brand,
+      title: subjectOverride || `Upcoming: ${sessionTitle}`,
       previewText: `Reminder: ${sessionTitle} is starting soon`,
-      contentHtml,
+      contentHtml: bodyHtml || contentHtml,
       actionText: meetingUrl ? 'Join Meeting' : 'View in Portal',
       actionUrl: meetingUrl || `${appUrl}/member/sessions.html`,
       appUrl
     }),
     text: toPlainText({
-      title: `Upcoming: ${sessionTitle}`,
+      intro,
+      outro,
+      brand,
+      title: subjectOverride || `Upcoming: ${sessionTitle}`,
       contentText,
       actionText: meetingUrl ? 'Join Meeting' : 'View in Portal',
       actionUrl: meetingUrl || `${appUrl}/member/sessions.html`,

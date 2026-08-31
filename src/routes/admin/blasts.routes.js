@@ -124,6 +124,7 @@ router.post('/blasts/:id/send', requirePermission('blasts.send'), async (req, re
       title: blast.subject || 'A message from Credit Direct',
       body: blast.content,
       sourceType: 'blast',
+      circleId: blast.circle_id || null,
       sourceId: blast.id,
       channels
     });

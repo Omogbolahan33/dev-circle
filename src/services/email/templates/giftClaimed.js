@@ -5,7 +5,15 @@ function renderGiftClaimed({
   giftValue = null,
   currency = 'NGN',
   recipientName = null,
-  appUrl
+  appUrl,
+  // Set by services/emailTemplates.js when this circle has overridden the
+  // wording. Every one is null unless somebody has actually typed something,
+  // which is what keeps an untouched workflow rendering exactly this code.
+  intro = null,
+  outro = null,
+  bodyHtml = null,
+  subjectOverride = null,
+  brand = null
 }) {
   const greeting = recipientName ? `Hello ${escapeHtml(recipientName)},` : 'Hello,';
   const valDisplay = giftValue ? `${currency} ${Number(giftValue).toLocaleString()}` : null;
@@ -34,18 +42,24 @@ function renderGiftClaimed({
   ].filter(Boolean).join('\n');
 
   return {
-    subject: `Gift claimed: ${giftName}`,
+    subject: subjectOverride || `Gift claimed: ${giftName}`,
     previewText: `Your claim for ${giftName} has been received`,
     html: wrapLayout({
-      title: `Reward Claim: ${giftName}`,
+      intro,
+      outro,
+      brand,
+      title: subjectOverride || `Reward Claim: ${giftName}`,
       previewText: `Your claim for ${giftName} has been received`,
-      contentHtml,
+      contentHtml: bodyHtml || contentHtml,
       actionText: 'View Your Profile & Rewards',
       actionUrl: `${appUrl}/member/profile.html`,
       appUrl
     }),
     text: toPlainText({
-      title: `Reward Claim: ${giftName}`,
+      intro,
+      outro,
+      brand,
+      title: subjectOverride || `Reward Claim: ${giftName}`,
       contentText,
       actionText: 'View Your Profile & Rewards',
       actionUrl: `${appUrl}/member/profile.html`,

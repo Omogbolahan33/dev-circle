@@ -4,7 +4,15 @@ function renderSurveyReminder({
   surveyTitle,
   surveyUrl,
   recipientName = null,
-  appUrl
+  appUrl,
+  // Set by services/emailTemplates.js when this circle has overridden the
+  // wording. Every one is null unless somebody has actually typed something,
+  // which is what keeps an untouched workflow rendering exactly this code.
+  intro = null,
+  outro = null,
+  bodyHtml = null,
+  subjectOverride = null,
+  brand = null
 }) {
   const greeting = recipientName ? `Hello ${escapeHtml(recipientName)},` : 'Hello,';
 
@@ -23,18 +31,24 @@ function renderSurveyReminder({
   ].join('\n');
 
   return {
-    subject: `Reminder: ${surveyTitle}`,
+    subject: subjectOverride || `Reminder: ${surveyTitle}`,
     previewText: `Don't forget to share your feedback on ${surveyTitle}`,
     html: wrapLayout({
-      title: `Reminder: ${surveyTitle}`,
+      intro,
+      outro,
+      brand,
+      title: subjectOverride || `Reminder: ${surveyTitle}`,
       previewText: `Don't forget to complete: ${surveyTitle}`,
-      contentHtml,
+      contentHtml: bodyHtml || contentHtml,
       actionText: 'Complete Survey',
       actionUrl: surveyUrl,
       appUrl
     }),
     text: toPlainText({
-      title: `Reminder: ${surveyTitle}`,
+      intro,
+      outro,
+      brand,
+      title: subjectOverride || `Reminder: ${surveyTitle}`,
       contentText,
       actionText: 'Complete Survey',
       actionUrl: surveyUrl,

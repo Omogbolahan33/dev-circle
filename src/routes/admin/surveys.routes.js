@@ -507,6 +507,7 @@ router.post('/surveys/:id/invite', requirePermission('surveys.invite'), async (r
         `We'd like your input. This takes about ${survey.time_estimate_min} minutes.`,
       actionUrl: `/member/survey.html?id=${survey.id}`,
       sourceType: 'survey_invite',
+      circleId: survey.circle_id || null,
       sourceId: survey.id,
       channels
     });
@@ -553,6 +554,7 @@ router.post('/surveys/:id/remind', requirePermission('surveys.invite'), async (r
       body: `Still open — about ${survey.time_estimate_min} minutes of your time.`,
       actionUrl: `/member/survey.html?id=${survey.id}`,
       sourceType: 'survey_reminder',
+      circleId: survey.circle_id || null,
       sourceId: survey.id,
       channels
     });

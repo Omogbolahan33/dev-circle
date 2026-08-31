@@ -1488,6 +1488,54 @@ function define(db) {
         // shared survey-theme definition (assets/js/survey-theme.js).
         addColumn('circles', 'theme', 'TEXT');
       }
+    },
+
+    {
+      id: 30,
+      name: 'editable_email_templates',
+      up() {
+        // What outbound mail says was fixed in the repository: changing a
+        // subject line meant a code change and a deploy, which put the wording
+        // of an invitation out of reach of the people whose invitation it is.
+        //
+        // A row here is an override, never the whole story. Anything left null
+        // falls back to what the template renders in code, so an untouched
+        // workflow behaves exactly as it always did and a circle that has
+        // customised one line has customised one line — not inherited a frozen
+        // copy of everything around it.
+        //
+        // Scoped to a circle because every other authored thing here is: a
+        // survey, a cohort, a session and a form all belong to one workspace,
+        // and an invitation is the workspace speaking.
+        db.exec(`
+          CREATE TABLE IF NOT EXISTS email_templates (
+            id TEXT PRIMARY KEY,
+            circle_id TEXT NOT NULL REFERENCES circles(id) ON DELETE CASCADE,
+
+            -- Which outbound mail this overrides: 'survey_invite', 'login_code'
+            -- and so on, matching the keys in services/email/templates/index.js.
+            workflow TEXT NOT NULL,
+
+            -- Each is optional and each falls back on its own, so an author can
+            -- change a subject without adopting a body.
+            subject TEXT,
+            intro TEXT,
+            outro TEXT,
+
+            -- A whole body, pasted or uploaded, replacing what the template
+            -- would have written. The layout around it stays: an author cannot
+            -- accidentally remove the footer that carries the preferences link.
+            body_html TEXT,
+
+            updated_at TEXT DEFAULT (datetime('now')),
+            updated_by TEXT REFERENCES admin_users(id) ON DELETE SET NULL,
+
+            UNIQUE(circle_id, workflow)
+          );
+          CREATE INDEX IF NOT EXISTS idx_email_templates_circle
+            ON email_templates(circle_id);
+        `);
+      }
     }
   ];
   return migrations;

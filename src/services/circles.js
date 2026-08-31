@@ -265,8 +265,16 @@ async function setBrand(circleId, input) {
   const circle = await byId(circleId);
   if (!circle) throw new CircleError('Circle not found');
 
+  // The email service holds this circle's colours for a minute so it is not
+  // reading them on every send. Required lazily: emailTemplates reaches back
+  // here for the circle, and requiring it at the top would be a cycle.
+  const forgetBrand = () => {
+    try { require('./emailTemplates').forget(circleId); } catch { /* not loaded yet */ }
+  };
+
   if (input === null || input === undefined || (typeof input === 'object' && !Object.keys(input).length)) {
     await db.prepare('UPDATE circles SET theme = NULL WHERE id = ?').run(circleId);
+    forgetBrand();
     return { theme: null, issues: [], warnings: [] };
   }
 
@@ -279,6 +287,7 @@ async function setBrand(circleId, input) {
   }
 
   await db.prepare('UPDATE circles SET theme = ? WHERE id = ?').run(JSON.stringify(theme), circleId);
+  forgetBrand();
   return { theme, issues, warnings };
 }
 

@@ -2974,6 +2974,119 @@ const paths = {
     })
   },
 
+  // ─── Communications ───────────────────────────────────────
+  '/admin/email-templates': {
+    get: op({
+      tag: 'Admin · Communications',
+      summary: 'What this workspace\'s automated mail says',
+      description: [
+        'Every outbound workflow, what it sends today, and whatever this circle has',
+        'overridden. An entry with `customised: false` carries no override at all —',
+        'the wording is whatever the platform ships, read from code rather than from',
+        'a copy in the database.'
+      ].join(' '),
+      operationId: 'listEmailTemplates',
+      permission: 'circles.write',
+      responses: {
+        200: json('The workflows, with any overrides this circle holds.', { type: 'object' }, {
+          circle: { id: 'r1', name: 'Dev Circle' },
+          brand: { name: 'Dev Circle', accent: '#107EBC', logoUrl: null },
+          workflows: [{
+            key: 'survey_invite',
+            label: 'Survey invitation',
+            description: 'Sent when somebody is invited to a survey.',
+            defaultSubject: "You're invited: {{survey_title}}",
+            variables: ['recipient_name', 'survey_title', 'survey_url'],
+            customised: false,
+            override: null
+          }],
+          limits: { subject: 200, intro: 2000, outro: 2000, body_html: 100000 }
+        })
+      }
+    })
+  },
+
+  '/admin/email-templates/{workflow}': {
+    put: op({
+      tag: 'Admin · Communications',
+      summary: 'Change what one of them says',
+      description: [
+        'Each field is an independent override and each may be omitted: sending only',
+        '`subject` leaves an intro somebody set earlier alone. Sending every field',
+        'empty removes the override entirely, which is the same as reverting.',
+        '`body_html` replaces what the template writes, inside the layout it ships —',
+        'script tags, event handlers and `javascript:` URLs are stripped on the way in.',
+        'Copy may carry `{{variables}}`; the ones a workflow offers are listed by',
+        'GET /admin/email-templates.'
+      ].join(' '),
+      operationId: 'saveEmailTemplate',
+      permission: 'circles.write',
+      parameters: [path('workflow', 'The workflow key, e.g. `survey_invite`.', { type: 'string' })],
+      requestBody: jsonBody({ type: 'object' }, {
+        subject: 'Two minutes on {{survey_title}}?',
+        intro: 'Hello {{recipient_name}} — a quick one from the team.',
+        outro: null,
+        body_html: null
+      }),
+      responses: {
+        200: json('Saved, or reverted if nothing was left in it.', { type: 'object' }, {
+          message: 'Saved — this workspace now sends its own wording',
+          workflow: 'survey_invite',
+          override: { workflow: 'survey_invite', subject: 'Two minutes on {{survey_title}}?', intro: null, outro: null, body_html: null }
+        }),
+        400: json('The copy was refused — too long, most likely.', ref('Error'),
+          { error: 'That subject is too long (limit 200 characters)' }),
+        404: json('No such workflow.', ref('Error'), { error: 'No such email workflow' })
+      }
+    }),
+    delete: op({
+      tag: 'Admin · Communications',
+      summary: 'Revert one to the wording the platform ships',
+      description: [
+        'Deletes the override. The default was never copied anywhere, so what comes',
+        'back is whatever the template renders today.'
+      ].join(' '),
+      operationId: 'resetEmailTemplate',
+      permission: 'circles.write',
+      parameters: [path('workflow', 'The workflow key.', { type: 'string' })],
+      responses: {
+        200: json('Reverted.', { type: 'object' }, {
+          message: 'Back to the wording this platform ships', workflow: 'survey_invite'
+        }),
+        404: json('No such workflow.', ref('Error'), { error: 'No such email workflow' })
+      }
+    })
+  },
+
+  '/admin/email-templates/{workflow}/preview': {
+    post: op({
+      tag: 'Admin · Communications',
+      summary: 'Render one, without sending it',
+      description: [
+        'Renders the mail exactly as it would go out, against sample data rather than',
+        'a real member. Post a draft to see an unsaved change; post nothing to see what',
+        'is saved. The circle\'s brand is applied, so the preview shows the colours the',
+        'recipient would get.'
+      ].join(' '),
+      operationId: 'previewEmailTemplate',
+      permission: 'circles.write',
+      parameters: [path('workflow', 'The workflow key.', { type: 'string' })],
+      requestBody: jsonBody({ type: 'object' }, {
+        subject: 'Two minutes on {{survey_title}}?', intro: null, outro: null, body_html: null
+      }, { required: false, description: 'An unsaved draft. Omit to render what is saved.' }),
+      responses: {
+        200: json('The rendered mail.', { type: 'object' }, {
+          workflow: 'survey_invite',
+          subject: 'Two minutes on How is the sandbox treating you??',
+          html: '<!DOCTYPE html>…',
+          text: 'CREDIT DIRECT DEV CIRCLE…',
+          is_customised: true
+        }),
+        404: json('No such workflow.', ref('Error'), { error: 'No such email workflow' })
+      }
+    })
+  },
+
   '/admin/credentials/test-email': {
     post: op({
       tag: 'Admin · Credentials',

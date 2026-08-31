@@ -215,7 +215,10 @@ async function notify(user, {
   sourceId = null,
   channels = ['in_portal'],
   workflow = null,
-  templateData = null
+  templateData = null,
+  // The workspace this message belongs to. Carried so the email service can
+  // use that circle's wording and colours; null means the platform's own.
+  circleId = null
 }) {
   if (!title) throw new Error('notify() requires a title');
 
@@ -230,7 +233,8 @@ async function notify(user, {
 
   const message = {
     category, title, body, action_url: actionUrl, notification_id: notificationId,
-    source_type: sourceType, source_id: sourceId, workflow, templateData
+    source_type: sourceType, source_id: sourceId, workflow, templateData,
+    circle_id: circleId
   };
 
   for (const channel of allowed) {

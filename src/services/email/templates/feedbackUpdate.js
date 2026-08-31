@@ -6,7 +6,15 @@ function renderFeedbackUpdate({
   responseMessage = null,
   recipientName = null,
   feedbackUrl = null,
-  appUrl
+  appUrl,
+  // Set by services/emailTemplates.js when this circle has overridden the
+  // wording. Every one is null unless somebody has actually typed something,
+  // which is what keeps an untouched workflow rendering exactly this code.
+  intro = null,
+  outro = null,
+  bodyHtml = null,
+  subjectOverride = null,
+  brand = null
 }) {
   const greeting = recipientName ? `Hello ${escapeHtml(recipientName)},` : 'Hello,';
 
@@ -43,18 +51,24 @@ function renderFeedbackUpdate({
   ].filter(Boolean).join('\n');
 
   return {
-    subject: `Update on feedback: ${feedbackTitle}`,
+    subject: subjectOverride || `Update on feedback: ${feedbackTitle}`,
     previewText: `Feedback update: ${feedbackTitle}`,
     html: wrapLayout({
-      title: 'Feedback Update',
+      intro,
+      outro,
+      brand,
+      title: subjectOverride || 'Feedback Update',
       previewText: `Update on: ${feedbackTitle}`,
-      contentHtml,
+      contentHtml: bodyHtml || contentHtml,
       actionText: feedbackUrl ? 'View Feedback' : null,
       actionUrl: feedbackUrl,
       appUrl
     }),
     text: toPlainText({
-      title: 'Feedback Update',
+      intro,
+      outro,
+      brand,
+      title: subjectOverride || 'Feedback Update',
       contentText,
       actionText: feedbackUrl ? 'View Feedback' : null,
       actionUrl: feedbackUrl,

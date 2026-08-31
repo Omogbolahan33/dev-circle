@@ -27,9 +27,23 @@ const TEMPLATES = {
   generic: renderGeneric
 };
 
-function renderTemplate(name, data = {}) {
+// ─── Rendering one ───────────────────────────────────────────
+// `overrides` is what a circle has typed for this workflow, already filled in
+// (see services/emailTemplates.js), and `brand` is that circle's colours. Both
+// are optional and both default to nothing, so every existing caller keeps the
+// behaviour it had: the template renders itself, in Credit Direct's colours.
+function renderTemplate(name, data = {}, { overrides = null, brand = null } = {}) {
   const renderer = TEMPLATES[name] || renderGeneric;
-  return renderer(data);
+  if (!overrides && !brand) return renderer(data);
+
+  return renderer({
+    ...data,
+    intro: overrides?.intro || null,
+    outro: overrides?.outro || null,
+    bodyHtml: overrides?.body_html || null,
+    subjectOverride: overrides?.subject || null,
+    brand: brand || null
+  });
 }
 
 module.exports = {

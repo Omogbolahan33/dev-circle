@@ -4,7 +4,15 @@ function renderLoginCode({
   code,
   expiresInMinutes = 10,
   recipientName = null,
-  appUrl
+  appUrl,
+  // Set by services/emailTemplates.js when this circle has overridden the
+  // wording. Every one is null unless somebody has actually typed something,
+  // which is what keeps an untouched workflow rendering exactly this code.
+  intro = null,
+  outro = null,
+  bodyHtml = null,
+  subjectOverride = null,
+  brand = null
 }) {
   const greeting = recipientName ? `Hello ${escapeHtml(recipientName)},` : 'Hello,';
 
@@ -39,16 +47,22 @@ function renderLoginCode({
   ].join('\n');
 
   return {
-    subject: `${code} is your Dev Circle sign-in code`,
+    subject: subjectOverride || `${code} is your Dev Circle sign-in code`,
     previewText: `${code} is your verification code for Credit Direct Dev Circle`,
     html: wrapLayout({
-      title: `Dev Circle Sign-In Code`,
+      intro,
+      outro,
+      brand,
+      title: subjectOverride || `Dev Circle Sign-In Code`,
       previewText: `${code} is your verification code`,
-      contentHtml,
+      contentHtml: bodyHtml || contentHtml,
       appUrl
     }),
     text: toPlainText({
-      title: `Dev Circle Sign-In Code`,
+      intro,
+      outro,
+      brand,
+      title: subjectOverride || `Dev Circle Sign-In Code`,
       contentText,
       appUrl
     })

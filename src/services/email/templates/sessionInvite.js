@@ -7,7 +7,15 @@ function renderSessionInvite({
   sessionTime = null,
   meetingUrl = null,
   recipientName = null,
-  appUrl
+  appUrl,
+  // Set by services/emailTemplates.js when this circle has overridden the
+  // wording. Every one is null unless somebody has actually typed something,
+  // which is what keeps an untouched workflow rendering exactly this code.
+  intro = null,
+  outro = null,
+  bodyHtml = null,
+  subjectOverride = null,
+  brand = null
 }) {
   const greeting = recipientName ? `Hello ${escapeHtml(recipientName)},` : 'Hello,';
   const timeDisplay = sessionTime || (scheduledAt ? new Date(scheduledAt).toLocaleString('en-NG', { timeZone: 'Africa/Lagos' }) + ' WAT' : null);
@@ -40,18 +48,24 @@ function renderSessionInvite({
   ].filter(Boolean).join('\n');
 
   return {
-    subject: `Invited: ${sessionTitle}`,
+    subject: subjectOverride || `Invited: ${sessionTitle}`,
     previewText: `You're invited to ${sessionTitle}`,
     html: wrapLayout({
-      title: `Invited: ${sessionTitle}`,
+      intro,
+      outro,
+      brand,
+      title: subjectOverride || `Invited: ${sessionTitle}`,
       previewText: `You're invited to ${sessionTitle}`,
-      contentHtml,
+      contentHtml: bodyHtml || contentHtml,
       actionText: meetingUrl ? 'Join Session' : 'View in Portal',
       actionUrl: meetingUrl || `${appUrl}/member/sessions.html`,
       appUrl
     }),
     text: toPlainText({
-      title: `Invited: ${sessionTitle}`,
+      intro,
+      outro,
+      brand,
+      title: subjectOverride || `Invited: ${sessionTitle}`,
       contentText,
       actionText: meetingUrl ? 'Join Session' : 'View in Portal',
       actionUrl: meetingUrl || `${appUrl}/member/sessions.html`,

@@ -7,7 +7,15 @@ function renderSurveyInvite({
   questionCount = null,
   surveyUrl,
   recipientName = null,
-  appUrl
+  appUrl,
+  // Set by services/emailTemplates.js when this circle has overridden the
+  // wording. Every one is null unless somebody has actually typed something,
+  // which is what keeps an untouched workflow rendering exactly this code.
+  intro = null,
+  outro = null,
+  bodyHtml = null,
+  subjectOverride = null,
+  brand = null
 }) {
   const greeting = recipientName ? `Hello ${escapeHtml(recipientName)},` : 'Hello,';
   const timeText = timeEstimateMin ? `~${timeEstimateMin} minute${timeEstimateMin === 1 ? '' : 's'}` : null;
@@ -42,18 +50,24 @@ function renderSurveyInvite({
   ].filter(Boolean).join('\n');
 
   return {
-    subject: `You're invited: ${surveyTitle}`,
+    subject: subjectOverride || `You're invited: ${surveyTitle}`,
     previewText: `Share your feedback on ${surveyTitle}`,
     html: wrapLayout({
-      title: `You're invited: ${surveyTitle}`,
+      intro,
+      outro,
+      brand,
+      title: subjectOverride || `You're invited: ${surveyTitle}`,
       previewText: `Share your feedback on ${surveyTitle}`,
-      contentHtml,
+      contentHtml: bodyHtml || contentHtml,
       actionText: 'Take Survey',
       actionUrl: surveyUrl,
       appUrl
     }),
     text: toPlainText({
-      title: `You're invited: ${surveyTitle}`,
+      intro,
+      outro,
+      brand,
+      title: subjectOverride || `You're invited: ${surveyTitle}`,
       contentText,
       actionText: 'Take Survey',
       actionUrl: surveyUrl,

@@ -100,6 +100,10 @@ test('no page ships a template placeholder of any kind', () => {
         continue;
       }
       if (!/\.(html|js|css)$/.test(entry.name)) continue;
+      // The Communications editor is the one page whose subject *is* template
+      // syntax: it shows an author the {{variables}} they may use. Braces there
+      // are the content, not an unrendered placeholder.
+      if (entry.name === 'communications.html') continue;
 
       const text = fs.readFileSync(full, 'utf8');
       for (const m of text.matchAll(/\{\{\s*[\w.]+\s*\}\}/g)) {

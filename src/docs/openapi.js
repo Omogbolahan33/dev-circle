@@ -211,6 +211,7 @@ const tags = [
   { name: 'Admin · Rewards', description: 'The reward catalogue, its eligibility rules and fulfilment.' },
   { name: 'Admin · Feedback', description: 'Reading and triaging feedback, including complaints mirrored from Feex.' },
   { name: 'Admin · Access control', description: 'Roles, permissions and staff accounts.' },
+  { name: 'Admin · Communications', description: 'What this workspace\'s automated mail says — the wording of every outbound workflow, and the circle brand it carries.' },
   { name: 'Admin · Credentials', description: `The keys Dev Circle issues to integrations, end to end — issue, inspect, re-scope, rotate and revoke — plus the state of the outbound provider credentials.` },
   { name: 'Admin · Integrations', description: 'The inbound event log: everything the connected systems have sent.' },
   { name: 'Admin · Sandbox', description: 'The throwaway database this reference can be pointed at.' },

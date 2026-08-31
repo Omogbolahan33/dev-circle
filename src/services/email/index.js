@@ -3,6 +3,7 @@ const dbContext = require('../../db/context');
 const { logger } = require('../../utils/logger');
 const { renderTemplate } = require('./templates');
 const { resolveWorkflow } = require('./workflows');
+const emailTemplates = require('../emailTemplates');
 const TermiiEmailProvider = require('./providers/termii');
 const SimpuEmailProvider = require('./providers/simpu');
 const CustomerIoEmailProvider = require('./providers/customerio');
@@ -15,6 +16,39 @@ const SimulatedEmailProvider = require('./providers/simulated');
 // Supports external providers (Termii, Simpu, Customer.io) and simulated delivery
 // in sandboxes and test suites. Transparently renders branded HTML & plain-text
 // templates for surveys, sessions, staff invites, sign-in codes, and blasts.
+
+
+// ─── The names an author writes, from the data a template gets ───
+// Templates take camelCase because that is what the renderers destructure;
+// an author writes {{survey_title}}, because that is what reads like a name
+// rather than like code. This is the join between the two.
+//
+// Converting the case mechanically covers most of it; the aliases below are
+// the handful where the template's field name and the sensible public name
+// genuinely differ, and where inventing {{invited_by_name}} would be worse.
+const VARIABLE_ALIASES = {
+  invitedByName: 'invited_by',
+  timeEstimateMin: 'time_estimate',
+  status: 'feedback_status',
+  when: 'session_time',
+  location: 'session_location'
+};
+
+function snake(key) {
+  return key.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase();
+}
+
+function templateVariables(templateData = {}, { subject = null, body = null } = {}) {
+  const out = {};
+  for (const [key, value] of Object.entries(templateData)) {
+    if (value === undefined || value === null || typeof value === 'object') continue;
+    out[snake(key)] = value;
+    if (VARIABLE_ALIASES[key]) out[VARIABLE_ALIASES[key]] = value;
+  }
+  if (subject && !out.title) out.title = subject;
+  if (body && !out.body) out.body = body;
+  return out;
+}
 
 class EmailService {
   constructor() {
@@ -146,7 +180,10 @@ class EmailService {
     replyTo = null,
     templateId = null,
     variables = {},
-    metadata = {}
+    metadata = {},
+    // Whose mail this is. Decides the wording, if that circle has overridden
+    // it, and the colours. Absent means the platform's own, unchanged.
+    circleId = null
   }) {
     if (!to) {
       throw new Error('EmailService.send() requires a recipient address ("to")');
@@ -155,6 +192,24 @@ class EmailService {
     let finalSubject = subject;
     let finalHtml = html;
     let finalText = text;
+
+    // What this circle has said this particular mail should say, and what it
+    // should look like. Both are null for a circle that has changed neither,
+    // and renderTemplate then takes the path it always took.
+    const overrides = template && circleId
+      ? await emailTemplates.resolveFor(circleId, template, emailTemplates.withCommon(
+          templateVariables(templateData, { subject, body }),
+          {
+            product: 'Dev Circle',
+            organisation: 'Credit Direct',
+            portalUrl: config.appUrl,
+            recipientName: templateData.recipientName || templateData.userName || null
+          }
+        ))
+      : null;
+    const brand = circleId
+      ? await emailTemplates.brandFor(circleId, { appUrl: config.appUrl })
+      : null;
 
     // Resolve template if specified
     if (template) {
@@ -165,7 +220,7 @@ class EmailService {
         actionText,
         actionUrl,
         ...templateData
-      });
+      }, { overrides, brand });
 
       if (!finalSubject) finalSubject = rendered.subject;
       if (!finalHtml) finalHtml = rendered.html;
@@ -178,7 +233,7 @@ class EmailService {
         body,
         actionText,
         actionUrl
-      });
+      }, { brand });
       finalHtml = rendered.html;
       finalText = rendered.text;
     }
@@ -416,7 +471,7 @@ class EmailService {
    * the survey one), a gift email never renders "undefined", and a sign-in
    * code uses the code template, regardless of which category the caller used.
    */
-  async sendNotificationEmail({ user, message }) {
+  async sendNotificationEmail({ user, message, circleId = null }) {
     const to = message.to || user.email;
     if (!to) {
       return { status: 'failed', ref: null, error: 'No email address on file for user' };
@@ -431,6 +486,9 @@ class EmailService {
       templateData,
       category: message.category || 'platform_updates',
       actionUrl: message.action_url,
+      // The source knows which workspace it belongs to; when it says so the
+      // mail is that workspace's. Otherwise it is the platform's, unchanged.
+      circleId: circleId || message.circle_id || null,
       metadata: {
         notificationId: message.notification_id,
         userId: user.id,

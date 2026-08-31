@@ -88,6 +88,7 @@ const ADMIN_NAV = [
   ]},
   { group: 'Workspace', items: [
     { id: 'roles', label: 'Roles & access', icon: 'roles', href: '/admin/roles.html' },
+    { id: 'communications', label: 'Communications', icon: 'blasts', href: '/admin/communications.html', permission: 'circles.write' },
     // An item may name the permission it needs. The nav then hides it from a
     // role that does not hold it, so nobody is offered a page that answers 403.
     { id: 'credentials', label: 'Credentials', icon: 'key', href: '/admin/credentials.html', permission: 'credentials.read' },

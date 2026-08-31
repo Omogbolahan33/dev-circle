@@ -440,6 +440,22 @@
   );
 
   -- Sandbox meta (used by sandbox.js)
+  -- Overrides for what outbound mail says. Every column but the keys is
+  -- optional: what is null falls back to what the template renders in code.
+  -- Mirrors migration 30. See services/emailTemplates.js.
+  CREATE TABLE IF NOT EXISTS email_templates (
+    id TEXT PRIMARY KEY,
+    circle_id TEXT NOT NULL REFERENCES circles(id) ON DELETE CASCADE,
+    workflow TEXT NOT NULL,
+    subject TEXT,
+    intro TEXT,
+    outro TEXT,
+    body_html TEXT,
+    updated_at TEXT DEFAULT (now()::text),
+    updated_by TEXT REFERENCES admin_users(id) ON DELETE SET NULL,
+    UNIQUE(circle_id, workflow)
+  );
+
   CREATE TABLE IF NOT EXISTS sandbox_meta (
     key TEXT PRIMARY KEY,
     value TEXT
@@ -504,6 +520,7 @@
   CREATE UNIQUE INDEX IF NOT EXISTS idx_feedback_verbatim_anon ON feedback(response_id, question_id) WHERE response_id IS NOT NULL AND question_id IS NOT NULL;
   CREATE UNIQUE INDEX IF NOT EXISTS idx_feedback_external_response ON feedback(source_system, external_response_id) WHERE external_response_id IS NOT NULL;
   CREATE UNIQUE INDEX IF NOT EXISTS idx_session_dispatch_once ON session_dispatches(session_id, offset_minutes);
+  CREATE INDEX IF NOT EXISTS idx_email_templates_circle ON email_templates(circle_id);
   CREATE INDEX IF NOT EXISTS idx_onboarding_forms_circle ON onboarding_forms(circle_id);
   CREATE INDEX IF NOT EXISTS idx_onboarding_forms_token ON onboarding_forms(public_token) WHERE public_token IS NOT NULL;
   CREATE INDEX IF NOT EXISTS idx_onboarding_submissions_form ON onboarding_submissions(form_id, status);
