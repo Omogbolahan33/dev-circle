@@ -358,8 +358,9 @@ const config = {
   // Bootstrap key printed on first run so integrations can authenticate
   bootstrapApiKey: process.env.BOOTSTRAP_API_KEY || null,
 
-  // Upsert the advertised demo logins on boot so a fresh deploy is usable.
-  // Tests skip this regardless. Set SEED_DEMO_ACCOUNTS=false to disable.
+  // Create the roles, default circle and first accounts on boot if they are
+  // missing, so a fresh deploy is usable. Insert-only — nothing that already
+  // exists is rewritten. Tests skip this regardless. Set false to disable.
   seedDemoAccounts: process.env.SEED_DEMO_ACCOUNTS !== 'false'
 };
 

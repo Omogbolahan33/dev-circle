@@ -19,7 +19,7 @@ function freshDb() {
   return db;
 }
 
-test('bootstrap creates the advertised demo logins', async () => {
+test('bootstrap creates the first-run accounts on an empty database', async () => {
   const db = freshDb();
   const result = await ensureDemoAccounts(db, { force: true });
 
@@ -49,7 +49,7 @@ test('bootstrap creates the advertised demo logins', async () => {
   }
 });
 
-test('bootstrap is idempotent and keeps published passwords working', async () => {
+test('bootstrap is idempotent', async () => {
   const db = freshDb();
   await ensureDemoAccounts(db, { force: true });
   const again = await ensureDemoAccounts(db, { force: true });
@@ -57,7 +57,36 @@ test('bootstrap is idempotent and keeps published passwords working', async () =
   assert.equal(again.created.admins, 0);
   assert.equal(again.created.users, 0);
   assert.equal(db.prepare('SELECT COUNT(*) AS c FROM admin_users').get().c, DEMO_ADMINS.length);
+});
 
-  const admin = db.prepare("SELECT password_hash FROM admin_users WHERE email = 'admin@creditdirect.ng'").get();
-  assert.ok(bcrypt.compareSync('admin123', admin.password_hash));
+// The bootstrap used to UPDATE the hash, role, status and is_global of every
+// account it knew about on each boot. In production that silently undid the
+// operator: a password changed in the admin screens was back to the shipped one
+// after the next restart, a deactivated account was active again, and a demoted
+// one was global again. Existence is bootstrapped; state is not.
+test('bootstrap never rewrites an account that already exists', async () => {
+  const db = freshDb();
+  await ensureDemoAccounts(db, { force: true });
+
+  const readOnly = db.prepare("SELECT id FROM roles WHERE name = 'Read Only'").get();
+  const chosen = bcrypt.hashSync('a-password-the-operator-chose', 10);
+  db.prepare(
+    "UPDATE admin_users SET password_hash = ?, status = 'inactive', is_global = 0, role_id = ? WHERE email = 'admin@creditdirect.ng'"
+  ).run(chosen, readOnly.id);
+
+  db.prepare("UPDATE users SET phone = '+2348039999999', status = 'inactive' WHERE email = ?")
+    .run(DEMO_USERS[0].email);
+
+  await ensureDemoAccounts(db, { force: true });
+
+  const admin = db.prepare("SELECT * FROM admin_users WHERE email = 'admin@creditdirect.ng'").get();
+  assert.ok(bcrypt.compareSync('a-password-the-operator-chose', admin.password_hash),
+    'a password changed by the operator must survive a restart');
+  assert.equal(admin.status, 'inactive', 'a deactivated admin must stay deactivated');
+  assert.equal(admin.is_global, 0, 'a demoted admin must not be re-promoted');
+  assert.equal(admin.role_id, readOnly.id, 'a role change must not be reverted');
+
+  const member = db.prepare('SELECT * FROM users WHERE email = ?').get(DEMO_USERS[0].email);
+  assert.equal(member.phone, '+2348039999999', 'a corrected phone number must survive a restart');
+  assert.equal(member.status, 'inactive');
 });

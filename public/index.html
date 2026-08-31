@@ -99,21 +99,6 @@
     .note.visible { display: block; }
     .note code { font-family: var(--font-mono); color: var(--white); }
 
-    .demo { margin-top: var(--sp-8); padding-top: var(--sp-5); border-top: 1px solid var(--line-faint); }
-    .demo-title { font-size: var(--fs-xs); color: var(--ash-dim); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: var(--sp-3); }
-    .demo-row {
-      display: flex;
-      justify-content: space-between;
-      gap: var(--sp-3);
-      padding: var(--sp-2) 0;
-      font-size: var(--fs-xs);
-      cursor: pointer;
-      color: var(--ash);
-    }
-    .demo-row:hover { color: var(--white); }
-    .demo-row .email { font-family: var(--font-mono); }
-    .demo-row .role { color: var(--ash-dim); }
-
     .legal { margin-top: var(--sp-8); font-size: var(--fs-xs); color: var(--ash-dim); text-align: center; }
   </style>
 </head>
@@ -209,14 +194,6 @@
           Changed your number, or never gave us one? Ask the team that onboarded you to update it.
         </p>
       </form>
-
-      <div class="demo">
-        <div class="demo-title">Demo accounts</div>
-        <div class="demo-row" onclick="fill('admin@creditdirect.ng','admin123')"><span class="email">admin@creditdirect.ng</span><span class="role">Super admin · password</span></div>
-        <div class="demo-row" onclick="fill('engagement@creditdirect.ng','engagement123')"><span class="email">engagement@creditdirect.ng</span><span class="role">CDL rep · password</span></div>
-        <div class="demo-row" onclick="fill('adebayo@paystack.dev','000001')"><span class="email">adebayo@paystack.dev</span><span class="role">Developer · digits 000001</span></div>
-        <div class="demo-row" onclick="fill('emeka@kuda.ng','000002')"><span class="email">emeka@kuda.ng</span><span class="role">Developer · digits 000002</span></div>
-      </div>
 
       <p class="legal">Credit Direct Limited · CBN Licensed · <a href="https://creditdirect.ng">creditdirect.ng</a></p>
     </div>
@@ -354,21 +331,6 @@
       btn.disabled = false;
       btn.textContent = original;
     }
-  }
-
-  // Demo rows fill the one field and walk the same path a real visitor does.
-  // The second argument is whichever secret that demo account holds — a
-  // password for staff, six digits for a developer. Which box it lands in is
-  // decided by identify(), so both are filled and the unused one is discarded
-  // by startOver() on the next attempt.
-  function fill(identifier, secret) {
-    startOver();
-    $('identifier').value = identifier;
-    if (secret) {
-      $('password').value = secret;
-      $('digits').value = secret;
-    }
-    $('stepIdentify').requestSubmit();
   }
 
   function showError(msg) {

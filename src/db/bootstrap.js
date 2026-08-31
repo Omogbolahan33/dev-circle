@@ -3,12 +3,18 @@ const bcrypt = require('bcryptjs');
 const config = require('../config');
 const { NO_PASSWORD } = require('../utils/identity');
 
-// ─── Demo accounts ──────────────────────────────────────────
-// The sign-in page advertises these. A fresh Postgres deploy used to apply
-// schema and then leave every table empty, so the published credentials
-// 401'd. This upserts them on boot without wiping anything else.
+// ─── Bootstrap accounts ─────────────────────────────────────
+// A fresh deploy applies schema and then leaves every table empty, so there is
+// nobody to sign in as. This creates the roles, the default circle, the "All
+// Members" cohort and a first set of accounts if — and only if — they are
+// missing. Nothing that already exists is touched.
 //
-// Skip with SEED_DEMO_ACCOUNTS=false. Tests skip automatically.
+// The passwords below are the ones a first deploy starts with. They are no
+// longer printed anywhere in the UI, and because this is insert-only, changing
+// one in the admin screens now sticks across restarts. Change them on the first
+// sign-in of a new environment.
+//
+// Skip entirely with SEED_DEMO_ACCOUNTS=false. Tests skip automatically.
 
 const DEMO_ROLES = [
   {
@@ -71,10 +77,8 @@ const DEMO_ADMINS = [
 ];
 
 // A participant signs in with their address and the last six digits of the
-// number on their record, so a demo developer without a number is a demo
-// account nobody can demonstrate anything with. The numbers are fixed rather
-// than random for the same reason: the sign-in page prints the digits beside
-// each demo row, and it can only do that if it knows them.
+// number on their record, so an account without a number is one nobody can
+// sign in as. These two carry fixed numbers for that reason.
 const DEMO_USERS = [
   {
     email: 'adebayo@paystack.dev',
@@ -138,29 +142,28 @@ async function ensureDemoAccounts(database, { force = false } = {}) {
     rolesByName[row.name] = row.id;
   }
 
+  // Existing rows are left exactly as they are. This used to UPDATE the hash,
+  // role, status and is_global on every boot, which meant a password changed in
+  // the admin UI was reverted by the next restart, a deactivated account came
+  // back active, and a demoted one came back global. The bootstrap's job is to
+  // guarantee the account exists on a fresh deploy; who it is after that is the
+  // operator's to decide.
   for (const admin of DEMO_ADMINS) {
     const roleId = rolesByName[admin.role];
-    if (!roleId) throw new Error(`Demo role "${admin.role}" is missing`);
-    const hash = bcrypt.hashSync(admin.password, 10);
+    if (!roleId) throw new Error(`Role "${admin.role}" is missing`);
     const existing = await q.get('SELECT id FROM admin_users WHERE lower(email) = ?', admin.email);
     if (existing) {
-      await q.run(
-        `UPDATE admin_users
-            SET name = ?, password_hash = ?, role_id = ?, status = 'active', is_global = ?
-          WHERE id = ?`,
-        admin.name, hash, roleId, admin.is_global, existing.id
-      );
       admin.id = existing.id;
-    } else {
-      const id = uuid();
-      await q.run(
-        `INSERT INTO admin_users (id, email, name, password_hash, role_id, status, is_global)
-         VALUES (?, ?, ?, ?, ?, 'active', ?)`,
-        id, admin.email, admin.name, hash, roleId, admin.is_global
-      );
-      admin.id = id;
-      created.admins++;
+      continue;
     }
+    const id = uuid();
+    await q.run(
+      `INSERT INTO admin_users (id, email, name, password_hash, role_id, status, is_global)
+       VALUES (?, ?, ?, ?, ?, 'active', ?)`,
+      id, admin.email, admin.name, bcrypt.hashSync(admin.password, 10), roleId, admin.is_global
+    );
+    admin.id = id;
+    created.admins++;
   }
 
   let circle = await q.get("SELECT * FROM circles WHERE slug = 'dev-circle'");
@@ -204,12 +207,9 @@ async function ensureDemoAccounts(database, { force = false } = {}) {
     const existing = await q.get('SELECT id FROM users WHERE lower(email) = ?', user.email);
     let userId;
     if (existing) {
-      // The number is part of the credential, so a demo account that predates
-      // it gets one here rather than staying unsignable-in.
-      await q.run(
-        "UPDATE users SET name = ?, phone = ?, phone_normalized = ?, status = 'active' WHERE id = ?",
-        user.name, user.phone, user.phone, existing.id
-      );
+      // Left alone for the same reason as the admins above: the phone number is
+      // half of a member's credential, so rewriting it on boot would undo any
+      // correction made to the record.
       userId = existing.id;
     } else {
       userId = uuid();

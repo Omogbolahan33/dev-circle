@@ -54,8 +54,21 @@ async function boot() {
       uploads: config.uploads.backend
     });
 
+    // The email service falls back to the simulated provider when nothing is
+    // configured, which means every invite, sign-in code and blast is recorded
+    // as sent and then dropped. That is correct in a sandbox and invisible in
+    // production, so say it plainly and say it loudest where it costs most.
+    const activeEmail = require('./services/email').getActiveProviderName();
+    if (activeEmail === 'simulated') {
+      const message = 'Email provider is SIMULATED — no message actually leaves this ' +
+        'process. Sign-in codes, invites and blasts will be recorded as sent and ' +
+        'discarded. Configure EMAIL_HTTP_URL, Termii, Simpu or Customer.io.';
+      if (config.isProduction) logger.error(message);
+      else logger.warn(message);
+    }
+
     if (!config.delivery.enabled) {
-      logger.warn('No Customer.io credentials configured — email, WhatsApp and SMS ' +
+      logger.warn('No Customer.io credentials configured — WhatsApp and SMS ' +
         'deliveries are recorded as "simulated" rather than reported as sent');
     }
   });
