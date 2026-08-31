@@ -36,7 +36,9 @@ test('the sign-in page is signed by the organisation, in full, including the tab
   const res = await h.call('GET', '/', { raw: true });
 
   assert.match(res.text, new RegExp(`<title>${config.brand.full} — Sign in</title>`));
-  assert.ok(res.text.includes(`by ${config.brand.organisation}`), 'the mark is attributed');
+  // The lockup carries the organisation, so the line under it names the
+  // product rather than repeating the company.
+  assert.ok(res.text.includes(`>${config.brand.product}</p>`), 'the product is named under the mark');
   assert.ok(res.text.includes(config.brand.legal), 'the licence line is present');
   assert.ok(res.text.includes(config.brand.website), 'the organisation is linked');
 });
@@ -127,4 +129,68 @@ test('the font catalogue an admin sees names the product, not the token', async 
     assert.ok(!String(label).includes('{{'), `font label leaked a token: ${label}`);
   }
   assert.ok(labels.includes(config.brand.product), 'the default face is named for the product');
+});
+
+// ─── The mark ────────────────────────────────────────────────
+
+test('the sign-in page shows the Credit Direct lockup, in both inks', async () => {
+  const res = await h.call('GET', '/', { raw: true });
+
+  assert.ok(res.text.includes('/assets/brand/creditdirect.svg'), 'the light ink is there');
+  assert.ok(res.text.includes('/assets/brand/creditdirect-white.svg'), 'the dark ink is there');
+  // One of the pair carries the name; the other is decorative, so a screen
+  // reader is not told the company twice.
+  assert.ok(res.text.includes(`alt="${config.brand.full}"`), 'the mark is labelled');
+  assert.ok(res.text.includes('aria-hidden="true"'), 'the duplicate is hidden from assistive tech');
+});
+
+test('both inks and the favicon are actually served', async () => {
+  for (const asset of ['/assets/brand/creditdirect.svg',
+                       '/assets/brand/creditdirect-white.svg',
+                       '/assets/brand/favicon.svg']) {
+    const res = await h.call('GET', asset, { raw: true });
+    assert.equal(res.status, 200, asset);
+    assert.match(res.headers.get('content-type'), /svg/, asset);
+    assert.match(res.text, /^<svg/, `${asset} is not an svg`);
+  }
+});
+
+test('the two inks are the same artwork, differing only in colour', async () => {
+  const light = await h.call('GET', '/assets/brand/creditdirect.svg', { raw: true });
+  const dark = await h.call('GET', '/assets/brand/creditdirect-white.svg', { raw: true });
+
+  assert.equal(light.text.replace(/#107EBC/g, '#FFFFFF'), dark.text,
+    'the white variant must be the blue one with the ink swapped');
+  assert.ok(!dark.text.includes('#107EBC'), 'no blue ink survives in the dark variant');
+});
+
+test('every page points at the favicon', async () => {
+  for (const page of ['/', '/admin/dashboard.html', '/member/dashboard.html', '/onboarding/form.html']) {
+    const res = await h.call('GET', page, { raw: true });
+    assert.ok(res.text.includes('/assets/brand/favicon.svg'), `${page} has no favicon`);
+  }
+});
+
+test('a deployment that is not Credit Direct does not fly its logo', () => {
+  // The artwork is a trademark, so it stands only while this is Credit
+  // Direct's own deployment. mark() is evaluated at load, so this checks the
+  // rule rather than the cached token.
+  const { substitute } = require('../../src/middleware/brand');
+  assert.ok(substitute('{{brand.mark}}').includes('creditdirect.svg'),
+    'Credit Direct keeps its mark');
+
+  // Re-require the module under a different organisation.
+  const path = require.resolve('../../src/middleware/brand');
+  const configPath = require.resolve('../../src/config');
+  const savedBrand = { ...require('../../src/config').brand };
+  require('../../src/config').brand.organisation = 'Someone Else';
+  delete require.cache[path];
+  const rebranded = require(path);
+  assert.ok(!rebranded.TOKENS.get('brand.mark').includes('creditdirect'),
+    'a rebranded deployment must not show Credit Direct artwork');
+
+  // Put it back, and restore the module the rest of the suite shares.
+  Object.assign(require(configPath).brand, savedBrand);
+  delete require.cache[path];
+  require(path);
 });

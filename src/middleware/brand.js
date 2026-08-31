@@ -25,18 +25,33 @@ function sanitize(value) {
   return String(value ?? '').replace(/[<>"'`\\]/g, '').replace(/\$\{/g, '').trim();
 }
 
-// The wordmark is a logo set in type rather than drawn — "dev.circle" with the
-// stop in Denim blue — so it is markup, not a name, and it is the one token
-// that is not simply a sanitized string. It survives as designed while the
-// product is called what it is called; rename the product and it steps aside
-// for the plain name rather than showing somebody else's mark. An uploaded
-// BRAND_LOGO_URL replaces it outright.
-const DESIGNED_MARK = 'dev<span>.</span>circle';
+// The mark in the chrome. It is the one token that is markup rather than a
+// name, so it is built here rather than sanitized.
+//
+// Credit Direct's lockup is a single flat ink, and one ink cannot serve both
+// themes: the Denim blue reads at 4.44:1 on the light sidebar but only 3.84:1
+// on the dark one, which is the default and the sign-in panel. So both
+// variants are emitted and CSS shows whichever the current theme calls for —
+// the same reason Credit Direct publishes a white version of its own logo.
+// See public/assets/brand/NOTICE.txt.
+const LOCKUP =
+  '<img src="/assets/brand/creditdirect.svg" alt="{alt}" class="brand-logo-img brand-logo-on-light">' +
+  '<img src="/assets/brand/creditdirect-white.svg" alt="" aria-hidden="true" class="brand-logo-img brand-logo-on-dark">';
 
 function mark() {
+  const alt = sanitize(config.brand.full);
+
+  // An operator who supplied their own logo gets theirs, and owns the question
+  // of whether it reads on both themes.
   const logo = sanitize(config.brand.logoUrl);
-  if (logo) return `<img src="${logo}" alt="${sanitize(config.brand.full)}" class="brand-logo-img">`;
-  if (sanitize(config.brand.product) === 'Dev Circle') return DESIGNED_MARK;
+  if (logo) return `<img src="${logo}" alt="${alt}" class="brand-logo-img">`;
+
+  // The shipped artwork is Credit Direct's, so it stands only while this is
+  // Credit Direct's deployment. Renamed, the mark steps aside for the name
+  // rather than putting somebody else's logo above their sign-in form.
+  if (sanitize(config.brand.organisation) === 'Credit Direct') {
+    return LOCKUP.replace('{alt}', alt);
+  }
   return sanitize(config.brand.product);
 }
 

@@ -165,9 +165,10 @@ const config = {
     // so wherever it signs its name.
     legal: process.env.BRAND_LEGAL || `${BRAND_ORG} Limited · CBN Licensed`,
     website: process.env.BRAND_URL || 'https://creditdirect.ng',
-    // No wordmark image ships with this repository — the mark in the chrome is
-    // set in type, not drawn. Point this at an uploaded asset to use a real
-    // one; until then the typographic mark stands in.
+    // Credit Direct's own lockup ships in public/assets/brand and is what the
+    // chrome uses by default, in a light and a dark ink. Set this only to put
+    // a different logo there — it replaces both, so it has to read on both
+    // themes. See public/assets/brand/NOTICE.txt.
     logoUrl: process.env.BRAND_LOGO_URL || null
   },
 

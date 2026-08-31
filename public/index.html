@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" type="image/svg+xml" href="/assets/brand/favicon.svg">
   <title>{{brand.full}} — Sign in</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -118,7 +119,10 @@
       <div class="row-tight">
         <span class="brand-mark" style="font-size:var(--fs-lg)">{{brand.mark}}</span>
       </div>
-      <p class="attribution">by {{brand.organisation}}</p>
+      <!-- The lockup above is Credit Direct's own wordmark, so naming the
+           organisation again here would say it twice. What it does not say is
+           which of their products this is. -->
+      <p class="attribution">{{brand.product}}</p>
 
       <h1 class="pitch-title">Where {{brand.organisation}} listens to the people building on it.</h1>
 

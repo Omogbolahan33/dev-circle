@@ -89,11 +89,27 @@
 .brand-mark span { color: var(--cd-blue); }
 
 /* A circle's own wordmark replaces the product name in the chrome. It is
-   capped to the mark's line-height so a large logo cannot push the bar. */
-.brand-mark.has-logo { display: inline-flex; align-items: center; }
+   capped to the mark's line-height so a large logo cannot push the bar.
+
+   :has() joins .has-logo because the two arrive by different routes. A circle's
+   logo is put in by brand.js, which sets the class on the element it fills. The
+   platform's own lockup is substituted into the page by middleware/brand.js,
+   which replaces what is *inside* the element and so cannot touch its class —
+   without this, that mark would render as inline text and sit off the baseline. */
+.brand-mark.has-logo,
+.brand-mark:has(.brand-logo-img) { display: inline-flex; align-items: center; }
 .brand-mark .brand-logo-img {
   height: 26px; width: auto; max-width: 160px; object-fit: contain; display: block;
 }
+
+/* One flat ink cannot serve both themes, so the lockup ships twice and the
+   theme picks. Default is dark — matching :root in tokens.css — and the light
+   variant is switched in wherever light is actually chosen. */
+.brand-logo-on-light { display: none; }
+.brand-logo-on-dark { display: block; }
+
+:root[data-theme="light"] .brand-logo-on-light { display: block; }
+:root[data-theme="light"] .brand-logo-on-dark { display: none; }
 
 .brand-badge {
   font-family: var(--font-mono);

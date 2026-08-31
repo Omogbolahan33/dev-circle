@@ -1,0 +1,22 @@
+Credit Direct brand assets
+==========================
+
+creditdirect.svg        The "credit direct" lockup, Denim blue #107EBC.
+creditdirect-white.svg  The same artwork with the ink swapped to #FFFFFF,
+                        for dark surfaces. Blue reads at 3.84:1 on the dark
+                        sidebar (#1A1A2E) and 4.44:1 on the light one; white
+                        reads at 17.06:1 on the dark. Hence two files.
+favicon.svg             The mark on a white rounded badge, for the browser tab.
+
+Source
+------
+Retrieved 2026-08-31 from https://www.creditdirect.ng/, which serves them from
+its own CDN. They are Credit Direct Limited's trademarks, used here in Credit
+Direct's own software. They are not covered by this repository's licence and
+should not be reused elsewhere.
+
+Editing
+-------
+creditdirect-white.svg is generated from creditdirect.svg by replacing #107EBC
+with #FFFFFF. If the lockup is ever replaced, regenerate the white variant the
+same way rather than downloading a second file, so the two cannot drift apart.
