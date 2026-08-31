@@ -1,6 +1,5 @@
 const EmailProvider = require('../interface');
 const { logger } = require('../../../utils/logger');
-const { brand } = require('../../../config');
 
 // ─── Simpu Email Provider ─────────────────────────────────────────────
 // Dispatches outbound emails via Simpu's customer communication platform.
@@ -13,7 +12,7 @@ class SimpuEmailProvider extends EmailProvider {
     super('simpu', config);
     this.apiKey = config.apiKey || process.env.SIMPU_API_KEY || null;
     this.senderId = config.senderId || process.env.SIMPU_SENDER_ID || process.env.EMAIL_FROM || 'devcircle@creditdirect.ng';
-    this.fromName = config.fromName || process.env.SIMPU_FROM_NAME || process.env.EMAIL_FROM_NAME || `${brand.full}`;
+    this.fromName = config.fromName || process.env.SIMPU_FROM_NAME || process.env.EMAIL_FROM_NAME || 'Credit Direct Dev Circle';
     this.baseUrl = (config.baseUrl || process.env.SIMPU_BASE_URL || 'https://api.simpu.co').replace(/\/+$/, '');
     this.replyTo = config.replyTo || process.env.EMAIL_REPLY_TO || 'devrelations@creditdirect.ng';
   }

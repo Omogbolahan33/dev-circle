@@ -1,4 +1,4 @@
-const { wrapLayout, toPlainText, escapeHtml, brand } = require('./layout');
+const { wrapLayout, toPlainText, escapeHtml } = require('./layout');
 
 function renderFeedbackUpdate({
   feedbackTitle,
@@ -12,7 +12,7 @@ function renderFeedbackUpdate({
 
   const contentHtml = `
     <p style="margin-top: 0;">${greeting}</p>
-    <p>There is an update on feedback you submitted to ${brand.full}:</p>
+    <p>There is an update on feedback you submitted to Credit Direct Dev Circle:</p>
 
     <div style="background-color: #F8FAFC; border-left: 4px solid #107EBC; padding: 16px; margin: 20px 0; border-radius: 0 6px 6px 0;">
       <div style="font-size: 15px; font-weight: 700; color: #0F172A; margin-bottom: 6px;">
@@ -34,7 +34,7 @@ function renderFeedbackUpdate({
   const contentText = [
     recipientName ? `Hello ${recipientName},` : 'Hello,',
     '',
-    `There is an update on feedback you submitted to ${brand.full}: "${feedbackTitle}"`,
+    `There is an update on feedback you submitted to Credit Direct Dev Circle: "${feedbackTitle}"`,
     feedbackStatus ? `Status: ${feedbackStatus}` : '',
     responseMessage ? `Response: ${responseMessage}` : '',
     '',

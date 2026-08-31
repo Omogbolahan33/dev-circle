@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="icon" type="image/svg+xml" href="/assets/brand/favicon.svg">
-  <title>{{brand.product}} — Roles &amp; access</title>
+  <title>Dev Circle — Roles &amp; access</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -114,7 +114,7 @@
   <div class="drawer-head">
     <div>
       <div class="drawer-title">Add administrator</div>
-      <div class="drawer-sub">A {{brand.organisation}} colleague, and what they are allowed to do</div>
+      <div class="drawer-sub">A Credit Direct colleague, and what they are allowed to do</div>
     </div>
     <button class="icon-btn" onclick="Shell.closeDrawer('adminDrawer')">×</button>
   </div>
@@ -126,7 +126,7 @@
     <div class="field">
       <label class="label">Work email</label>
       <input type="email" class="input" id="aEmail" placeholder="tunde@creditdirect.ng" autocapitalize="off" spellcheck="false">
-      <p class="hint" id="aEmailHint">Must be a {{brand.organisation}} address — that domain is what tells the sign-in page to ask for a password.</p>
+      <p class="hint" id="aEmailHint">Must be a Credit Direct address — that domain is what tells the sign-in page to ask for a password.</p>
     </div>
     <div class="field">
       <label class="label">Role</label>
@@ -352,7 +352,7 @@
         ? admins.map(a => renderAdminRow(a)).join('')
         : `<tr><td colspan="5">${emptyState({
             title: 'No administrators listed',
-            text: 'Add a {{brand.organisation}} colleague to give a role to somebody.',
+            text: 'Add a Credit Direct colleague to give a role to somebody.',
             action: can('roles.write')
               ? '<button class="btn btn-sm btn-primary" onclick="openAdmin()">Add administrator</button>'
               : ''

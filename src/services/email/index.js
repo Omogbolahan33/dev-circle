@@ -1,5 +1,4 @@
 const config = require('../../config');
-const { brand } = config;
 const dbContext = require('../../db/context');
 const { logger } = require('../../utils/logger');
 const { renderTemplate } = require('./templates');
@@ -123,7 +122,7 @@ class EmailService {
     return {
       active_provider: active.getName(),
       from_email: config.email?.fromEmail || 'devcircle@creditdirect.ng',
-      from_name: config.email?.fromName || `${brand.full}`,
+      from_name: config.email?.fromName || 'Credit Direct Dev Circle',
       providers: providersList
     };
   }
@@ -175,7 +174,7 @@ class EmailService {
       // Wrap bare body in standard layout
       const rendered = renderTemplate('generic', {
         appUrl: config.appUrl,
-        title: finalSubject || `${brand.full}`,
+        title: finalSubject || 'Credit Direct Dev Circle',
         body,
         actionText,
         actionUrl
@@ -185,7 +184,7 @@ class EmailService {
     }
 
     if (!finalSubject) {
-      finalSubject = `Notification from ${brand.full}`;
+      finalSubject = `Notification from Credit Direct Dev Circle`;
     }
 
     const provider = this.getActiveProvider();
@@ -462,16 +461,16 @@ class EmailService {
     const testTime = new Date().toLocaleString('en-NG', { timeZone: 'Africa/Lagos' });
     const rendered = renderTemplate('generic', {
       appUrl: config.appUrl,
-      title: `${brand.product} — Email Interface Test`,
+      title: `Dev Circle — Email Interface Test`,
       body: `This is a test communication sent via provider: ${provider.getName().toUpperCase()} at ${testTime} WAT.\n\n` +
             'If you received this message, the email interface and provider credentials are configured and 100% operational.',
-      actionText: `Open ${brand.product} Portal`,
+      actionText: `Open Dev Circle Portal`,
       actionUrl: config.appUrl
     });
 
     const result = await provider.send({
       to,
-      subject: `[Test] ${brand.product} Email Delivery (${provider.getName()})`,
+      subject: `[Test] Dev Circle Email Delivery (${provider.getName()})`,
       html: rendered.html,
       text: rendered.text,
       from: config.email?.fromEmail,

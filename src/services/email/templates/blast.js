@@ -1,4 +1,4 @@
-const { wrapLayout, toPlainText, escapeHtml, brand } = require('./layout');
+const { wrapLayout, toPlainText, escapeHtml } = require('./layout');
 
 function renderBlast({
   subject,
@@ -9,7 +9,7 @@ function renderBlast({
   recipientName = null,
   appUrl
 }) {
-  const displayTitle = title || subject || `Announcement from ${brand.full}`;
+  const displayTitle = title || subject || `Announcement from Credit Direct Dev Circle`;
   const greeting = recipientName ? `Hello ${escapeHtml(recipientName)},` : '';
   const paragraphs = String(content || '')
     .split(/\n\s*\n/)

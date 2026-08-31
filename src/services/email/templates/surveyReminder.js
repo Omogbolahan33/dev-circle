@@ -1,4 +1,4 @@
-const { wrapLayout, toPlainText, escapeHtml, brand } = require('./layout');
+const { wrapLayout, toPlainText, escapeHtml } = require('./layout');
 
 function renderSurveyReminder({
   surveyTitle,
@@ -11,7 +11,7 @@ function renderSurveyReminder({
   const contentHtml = `
     <p style="margin-top: 0;">${greeting}</p>
     <p>This is a quick reminder that you were invited to share your input on <strong>${escapeHtml(surveyTitle)}</strong>.</p>
-    <p>We value your perspective as a developer integrating ${brand.organisation} services. Taking a few moments to complete this survey helps us improve the platform for you.</p>
+    <p>We value your perspective as a developer integrating Credit Direct services. Taking a few moments to complete this survey helps us improve the platform for you.</p>
   `;
 
   const contentText = [
@@ -19,7 +19,7 @@ function renderSurveyReminder({
     '',
     `This is a quick reminder that you were invited to share your input on: ${surveyTitle}.`,
     '',
-    `We value your perspective as a developer integrating ${brand.organisation} services. Taking a few moments to complete this survey helps us improve the platform for you.`
+    `We value your perspective as a developer integrating Credit Direct services. Taking a few moments to complete this survey helps us improve the platform for you.`
   ].join('\n');
 
   return {

@@ -1,4 +1,4 @@
-const { wrapLayout, toPlainText, escapeHtml, brand } = require('./layout');
+const { wrapLayout, toPlainText, escapeHtml } = require('./layout');
 
 function renderStaffInvite({
   recipientName,
@@ -13,8 +13,8 @@ function renderStaffInvite({
 
   const contentHtml = `
     <p style="margin-top: 0;">${greeting}</p>
-    <p>${escapeHtml(invitedByName)} has invited you to join the ${brand.full} management team with the role <strong>${escapeHtml(roleName)}</strong>.</p>
-    <p>${brand.product} is the central platform for developer relations, surveys, cohorts, and engagement tracking across ${brand.organisation} APIs.</p>
+    <p>${escapeHtml(invitedByName)} has invited you to join the Credit Direct Dev Circle management team with the role <strong>${escapeHtml(roleName)}</strong>.</p>
+    <p>Dev Circle is the central platform for developer relations, surveys, cohorts, and engagement tracking across Credit Direct APIs.</p>
     
     <div style="background-color: #F8FAFC; border: 1px solid #CBD5E1; border-radius: 8px; padding: 20px; margin: 24px 0;">
       <div style="font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #64748B; margin-bottom: 12px;">
@@ -40,7 +40,7 @@ function renderStaffInvite({
   const contentText = [
     recipientName ? `Hello ${recipientName},` : 'Hello,',
     '',
-    `${invitedByName} has invited you to join the ${brand.full} management team with the role: ${roleName}.`,
+    `${invitedByName} has invited you to join the Credit Direct Dev Circle management team with the role: ${roleName}.`,
     '',
     'Your sign-in credentials:',
     `Email: ${email}`,
@@ -54,18 +54,18 @@ function renderStaffInvite({
   const actionUrl = loginUrl || `${appUrl}/admin/login`;
 
   return {
-    subject: `You have been invited to ${brand.full}`,
-    previewText: `Join the ${brand.full} admin console as ${roleName}`,
+    subject: `You have been invited to Credit Direct Dev Circle`,
+    previewText: `Join the Credit Direct Dev Circle admin console as ${roleName}`,
     html: wrapLayout({
-      title: `${brand.product} Admin Invitation`,
-      previewText: `Join the ${brand.full} admin console as ${roleName}`,
+      title: `Dev Circle Admin Invitation`,
+      previewText: `Join the Credit Direct Dev Circle admin console as ${roleName}`,
       contentHtml,
       actionText: 'Sign In to Set Password',
       actionUrl,
       appUrl
     }),
     text: toPlainText({
-      title: `${brand.product} Admin Invitation`,
+      title: `Dev Circle Admin Invitation`,
       contentText,
       actionText: 'Sign In to Set Password',
       actionUrl,

@@ -131,7 +131,7 @@
 <body>
 
   <div class="form-bar">
-    <span class="brand-mark" id="brand">{{brand.mark}}</span>
+    <span class="brand-mark" id="brand"><img src="/assets/brand/creditdirect.svg" alt="Credit Direct Dev Circle" class="brand-logo-img brand-logo-on-light"><img src="/assets/brand/creditdirect-white.svg" alt="" aria-hidden="true" class="brand-logo-img brand-logo-on-dark"></span>
     <span class="form-name" id="formName"></span>
     <span class="spacer"></span>
     <span class="text-xs dim hide" id="saveState"></span>
@@ -718,12 +718,12 @@
             result.submitted_message ||
             'We have your details. Someone will review this and you will hear from us at the address you gave.')}</p>
           <p class="fine-print">
-            Your answers are held by {{brand.organisation}} while this is reviewed. Nothing is sent to you
+            Your answers are held by Credit Direct while this is reviewed. Nothing is sent to you
             on a channel you did not agree to.
           </p>
           ${!embedded && !result.redirect_url ? `
             <div class="row gap-3 justify-center mt-4">
-              <a class="btn btn-primary" href="/index.html">Go to {{brand.product}} →</a>
+              <a class="btn btn-primary" href="/index.html">Go to Dev Circle →</a>
             </div>` : ''}
         </div>`;
       reportHeight();

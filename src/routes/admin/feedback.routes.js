@@ -6,7 +6,6 @@ const notifications = require('../../services/notifications');
 const { toCSV } = require('../../utils/helpers');
 const { buildXLSX } = require('../../utils/xlsx');
 const views = require('../../services/feedbackViews');
-const config = require('../../config');
 
 // Every read is bounded by the circle being worked in
 const scoped = req => ({ ...req.query, circle_id: req.circleId });
@@ -241,7 +240,7 @@ router.put('/feedback/:id', requirePermission('feedback.write'), async (req, res
 
   if (fb.source === 'feex') {
     return res.status(409).json({
-      error: `This complaint is owned by Feex. Update it there — ${config.brand.product} mirrors its status for engagement tracking only.`,
+      error: `This complaint is owned by Feex. Update it there — Dev Circle mirrors its status for engagement tracking only.`,
       ticket_id: fb.external_ticket_id,
       feex_status: fb.feex_status,
       feex_url: fb.feex_url

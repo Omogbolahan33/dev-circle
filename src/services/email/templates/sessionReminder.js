@@ -1,4 +1,4 @@
-const { wrapLayout, toPlainText, escapeHtml, brand } = require('./layout');
+const { wrapLayout, toPlainText, escapeHtml } = require('./layout');
 
 function renderSessionReminder({
   sessionTitle,

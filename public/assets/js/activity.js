@@ -7,7 +7,7 @@
 // tone maps to a .tl-dot modifier: '' (blue) | gold | teal | rose | ash
 
 const ACTIVITY = {
-  account_created:       { tone: 'ash',  text: 'joined {{brand.product}}' },
+  account_created:       { tone: 'ash',  text: 'joined Dev Circle' },
   api_key_generated:     { tone: 'ash',  text: 'generated API keys' },
   first_sandbox_call:    { tone: 'gold', text: 'made a first sandbox call' },
   first_production_call: { tone: 'teal', text: 'went live in production' },

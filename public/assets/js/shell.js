@@ -202,7 +202,7 @@ const Shell = {
     return `
       <aside class="sidebar" id="sidebar">
         <a href="/admin/dashboard.html" class="sidebar-brand">
-          <span class="brand-mark" id="brandMark" data-brand-logo>{{brand.mark}}</span>
+          <span class="brand-mark" id="brandMark" data-brand-logo><img src="/assets/brand/creditdirect.svg" alt="Credit Direct Dev Circle" class="brand-logo-img brand-logo-on-light"><img src="/assets/brand/creditdirect-white.svg" alt="" aria-hidden="true" class="brand-logo-img brand-logo-on-dark"></span>
           <span class="brand-badge">Admin</span>
         </a>
         <button class="sidebar-search" onclick="Shell.openPalette()">
@@ -249,7 +249,7 @@ const Shell = {
     return `
       <div class="mobile-bar">
         <button class="icon-btn" onclick="Shell.openNav()" aria-label="Open navigation">${icon('menu', 18)}</button>
-        <span class="brand-mark" data-brand-logo>{{brand.mark}}</span>
+        <span class="brand-mark" data-brand-logo><img src="/assets/brand/creditdirect.svg" alt="Credit Direct Dev Circle" class="brand-logo-img brand-logo-on-light"><img src="/assets/brand/creditdirect-white.svg" alt="" aria-hidden="true" class="brand-logo-img brand-logo-on-dark"></span>
         <span class="spacer"></span>
         <span class="badge badge-info">${current ? current.label : 'Admin'}</span>
       </div>`;
@@ -269,7 +269,7 @@ const Shell = {
       <header class="portal-bar">
         <div class="portal-bar-inner">
           <a href="/member/dashboard.html" class="sidebar-brand" style="padding:0;height:auto">
-            <span class="brand-mark" data-brand-logo>{{brand.mark}}</span>
+            <span class="brand-mark" data-brand-logo><img src="/assets/brand/creditdirect.svg" alt="Credit Direct Dev Circle" class="brand-logo-img brand-logo-on-light"><img src="/assets/brand/creditdirect-white.svg" alt="" aria-hidden="true" class="brand-logo-img brand-logo-on-dark"></span>
           </a>
 
           <!-- Current page, shown in the bar on a phone where the link row

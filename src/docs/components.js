@@ -1,4 +1,3 @@
-const config = require('../config');
 // ─── OpenAPI components ─────────────────────────────────────
 // The reusable half of the specification: security schemes, the object shapes
 // the API returns, and the error responses every endpoint can produce. Paths
@@ -68,7 +67,7 @@ const securitySchemes = {
     type: 'http',
     scheme: 'bearer',
     description: [
-      `A ${config.brand.product} session token, sent as \`Authorization: Bearer <token>\`.`,
+      `A Dev Circle session token, sent as \`Authorization: Bearer <token>\`.`,
       '',
       'Both audiences receive one from `POST /auth/login` — staff with a password,',
       'members with the last six digits of their phone number — or from',
@@ -110,7 +109,7 @@ const schemas = {
 
   // ── People ──
   Member: object({
-    id: id(`${config.brand.product} member id`),
+    id: id(`Dev Circle member id`),
     email: str('Sign-in address', { format: 'email', example: 'chidi@paystack.africa' }),
     name: str('Full name', { example: 'Chidi Nwosu' }),
     phone: str('As the member typed it', { nullable: true, example: '0803 555 0142' }),
@@ -139,7 +138,7 @@ const schemas = {
     last_engagement_at: timestamp('Last action that counted toward the streak'),
     created_at: timestamp('When the profile was created'),
     updated_at: timestamp('When the profile last changed')
-  }, { description: `A developer in the ${config.brand.product}. The password hash is never returned.` }),
+  }, { description: `A developer in the Dev Circle. The password hash is never returned.` }),
 
   MemberSummary: object({
     id: id('Member id'),
@@ -233,7 +232,7 @@ const schemas = {
     description: str('What the circle is for', { nullable: true }),
     color: str('Hex swatch', { example: '#107EBC' }),
     parent_id: { ...id('Circle this one sits under'), nullable: true },
-    is_root: int(`1 for the original ${config.brand.product}, which holds every member`, { enum: [0, 1] }),
+    is_root: int(`1 for the original Dev Circle, which holds every member`, { enum: [0, 1] }),
     status: str('Archived circles keep their history but take no new work', { enum: ['active', 'archived'] }),
     member_count: int('Members in the circle'),
     created_by: id('Admin who created it'),
@@ -475,12 +474,12 @@ const schemas = {
     resolved_at: timestamp('When triage closed it')
   }, {
     description:
-      `Something a member told us, whatever prompted it: written unprompted in ${config.brand.product}, ` +
+      `Something a member told us, whatever prompted it: written unprompted in Dev Circle, ` +
       'answered in a survey, or raised through Feex. All three are filed here so that ' +
       'everything one member has said is a single query.\n\n' +
       'Survey answers carry the question that drew them out and cannot be triaged — they ' +
       'are a record of what was said, not an item to work through. Feex owns its tickets; ' +
-      `${config.brand.product} only reflects their state.`
+      `Dev Circle only reflects their state.`
   }),
 
   // ── Messaging ──
@@ -655,7 +654,7 @@ const schemas = {
   IntegrationProvider: object({
     id: str('Provider key', { example: 'customer_io' }),
     name: str('Provider name', { example: 'Customer.io' }),
-    purpose: str(`What ${config.brand.product} uses it for`),
+    purpose: str(`What Dev Circle uses it for`),
     configured: bool('Whether the credential is present. The value itself is never returned'),
     env: arrayOf({ type: 'string' }, 'Environment variables that supply it'),
     degraded: str('What stops working, or works differently, while it is missing')

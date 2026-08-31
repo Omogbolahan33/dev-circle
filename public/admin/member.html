@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="icon" type="image/svg+xml" href="/assets/brand/favicon.svg">
-  <title>{{brand.product}} — Member</title>
+  <title>Dev Circle — Member</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -183,7 +183,7 @@
 
   function renderIdentity({ user: u, engagement }) {
     document.getElementById('crumbName').textContent = u.name;
-    document.title = `{{brand.product}} — ${u.name}`;
+    document.title = `Dev Circle — ${u.name}`;
 
     // Rings show engagement depth at a glance, the way orbit levels do.
     document.getElementById('identity').innerHTML = `
@@ -286,7 +286,7 @@
   }
 
   const FEEDBACK_SOURCES = {
-    dev_circle: 'Said in {{brand.product}}', survey: 'Answered in a survey',
+    dev_circle: 'Said in Dev Circle', survey: 'Answered in a survey',
     feex: 'Raised through Feex', customer_io: 'Via Customer.io'
   };
 
@@ -307,7 +307,7 @@
             <span>${formatDate(f.created_at)}</span>
           </div>
         </div>`).join('')
-      : emptyState({ title: 'Nothing said yet', text: 'What this member writes in {{brand.product}}, answers in a survey, or raises through Feex collects here.' });
+      : emptyState({ title: 'Nothing said yet', text: 'What this member writes in Dev Circle, answers in a survey, or raises through Feex collects here.' });
   }
 
   function renderRewards(gifts) {
@@ -345,7 +345,7 @@
       title: next === 'inactive' ? 'Deactivate this member?' : 'Reactivate this member?',
       text: next === 'inactive'
         ? 'They keep their history but cannot sign in, and drop out of broadcasts and survey audiences.'
-        : 'They regain access to {{brand.product}} and re-enter survey audiences.',
+        : 'They regain access to Dev Circle and re-enter survey audiences.',
       ok: next === 'inactive' ? 'Deactivate' : 'Activate',
       danger: next === 'inactive'
     });
@@ -408,7 +408,7 @@
   // ─── Tabs ───────────────────────────────────────────────
   // ─── Everything ─────────────────────────────────────────
   const EVENT_WORDS = {
-    account_created: 'Joined {{brand.product}}',
+    account_created: 'Joined Dev Circle',
     api_key_generated: 'Generated an API key',
     first_sandbox_call: 'First sandbox call',
     first_production_call: 'Went live in production',
@@ -430,7 +430,7 @@
   };
 
   const SAID_WHERE = {
-    dev_circle: 'unprompted, in {{brand.product}}',
+    dev_circle: 'unprompted, in Dev Circle',
     survey: 'in a survey',
     external_survey: 'in a form run elsewhere',
     feex: 'through Feex support',

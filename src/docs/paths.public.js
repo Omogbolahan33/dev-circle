@@ -7,7 +7,6 @@ const {
   CHANNELS, FEEDBACK_CATEGORIES, ENGAGEMENT_TYPES
 } = require('./components');
 const { op, json, jsonBody, query, path } = require('./operation');
-const config = require('../config');
 
 // Worked examples reused across operations, so the same member appears
 // throughout the documentation rather than a different invented one per page.
@@ -316,7 +315,7 @@ const paths = {
         'so knowing a `dev_hub_user_id` is not enough to obtain a session. Tokens older',
         'than five minutes are rejected.',
         '',
-        `A Hub developer with no ${config.brand.product} profile has one created on arrival, unless`,
+        `A Hub developer with no Dev Circle profile has one created on arrival, unless`,
         'their address is on a Credit Direct domain.'
       ].join('\n'),
       requestBody: jsonBody(object({
@@ -326,7 +325,7 @@ const paths = {
       }),
       responses: {
         200: json('Signed in.', object({
-          token: str(`${config.brand.product} session token`),
+          token: str(`Dev Circle session token`),
           user: ref('Member'),
           isAdmin: bool('Always false')
         }), { token: TOKEN_EXAMPLE, user: MEMBER_EXAMPLE, isAdmin: false }),
@@ -335,8 +334,8 @@ const paths = {
           error: 'SSO rejected: Signature verification failed'
         }),
         403: json('The linked account is not active.', ref('Error'), { error: 'Account is suspended' }),
-        404: json(`No ${config.brand.product} account matches, and auto-provisioning did not apply.`, ref('Error'), {
-          error: `No ${config.brand.product} account linked to this Developer Hub user`
+        404: json(`No Dev Circle account matches, and auto-provisioning did not apply.`, ref('Error'), {
+          error: `No Dev Circle account linked to this Developer Hub user`
         })
       }
     })
@@ -1389,7 +1388,7 @@ const paths = {
       responses: {
         200: json('Processed.', object({
           message: str('Confirmation'),
-          user_id: str(`The ${config.brand.product} member the event was applied to`),
+          user_id: str(`The Dev Circle member the event was applied to`),
           engagement_type: str('The engagement event recorded, or null for an unmapped type', { nullable: true }),
           surveys_triggered: arrayOf(object({
             survey_id: str('Survey the member was invited to'),
@@ -1403,7 +1402,7 @@ const paths = {
         }),
         400: json('Missing fields.', ref('Error'), { error: 'event_type and user_id required' }),
         404: json('No matching member. The event is kept for replay.', ref('Error'), {
-          error: `User not found in ${config.brand.product}`, queued: true, event_id: 'ev_71a2'
+          error: `User not found in Dev Circle`, queued: true, event_id: 'ev_71a2'
         })
       }
     })
@@ -1418,7 +1417,7 @@ const paths = {
       summary: 'Mirror a Feex support ticket',
       description: [
         'Feex owns support tickets end to end, including all correspondence with the',
-        `developer. ${config.brand.product} mirrors the ticket so a complaint shows up as an engagement`,
+        `developer. Dev Circle mirrors the ticket so a complaint shows up as an engagement`,
         'signal against the member — it never writes back and never resolves anything.',
         '',
         'Send both new tickets and status changes here: a ticket already known by',
@@ -1444,7 +1443,7 @@ const paths = {
       responses: {
         200: json('An existing ticket\'s state was mirrored.', object({
           message: str('Confirmation'),
-          feedback_id: str(`The ${config.brand.product} feedback record mirroring this ticket`),
+          feedback_id: str(`The Dev Circle feedback record mirroring this ticket`),
           feex_status: str('The state now on record')
         }), { message: 'Ticket state mirrored', feedback_id: 'f9', feex_status: 'resolved' }),
         201: json('A new ticket was ingested.', object({
@@ -1468,7 +1467,7 @@ const paths = {
       operationId: 'ingestSurveyResponses',
       summary: 'Deliver answers from a survey run elsewhere',
       description: [
-        `A discovery round does not have to run in ${config.brand.product}. It may go out through`,
+        `A discovery round does not have to run in Dev Circle. It may go out through`,
         'Customer.io, Google Forms, Microsoft Forms or anything else the team already',
         'uses — and those answers are the same evidence. Post them here and they are',
         'filed against the developer who wrote them, under the question they answered,',
@@ -1477,7 +1476,7 @@ const paths = {
         'Only written answers are kept. A rating or a picked option is a measurement and',
         'belongs in the form\'s own results, the same as one collected here.',
         '',
-        `The respondent is matched on email, Developer Hub id, phone or ${config.brand.product} id. If`,
+        `The respondent is matched on email, Developer Hub id, phone or Dev Circle id. If`,
         'nobody matches, the delivery is queued rather than dropped, so it can be replayed',
         'once that developer exists here.',
         '',
@@ -1494,7 +1493,7 @@ const paths = {
           email: str('Their email', { format: 'email', nullable: true }),
           dev_hub_user_id: str('Their Developer Hub id', { nullable: true }),
           phone: str('Their phone number', { nullable: true }),
-          user_id: id(`Their ${config.brand.product} id, if the caller knows it`)
+          user_id: id(`Their Dev Circle id, if the caller knows it`)
         }, 'How to find the developer'),
         answers: arrayOf(object({
           question: str('The question as it was asked'),
@@ -1532,7 +1531,7 @@ const paths = {
         400: json('The delivery could not be read.', ref('Error'),
           { error: 'answers must be a non-empty array of { question, answer }' }),
         404: json('No developer matches the respondent. Queued for replay.', ref('Error'), {
-          error: `No developer in ${config.brand.product} matches this respondent`,
+          error: `No developer in Dev Circle matches this respondent`,
           queued: true, matched_on: ['email']
         })
       }
@@ -1594,7 +1593,7 @@ const paths = {
       scopes: ['events', 'customer_io', 'feex'],
       operationId: 'listPendingEvents',
       summary: 'Events that did not land, and why',
-      description: `The replay queue. An event is unprocessed when it arrived for a member ${config.brand.product} does not know yet.`,
+      description: `The replay queue. An event is unprocessed when it arrived for a member Dev Circle does not know yet.`,
       responses: {
         200: json('Up to 100 unprocessed events, most recent first.', object({
           events: arrayOf(object({

@@ -37,12 +37,6 @@ app.use(securityHeaders);
 // Only public/ is reachable over HTTP. Serving the project root used to
 // publish the entire codebase — /src/config/index.js and any .env with it.
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
-
-// Puts the configured product name into the pages that ask for it, then hands
-// everything else to the static handler untouched. See middleware/brand.js.
-const { brandedStatic, sendPage } = require('./middleware/brand');
-app.use(brandedStatic(PUBLIC_DIR));
-
 app.use(express.static(PUBLIC_DIR, { extensions: ['html'] }));
 
 // Brand assets someone uploaded — a wordmark, a background, a brand font.
@@ -85,7 +79,7 @@ app.get('/uploads/{*name}', async (req, res) => {
 // token is read by the page and never used here, because everything it opens
 // is decided by the API.
 app.get('/s/:token', (req, res) => {
-  sendPage(res, path.join(PUBLIC_DIR, 'member', 'survey.html'));
+  res.sendFile(path.join(PUBLIC_DIR, 'member', 'survey.html'));
 });
 
 // An onboarding form, at its own address and inside somebody else's page.
@@ -105,7 +99,7 @@ app.get('/o/:token', async (req, res) => {
   const form = await onboarding.byToken(req.params.token);
   if (form) allowFraming(res, onboarding.frameAncestors(form));
 
-  sendPage(res, path.join(PUBLIC_DIR, 'onboarding', 'form.html'));
+  res.sendFile(path.join(PUBLIC_DIR, 'onboarding', 'form.html'));
 });
 
 // Swagger UI's CSS and bundle are vendored into public/vendor/swagger-ui/ so
@@ -150,7 +144,7 @@ app.get('/{*path}', (req, res) => {
   if (ASSET_LIKE.test(req.path)) {
     return res.status(404).type('text/plain').send('Not found');
   }
-  sendPage(res, path.join(PUBLIC_DIR, 'index.html'));
+  res.sendFile(path.join(PUBLIC_DIR, 'index.html'));
 });
 
 app.use(errorHandler);

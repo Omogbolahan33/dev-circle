@@ -8,7 +8,6 @@ const notifications = require('../services/notifications');
 const cohortRules = require('../services/cohortRules');
 const circles = require('../services/circles');
 const questionsService = require('../services/questions');
-const config = require('../config');
 
 const router = express.Router();
 
@@ -182,7 +181,7 @@ router.post('/customerio/webhook', requireApiKey('customer_io'), async (req, res
   const user = await findUser({ dev_hub_user_id: user_id, email: data.email });
   if (!user) {
     // Left unprocessed so it can be replayed once the member exists
-    return res.status(404).json({ error: `User not found in ${config.brand.product}`, queued: true, event_id: eventId });
+    return res.status(404).json({ error: `User not found in Dev Circle`, queued: true, event_id: eventId });
   }
 
   const eventMap = {
@@ -330,7 +329,7 @@ router.post('/survey-responses', requireApiKey('events', 'customer_io'), async (
     // Left unprocessed so it can be replayed once the developer exists here,
     // rather than dropping what someone took the time to write
     return res.status(404).json({
-      error: `No developer in ${config.brand.product} matches this respondent`,
+      error: `No developer in Dev Circle matches this respondent`,
       queued: true,
       event_id: eventId,
       matched_on: Object.keys(respondent)

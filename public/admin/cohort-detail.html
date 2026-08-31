@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="icon" type="image/svg+xml" href="/assets/brand/favicon.svg">
-  <title>{{brand.product}} — Cohort</title>
+  <title>Dev Circle — Cohort</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -104,7 +104,7 @@
     <div class="field">
       <label class="label">Email</label>
       <input type="email" class="input" id="addEmail" placeholder="developer@company.ng">
-      <p class="hint">The member must already exist in {{brand.product}}. Import them first if they do not.</p>
+      <p class="hint">The member must already exist in Dev Circle. Import them first if they do not.</p>
     </div>
   </div>
   <div class="drawer-foot">
@@ -189,7 +189,7 @@
 
   function renderIdentity() {
     document.getElementById('crumbName').textContent = cohort.name;
-    document.title = `{{brand.product}} — ${cohort.name}`;
+    document.title = `Dev Circle — ${cohort.name}`;
 
     document.getElementById('identity').innerHTML = `
       <span class="cohort-dot" style="background:${cohort.color}"></span>
@@ -286,7 +286,7 @@
   async function removeMember(userId, name, btn) {
     const ok = await Shell.confirm({
       title: `Remove ${name}?`,
-      text: 'They stay in {{brand.product}} — this only takes them out of this cohort.',
+      text: 'They stay in Dev Circle — this only takes them out of this cohort.',
       ok: 'Remove'
     });
     if (!ok) return;

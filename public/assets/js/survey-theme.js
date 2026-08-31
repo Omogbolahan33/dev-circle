@@ -92,12 +92,7 @@ const SurveyTheme = (() => {
   const FONTS = {
     // Kept as the default so a survey that was never themed still looks like
     // the product it came from
-    // This file is loaded two ways — served to the browser, where the brand
-    // token below is substituted on the way out, and required by
-    // services/surveyForm.js on the server, where it is not. Anything on the
-    // server that publishes this label has to substitute it first; the two
-    // routes that expose the font list do.
-    default: { label: '{{brand.product}}', category: 'sans', stack: "'Plus Jakarta Sans', 'Inter', system-ui, sans-serif" },
+    default: { label: 'Dev Circle', category: 'sans', stack: "'Plus Jakarta Sans', 'Inter', system-ui, sans-serif" },
 
     inter:        { label: 'Inter',             category: 'sans',  stack: "'Inter', system-ui, sans-serif" },
     roboto:       { label: 'Roboto',            category: 'sans',  stack: "'Roboto', system-ui, sans-serif" },
