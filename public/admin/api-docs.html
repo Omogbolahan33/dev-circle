@@ -299,7 +299,7 @@
           <button data-mode="sandbox" class="on" onclick="setMode('sandbox')">Sandbox</button>
           <button data-mode="live" onclick="setMode('live')">Live data</button>
         </div>
-        <button class="btn btn-sm btn-secondary" id="resetSandboxBtn" onclick="resetSandbox()">Reset sandbox</button>
+        <button class="btn btn-sm btn-secondary" id="resetSandboxBtn" onclick="resetSandbox(this)">Reset sandbox</button>
       </div>
 
       <section class="card quickstart hide" id="quickstart">
@@ -387,7 +387,7 @@
     document.getElementById('resetSandboxBtn').classList.toggle('hide', live || !sandboxAvailable);
   }
 
-  async function resetSandbox() {
+  async function resetSandbox(btn) {
     const ok = await Shell.confirm({
       title: 'Reset the sandbox?',
       text: 'The sandbox database is deleted and rebuilt from demo data. Anything you created while exploring is gone. The live database is untouched.',
@@ -395,16 +395,18 @@
     });
     if (!ok) return;
 
-    try {
-      const result = await api('/admin/sandbox/reset', {
-        method: 'POST',
-        headers: { ...Auth.headers(), [SANDBOX_HEADER]: '1' },
-        body: '{}'
-      });
-      showToast(result.message);
-    } catch (err) {
-      showToast(err.message, 'error');
-    }
+    await busy(btn, 'Resetting…', async () => {
+      try {
+        const result = await api('/admin/sandbox/reset', {
+          method: 'POST',
+          headers: { ...Auth.headers(), [SANDBOX_HEADER]: '1' },
+          body: '{}'
+        });
+        showToast(result.message);
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    });
   }
 
   // ─── Request snippets ───────────────────────────────────────
@@ -723,7 +725,16 @@ print(response.json())`
 
   async function load() {
     const state = document.getElementById('state');
-    state.innerHTML = '<div class="empty"><div class="empty-text">Loading the specification…</div></div>';
+    state.innerHTML =
+      '<div class="card" style="max-width:720px;margin:0 auto;padding:var(--sp-5)">' +
+      '<div class="skeleton" style="width:60%;height:16px;margin-bottom:14px"></div>' +
+      '<div class="skeleton" style="width:100%;height:12px;margin-bottom:8px"></div>' +
+      '<div class="skeleton" style="width:94%;height:12px;margin-bottom:8px"></div>' +
+      '<div class="skeleton" style="width:98%;height:12px;margin-bottom:14px"></div>' +
+      '<div class="skeleton" style="width:80%;height:16px;margin-bottom:14px"></div>' +
+      '<div class="skeleton" style="width:90%;height:12px;margin-bottom:8px"></div>' +
+      '<div class="skeleton" style="width:70%;height:12px"></div>' +
+      '</div>';
 
     try {
       spec = await api.get(SPEC_PATH);

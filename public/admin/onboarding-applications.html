@@ -102,7 +102,7 @@
                 <th class="col-actions"></th>
               </tr>
             </thead>
-            <tbody id="rows"></tbody>
+            <tbody id="rows"><tr><td colspan="6"><div class="skeleton" style="width:100%;height:140px"></div></td></tr></tbody>
           </table>
         </div>
       </div>
@@ -229,11 +229,11 @@
     // reconsidered or put back.
     const actions = {
       pending: `
-        <button class="btn btn-sm btn-secondary" onclick="decideSelected('reject')">Turn down</button>
-        <button class="btn btn-sm btn-primary" onclick="decideSelected('approve')">Approve</button>`,
+        <button class="btn btn-sm btn-secondary" onclick="decideSelected('reject', this)">Turn down</button>
+        <button class="btn btn-sm btn-primary" onclick="decideSelected('approve', this)">Approve</button>`,
       rejected: `
-        <button class="btn btn-sm btn-secondary" onclick="decideSelected('reopen')">Put back in the queue</button>
-        <button class="btn btn-sm btn-primary" onclick="decideSelected('approve')">Approve after all</button>`,
+        <button class="btn btn-sm btn-secondary" onclick="decideSelected('reopen', this)">Put back in the queue</button>
+        <button class="btn btn-sm btn-primary" onclick="decideSelected('approve', this)">Approve after all</button>`,
       approved: '<span class="text-xs dim">Already members — nothing left to decide.</span>',
       withdrawn: '<span class="text-xs dim">Superseded by a later application.</span>'
     };
@@ -293,7 +293,7 @@
     }
   };
 
-  async function decideSelected(action) {
+  async function decideSelected(action, btn) {
     const ids = [...selected];
     if (!ids.length) return;
 
@@ -306,20 +306,22 @@
     });
     if (!ok) return;
 
-    try {
-      const res = await api.post('/admin/onboarding-applications/decide', { ids, action });
-      showToast(res.message, res.failed.length ? 'warning' : 'success');
+    await busy(btn, action === 'approve' ? 'Approving…' : action === 'reject' ? 'Turning down…' : 'Reopening…', async () => {
+      try {
+        const res = await api.post('/admin/onboarding-applications/decide', { ids, action });
+        showToast(res.message, res.failed.length ? 'warning' : 'success');
 
-      // What could not be done stays selected, so the next thing on screen is
-      // the list of what still needs attention rather than an empty table and a
-      // number in a toast.
-      selected = new Set(res.failed.map(f => f.id));
-      if (res.failed.length) renderFailures(res.failed);
+        // What could not be done stays selected, so the next thing on screen is
+        // the list of what still needs attention rather than an empty table and a
+        // number in a toast.
+        selected = new Set(res.failed.map(f => f.id));
+        if (res.failed.length) renderFailures(res.failed);
 
-      load();
-    } catch (err) {
-      showToast(err.message, 'error');
-    }
+        load();
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    });
   }
 
   function renderFailures(failed) {
@@ -399,11 +401,11 @@
       // after the decision. An approval is, because the member exists.
       const foot = {
         pending: `
-          <button class="btn btn-secondary" onclick="decide('reject')">Turn down</button>
-          <button class="btn btn-primary" onclick="decide('approve')">${approveLabel}</button>`,
+          <button class="btn btn-secondary" onclick="decide('reject', this)">Turn down</button>
+          <button class="btn btn-primary" onclick="decide('approve', this)">${approveLabel}</button>`,
         rejected: `
-          <button class="btn btn-secondary" onclick="decide('reopen')">Put back in the queue</button>
-          <button class="btn btn-primary" onclick="decide('approve')">Approve after all</button>`,
+          <button class="btn btn-secondary" onclick="decide('reopen', this)">Put back in the queue</button>
+          <button class="btn btn-primary" onclick="decide('approve', this)">Approve after all</button>`,
         withdrawn: `
           <button class="btn btn-secondary" onclick="Shell.closeDrawer('oneDrawer')">Close</button>`
       };
@@ -416,7 +418,7 @@
     }
   }
 
-  async function decide(action) {
+  async function decide(action, btn) {
     const a = open.application;
 
     // Approving creates an account and joins somebody to this workspace. That
@@ -443,14 +445,16 @@
     });
     if (!ok) return;
 
-    try {
-      const res = await api.post(`/admin/onboarding-applications/${a.id}/${action}`, {});
-      showToast(res.message);
-      Shell.closeDrawer('oneDrawer');
-      load();
-    } catch (err) {
-      showToast(err.message, 'error');
-    }
+    await busy(btn, action === 'approve' ? 'Approving…' : action === 'reject' ? 'Turning down…' : 'Reopening…', async () => {
+      try {
+        const res = await api.post(`/admin/onboarding-applications/${a.id}/${action}`, {});
+        showToast(res.message);
+        Shell.closeDrawer('oneDrawer');
+        load();
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    });
   }
 
   document.getElementById('tabs').addEventListener('click', e => {

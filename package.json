@@ -33,8 +33,7 @@
     "cors": "^2.8.6",
     "dotenv": "^16.6.0",
     "express": "^5.2.1",
-    "pg": "^8.13.0",
-    "swagger-ui-dist": "^5.32.13"
+    "pg": "^8.13.0"
   },
   "private": true,
   "engines": {

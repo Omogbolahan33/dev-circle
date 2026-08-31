@@ -163,7 +163,7 @@
     <span class="spacer"></span>
     <span class="text-xs dim hide" id="saveState"></span>
     <button class="icon-btn" data-theme-toggle onclick="Theme.toggle()"><span data-theme-icon></span></button>
-    <button class="btn btn-sm btn-ghost" onclick="exitSurvey()" data-icon="arrowLeft" data-icon-size="13">Save &amp; exit</button>
+    <button class="btn btn-sm btn-ghost" onclick="exitSurvey(this)" data-icon="arrowLeft" data-icon-size="13">Save &amp; exit</button>
   </div>
 
   <div class="progress-strip hide" id="progressStrip">
@@ -769,9 +769,9 @@
     }
 
     const button = document.getElementById('nextBtn');
-    button.disabled = true;
 
-    try {
+    await busy(button, 'Submitting…', async () => {
+      try {
       const result = await api2.respond({ answers });
       // Over a link there is nobody to thank by name — and pretending
       // otherwise would be the one moment the page implies it knows who
@@ -814,36 +814,38 @@
           if (location.pathname.includes('survey.html')) location.href = '/member/dashboard.html';
         }, 4000);
       }
-    } catch (err) {
-      button.disabled = false;
-      // The server checked the same definition, so a refusal here means the
-      // page and the survey disagreed. Show it against the questions rather
-      // than as a sentence with no home.
-      if (err.body && err.body.errors) {
-        errors = err.body.errors;
-        render();
+      } catch (err) {
+        // The server checked the same definition, so a refusal here means the
+        // page and the survey disagreed. Show it against the questions rather
+        // than as a sentence with no home.
+        if (err.body && err.body.errors) {
+          errors = err.body.errors;
+          render();
+        }
+        showToast(err.message, 'error');
       }
-      showToast(err.message, 'error');
-    }
+    });
   }
 
-  async function exitSurvey() {
-    if (dirty) await save();
-    // Over a link there is no home to go to. Saying the answers are kept for
-    // this tab is the honest version: the key lives in sessionStorage, so
-    // reopening the link here resumes and reopening it elsewhere does not.
-    if (overLink) {
-      document.getElementById('stage').innerHTML = `
-        <div class="done">
-          <div class="done-title">Saved for now</div>
-          <p class="done-text">Your answers are kept in this browser. Open the same link again
-          to pick up where you left off.</p>
-        </div>`;
-      document.getElementById('progressStrip').classList.add('hide');
-      document.getElementById('foot').classList.add('hide');
-      return;
-    }
-    window.location.href = '/member/dashboard.html';
+  async function exitSurvey(btn) {
+    await busy(btn, 'Saving…', async () => {
+      if (dirty) await save();
+      // Over a link there is no home to go to. Saying the answers are kept for
+      // this tab is the honest version: the key lives in sessionStorage, so
+      // reopening the link here resumes and reopening it elsewhere does not.
+      if (overLink) {
+        document.getElementById('stage').innerHTML = `
+          <div class="done">
+            <div class="done-title">Saved for now</div>
+            <p class="done-text">Your answers are kept in this browser. Open the same link again
+            to pick up where you left off.</p>
+          </div>`;
+        document.getElementById('progressStrip').classList.add('hide');
+        document.getElementById('foot').classList.add('hide');
+        return;
+      }
+      window.location.href = '/member/dashboard.html';
+    });
   }
 
   // Closing the tab, switching apps, or locking a phone mid-question. keepalive

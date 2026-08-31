@@ -1147,6 +1147,14 @@ textarea.input { min-height: 90px; line-height: var(--lh-normal); }
 .btn-lg { font-size: var(--fs-base); padding: var(--sp-3) var(--sp-6); }
 .btn-block { width: 100%; }
 
+/* The busy state shared by every in-flight action (see busy() in api.js): the
+   button disables, shows a spinner beside the busy label, and the label area
+   is fixed-width so the button does not jump around between its resting label
+   and a shorter "Saving…". */
+.btn.is-loading { cursor: progress; }
+.btn.is-loading .spinner { width: 14px; height: 14px; flex: none; }
+.btn.is-loading .busy-label { display: inline-flex; align-items: center; min-width: 4ch; text-align: left; }
+
 /* ─────────────────────────────────────────────
    12. EMPTY, LOADING
    An empty state always names the thing that is missing and offers the
@@ -1170,6 +1178,18 @@ textarea.input { min-height: 90px; line-height: var(--lh-normal); }
   height: 12px;
 }
 @keyframes shimmer { 0% { background-position: 100% 50%; } 100% { background-position: 0 50%; } }
+
+/* Skeleton rows for list/timeline placeholders — a leading avatar with a
+   couple of text lines, so the loading shape reads as the content to come. */
+.skeleton-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) 0;
+}
+.skeleton-row + .skeleton-row { border-top: 1px solid var(--line-faint); }
+.skeleton-avatar { width: 36px; height: 36px; border-radius: 50%; flex: none; }
+.skeleton-row-lines { flex: 1; display: flex; flex-direction: column; gap: var(--sp-2); }
 
 .spinner {
   width: 16px;

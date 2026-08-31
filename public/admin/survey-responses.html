@@ -90,16 +90,24 @@
     </header>
 
     <div class="app-body">
-      <div class="figures" id="figures"></div>
+      <div class="figures" id="figures">
+        <div><div class="figure-value"><div class="skeleton" style="width:52px;height:28px;margin:0 auto"></div></div><div class="figure-label">Invited</div></div>
+        <div><div class="figure-value"><div class="skeleton" style="width:52px;height:28px;margin:0 auto"></div></div><div class="figure-label">Completed</div></div>
+        <div><div class="figure-value"><div class="skeleton" style="width:52px;height:28px;margin:0 auto"></div></div><div class="figure-label">Response rate</div></div>
+        <div><div class="figure-value"><div class="skeleton" style="width:52px;height:28px;margin:0 auto"></div></div><div class="figure-label">Questions</div></div>
+      </div>
 
       <div class="panel active" id="panel-summary">
-        <div id="analysis"></div>
+        <div id="analysis">
+          <div class="q-block"><div class="skeleton" style="width:34%;height:14px"></div><div class="skeleton" style="width:70%;height:18px;margin-top:14px"></div><div class="skeleton" style="width:100%;height:110px;margin-top:14px"></div></div>
+          <div class="q-block"><div class="skeleton" style="width:34%;height:14px"></div><div class="skeleton" style="width:70%;height:18px;margin-top:14px"></div><div class="skeleton" style="width:100%;height:110px;margin-top:14px"></div></div>
+        </div>
       </div>
 
       <div class="panel" id="panel-individual">
         <div class="table-shell">
           <div class="table-scroll">
-            <table class="data-table" id="responseTable"></table>
+            <table class="data-table" id="responseTable"><tbody><tr><td><div class="skeleton" style="width:100%;height:140px"></div></td></tr></tbody></table>
           </div>
         </div>
       </div>
@@ -180,8 +188,8 @@
   </div>
   <div class="drawer-foot">
     <button class="btn btn-secondary" onclick="Shell.closeDrawer('importDrawer')">Cancel</button>
-    <button class="btn btn-secondary" onclick="doImport(true)">Check first</button>
-    <button class="btn btn-primary" onclick="doImport(false)">Import</button>
+    <button class="btn btn-secondary" id="checkBtn" onclick="doImport(true, this)">Check first</button>
+    <button class="btn btn-primary" id="importBtn" onclick="doImport(false, this)">Import</button>
   </div>
 </aside>
 
@@ -212,16 +220,18 @@
       document.getElementById('actions').innerHTML = `
         ${badge(survey.status, survey.status === 'active' ? 'active' : survey.status === 'draft' ? 'warn' : 'inactive')}
         ${survey.public_path
-          ? `<button class="btn btn-sm btn-secondary" onclick="copyLink()">Copy link</button>` : ''}
+          ? `<button class="btn btn-sm btn-secondary" onclick="copyLink(this)">Copy link</button>` : ''}
         <a class="btn btn-sm btn-secondary" href="/admin/survey-new.html?id=${survey.id}">Edit</a>
         <button class="btn btn-sm btn-secondary" onclick="openImport()">Import responses</button>
-        <button class="btn btn-sm btn-secondary" onclick="exportResponses()">Export CSV</button>`;
+        <button class="btn btn-sm btn-secondary" onclick="exportResponses(this)">Export CSV</button>`;
 
-      window.copyLink = async () => {
-        try {
-          await navigator.clipboard.writeText(location.origin + survey.public_path);
-          showToast('Link copied — anyone holding it can answer, no account needed');
-        } catch { showToast(location.origin + survey.public_path, 'warning'); }
+      window.copyLink = async (btn) => {
+        await busy(btn, 'Copying…', async () => {
+          try {
+            await navigator.clipboard.writeText(location.origin + survey.public_path);
+            showToast('Link copied — anyone holding it can answer, no account needed');
+          } catch { showToast(location.origin + survey.public_path, 'warning'); }
+        });
       };
 
       const rate = responses.length ? Math.round((completed.length / responses.length) * 100) : 0;
@@ -522,16 +532,24 @@
       </tbody>`;
   }
 
-  async function exportResponses() {
-    try {
-      const res = await fetch(`${API_BASE}/admin/surveys/${surveyId}/export`, { headers: Auth.headers() });
-      const blob = await res.blob();
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = 'survey-responses.csv';
-      a.click();
-      showToast('Exported');
-    } catch { showToast('Export failed', 'error'); }
+  async function exportResponses(btn) {
+    await busy(btn, 'Exporting…', async () => {
+      try {
+        const res = await fetch(`${API_BASE}/admin/surveys/${surveyId}/export`, { headers: Auth.headers() });
+        if (!res.ok) {
+          let msg = `Export failed (${res.status})`;
+          try { msg = (await res.json()).error || msg; } catch { /* not JSON */ }
+          throw new Error(msg);
+        }
+        const blob = await res.blob();
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'survey-responses.csv';
+        a.click();
+        URL.revokeObjectURL(a.href);
+        showToast('Exported');
+      } catch (err) { showToast(err.message || 'Export failed', 'error'); }
+    });
   }
 
 // ─── Importing responses collected elsewhere ────────────
@@ -545,17 +563,14 @@
   }
 
   async function downloadTemplate(format, button) {
-    const label = button.textContent;
-    button.disabled = true;
-    button.textContent = 'Preparing…';
-    try {
-      await api.download(`/admin/surveys/${surveyId}/responses/template?format=${format}`,
-        `survey-responses-template.${format}`);
-    } catch (err) {
-      showToast(err.message, 'error');
-    }
-    button.disabled = false;
-    button.textContent = label;
+    await busy(button, 'Preparing…', async () => {
+      try {
+        await api.download(`/admin/surveys/${surveyId}/responses/template?format=${format}`,
+          `survey-responses-template.${format}`);
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    });
   }
 
   // Described from the server's spec rather than from a copy kept here, so
@@ -601,7 +616,7 @@
     summary.textContent = `Loaded ${file.name}. Run "Check first" before importing.`;
   }
 
-  async function doImport(dryRun) {
+  async function doImport(dryRun, btn) {
     const raw = document.getElementById('importData').value.trim();
 
     let body;
@@ -614,10 +629,10 @@
     body.dry_run = dryRun;
 
     const summary = document.getElementById('importSummary');
-    summary.textContent = dryRun ? 'Checking…' : 'Importing…';
 
-    try {
-      const result = await api.post(`/admin/surveys/${surveyId}/responses/import`, body);
+    await busy(btn, dryRun ? 'Checking…' : 'Importing…', async () => {
+      try {
+        const result = await api.post(`/admin/surveys/${surveyId}/responses/import`, body);
 
       // A heading that matched nothing is the failure that otherwise passes
       // silently: the import succeeds and the answers are simply not there.
@@ -652,10 +667,11 @@
           load();
         }
       }
-    } catch (err) {
-      summary.textContent = '';
-      showToast(err.message, 'error');
-    }
+      } catch (err) {
+        summary.textContent = '';
+        showToast(err.message, 'error');
+      }
+    });
   }
 
   document.querySelectorAll('.tab[data-panel]').forEach(tab => {

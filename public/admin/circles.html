@@ -118,7 +118,10 @@
     </header>
 
     <div class="app-body">
-      <div id="circleList"></div>
+      <div id="circleList">
+        <div class="circle-card"><div class="skeleton" style="width:10px;height:10px"></div><div class="circle-body"><div class="skeleton" style="width:34%;height:16px"></div><div class="skeleton" style="width:70%;height:12px;margin-top:10px"></div></div></div>
+        <div class="circle-card"><div class="skeleton" style="width:10px;height:10px"></div><div class="circle-body"><div class="skeleton" style="width:30%;height:16px"></div><div class="skeleton" style="width:60%;height:12px;margin-top:10px"></div></div></div>
+      </div>
     </div>
   </div>
 </div>
@@ -303,7 +306,7 @@
     </details>
   </div>
   <div class="drawer-foot">
-    <button class="btn btn-ghost" id="brandReset" onclick="resetBrand()">Reset to product defaults</button>
+    <button class="btn btn-ghost" id="brandReset" onclick="resetBrand(this)">Reset to product defaults</button>
     <span style="flex:1"></span>
     <button class="btn btn-secondary" onclick="Shell.closeDrawer('brandDrawer')">Close</button>
     <button class="btn btn-primary" id="brandSave" onclick="saveBrand(this)">Save branding</button>
@@ -375,25 +378,25 @@
     const name = document.getElementById('cName').value.trim();
     if (!name) { showToast('Give the circle a name', 'warning'); return; }
 
-    button.disabled = true;
-    try {
-      const res = await api.post('/admin/circles', {
-        name,
-        description: document.getElementById('cDesc').value.trim() || null,
-        seed_from_cohort_id: document.getElementById('cSeed').value || null
-      });
+    await busy(button, 'Creating…', async () => {
+      try {
+        const res = await api.post('/admin/circles', {
+          name,
+          description: document.getElementById('cDesc').value.trim() || null,
+          seed_from_cohort_id: document.getElementById('cSeed').value || null
+        });
 
-      Shell.closeDrawer('newCircleDrawer');
-      showToast(res.seeded
-        ? `"${name}" created with ${res.seeded.added} member(s)`
-        : `"${name}" created`);
-      document.getElementById('cName').value = '';
-      document.getElementById('cDesc').value = '';
-      load();
-    } catch (err) {
-      showToast(err.message, 'error');
-    }
-    button.disabled = false;
+        Shell.closeDrawer('newCircleDrawer');
+        showToast(res.seeded
+          ? `"${name}" created with ${res.seeded.added} member(s)`
+          : `"${name}" created`);
+        document.getElementById('cName').value = '';
+        document.getElementById('cDesc').value = '';
+        load();
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    });
   }
 
   // ─── Staff access ───────────────────────────────────────
@@ -420,7 +423,7 @@
           <div class="staff-row">
             <span class="staff-name">${escapeHtml(s.name)}</span>
             <span class="text-xs muted">${escapeHtml(s.role_name || '—')}</span>
-            <button class="btn btn-sm btn-ghost" onclick="revoke('${s.id}','${escapeHtml(s.name)}')">Remove</button>
+            <button class="btn btn-sm btn-ghost" onclick="revoke('${s.id}','${escapeHtml(s.name)}', this)">Remove</button>
           </div>`).join('')
         : '<p class="hint">Nobody has been given access to this circle yet.</p>';
     } catch (err) {
@@ -429,29 +432,31 @@
   }
 
   async function grantAccess(button) {
-    button.disabled = true;
-    try {
-      await api.post(`/admin/circles/${openCircleId}/staff`, {
-        admin_id: document.getElementById('staffAdmin').value,
-        role_id: document.getElementById('staffRole').value
-      });
-      showToast('Access granted');
-      openStaff(openCircleId);
-    } catch (err) {
-      showToast(err.message, 'error');
-    }
-    button.disabled = false;
+    await busy(button, 'Granting…', async () => {
+      try {
+        await api.post(`/admin/circles/${openCircleId}/staff`, {
+          admin_id: document.getElementById('staffAdmin').value,
+          role_id: document.getElementById('staffRole').value
+        });
+        showToast('Access granted');
+        openStaff(openCircleId);
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    });
   }
 
-  async function revoke(adminId, name) {
+  async function revoke(adminId, name, btn) {
     if (!await Shell.confirm({ title: `Remove ${name}?`, text: 'They keep any role they hold in other circles.' })) return;
-    try {
-      await api.del(`/admin/circles/${openCircleId}/staff/${adminId}`);
-      showToast('Access removed');
-      openStaff(openCircleId);
-    } catch (err) {
-      showToast(err.message, 'error');
-    }
+    await busy(btn, 'Removing…', async () => {
+      try {
+        await api.del(`/admin/circles/${openCircleId}/staff/${adminId}`);
+        showToast('Access removed');
+        openStaff(openCircleId);
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    });
   }
 
   // ─── Branding ──────────────────────────────────────────
@@ -645,41 +650,43 @@
       return;
     }
 
-    button.disabled = true;
-    try {
-      const res = await api.put(`/admin/circles/${brandState.circleId}`, { theme: theme || {} });
-      brandState.theme = res.circle.theme ? JSON.parse(res.circle.theme) : {};
-      showToast('Branding saved — everyone in this circle now sees it');
-      if (res.warnings?.length) showToast(res.warnings[0].message, 'warning');
-      previewBrand();
-      // If this is the workspace the console is in, repaint it immediately.
-      if (brandState.circleId === Auth.getCircle() && window.Brand) {
-        window.Brand.apply(res.brand || brandState.theme);
+    await busy(button, 'Saving…', async () => {
+      try {
+        const res = await api.put(`/admin/circles/${brandState.circleId}`, { theme: theme || {} });
+        brandState.theme = res.circle.theme ? JSON.parse(res.circle.theme) : {};
+        showToast('Branding saved — everyone in this circle now sees it');
+        if (res.warnings?.length) showToast(res.warnings[0].message, 'warning');
+        previewBrand();
+        // If this is the workspace the console is in, repaint it immediately.
+        if (brandState.circleId === Auth.getCircle() && window.Brand) {
+          window.Brand.apply(res.brand || brandState.theme);
+        }
+      } catch (err) {
+        showToast(err.message, 'error');
       }
-    } catch (err) {
-      showToast(err.message, 'error');
-    }
-    button.disabled = false;
+    });
   }
 
-  async function resetBrand() {
+  async function resetBrand(btn) {
     if (!brandState.canBrand) return;
     if (!await Shell.confirm({
       title: 'Reset branding?',
       text: 'This circle returns to the product look. Its surveys keep any theme of their own.'
     })) return;
-    try {
-      const res = await api.put(`/admin/circles/${brandState.circleId}`, { theme: null });
-      brandState.theme = {};
-      document.getElementById('brandFont').value = 'default';
-      document.getElementById('brandCorner').value = 'soft';
-      document.getElementById('brandBackground').value = 'plain';
-      showToast('Branding reset');
-      previewBrand();
-      if (brandState.circleId === Auth.getCircle() && window.Brand) window.Brand.clear();
-    } catch (err) {
-      showToast(err.message, 'error');
-    }
+    await busy(btn, 'Resetting…', async () => {
+      try {
+        const res = await api.put(`/admin/circles/${brandState.circleId}`, { theme: null });
+        brandState.theme = {};
+        document.getElementById('brandFont').value = 'default';
+        document.getElementById('brandCorner').value = 'soft';
+        document.getElementById('brandBackground').value = 'plain';
+        showToast('Branding reset');
+        previewBrand();
+        if (brandState.circleId === Auth.getCircle() && window.Brand) window.Brand.clear();
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    });
   }
 
   // ─── Editor events ─────────────────────────────────────

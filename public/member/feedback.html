@@ -120,7 +120,11 @@
         <button class="chip" data-status="resolved">Closed</button>
       </div>
 
-      <div id="list"></div>
+      <div id="list">
+        <div class="skeleton" style="height:64px;width:100%;border-radius:var(--r-lg);margin-bottom:var(--sp-3)"></div>
+        <div class="skeleton" style="height:64px;width:100%;border-radius:var(--r-lg);margin-bottom:var(--sp-3)"></div>
+        <div class="skeleton" style="height:64px;width:100%;border-radius:var(--r-lg)"></div>
+      </div>
     </section>
 
   </div>
@@ -244,32 +248,28 @@
     if (!content) { showToast('Write something first', 'warning'); return; }
 
     const btn = document.getElementById('sendBtn');
-    btn.disabled = true;
-    btn.innerHTML = '<span class="spinner"></span> Sending';
+    await busy(btn, 'Sending…', async () => {
+      try {
+        const res = await api.post('/feedback', {
+          content,
+          category: document.getElementById('fbCategory').value,
+          rating: rating ?? undefined
+        });
 
-    try {
-      const res = await api.post('/feedback', {
-        content,
-        category: document.getElementById('fbCategory').value,
-        rating: rating ?? undefined
-      });
+        const streakNote = res.streak
+          ? `Keeps your streak at ${res.streak} day${res.streak === 1 ? '' : 's'}.`
+          : 'Thank you for helping us improve.';
+        document.getElementById('successMsg').textContent = `Your feedback reached the team. ${streakNote}`;
 
-      const streakNote = res.streak
-        ? `Keeps your streak at ${res.streak} day${res.streak === 1 ? '' : 's'}.`
-        : 'Thank you for helping us improve.';
-      document.getElementById('successMsg').textContent = `Your feedback reached the team. ${streakNote}`;
+        document.getElementById('composeCard').classList.add('hide');
+        document.getElementById('successCard').classList.remove('hide');
 
-      document.getElementById('composeCard').classList.add('hide');
-      document.getElementById('successCard').classList.remove('hide');
-
-      showToast('Feedback sent — thank you!');
-      loadFeedback();
-    } catch (err) {
-      showToast(err.message, 'error');
-    } finally {
-      btn.disabled = false;
-      btn.innerHTML = `${icon('send', 15)} Send feedback`;
-    }
+        showToast('Feedback sent — thank you!');
+        loadFeedback();
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    });
   }
 
   function resetForm() {

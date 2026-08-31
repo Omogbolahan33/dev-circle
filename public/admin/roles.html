@@ -55,7 +55,11 @@
 
     <div class="app-body">
       <div class="panel active" id="panel-roles">
-        <div class="list" id="roles"></div>
+        <div class="list" id="roles">
+          <div class="skeleton-row"><div class="skeleton" style="width:100%;height:60px"></div></div>
+          <div class="skeleton-row"><div class="skeleton" style="width:88%;height:60px"></div></div>
+          <div class="skeleton-row"><div class="skeleton" style="width:94%;height:60px"></div></div>
+        </div>
       </div>
 
       <div class="panel" id="panel-admins">
@@ -64,7 +68,9 @@
           <div class="table-scroll">
             <table class="data-table">
               <thead><tr><th>Administrator</th><th>Role</th><th>Status</th><th>Added</th><th></th></tr></thead>
-              <tbody id="admins"></tbody>
+              <tbody id="admins">
+                <tr><td colspan="5"><div class="skeleton" style="width:100%;height:120px"></div></td></tr>
+              </tbody>
             </table>
           </div>
         </div>
@@ -137,7 +143,7 @@
   </div>
   <div class="drawer-foot">
     <button class="btn btn-secondary" onclick="Shell.closeDrawer('adminDrawer')">Cancel</button>
-    <button class="btn btn-primary" onclick="createAdmin()">Add administrator</button>
+    <button class="btn btn-primary" id="adminSaveBtn" onclick="createAdmin(this)">Add administrator</button>
   </div>
 </aside>
 
@@ -161,7 +167,7 @@
   </div>
   <div class="drawer-foot">
     <button class="btn btn-secondary" onclick="Shell.closeDrawer('resetDrawer')">Cancel</button>
-    <button class="btn btn-primary" onclick="doReset()">Set password</button>
+    <button class="btn btn-primary" id="resetBtn" onclick="doReset(this)">Set password</button>
   </div>
 </aside>
 
@@ -223,7 +229,7 @@
         ${can('roles.write') && !r.is_system ? `
           <div class="role-actions">
             <button class="btn btn-sm btn-secondary" onclick="openEdit('${r.id}')">Edit</button>
-            <button class="btn btn-sm btn-ghost" onclick="deleteRole('${r.id}')">Delete</button>
+            <button class="btn btn-sm btn-ghost" onclick="deleteRole('${r.id}', this)">Delete</button>
           </div>` : ''}
       </article>`).join('')
       : emptyState({
@@ -292,20 +298,23 @@
 
     const body = { name, description: $('rDesc').value.trim(), permissions };
 
-    try {
-      if (editingRoleId) {
-        await api.put(`/admin/roles/${editingRoleId}`, body);
-        showToast(`Role "${name}" updated`);
-      } else {
-        await api.post('/admin/roles', body);
-        showToast(`Role "${name}" created`);
-      }
-      Shell.closeDrawer('roleDrawer');
-      await refresh();
-    } catch (err) { showToast(err.message, 'error'); }
+    const btn = $('roleSaveBtn');
+    await busy(btn, editingRoleId ? 'Saving…' : 'Creating…', async () => {
+      try {
+        if (editingRoleId) {
+          await api.put(`/admin/roles/${editingRoleId}`, body);
+          showToast(`Role "${name}" updated`);
+        } else {
+          await api.post('/admin/roles', body);
+          showToast(`Role "${name}" created`);
+        }
+        Shell.closeDrawer('roleDrawer');
+        await refresh();
+      } catch (err) { showToast(err.message, 'error'); }
+    });
   }
 
-  async function deleteRole(id) {
+  async function deleteRole(id, btn) {
     const role = roles.find(r => r.id === id);
     if (!role) return;
 
@@ -318,11 +327,13 @@
     });
     if (!ok) return;
 
-    try {
-      await api.del(`/admin/roles/${id}`);
-      showToast('Role deleted');
-      await refresh();
-    } catch (err) { showToast(err.message, 'error'); }
+    await busy(btn, 'Deleting…', async () => {
+      try {
+        await api.del(`/admin/roles/${id}`);
+        showToast('Role deleted');
+        await refresh();
+      } catch (err) { showToast(err.message, 'error'); }
+    });
   }
 
   // ─── Administrators ───────────────────────────────────────
@@ -373,7 +384,7 @@
               <button class="btn btn-sm btn-ghost" onclick="openReset('${a.id}')">Reset password</button>
               ${isMe ? '' : `
                 <button class="btn btn-sm ${a.status === 'active' ? 'btn-danger' : 'btn-primary'}"
-                        onclick="toggleAdmin('${a.id}', '${a.status}')">
+                        onclick="toggleAdmin('${a.id}', '${a.status}', this)">
                   ${a.status === 'active' ? 'Deactivate' : 'Activate'}
                 </button>`}
             </div>` : ''}
@@ -397,7 +408,7 @@
     $(target).value = Array.from(bytes, n => alphabet[n % alphabet.length]).join('');
   }
 
-  async function createAdmin() {
+  async function createAdmin(btn) {
     const name = $('aName').value.trim();
     const email = $('aEmail').value.trim();
     const password = $('aPassword').value;
@@ -406,12 +417,14 @@
     if (!name || !email) { showToast('Name and work email are required', 'warning'); return; }
     if (password.length < 10) { showToast('Password must be at least 10 characters', 'warning'); return; }
 
-    try {
-      await api.post('/admin/admins', { name, email, password, role_id });
-      Shell.closeDrawer('adminDrawer');
-      showToast(`${name} can now sign in`);
-      await refresh();
-    } catch (err) { showToast(err.message, 'error'); }
+    await busy(btn, 'Adding…', async () => {
+      try {
+        await api.post('/admin/admins', { name, email, password, role_id });
+        Shell.closeDrawer('adminDrawer');
+        showToast(`${name} can now sign in`);
+        await refresh();
+      } catch (err) { showToast(err.message, 'error'); }
+    });
   }
 
   async function changeRole(id, select) {
@@ -441,7 +454,7 @@
     }
   }
 
-  async function toggleAdmin(id, current) {
+  async function toggleAdmin(id, current, btn) {
     const admin = admins.find(a => a.id === id);
     if (!admin) return;
 
@@ -456,11 +469,13 @@
     });
     if (!ok) return;
 
-    try {
-      await api.put(`/admin/admins/${id}`, { status: next });
-      showToast(next === 'inactive' ? 'Access removed' : 'Access restored');
-      await refresh();
-    } catch (err) { showToast(err.message, 'error'); }
+    await busy(btn, next === 'inactive' ? 'Deactivating…' : 'Activating…', async () => {
+      try {
+        await api.put(`/admin/admins/${id}`, { status: next });
+        showToast(next === 'inactive' ? 'Access removed' : 'Access restored');
+        await refresh();
+      } catch (err) { showToast(err.message, 'error'); }
+    });
   }
 
   function openReset(id) {
@@ -473,15 +488,17 @@
     Shell.openDrawer('resetDrawer');
   }
 
-  async function doReset() {
+  async function doReset(btn) {
     const password = $('resetPassword').value;
     if (password.length < 10) { showToast('Password must be at least 10 characters', 'warning'); return; }
 
-    try {
-      await api.post(`/admin/admins/${resettingId}/reset-password`, { new_password: password });
-      Shell.closeDrawer('resetDrawer');
-      showToast('Password reset — they are signed out everywhere');
-    } catch (err) { showToast(err.message, 'error'); }
+    await busy(btn, 'Setting…', async () => {
+      try {
+        await api.post(`/admin/admins/${resettingId}/reset-password`, { new_password: password });
+        Shell.closeDrawer('resetDrawer');
+        showToast('Password reset — they are signed out everywhere');
+      } catch (err) { showToast(err.message, 'error'); }
+    });
   }
 
   // ─── Tabs ─────────────────────────────────────────────────

@@ -130,9 +130,20 @@
       <span class="current mobile-current" id="mobileProfileTitle">Profile</span>
     </nav>
 
-    <header class="identity-head" id="identity"></header>
+    <header class="identity-head" id="identity">
+      <div class="skeleton" style="width:72px;height:72px;border-radius:50%"></div>
+      <div style="flex:1;min-width:0">
+        <div class="skeleton" style="height:28px;width:45%;margin-bottom:10px"></div>
+        <div class="skeleton" style="height:14px;width:60%"></div>
+      </div>
+    </header>
 
-    <div class="figures" id="figures"></div>
+    <div class="figures" id="figures">
+      <div><div class="skeleton" style="height:30px;width:70%;margin-bottom:6px"></div><div class="skeleton" style="height:12px;width:90%"></div></div>
+      <div><div class="skeleton" style="height:30px;width:70%;margin-bottom:6px"></div><div class="skeleton" style="height:12px;width:90%"></div></div>
+      <div><div class="skeleton" style="height:30px;width:70%;margin-bottom:6px"></div><div class="skeleton" style="height:12px;width:90%"></div></div>
+      <div><div class="skeleton" style="height:30px;width:70%;margin-bottom:6px"></div><div class="skeleton" style="height:12px;width:90%"></div></div>
+    </div>
 
     <div id="readinessBanner"></div>
 
@@ -145,8 +156,11 @@
         <h2 class="section-title">Your standing</h2>
         <span class="dim text-xs">Set by the Developer Hub &amp; the team</span>
       </div>
-      <div class="kv" id="standing"></div>
-      <div class="membership mt-4" id="membership"></div>
+      <div class="kv" id="standing">
+        <div class="kv-row"><span class="kv-key">API stage</span><span class="kv-val"><span class="skeleton" style="display:inline-block;height:12px;width:120px"></span></span></div>
+        <div class="kv-row"><span class="kv-key">KYB</span><span class="kv-val"><span class="skeleton" style="display:inline-block;height:12px;width:100px"></span></span></div>
+      </div>
+      <div class="membership mt-4" id="membership"><span class="skeleton" style="display:inline-block;height:12px;width:180px"></span></div>
 
       <div class="mt-6">
         <label class="label">API products you build against</label>
@@ -289,8 +303,8 @@
 
     <div class="save-bar">
       <a class="btn btn-ghost" href="/member/dashboard.html" data-icon="arrowLeft" data-icon-size="15">Back to dashboard</a>
-      <button type="button" class="btn btn-secondary" onclick="saveProfile(false)" data-icon="check" data-icon-size="15">Save changes</button>
-      <button type="button" class="btn btn-primary" onclick="saveProfile(true)" data-icon="check" data-icon-size="15">Save &amp; return to dashboard</button>
+      <button type="button" class="btn btn-secondary" onclick="saveProfile(false, this)" data-icon="check" data-icon-size="15">Save changes</button>
+      <button type="button" class="btn btn-primary" onclick="saveProfile(true, this)" data-icon="check" data-icon-size="15">Save &amp; return to dashboard</button>
     </div>
 
   </div>
@@ -356,7 +370,7 @@
         ? Object.fromEntries(profile.product_catalog.map(p => [p.key, p.label]))
         : FALLBACK_PRODUCTS;
       renderChoices('productGroup', catalog, user.api_products || []);
-      showWhoIsAsking(data.readiness);
+      showWhoIsAsking(profile.readiness);
 
       // Phone is a sign-in credential: once a number is on the account it is
       // locked here and can only be changed via the team after verification.
@@ -500,9 +514,10 @@
     });
   }
 
-  async function saveProfile(returnHome = false) {
-    try {
-      const payload = {
+  async function saveProfile(returnHome = false, btn) {
+    await busy(btn, 'Saving…', async () => {
+      try {
+        const payload = {
         name: document.getElementById('fName').value.trim(),
         company: document.getElementById('fCompany').value.trim(),
         work_sector: document.getElementById('fSector').value,
@@ -570,7 +585,8 @@
       // If finished current section or all rings complete, naturally return home
       showToast('Preferences saved! Returning to dashboard...');
       setTimeout(() => { window.location.href = '/member/dashboard.html'; }, 800);
-    } catch (err) { showToast(err.message, 'error'); }
+      } catch (err) { showToast(err.message, 'error'); }
+    });
   }
 
   load();

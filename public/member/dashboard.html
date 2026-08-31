@@ -408,7 +408,46 @@
            `${String(wat.getUTCHours()).padStart(2, '0')}:${String(wat.getUTCMinutes()).padStart(2, '0')} WAT`;
   }
 
+  function showDashSkeletons() {
+    document.getElementById('masthead').innerHTML =
+      '<div class="skeleton" style="width:180px;height:34px;border-radius:var(--r-full)"></div>';
+
+    const trackEl = document.getElementById('track');
+    trackEl.innerHTML = Array(4).fill(
+      '<div class="int-step"><span class="skeleton" style="width:18px;height:18px;border-radius:50%"></span>' +
+      '<span style="flex:1"><span class="skeleton" style="display:block;width:70%;height:12px;margin-bottom:6px"></span>' +
+      '<span class="skeleton" style="display:block;width:55%;height:10px"></span></span></div>'
+    ).join('');
+
+    const productsEl = document.getElementById('products');
+    productsEl.innerHTML = '<span class="skeleton" style="display:inline-block;width:120px;height:12px"></span>';
+
+    document.getElementById('readinessContent').innerHTML =
+      '<div class="rings-card-body"><div class="rings-overview">' +
+      '<div class="skeleton" style="width:112px;height:112px;border-radius:50%"></div>' +
+      '<div class="rings-meta" style="flex:1">' +
+      Array(3).fill('<div class="skeleton" style="height:12px;width:100%;margin-bottom:8px"></div>').join('') +
+      '</div></div></div>';
+
+    document.getElementById('streakValue').textContent = '';
+    document.getElementById('streakLabel').textContent = 'loading…';
+    document.getElementById('answeredValue').textContent = '';
+    document.getElementById('heat').innerHTML =
+      Array(84).fill('<span class="heat-cell"></span>').join('');
+
+    document.getElementById('timeline').innerHTML =
+      Array(4).fill('<div class="tl-item"><span class="skeleton" style="width:16px;height:16px;border-radius:50%"></span>' +
+        '<div style="flex:1"><div class="skeleton" style="height:12px;width:80%;margin-bottom:6px"></div></div></div>').join('');
+
+    document.getElementById('invites').innerHTML =
+      Array(2).fill('<div class="skeleton" style="height:64px;width:100%;border-radius:var(--r-lg)"></div>').join('');
+
+    document.getElementById('sessions').innerHTML =
+      Array(2).fill('<div class="skeleton" style="height:48px;width:100%;border-radius:var(--r-lg)"></div>').join('');
+  }
+
   async function load() {
+    showDashSkeletons();
     try {
       const [profile, surveys, engagement, sessions] = await Promise.all([
         api.get('/users/profile'),
@@ -796,25 +835,22 @@
     const btn = document.getElementById('saveProducts');
     const chosen = Array.from(document.querySelectorAll('#productGroup .choice.selected'))
       .map(el => el.dataset.value);
-    btn.disabled = true;
-    btn.textContent = 'Saving…';
-    try {
-      const res = await api.put('/users/profile', { api_products: chosen });
-      renderProductChips(chosen);
-      renderProductEditor(chosen);
-      const updated = res.user?.api_products || chosen;
-      renderTrackActions(res.user?.api_status === 'production', !!res.user?.kyb_completed, updated);
-      document.getElementById('productsEditor').hidden = true;
-      showToast(chosen.length
-        ? `Products recorded: ${chosen.map(p => PRODUCT_LABELS[p] || p).join(', ')}`
-        : 'Products cleared.');
-    } catch (err) {
-      document.getElementById('productsNote').textContent = err.message;
-      showToast(err.message, 'error');
-    } finally {
-      btn.disabled = false;
-      btn.textContent = 'Save products';
-    }
+    await busy(btn, 'Saving…', async () => {
+      try {
+        const res = await api.put('/users/profile', { api_products: chosen });
+        renderProductChips(chosen);
+        renderProductEditor(chosen);
+        const updated = res.user?.api_products || chosen;
+        renderTrackActions(res.user?.api_status === 'production', !!res.user?.kyb_completed, updated);
+        document.getElementById('productsEditor').hidden = true;
+        showToast(chosen.length
+          ? `Products recorded: ${chosen.map(p => PRODUCT_LABELS[p] || p).join(', ')}`
+          : 'Products cleared.');
+      } catch (err) {
+        document.getElementById('productsNote').textContent = err.message;
+        showToast(err.message, 'error');
+      }
+    });
   }
 
   // Exactly one call to action, chosen by what actually matters most:

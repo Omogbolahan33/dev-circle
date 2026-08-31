@@ -272,3 +272,87 @@ function showToast(message, type = 'success') {
 
   setTimeout(() => toast.remove(), 3600);
 }
+
+// ─── Button loading state ──────────────────────────────────
+// The one proper loading state for an action button. `busy` disables the
+// button, swaps in a spinner next to a busy label for the duration of `work`,
+// and restores the button's original label and state when `work` settles —
+// whether it succeeded or threw. Callers run their work inside the callback
+// and let exceptions propagate to their own catch, so each page keeps control
+// of its error message while every button gets the same in-flight look.
+//
+//   await busy($('saveBtn'), 'Saving…', async () => { await api.post(...); });
+//
+// Buttons that appear to do nothing while a request is in flight are how
+// double-submits happen (a survey published twice is a survey sent twice), so
+// this also guards against the same handler firing again mid-flight.
+function busy(btn, busyLabel, work) {
+  if (!btn) return Promise.resolve().then(work);
+
+  const original = btn.dataset.busyRestore || btn.innerHTML;
+  btn.dataset.busyRestore = original;
+  btn.classList.add('is-loading');
+  btn.setAttribute('aria-busy', 'true');
+  btn.disabled = true;
+  btn.innerHTML = `<span class="spinner" aria-hidden="true"></span><span class="busy-label">${escapeHtml(busyLabel || 'Working…')}</span>`;
+
+  return Promise.resolve()
+    .then(work)
+    .finally(() => {
+      btn.classList.remove('is-loading');
+      btn.removeAttribute('aria-busy');
+      btn.disabled = false;
+      btn.innerHTML = original;
+    });
+}
+
+// ─── Page & section loading states ─────────────────────────
+// A page that fills containers after an async fetch usually shows nothing
+// while it waits — a blank body is read as a frozen page. These helpers paint
+// skeleton placeholders into those containers so the shape of the content is
+// visible while the data is on its way, then the page renders over them.
+//
+//   <div class="stat-grid" id="stats">…</div>            → empty on first paint
+//   <div class="stat-grid" id="stats">${skelStats(4)}</div>
+//
+// Skeleton columns mirror the width of a typical column (avator, name,
+// sub-line) rather than a uniform row, so the placeholder reads as a table.
+
+function skelLine(width = '60%', height = 12) {
+  return `<div class="skeleton" style="width:${width};height:${height}px"></div>`;
+}
+
+function skelRows(rows = 5, cols = 4) {
+  return Array.from({ length: rows }, () => `
+    <tr>${Array.from({ length: cols }, (_, c) => `
+      <td><div class="skeleton" style="width:${c === 0 ? 60 : 30 + (c * 10)}%"></div></td>`).join('')}
+    </tr>`).join('');
+}
+
+function skelStats(count = 4) {
+  return Array.from({ length: count }, () => `
+    <div class="stat">
+      <div class="stat-label"><div class="skeleton" style="width:50%;height:10px"></div></div>
+      <div class="stat-value"><div class="skeleton" style="width:56px;height:26px"></div></div>
+    </div>`).join('');
+}
+
+function skelList(items = 5, { avatar = false, lines = 1 } = {}) {
+  return Array.from({ length: items }, () => `
+    <div class="skeleton-row">
+      ${avatar ? '<div class="skeleton skeleton-avatar"></div>' : ''}
+      <div class="skeleton-row-lines">
+        ${Array.from({ length: lines }, (_, i) => `<div class="skeleton" style="width:${i === 0 ? 60 : 40}%;height:${i === 0 ? 13 : 11}px"></div>`).join('')}
+      </div>
+    </div>`).join('');
+}
+
+// Paint the page's section containers with skeleton placeholders, so a slow
+// first load never leaves the screen empty. Each selector maps to a builder
+// that knows the shape of that section (a stat grid, a table body, a list).
+function showSkeletons(spec) {
+  for (const selector in spec) {
+    const el = document.querySelector(selector);
+    if (el) el.innerHTML = spec[selector]();
+  }
+}

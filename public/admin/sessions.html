@@ -56,7 +56,7 @@
           <p class="page-subtitle">Scheduled engagements — office hours, 1-on-1s, group calls. Members see them in their portal and are reminded automatically.</p>
         </div>
         <div class="page-actions">
-          <button class="btn btn-sm btn-secondary" onclick="runScheduler()">Run scheduler</button>
+          <button class="btn btn-sm btn-secondary" onclick="runScheduler(this)">Run scheduler</button>
           <button class="btn btn-sm btn-primary" onclick="openCreate()">Schedule session</button>
         </div>
       </div>
@@ -68,7 +68,11 @@
 
     <div class="app-body">
       <div class="list">
-        <div id="panel-upcoming"></div>
+        <div id="panel-upcoming">
+          <div class="session"><div class="skeleton" style="width:68px;height:56px"></div><div class="skeleton" style="flex:1;height:56px"></div></div>
+          <div class="session"><div class="skeleton" style="width:68px;height:56px"></div><div class="skeleton" style="flex:1;height:56px"></div></div>
+          <div class="session"><div class="skeleton" style="width:68px;height:56px"></div><div class="skeleton" style="flex:1;height:56px"></div></div>
+        </div>
         <div id="panel-past" class="hide"></div>
       </div>
     </div>
@@ -138,7 +142,7 @@
   </div>
   <div class="drawer-foot">
     <button class="btn btn-secondary" onclick="Shell.closeDrawer('createDrawer')">Cancel</button>
-    <button class="btn btn-primary" onclick="createSession()">Schedule</button>
+    <button class="btn btn-primary" onclick="createSession(this)">Schedule</button>
   </div>
 </aside>
 
@@ -188,7 +192,7 @@
         ${s.status === 'scheduled'
           ? `<button class="btn btn-sm btn-primary" onclick="announce('${s.id}', this)">Announce</button>`
           : `<button class="btn btn-sm btn-secondary" onclick="remind('${s.id}', this)">Remind now</button>`}
-        <button class="btn btn-sm btn-ghost" onclick="cancelSession('${s.id}', '${escapeHtml(s.title).replace(/'/g, '&#39;')}')">Cancel</button>
+        <button class="btn btn-sm btn-ghost" onclick="cancelSession('${s.id}', '${escapeHtml(s.title).replace(/'/g, '&#39;')}', this)">Cancel</button>
       </div>`;
 
     return `
@@ -303,7 +307,10 @@
   // Check the slot against members' stated availability before committing
   async function checkSlot() {
     const when = watInputToUtc(document.getElementById('sWhen').value);
-    if (!when) return;
+    const slot = document.getElementById('slotCheck');
+    if (!when) { slot.innerHTML = ''; return; }
+
+    slot.innerHTML = '<div class="avail"><div class="avail-line"><span class="spinner" aria-hidden="true"></span> Checking availability…</div></div>';
 
     try {
       const a = await api.post('/admin/sessions/preview', {
@@ -325,7 +332,7 @@
     }
   }
 
-  async function createSession() {
+  async function createSession(btn) {
     const title = document.getElementById('sTitle').value.trim();
     const when = watInputToUtc(document.getElementById('sWhen').value);
 
@@ -335,52 +342,54 @@
     const channels = selectedChannels();
     if (!channels.length) { showToast('Pick at least one channel', 'warning'); return; }
 
-    try {
-      const res = await api.post('/admin/sessions', {
-        title,
-        description: document.getElementById('sDesc').value.trim() || null,
-        type: document.getElementById('sType').value,
-        circle_id: document.getElementById('sCircle').value,
-        scheduled_for: when,
-        duration_min: Number(document.getElementById('sDuration').value) || 30,
-        location: document.getElementById('sLocation').value.trim() || null,
-        target_type: 'all',
-        channels,
-        reminder_offsets: parseLeads(document.getElementById('sReminders').value)
-      });
+    await busy(btn, 'Scheduling…', async () => {
+      try {
+        const res = await api.post('/admin/sessions', {
+          title,
+          description: document.getElementById('sDesc').value.trim() || null,
+          type: document.getElementById('sType').value,
+          circle_id: document.getElementById('sCircle').value,
+          scheduled_for: when,
+          duration_min: Number(document.getElementById('sDuration').value) || 30,
+          location: document.getElementById('sLocation').value.trim() || null,
+          target_type: 'all',
+          channels,
+          reminder_offsets: parseLeads(document.getElementById('sReminders').value)
+        });
 
-      Shell.closeDrawer('createDrawer');
-      const p = res.preview;
-      showToast(`Scheduled — ${p.available.length} of ${p.total} members are free then`);
-      document.getElementById('sTitle').value = '';
-      document.getElementById('sDesc').value = '';
-      load();
-    } catch (err) { showToast(err.message, 'error'); }
+        Shell.closeDrawer('createDrawer');
+        const p = res.preview;
+        showToast(`Scheduled — ${p.available.length} of ${p.total} members are free then`);
+        document.getElementById('sTitle').value = '';
+        document.getElementById('sDesc').value = '';
+        load();
+      } catch (err) { showToast(err.message, 'error'); }
+    });
   }
 
   // ─── Actions ────────────────────────────────────────────
   async function announce(id, button) {
-    button.disabled = true;
-    try {
-      const res = await api.post(`/admin/sessions/${id}/announce`, {});
-      showToast(res.message);
-      load();
-    } catch (err) {
-      showToast(err.message, 'error');
-      button.disabled = false;
-    }
+    await busy(button, 'Announcing…', async () => {
+      try {
+        const res = await api.post(`/admin/sessions/${id}/announce`, {});
+        showToast(res.message);
+        load();
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    });
   }
 
   async function remind(id, button) {
-    button.disabled = true;
-    try {
-      const res = await api.post(`/admin/sessions/${id}/remind`, {});
-      showToast(res.message);
-    } catch (err) { showToast(err.message, 'error'); }
-    button.disabled = false;
+    await busy(button, 'Sending…', async () => {
+      try {
+        const res = await api.post(`/admin/sessions/${id}/remind`, {});
+        showToast(res.message);
+      } catch (err) { showToast(err.message, 'error'); }
+    });
   }
 
-  async function cancelSession(id, title) {
+  async function cancelSession(id, title, btn) {
     const ok = await Shell.confirm({
       title: `Cancel "${title}"?`,
       text: 'Anyone already invited will be told it is off.',
@@ -388,24 +397,28 @@
     });
     if (!ok) return;
 
-    try {
-      const res = await api.del(`/admin/sessions/${id}`);
-      showToast(`Cancelled${res.notified ? ` — ${res.notified} member(s) notified` : ''}`);
-      load();
-    } catch (err) { showToast(err.message, 'error'); }
+    await busy(btn, 'Cancelling…', async () => {
+      try {
+        const res = await api.del(`/admin/sessions/${id}`);
+        showToast(`Cancelled${res.notified ? ` — ${res.notified} member(s) notified` : ''}`);
+        load();
+      } catch (err) { showToast(err.message, 'error'); }
+    });
   }
 
   // Fires anything that has come due — reminders and survey nudges.
-  async function runScheduler() {
-    try {
-      const res = await api.post('/admin/sessions/run-scheduler', {});
-      const fired = res.reminders.length;
-      const nudged = res.survey_reminders.reduce((n, r) => n + r.reminded, 0);
-      showToast(fired || nudged
-        ? `${fired} session reminder(s), ${nudged} survey nudge(s) sent`
-        : 'Nothing was due');
-      load();
-    } catch (err) { showToast(err.message, 'error'); }
+  async function runScheduler(btn) {
+    await busy(btn, 'Running…', async () => {
+      try {
+        const res = await api.post('/admin/sessions/run-scheduler', {});
+        const fired = res.reminders.length;
+        const nudged = res.survey_reminders.reduce((n, r) => n + r.reminded, 0);
+        showToast(fired || nudged
+          ? `${fired} session reminder(s), ${nudged} survey nudge(s) sent`
+          : 'Nothing was due');
+        load();
+      } catch (err) { showToast(err.message, 'error'); }
+    });
   }
 
   document.querySelectorAll('.tab[data-panel]').forEach(tab => {
