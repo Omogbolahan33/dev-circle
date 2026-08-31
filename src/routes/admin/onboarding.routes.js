@@ -7,6 +7,7 @@ const onboarding = require('../../services/onboarding');
 const onboardingImport = require('../../services/onboardingImport');
 const surveyForm = require('../../services/surveyForm');
 const circles = require('../../services/circles');
+const { substitute } = require('../../middleware/brand');
 
 const router = express.Router();
 
@@ -74,8 +75,12 @@ router.get('/onboarding/schema', requirePermission('onboarding.read'), async (re
 
     theme: {
       defaults: surveyForm.themes.DEFAULTS,
+      // survey-theme.js is loaded two ways: served to the browser, where the
+      // brand token in a label is substituted on the way out, and required
+      // here on the server, where nothing does that. So it is done explicitly
+      // — without this the font list names itself {{brand.product}}.
       fonts: Object.entries(surveyForm.themes.FONTS).map(([value, f]) => ({
-        value, label: f.label, category: f.category, stack: f.stack, note: f.note,
+        value, label: substitute(f.label), category: f.category, stack: f.stack, note: f.note,
         device: !!f.device, needs_upload: !!f.needsUpload
       })),
       scales: surveyForm.themes.SCALES,

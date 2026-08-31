@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Dev Circle — Members</title>
+  <title>{{brand.product}} — Members</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -20,7 +20,7 @@
       <div class="page-head-row">
         <div>
           <h1 class="page-title">Members</h1>
-          <p class="page-subtitle" id="subtitle">Every developer in the Credit Direct ecosystem.</p>
+          <p class="page-subtitle" id="subtitle">Every developer in the {{brand.organisation}} ecosystem.</p>
         </div>
         <div class="page-actions">
           <button class="btn btn-sm btn-secondary" onclick="openImport()">Import</button>
@@ -321,7 +321,7 @@
     document.getElementById('subtitle').textContent =
       Object.keys(filters).filter(k => filters[k]).length
         ? 'Filtered view — clear the chips to see everyone.'
-        : 'Every developer in the Credit Direct ecosystem.';
+        : 'Every developer in the {{brand.organisation}} ecosystem.';
 
     document.getElementById('pagination').innerHTML = total ? `
       <span>${((page - 1) * PAGE_SIZE) + 1}–${Math.min(page * PAGE_SIZE, total)} of ${total}</span>

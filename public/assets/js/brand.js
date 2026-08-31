@@ -12,20 +12,20 @@
   const STYLE_ID = 'circle-brand-face';
   const SENTINEL = 'data-circle-branded';
 
-  function apply(theme) {
+  function apply(theme, name) {
     if (!theme || typeof theme !== 'object' || !window.SurveyTheme) return false;
 
     // Resolve to a full theme so derived colours (surfaces, tints, lines)
     // exist even when the brand only set an accent.
     const resolved = SurveyTheme.resolve(theme);
     const vars = SurveyTheme.toCSS(resolved);
-    for (const name of ALL_VARS()) {
+    for (const prop of ALL_VARS()) {
       // Clear everything first, so switching from an imaged brand to one
       // without imagery does not leave the old photograph behind.
-      root.style.removeProperty(name);
+      root.style.removeProperty(prop);
     }
-    for (const [name, value] of Object.entries(vars)) {
-      root.style.setProperty(name, value);
+    for (const [prop, value] of Object.entries(vars)) {
+      root.style.setProperty(prop, value);
     }
 
     // A brand typeface has to be declared in a stylesheet rather than set as
@@ -60,16 +60,7 @@
     }
 
     // A wordmark replaces the product name wherever the shell left a hook.
-    const logo = resolved.logo_url;
-    document.querySelectorAll('[data-brand-logo]').forEach(el => {
-      if (logo) {
-        el.innerHTML = `<img src="${logo}" alt="" class="brand-logo-img">`;
-        el.classList.add('has-logo');
-      } else {
-        el.innerHTML = '';
-        el.classList.remove('has-logo');
-      }
-    });
+    wordmark(resolved.logo_url, name);
 
     return true;
   }
@@ -83,9 +74,9 @@
   // a workspace that no longer names one.
   const ALL_VARS = () => [...Object.keys(SurveyTheme.toCSS(SurveyTheme.resolve({}))), '--survey-canvas'];
 
-  function clear() {
+  function clear(name) {
     if (!window.SurveyTheme) return;
-    for (const name of ALL_VARS()) root.style.removeProperty(name);
+    for (const prop of ALL_VARS()) root.style.removeProperty(prop);
     document.getElementById(STYLE_ID)?.remove();
     root.removeAttribute(SENTINEL);
     root.style.colorScheme = '';
@@ -97,18 +88,60 @@
         toggle.classList.remove('hide');
       }
     });
+    wordmark(null, name);
+  }
+
+  // ─── The wordmark ──────────────────────────────────────────
+  // Whose circle is this? Answered in the chrome, in the order the answer is
+  // worth having: the workspace's own logo if it uploaded one, its name if it
+  // did not, and the product's mark only when there is no workspace to name.
+  //
+  // The mark used to be blanked outright whenever a circle carried no logo,
+  // which left the corner of the shell empty for every workspace that had not
+  // uploaded one — and named the product rather than the circle even when it
+  // had a name to give.
+  //
+  // The shell writes the product mark into the hook itself, so the fallback is
+  // captured from the DOM on first touch rather than repeated here, where it
+  // would be a second copy to keep in step.
+  const PRODUCT_MARK = new WeakMap();
+
+  function wordmark(logo, name) {
     document.querySelectorAll('[data-brand-logo]').forEach(el => {
-      el.innerHTML = '';
+      if (!PRODUCT_MARK.has(el)) PRODUCT_MARK.set(el, el.innerHTML);
+
+      if (logo) {
+        // Built rather than interpolated: normalizeAsset() already confines a
+        // logo to an own-origin upload path, and this keeps it that way if that
+        // ever loosens.
+        const img = document.createElement('img');
+        img.src = logo;
+        img.alt = name || '';
+        img.className = 'brand-logo-img';
+        el.replaceChildren(img);
+        el.classList.add('has-logo');
+        return;
+      }
+
       el.classList.remove('has-logo');
+      // textContent, so a workspace cannot name itself in markup.
+      if (name) el.textContent = name;
+      else el.innerHTML = PRODUCT_MARK.get(el);
     });
   }
 
-  // Pick the brand of whichever circle is active in a list the API returned.
-  function fromList(circles, activeId) {
+  // The circle that is active in a list the API returned. Both /auth/me and
+  // /users/profile carry the name beside the brand, so one lookup answers both
+  // halves of "whose circle am I in".
+  function activeIn(circles, activeId) {
     if (!Array.isArray(circles) || !circles.length) return null;
-    const current = circles.find(c => c.id === activeId) || circles[0];
-    return current?.brand || null;
+    return circles.find(c => c.id === activeId) || circles[0];
   }
 
-  window.Brand = { apply, clear, fromList };
+  // Kept for callers that only want the look.
+  function fromList(circles, activeId) {
+    return activeIn(circles, activeId)?.brand || null;
+  }
+
+  window.Brand = { apply, clear, fromList, activeIn };
 })();

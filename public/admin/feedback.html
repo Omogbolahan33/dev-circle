@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Dev Circle — Feedback</title>
+  <title>{{brand.product}} — Feedback</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -145,7 +145,7 @@
   Shell.admin('feedback');
 
   const SOURCE_LABELS = {
-    dev_circle: 'Dev Circle', survey: 'Survey answer', external_survey: 'Form run elsewhere',
+    dev_circle: '{{brand.product}}', survey: 'Survey answer', external_survey: 'Form run elsewhere',
     feex: 'Feex', customer_io: 'Customer.io'
   };
 
@@ -273,7 +273,7 @@
         list.innerHTML = emptyState({
           title: 'Nothing here',
           text: filters.search ? 'No question or answer contains that.'
-            : 'Feedback collects here from surveys run in Dev Circle, forms run elsewhere, and what developers raise on their own.'
+            : 'Feedback collects here from surveys run in {{brand.product}}, forms run elsewhere, and what developers raise on their own.'
         });
         return;
       }

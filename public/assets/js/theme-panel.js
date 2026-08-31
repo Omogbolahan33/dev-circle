@@ -290,8 +290,8 @@ const ThemePanel = (() => {
       // form that has no opening screen of its own has no place for it to sit.
       const imagesBody = `
         ${assetRow('logo_url', theme.logo_url, 'image', 'Wordmark', screens
-          ? 'Replaces the Dev Circle mark in the bar and on the opening screen.'
-          : 'Replaces the Dev Circle mark in the bar.')}
+          ? 'Replaces the {{brand.product}} mark in the bar and on the opening screen.'
+          : 'Replaces the {{brand.product}} mark in the bar.')}
         ${screens ? assetRow('header_image', theme.header_image, 'image', 'Opening image', 'Sits above the headline on the first screen.') : ''}
         ${assetRow('background_image', theme.background_image, 'image', 'Background image')}
         ${theme.background_image ? `

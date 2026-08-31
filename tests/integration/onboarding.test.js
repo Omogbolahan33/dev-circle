@@ -345,6 +345,38 @@ test('an application without a usable email is refused before it reaches anybody
   assert.equal((await queue()).body.applications.length, 0);
 });
 
+// A form decides what it asks. Migration 28 made users.name nullable and FIELDS
+// marks the name `recommended` rather than `required` for exactly that reason —
+// but the submit route went on refusing an application that carried no name, so
+// a circle that had deliberately left the question out could publish a form
+// that nobody was able to send in. What the form did not collect is the
+// member's to fill in on their own profile afterwards.
+test('a form that never asks for a name can still be sent in, and approving it makes a nameless member', async () => {
+  const form = await live({ questions: IDENTITY.filter(q => q.maps_to !== 'name') });
+
+  const { sent } = await fillIn(form, {
+    'Which email should we use?': 'nameless@paystack.africa',
+    'And your phone number?': '0803 555 0199'
+  });
+  assert.equal(sent.status, 200, JSON.stringify(sent.body));
+
+  const waiting = await queue();
+  assert.equal(waiting.body.applications.length, 1);
+  const application = waiting.body.applications[0];
+  assert.equal(application.email, 'nameless@paystack.africa');
+  assert.equal(application.name, null, 'the application carries no name');
+
+  const approved = await h.post(
+    `/api/admin/onboarding-applications/${application.id}/approve`, {}, { token: adminToken });
+  assert.equal(approved.status, 200, JSON.stringify(approved.body));
+  assert.equal(approved.body.created, true);
+
+  const user = h.db.prepare('SELECT * FROM users WHERE email = ?').get('nameless@paystack.africa');
+  assert.ok(user, 'the member should exist');
+  assert.equal(user.name, null, 'and be nameless until they say otherwise');
+  assert.ok(user.phone_normalized, 'the credential still needs its number');
+});
+
 test('the same form cannot be sent in twice from one browser', async () => {
   const form = await live();
   const { key } = await fillIn(form, WHO);

@@ -111,7 +111,7 @@ async function deliver(user, identity, code) {
     // The delivery log only accepts the engagement source_type set; a code is
     // a system transaction.
     sourceType: 'system',
-    title: `${code} is your Dev Circle sign-in code`,
+    title: `${code} is your ${config.brand.product} sign-in code`,
     body: `Enter ${code} to sign in. It expires in ${minutes} minutes. ` +
           'If you did not try to sign in, you can ignore this message.'
   });

@@ -1,4 +1,4 @@
-const { wrapLayout, toPlainText, escapeHtml } = require('./layout');
+const { wrapLayout, toPlainText, escapeHtml, brand } = require('./layout');
 
 function renderGeneric({
   title,
@@ -9,7 +9,7 @@ function renderGeneric({
   recipientName = null,
   appUrl
 }) {
-  const displayTitle = title || 'Notification from Credit Direct Dev Circle';
+  const displayTitle = title || `Notification from ${brand.full}`;
   const greeting = recipientName ? `Hello ${escapeHtml(recipientName)},` : '';
 
   const paragraphs = htmlContent || String(body || '')

@@ -206,12 +206,21 @@ router.post('/:token/submit', submitting, async (req, res) => {
   // for why this cannot wait until somebody reviews it.
   const { profile, consent } = onboarding.resolveProfile(questions, checked.answers);
 
+  // Email is half the credential — a participant signs in with it and the last
+  // six digits of their phone — so an application carrying none produces a
+  // member who could never sign in. canGoOut() already refuses to publish a
+  // form that does not ask for it; this is the backstop for forms that predate
+  // that rule.
   if (!profile.email) {
     return res.status(400).json({ error: 'We need an email address we can reach you on' });
   }
-  if (!profile.name) {
-    return res.status(400).json({ error: 'We need a name to put to this' });
-  }
+
+  // A name is deliberately not required here. Migration 28 made users.name
+  // nullable and FIELDS marks name `recommended` rather than `required`,
+  // because what a form asks is the circle's to decide — but this check was
+  // left behind, so a form that never showed a name field was rejected on
+  // submit for not carrying one. Whatever the form did not collect is the
+  // member's to fill in on their profile afterwards.
 
   // What a second application from one address means is the form's decision,
   // because it depends on where it has been posted. A form on one partner's
@@ -256,7 +265,7 @@ router.post('/:token/submit', submitting, async (req, res) => {
     JSON.stringify(profile),
     JSON.stringify(consent),
     profile.email,
-    profile.name,
+    profile.name ?? null,
     submission.id
   );
 

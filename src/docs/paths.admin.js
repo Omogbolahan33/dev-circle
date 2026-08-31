@@ -9,6 +9,7 @@ const {
   CHANNELS, API_KEY_SCOPES, SESSION_TYPES
 } = require('./components');
 const { op, json, jsonBody, fileResponse, query, path } = require('./operation');
+const config = require('../config');
 
 const MEMBER_ID = '9f1c2a44-6d0b-4a1e-9c2f-7b1d3e5a8c40';
 
@@ -607,7 +608,7 @@ const paths = {
       description: [
         'A question is a thing in its own right rather than an entry inside one survey, so',
         'answers to it read together whichever survey carried it — including surveys run',
-        'outside Dev Circle.',
+        `outside ${config.brand.product}.`,
         '',
         'A survey normally asks several open questions, so a survey and a question are not',
         'the same unit: four surveys can produce seven questions.'
@@ -2581,7 +2582,7 @@ const paths = {
       summary: 'Move feedback through triage',
       description: [
         'This records how far the engagement team has got through *reading* feedback. It is',
-        'triage state, not ticket resolution — Dev Circle collects information, it does not',
+        `triage state, not ticket resolution — ${config.brand.product} collects information, it does not`,
         'resolve issues.',
         '',
         'A complaint mirrored from Feex is owned by Feex and cannot be edited here; the',
@@ -2599,7 +2600,7 @@ const paths = {
         400: json('Missing or invalid status.', ref('Error'), { error: 'Invalid status' }),
         404: json('No such feedback.', ref('Error'), { error: 'Feedback not found' }),
         409: json('The complaint belongs to Feex.', ref('Error'), {
-          error: 'This complaint is owned by Feex. Update it there — Dev Circle mirrors its status for engagement tracking only.',
+          error: `This complaint is owned by Feex. Update it there — ${config.brand.product} mirrors its status for engagement tracking only.`,
           ticket_id: 'FEEX-10428',
           feex_status: 'in_progress',
           feex_url: 'https://feex.creditdirect.ng/tickets/10428'
@@ -2930,10 +2931,10 @@ const paths = {
       operationId: 'getCredentials',
       summary: 'Every credential this deployment holds or issues',
       description: [
-        'Two halves. **Inbound** are the keys Dev Circle issues to integrations; they are',
+        `Two halves. **Inbound** are the keys ${config.brand.product} issues to integrations; they are`,
         'stored as hashes and managed entirely through this API.',
         '',
-        '**Outbound** are the credentials Dev Circle holds for the providers it calls.',
+        `**Outbound** are the credentials ${config.brand.product} holds for the providers it calls.`,
         'Signing a provider request needs those in cleartext, so they live in the',
         'environment rather than the database and this endpoint reports only whether each',
         'one is set — never its value.'
@@ -3271,7 +3272,7 @@ const paths = {
           tags: arrayOf(object({}), 'How the operations are grouped'),
           paths: object({}, { description: 'Every endpoint' }),
           components: object({}, { description: 'Schemas, security schemes and shared responses' })
-        }), { openapi: '3.0.3', info: { title: 'Dev Circle API', version: '1.0.0' } })
+        }), { openapi: '3.0.3', info: { title: `${config.brand.product} API`, version: '1.0.0' } })
       }
     })
   }

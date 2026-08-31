@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Dev Circle — API reference</title>
+  <title>{{brand.product}} — API reference</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -279,7 +279,7 @@
       <div class="page-head-row">
         <div>
           <h1 class="page-title">API reference</h1>
-          <p class="page-subtitle">Every Dev Circle endpoint, with payloads, responses and a live console. Share it with anybody building against the platform.</p>
+          <p class="page-subtitle">Every {{brand.product}} endpoint, with payloads, responses and a live console. Share it with anybody building against the platform.</p>
         </div>
         <div class="page-actions">
           <button class="btn btn-sm btn-secondary" onclick="copySpecUrl()">Copy spec URL</button>
@@ -523,7 +523,7 @@
 
   const QUICKSTART = {
     curl: `# 1. Sign in. A developer gives the last six digits of their phone
-#    number; Credit Direct staff give a password instead.
+#    number; {{brand.organisation}} staff give a password instead.
 curl -X POST '${window.location.origin}/api/auth/login' \\
   -H 'Content-Type: application/json' \\
   -d '{"identifier":"chidi@paystack.africa","digits":"550142"}'

@@ -433,7 +433,7 @@ router.post('/sso/exchange', async (req, res) => {
   }
 
   if (!user) {
-    return res.status(404).json({ error: 'No Dev Circle account linked to this Developer Hub user' });
+    return res.status(404).json({ error: `No ${config.brand.product} account linked to this Developer Hub user` });
   }
 
   if (user.status !== 'active') {

@@ -159,9 +159,11 @@ const Shell = {
     this.applyBrand();
   },
 
-  // Paint the shell with the active workspace's brand. Admins get it on
-  // /auth/me (the same call the switcher makes); members get it on
-  // /users/profile. A circle with no brand falls back to the product look.
+  // Paint the shell with the active workspace's brand, and name it. Admins get
+  // both on /auth/me (the same call the switcher makes); members get them on
+  // /users/profile. A circle with no brand falls back to the product look, and
+  // one with no logo is named rather than left blank — signed in, the chrome
+  // should say whose circle you are in, not whose software it is.
   async applyBrand() {
     if (!window.Brand) return;
     try {
@@ -176,9 +178,9 @@ const Shell = {
         list = profile.circles;
       }
 
-      const brand = window.Brand.fromList(list, activeId);
-      if (brand) window.Brand.apply(brand);
-      else window.Brand.clear();
+      const current = window.Brand.activeIn(list, activeId);
+      if (current?.brand) window.Brand.apply(current.brand, current.name);
+      else window.Brand.clear(current?.name);
     } catch {
       // The console works unbranded if the brand call fails — never block.
     }
@@ -200,7 +202,7 @@ const Shell = {
     return `
       <aside class="sidebar" id="sidebar">
         <a href="/admin/dashboard.html" class="sidebar-brand">
-          <span class="brand-mark" id="brandMark" data-brand-logo>dev<span>.</span>circle</span>
+          <span class="brand-mark" id="brandMark" data-brand-logo>{{brand.mark}}</span>
           <span class="brand-badge">Admin</span>
         </a>
         <button class="sidebar-search" onclick="Shell.openPalette()">
@@ -247,7 +249,7 @@ const Shell = {
     return `
       <div class="mobile-bar">
         <button class="icon-btn" onclick="Shell.openNav()" aria-label="Open navigation">${icon('menu', 18)}</button>
-        <span class="brand-mark" data-brand-logo>dev<span>.</span>circle</span>
+        <span class="brand-mark" data-brand-logo>{{brand.mark}}</span>
         <span class="spacer"></span>
         <span class="badge badge-info">${current ? current.label : 'Admin'}</span>
       </div>`;
@@ -267,7 +269,7 @@ const Shell = {
       <header class="portal-bar">
         <div class="portal-bar-inner">
           <a href="/member/dashboard.html" class="sidebar-brand" style="padding:0;height:auto">
-            <span class="brand-mark" data-brand-logo>dev<span>.</span>circle</span>
+            <span class="brand-mark" data-brand-logo>{{brand.mark}}</span>
           </a>
 
           <!-- Current page, shown in the bar on a phone where the link row

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Dev Circle — Circles</title>
+  <title>{{brand.product}} — Circles</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -568,9 +568,12 @@
   }
 
   async function openBrand(id) {
-    brandState = { circleId: id, theme: {}, canBrand: false, loaded: false };
     const circle = circles.find(c => c.id === id);
-    document.getElementById('brandCircleName').textContent = circle ? circle.name : '';
+    brandState = {
+      circleId: id, name: circle ? circle.name : '',
+      theme: {}, canBrand: false, loaded: false
+    };
+    document.getElementById('brandCircleName').textContent = brandState.name;
     Shell.openDrawer('brandDrawer');
 
     // Controls populated once from the engine's own catalogues, so an option
@@ -659,7 +662,7 @@
         previewBrand();
         // If this is the workspace the console is in, repaint it immediately.
         if (brandState.circleId === Auth.getCircle() && window.Brand) {
-          window.Brand.apply(res.brand || brandState.theme);
+          window.Brand.apply(res.brand || brandState.theme, brandState.name);
         }
       } catch (err) {
         showToast(err.message, 'error');
@@ -682,7 +685,7 @@
         document.getElementById('brandBackground').value = 'plain';
         showToast('Branding reset');
         previewBrand();
-        if (brandState.circleId === Auth.getCircle() && window.Brand) window.Brand.clear();
+        if (brandState.circleId === Auth.getCircle() && window.Brand) window.Brand.clear(brandState.name);
       } catch (err) {
         showToast(err.message, 'error');
       }

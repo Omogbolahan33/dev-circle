@@ -1,4 +1,4 @@
-const { wrapLayout, toPlainText, escapeHtml } = require('./layout');
+const { wrapLayout, toPlainText, escapeHtml, brand } = require('./layout');
 
 function renderSessionInvite({
   sessionTitle,
@@ -14,7 +14,7 @@ function renderSessionInvite({
 
   const contentHtml = `
     <p style="margin-top: 0;">${greeting}</p>
-    <p>You're invited to attend an upcoming session on Credit Direct Dev Circle:</p>
+    <p>You're invited to attend an upcoming session on ${brand.full}:</p>
     
     <div style="background-color: #F8FAFC; border-left: 4px solid #107EBC; padding: 16px; margin: 20px 0; border-radius: 0 6px 6px 0;">
       <div style="font-size: 16px; font-weight: 700; color: #0F172A; margin-bottom: 6px;">
@@ -30,7 +30,7 @@ function renderSessionInvite({
   const contentText = [
     recipientName ? `Hello ${recipientName},` : 'Hello,',
     '',
-    'You are invited to attend an upcoming session on Credit Direct Dev Circle:',
+    `You are invited to attend an upcoming session on ${brand.full}:`,
     '',
     `Session: ${sessionTitle}`,
     sessionDescription ? `Description: ${sessionDescription}` : '',

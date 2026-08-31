@@ -129,10 +129,47 @@ const pgPool = {
       : false
 };
 
+// ─── Whose software this is ─────────────────────────────────
+// Distinct from a circle's brand, and the distinction is the point. A circle
+// brands the workspace you are inside once you have signed in — its name and
+// its logo in the chrome, painted by public/assets/js/brand.js. This is the
+// platform itself: the sign-in page, which renders before anybody is known and
+// so has no circle to name, every browser tab, and the foot of every email.
+//
+// It lives here rather than in the markup because it was written into 72 files
+// by hand, which meant the product could not be renamed and a second
+// deployment could not be branded at all. Pages and the two shell scripts read
+// it through the {{brand.*}} tokens that middleware/brand.js substitutes at
+// serve time; server-side callers read it straight off config.
+//
+// The defaults are Credit Direct's own, taken from docs/visual-identity.md and
+// public/assets/css/tokens.css (Denim blue #107EBC).
+const BRAND_PRODUCT = process.env.BRAND_PRODUCT || 'Dev Circle';
+const BRAND_ORG = process.env.BRAND_ORG || 'Credit Direct';
+const BRAND_FULL = process.env.BRAND_FULL || `${BRAND_ORG} ${BRAND_PRODUCT}`;
+
 const config = {
   env: NODE_ENV,
   isProduction,
   port: parseInt(process.env.PORT, 10) || 3000,
+
+  brand: {
+    // "Dev Circle" on its own, for the places already inside the product.
+    product: BRAND_PRODUCT,
+    // Who it belongs to.
+    organisation: BRAND_ORG,
+    // The attributed form, for anywhere it has to stand on its own — an email
+    // subject, the sign-in page, a browser tab in a stack of twenty.
+    full: BRAND_FULL,
+    // The line under the sign-in form. Credit Direct is CBN-licensed and says
+    // so wherever it signs its name.
+    legal: process.env.BRAND_LEGAL || `${BRAND_ORG} Limited · CBN Licensed`,
+    website: process.env.BRAND_URL || 'https://creditdirect.ng',
+    // No wordmark image ships with this repository — the mark in the chrome is
+    // set in type, not drawn. Point this at an uploaded asset to use a real
+    // one; until then the typographic mark stands in.
+    logoUrl: process.env.BRAND_LOGO_URL || null
+  },
 
   // ─── Database ────────────────────────────────────────────
   // Overridable so the test suite runs against a throwaway database instead
@@ -250,7 +287,7 @@ const config = {
   email: {
     provider: process.env.EMAIL_PROVIDER || 'auto',
     fromEmail: process.env.EMAIL_FROM || process.env.EMAIL_FROM_ADDRESS || 'devcircle@creditdirect.ng',
-    fromName: process.env.EMAIL_FROM_NAME || 'Credit Direct Dev Circle',
+    fromName: process.env.EMAIL_FROM_NAME || BRAND_FULL,
     replyTo: process.env.EMAIL_REPLY_TO || 'devrelations@creditdirect.ng',
     termii: {
       apiKey: process.env.TERMII_API_KEY || null,
@@ -302,7 +339,7 @@ const config = {
       })(),
 
       fromEmail: process.env.EMAIL_FROM || 'devcircle@creditdirect.ng',
-      fromName: process.env.EMAIL_FROM_NAME || 'Credit Direct Dev Circle',
+      fromName: process.env.EMAIL_FROM_NAME || BRAND_FULL,
       replyTo: process.env.EMAIL_REPLY_TO || 'devrelations@creditdirect.ng',
 
       get configured() {
@@ -312,7 +349,7 @@ const config = {
     simpu: {
       apiKey: process.env.SIMPU_API_KEY || null,
       senderId: process.env.SIMPU_SENDER_ID || process.env.EMAIL_FROM || 'devcircle@creditdirect.ng',
-      fromName: process.env.SIMPU_FROM_NAME || process.env.EMAIL_FROM_NAME || 'Credit Direct Dev Circle',
+      fromName: process.env.SIMPU_FROM_NAME || process.env.EMAIL_FROM_NAME || BRAND_FULL,
       baseUrl: (process.env.SIMPU_BASE_URL || 'https://api.simpu.co').replace(/\/+$/, ''),
       get configured() {
         return Boolean(this.apiKey);

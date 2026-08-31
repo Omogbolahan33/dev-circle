@@ -29,7 +29,7 @@ const permissionTable = () => {
 };
 
 const description = () => `
-Dev Circle is the engagement platform for the Credit Direct developer ecosystem — surveys,
+${config.brand.product} is the engagement platform for the Credit Direct developer ecosystem — surveys,
 cohorts, consent-aware messaging and engagement history for the developers integrating our APIs.
 
 This reference covers every endpoint the platform serves. Each operation carries a worked
@@ -177,7 +177,7 @@ A 429 adds \`Retry-After\`. Back off on the header rather than on a fixed sleep.
 ## Webhooks and replay
 
 Inbound events from Customer.io, Feex and the Developer Hub are written to the integration
-log **before** they are acted on. An event for a member Dev Circle does not know yet is kept
+log **before** they are acted on. An event for a member ${config.brand.product} does not know yet is kept
 unprocessed rather than dropped — \`GET /integrations/events/pending\` lists what is waiting,
 and the sender can replay it once the member exists.
 
@@ -211,7 +211,7 @@ const tags = [
   { name: 'Admin · Rewards', description: 'The reward catalogue, its eligibility rules and fulfilment.' },
   { name: 'Admin · Feedback', description: 'Reading and triaging feedback, including complaints mirrored from Feex.' },
   { name: 'Admin · Access control', description: 'Roles, permissions and staff accounts.' },
-  { name: 'Admin · Credentials', description: 'The keys Dev Circle issues to integrations, end to end — issue, inspect, re-scope, rotate and revoke — plus the state of the outbound provider credentials.' },
+  { name: 'Admin · Credentials', description: `The keys ${config.brand.product} issues to integrations, end to end — issue, inspect, re-scope, rotate and revoke — plus the state of the outbound provider credentials.` },
   { name: 'Admin · Integrations', description: 'The inbound event log: everything the connected systems have sent.' },
   { name: 'Admin · Sandbox', description: 'The throwaway database this reference can be pointed at.' },
   { name: 'Admin · API reference', description: 'This document.' }
@@ -223,7 +223,7 @@ function build() {
   return {
     openapi: '3.0.3',
     info: {
-      title: 'Dev Circle API',
+      title: `${config.brand.product} API`,
       version: pkg.version,
       description: description(),
       contact: {

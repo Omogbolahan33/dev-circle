@@ -382,7 +382,7 @@ async function drainDeferred() {
 
     const outcome = await dispatchToProvider(row.channel, user, {
       category: source?.category || 'platform_updates',
-      title: source?.title || 'You have an update from Dev Circle',
+      title: source?.title || `You have an update from ${config.brand.product}`,
       body: source?.body || null,
       action_url: source?.action_url || null,
       notification_id: source?.id || null,

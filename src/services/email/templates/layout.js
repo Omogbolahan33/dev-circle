@@ -1,6 +1,11 @@
 // ─── Email Layout & Branding ──────────────────────────────────────────
 // Responsive HTML email wrapper and plain text converter grounded in
 // the Credit Direct brand system.
+//
+// The product's name reaches the templates from here rather than from each of
+// them: they all wrap themselves in this layout already, so one import is the
+// whole of what a template needs to say who the mail is from. See config.brand.
+const { brand } = require('../../../config');
 
 function escapeHtml(str) {
   if (str === null || str === undefined) return '';
@@ -31,7 +36,7 @@ function wrapLayout({
   appUrl = 'https://devcircle.creditdirect.ng',
   supportEmail = 'devrelations@creditdirect.ng'
 }) {
-  const safeTitle = escapeHtml(title || 'Credit Direct Dev Circle');
+  const safeTitle = escapeHtml(title || `${brand.full}`);
   const safePreview = escapeHtml(previewText || title || '');
 
   const actionBlock = (actionText && actionUrl) ? `
@@ -99,10 +104,10 @@ function wrapLayout({
                 <tr>
                   <td>
                     <div style="font-size: 13px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #E6B473; margin-bottom: 4px;">
-                      Credit Direct
+                      ${brand.organisation}
                     </div>
                     <div style="font-size: 22px; font-weight: 800; color: #FFFFFF; letter-spacing: -0.02em;">
-                      Dev Circle
+                      ${brand.product}
                     </div>
                   </td>
                   <td align="right" style="vertical-align: middle;">
@@ -135,10 +140,10 @@ function wrapLayout({
           <tr>
             <td style="background-color: #F8FAFC; padding: 24px 32px; border-top: 1px solid #E2E8F0; font-size: 12px; color: #64748B; line-height: 1.6;">
               <div style="margin-bottom: 8px;">
-                <strong>Credit Direct Dev Circle</strong> &middot; Engagement and feedback for developers integrating Credit Direct APIs.
+                <strong>${brand.full}</strong> &middot; Engagement and feedback for developers integrating ${brand.organisation} APIs.
               </div>
               <div style="margin-bottom: 8px;">
-                You are receiving this email because you are a registered participant or administrator in the Credit Direct developer community.
+                You are receiving this email because you are a registered participant or administrator in the ${brand.organisation} developer community.
               </div>
               <div style="font-size: 11px; color: #94A3B8;">
                 <a href="${escapeHtml(appUrl)}/member/notifications.html" style="color: #107EBC; text-decoration: underline;">Notification Preferences</a> &middot;
@@ -146,7 +151,7 @@ function wrapLayout({
                 <a href="mailto:${escapeHtml(supportEmail)}" style="color: #107EBC; text-decoration: underline;">Support</a>
               </div>
               <div style="margin-top: 12px; font-size: 11px; color: #94A3B8;">
-                &copy; ${new Date().getFullYear()} Credit Direct Limited. All rights reserved.
+                &copy; ${new Date().getFullYear()} ${brand.organisation} Limited. All rights reserved.
               </div>
             </td>
           </tr>
@@ -183,10 +188,10 @@ function toPlainText({ title, contentText, actionText = null, actionUrl = null, 
 
   lines.push(
     '----------------------------------------',
-    'Credit Direct Dev Circle — Developer Ecosystem',
+    `${brand.full} — Developer Ecosystem`,
     `Manage preferences: ${appUrl}/member/notifications.html`,
     `Visit portal: ${appUrl}`,
-    `© ${new Date().getFullYear()} Credit Direct Limited.`
+    `© ${new Date().getFullYear()} ${brand.organisation} Limited.`
   );
 
   return lines.filter(line => line !== null && line !== undefined).join('\n');
@@ -195,5 +200,6 @@ function toPlainText({ title, contentText, actionText = null, actionUrl = null, 
 module.exports = {
   wrapLayout,
   toPlainText,
-  escapeHtml
+  escapeHtml,
+  brand
 };

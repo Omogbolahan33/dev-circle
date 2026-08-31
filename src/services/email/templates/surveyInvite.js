@@ -1,4 +1,4 @@
-const { wrapLayout, toPlainText, escapeHtml } = require('./layout');
+const { wrapLayout, toPlainText, escapeHtml, brand } = require('./layout');
 
 function renderSurveyInvite({
   surveyTitle,
@@ -16,7 +16,7 @@ function renderSurveyInvite({
 
   const contentHtml = `
     <p style="margin-top: 0;">${greeting}</p>
-    <p>You have been invited to participate in a survey on Credit Direct Dev Circle:</p>
+    <p>You have been invited to participate in a survey on ${brand.full}:</p>
     
     <div style="background-color: #F8FAFC; border-left: 4px solid #107EBC; padding: 16px; margin: 20px 0; border-radius: 0 6px 6px 0;">
       <div style="font-size: 16px; font-weight: 700; color: #0F172A; margin-bottom: 6px;">
@@ -32,7 +32,7 @@ function renderSurveyInvite({
   const contentText = [
     recipientName ? `Hello ${recipientName},` : 'Hello,',
     '',
-    'You have been invited to participate in a survey on Credit Direct Dev Circle:',
+    `You have been invited to participate in a survey on ${brand.full}:`,
     '',
     `Survey: ${surveyTitle}`,
     surveyDescription ? `Description: ${surveyDescription}` : '',

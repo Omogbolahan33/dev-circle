@@ -11,6 +11,7 @@ const responseImport = require('../../services/responseImport');
 const verbatims = require('../../services/verbatims');
 const { parseXLSX } = require('../../utils/xlsx');
 const identity = require('../../utils/identity');
+const { substitute } = require('../../middleware/brand');
 
 const router = express.Router();
 
@@ -80,8 +81,12 @@ router.get('/surveys/schema', requirePermission('surveys.read'), async (req, res
       defaults: surveyForm.themes.DEFAULTS,
       // Sent with the stacks themselves, so the builder can set each option in
       // its own type — a font list you cannot see is a list of words
+      // survey-theme.js is loaded two ways: served to the browser, where the
+      // brand token in a label is substituted on the way out, and required
+      // here on the server, where nothing does that. So it is done explicitly
+      // — without this the font list names itself {{brand.product}}.
       fonts: Object.entries(surveyForm.themes.FONTS).map(([value, f]) => ({
-        value, label: f.label, category: f.category, stack: f.stack, note: f.note,
+        value, label: substitute(f.label), category: f.category, stack: f.stack, note: f.note,
         // Not served from here: it renders for readers who already have it
         device: !!f.device,
         needs_upload: !!f.needsUpload

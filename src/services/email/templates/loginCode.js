@@ -1,4 +1,4 @@
-const { wrapLayout, toPlainText, escapeHtml } = require('./layout');
+const { wrapLayout, toPlainText, escapeHtml, brand } = require('./layout');
 
 function renderLoginCode({
   code,
@@ -10,7 +10,7 @@ function renderLoginCode({
 
   const contentHtml = `
     <p style="margin-top: 0;">${greeting}</p>
-    <p>Use the one-time verification code below to sign in to your Dev Circle account:</p>
+    <p>Use the one-time verification code below to sign in to your ${brand.product} account:</p>
     
     <div style="text-align: center; margin: 30px 0;">
       <div style="display: inline-block; background-color: #F8FAFC; border: 2px dashed #107EBC; border-radius: 8px; padding: 18px 36px; font-family: 'JetBrains Mono', monospace, Courier; font-size: 32px; font-weight: 800; letter-spacing: 0.25em; color: #0B5A8A;">
@@ -29,7 +29,7 @@ function renderLoginCode({
   const contentText = [
     recipientName ? `Hello ${recipientName},` : 'Hello,',
     '',
-    'Use the one-time verification code below to sign in to your Dev Circle account:',
+    `Use the one-time verification code below to sign in to your ${brand.product} account:`,
     '',
     `     CODE: ${code}`,
     '',
@@ -39,16 +39,16 @@ function renderLoginCode({
   ].join('\n');
 
   return {
-    subject: `${code} is your Dev Circle sign-in code`,
-    previewText: `${code} is your verification code for Credit Direct Dev Circle`,
+    subject: `${code} is your ${brand.product} sign-in code`,
+    previewText: `${code} is your verification code for ${brand.full}`,
     html: wrapLayout({
-      title: 'Dev Circle Sign-In Code',
+      title: `${brand.product} Sign-In Code`,
       previewText: `${code} is your verification code`,
       contentHtml,
       appUrl
     }),
     text: toPlainText({
-      title: 'Dev Circle Sign-In Code',
+      title: `${brand.product} Sign-In Code`,
       contentText,
       appUrl
     })

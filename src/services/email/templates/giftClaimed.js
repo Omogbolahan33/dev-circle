@@ -1,4 +1,4 @@
-const { wrapLayout, toPlainText, escapeHtml } = require('./layout');
+const { wrapLayout, toPlainText, escapeHtml, brand } = require('./layout');
 
 function renderGiftClaimed({
   giftName,
@@ -19,7 +19,7 @@ function renderGiftClaimed({
       ${valDisplay ? `<div style="font-size: 14px; font-weight: 600; color: #15803D; margin-top: 4px;">Value: ${escapeHtml(valDisplay)}</div>` : ''}
     </div>
 
-    <p>A member of our developer relations team will process your claim and deliver your reward shortly. Thank you for being an active part of Dev Circle!</p>
+    <p>A member of our developer relations team will process your claim and deliver your reward shortly. Thank you for being an active part of ${brand.product}!</p>
   `;
 
   const contentText = [
@@ -30,7 +30,7 @@ function renderGiftClaimed({
     '',
     'A member of our developer relations team will process your claim and deliver your reward shortly.',
     '',
-    'Thank you for being an active part of Credit Direct Dev Circle!'
+    `Thank you for being an active part of ${brand.full}!`
   ].filter(Boolean).join('\n');
 
   return {
