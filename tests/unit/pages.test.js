@@ -50,6 +50,13 @@ function globalsFrom(source) {
 // Template literals are the interesting case: the text between the backticks is
 // data, but the ${…} holes in it are code and hold most of the calls a page
 // makes. So the text goes and the holes stay.
+// Words a regex literal may follow — after these a slash opens a pattern, where
+// after an identifier or a closing bracket it divides.
+const REGEX_MAY_FOLLOW = new Set([
+  'return', 'typeof', 'instanceof', 'in', 'of', 'new', 'delete', 'void',
+  'case', 'do', 'else', 'yield', 'await'
+]);
+
 function stripLiterals(source) {
   let out = '';
   let i = 0;
@@ -93,6 +100,37 @@ function stripLiterals(source) {
       while (i < source.length && !(source[i] === '*' && source[i + 1] === '/')) i++;
       i += 2;
       continue;
+    }
+    // A regex literal, which is neither code to keep nor a string to skip past
+    // — and which bites hardest when it contains a quote. /[",\n|]/ in the CSV
+    // escaper read as the start of a string, and the scanner then swallowed
+    // every remaining line of question-import.js as string content: no error,
+    // no finding, just half a module nothing looked at any more.
+    //
+    // Telling a regex from a division is the usual guess: after a value — an
+    // identifier, a number, a closing bracket — a slash divides; after an
+    // operator, a comma, or a keyword like `return`, it opens a regex.
+    if (char === '/' && next !== '/' && next !== '*') {
+      const before = out.replace(/\s+$/, '');
+      const previous = before[before.length - 1] || '';
+      const word = (before.match(/[A-Za-z_$][\w$]*$/) || [''])[0];
+
+      if (!/[\w$)\]]/.test(previous) || REGEX_MAY_FOLLOW.has(word)) {
+        i++;
+        let inClass = false;
+        while (i < source.length) {
+          const c = source[i];
+          if (c === '\\') { i += 2; continue; }
+          if (c === '\n') break;              // an unterminated one: not a regex
+          if (c === '[') inClass = true;
+          else if (c === ']') inClass = false;
+          else if (c === '/' && !inClass) { i++; break; }
+          i++;
+        }
+        while (i < source.length && /[a-z]/.test(source[i])) i++;   // flags
+        out += ' ';
+        continue;
+      }
     }
     if (char === "'" || char === '"') {
       const quote = char;
@@ -294,7 +332,8 @@ test('no page loads the same script twice', () => {
 // The first check in this file reads bare `name(` calls and leaves `obj.name(`
 // to somebody else. This is somebody else. A module written as an IIFE has
 // exactly the methods its `return {…}` names, and nothing warns you when a
-// function inside it never makes that list.
+// function inside it never makes that list — not the browser, which says only
+// "is not a function", and not at a moment you would notice.
 
 // The body of the {…} that opens at `open`.
 function braceBody(source, open) {
@@ -342,7 +381,7 @@ function moduleCalls(source) {
   )].map(m => [m[1], m[2]]);
 }
 
-test('every module method an inline handler calls is one that module exposes', () => {
+test('every module method called anywhere is one that module exposes', () => {
   // QuestionImport defined add() and parse() and returned neither, so both of
   // the import drawer's buttons threw "QuestionImport.add is not a function".
   // The markup naming them is written by the module itself, so no check that
@@ -389,10 +428,22 @@ test('every module method an inline handler calls is one that module exposes', (
   const wrong = new Set();
   for (const file of [...pagesUnder(PUBLIC), ...assets]) {
     const source = fs.readFileSync(file, 'utf8');
-    for (const [module, method] of moduleCalls(source)) {
-      // A module this check cannot find is not a failure — a handler may call
-      // something a page defines for itself, and a check that cries wolf is a
-      // check nobody reads.
+
+    // Two passes, because neither sees the other's call sites. stripLiterals
+    // reads a file as code — right for a script, but in an HTML file it takes
+    // every attribute's quotes for a string and erases the handlers with them.
+    // So handlers are read from the raw text and ordinary calls from the code.
+    const calls = [
+      ...moduleCalls(source),
+      ...[...stripLiterals(source).matchAll(/\b([A-Z][A-Za-z0-9_$]*)\.([a-zA-Z_$][\w$]*)\s*\(/g)]
+        .map(m => [m[1], m[2]])
+    ];
+
+    for (const [module, method] of calls) {
+      // A module this check cannot find is not a failure — a call may land on
+      // something a page defines for itself, or on a browser object that
+      // happens to be capitalised, and a check that cries wolf is a check
+      // nobody reads.
       const names = exposes.get(module);
       if (names && !names.has(method)) wrong.add(`${path.relative(PUBLIC, file)}: ${module}.${method}()`);
     }
@@ -400,4 +451,46 @@ test('every module method an inline handler calls is one that module exposes', (
 
   assert.deepEqual([...wrong].sort(), [],
     '\nThese handlers call a method the module never exposes:\n' + [...wrong].sort().join('\n') + '\n');
+});
+
+test('every method called on a builder is one QuestionBuilder.create returns', () => {
+  // The seam the check above cannot see. QuestionImport calls straight into the
+  // builder it was handed — ctx.builder.importQuestions(ready) — and that is an
+  // ordinary method call in a script, not an inline handler, so nothing that
+  // reads onclick attributes goes near it. importQuestions() was written,
+  // wired up and never added to what create() returns, and the import drawer
+  // got all the way to "Add questions" before saying so.
+  //
+  // The returned surface is deliberately small (see the comment on it), which
+  // is exactly why the two halves drift: the feature is added in one file and
+  // the doorway it needs is in another.
+  const builderJs = path.join(PUBLIC, 'assets', 'js', 'question-builder.js');
+  const source = fs.readFileSync(builderJs, 'utf8');
+
+  // Every object this module hands out — create()'s instance and the module's
+  // own { create }. A union, because a caller reaching for a name in either is
+  // reaching for something that exists.
+  const surface = new Set();
+  for (const m of source.matchAll(/^ {0,6}return\s*\{/gm)) {
+    const tail = stripLiterals(source.slice(m.index));
+    for (const key of keysOf(braceBody(tail, tail.indexOf('{')))) surface.add(key);
+  }
+
+  const assetDir = path.join(PUBLIC, 'assets', 'js');
+  const files = [
+    ...pagesUnder(PUBLIC),
+    ...fs.readdirSync(assetDir).filter(f => f.endsWith('.js')).map(f => path.join(assetDir, f))
+  ];
+
+  const missing = new Set();
+  for (const file of files) {
+    // `builder.x()`, `builder?.x()` and `ctx.builder.x()` alike. Lower-case, so
+    // QuestionBuilder.create() is not mistaken for one of these.
+    for (const m of stripLiterals(fs.readFileSync(file, 'utf8')).matchAll(/\bbuilder\??\.([a-zA-Z_$][\w$]*)\s*\(/g)) {
+      if (!surface.has(m[1])) missing.add(`${path.relative(PUBLIC, file)}: builder.${m[1]}()`);
+    }
+  }
+
+  assert.deepEqual([...missing].sort(), [],
+    '\nThese call a builder method that create() does not return:\n' + [...missing].sort().join('\n') + '\n');
 });

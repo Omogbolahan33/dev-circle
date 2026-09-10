@@ -1302,6 +1302,7 @@ const QuestionBuilder = (() => {
       render,              // draw the question list
       preview,             // redraw the preview alone
       add: addQuestion,    // add a question of a type
+      importQuestions,     // file a validated batch from a bulk import
       renderTypeMenu,      // draw the "add a question" menu
       toggleTypeMenu,
       newId,
