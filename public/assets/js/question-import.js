@@ -419,7 +419,7 @@ const QuestionImport = (() => {
     Shell.closeDrawer('qiDrawer');
   }
 
-  return { parseCSVText, build, templateCSV, downloadTemplate, normalizeTypeName, open, close };
+  return { parseCSVText, build, templateCSV, downloadTemplate, normalizeTypeName, open, close, parse, add };
 })();
 
 if (typeof window !== 'undefined') window.QuestionImport = QuestionImport;

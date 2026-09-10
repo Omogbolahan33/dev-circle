@@ -263,3 +263,141 @@ test('no page declares the same function twice', () => {
   assert.deepEqual(clashes, [],
     '\nThese pages declare a function more than once — the later one wins:\n' + clashes.join('\n') + '\n');
 });
+
+test('no page loads the same script twice', () => {
+  // A repeated <script src> is not the harmless duplicate it looks like. These
+  // assets publish themselves with `const SurveyTheme = …` at the top level,
+  // and a second evaluation of that line is "Identifier 'SurveyTheme' has
+  // already been declared" — a SyntaxError, so the whole file is thrown away
+  // and the module the page wanted is the one thing it does not get. Both
+  // survey builders loaded survey-theme.js twice, three lines apart, and the
+  // page looked fine until the theme panel was opened.
+  const repeats = [];
+
+  for (const file of pagesUnder(PUBLIC)) {
+    const html = fs.readFileSync(file, 'utf8');
+
+    const seen = new Map();
+    for (const m of html.matchAll(/<script\s+src="([^"]+)"/g)) {
+      seen.set(m[1], (seen.get(m[1]) || 0) + 1);
+    }
+
+    const twice = [...seen].filter(([, count]) => count > 1).map(([src]) => src);
+    if (twice.length) repeats.push(`${path.relative(PUBLIC, file)}: ${twice.join(', ')}`);
+  }
+
+  assert.deepEqual(repeats, [],
+    '\nThese pages load the same script more than once — the second one throws:\n' + repeats.join('\n') + '\n');
+});
+
+// ─── Does a module actually expose what a handler calls? ────
+// The first check in this file reads bare `name(` calls and leaves `obj.name(`
+// to somebody else. This is somebody else. A module written as an IIFE has
+// exactly the methods its `return {…}` names, and nothing warns you when a
+// function inside it never makes that list.
+
+// The body of the {…} that opens at `open`.
+function braceBody(source, open) {
+  let depth = 0;
+  for (let i = open; i < source.length; i++) {
+    if (source[i] === '{') depth++;
+    else if (source[i] === '}' && !--depth) return source.slice(open + 1, i);
+  }
+  return '';
+}
+
+// Splits an object-literal body on the commas that belong to it, not the ones
+// inside nested objects, arrays or argument lists.
+function topLevelParts(body) {
+  const parts = [];
+  let depth = 0;
+  let start = 0;
+
+  for (let i = 0; i < body.length; i++) {
+    const c = body[i];
+    if (c === '{' || c === '[' || c === '(') depth++;
+    else if (c === '}' || c === ']' || c === ')') depth--;
+    else if (c === ',' && depth === 0) { parts.push(body.slice(start, i)); start = i + 1; }
+  }
+  parts.push(body.slice(start));
+  return parts;
+}
+
+// Both shapes this codebase uses: `openDrawer(id) {…}` in an object literal,
+// and the shorthand `{ open, close }` of an IIFE's return.
+function keysOf(body) {
+  const names = new Set();
+  for (const part of topLevelParts(body)) {
+    const m = part.match(/^\s*(?:async\s+)?(?:get\s+|set\s+)?\*?\s*([A-Za-z_$][\w$]*)\s*(?:[:(]|$)/);
+    if (m) names.add(m[1]);
+  }
+  return names;
+}
+
+// Module.method() written into an inline handler — in a page, or in the markup
+// a module renders for its own drawer, which is where this one hid.
+function moduleCalls(source) {
+  return [...source.matchAll(
+    /\son(?:click|change|input|submit|keyup|keydown)="\s*([A-Z][\w$]*)\.([A-Za-z_$][\w$]*)\s*\(/g
+  )].map(m => [m[1], m[2]]);
+}
+
+test('every module method an inline handler calls is one that module exposes', () => {
+  // QuestionImport defined add() and parse() and returned neither, so both of
+  // the import drawer's buttons threw "QuestionImport.add is not a function".
+  // The markup naming them is written by the module itself, so no check that
+  // reads only pages would ever have seen the call.
+  const assetDir = path.join(PUBLIC, 'assets', 'js');
+  const assets = fs.readdirSync(assetDir).filter(f => f.endsWith('.js')).map(f => path.join(assetDir, f));
+
+  // Indentation is what tells the module's own `return {…}` from the ones
+  // inside its functions, so the search for it reads the file as written.
+  // stripLiterals runs on the tail from there: it drops the text of a template
+  // (and with it the newlines), which is exactly what a line anchor cannot
+  // survive, but it leaves the braces balanced, which is what braceBody needs.
+  const bodyAt = (source, from) => {
+    const tail = stripLiterals(source.slice(from));
+    return braceBody(tail, tail.indexOf('{'));
+  };
+
+  const exposes = new Map();
+  for (const file of assets) {
+    const source = fs.readFileSync(file, 'utf8');
+    const clean = stripLiterals(source);
+
+    for (const m of source.matchAll(/^const ([A-Z][\w$]*)\s*=\s*([{(])/gm)) {
+      const [, name, opener] = m;
+      let names;
+
+      if (opener === '{') {
+        names = keysOf(bodyAt(source, m.index));
+      } else {
+        // An IIFE exposes what it returns and only that. The module's own
+        // return is the one at the outermost indent; the deeper ones belong to
+        // the functions inside it.
+        const returns = [...source.matchAll(/^ {0,2}return\s*\{/gm)];
+        const last = returns[returns.length - 1];
+        names = last ? keysOf(bodyAt(source, last.index)) : new Set();
+      }
+
+      // …plus anything bolted on after the fact.
+      for (const a of clean.matchAll(new RegExp(`[^\\w$.]${name}\\.([A-Za-z_$][\\w$]*)\\s*=[^=]`, 'g'))) names.add(a[1]);
+      exposes.set(name, names);
+    }
+  }
+
+  const wrong = new Set();
+  for (const file of [...pagesUnder(PUBLIC), ...assets]) {
+    const source = fs.readFileSync(file, 'utf8');
+    for (const [module, method] of moduleCalls(source)) {
+      // A module this check cannot find is not a failure — a handler may call
+      // something a page defines for itself, and a check that cries wolf is a
+      // check nobody reads.
+      const names = exposes.get(module);
+      if (names && !names.has(method)) wrong.add(`${path.relative(PUBLIC, file)}: ${module}.${method}()`);
+    }
+  }
+
+  assert.deepEqual([...wrong].sort(), [],
+    '\nThese handlers call a method the module never exposes:\n' + [...wrong].sort().join('\n') + '\n');
+});
