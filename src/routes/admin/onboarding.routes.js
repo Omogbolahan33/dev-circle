@@ -172,7 +172,7 @@ async function cohortsInCircle(ids, circleId) {
 }
 
 router.post('/onboarding', requirePermission('onboarding.write'), async (req, res) => {
-  const { name, description, redirect_url, submitted_message, duplicate_policy, status } = req.body;
+  const { name, description, redirect_url, submitted_message, duplicate_policy, admission, status } = req.body;
 
   if (!name || !String(name).trim()) return res.status(400).json({ error: 'name required' });
 
@@ -190,12 +190,18 @@ router.post('/onboarding', requirePermission('onboarding.write'), async (req, re
 
   const policy = ['replace', 'reject', 'allow'].includes(duplicate_policy) ? duplicate_policy : 'replace';
 
+  // Falls back to review rather than to whatever was sent. A form that asked for
+  // automatic admission in a way this route did not recognise must not get it by
+  // accident — the safe reading of an unrecognised value is the careful one.
+  const admitting = onboarding.normalizeAdmission(admission);
+
   const id = uuid();
   await db.prepare(`
     INSERT INTO onboarding_forms (id, circle_id, name, description, questions, theme, field_map,
                                   cohort_ids, status, public_token, allowed_origins,
-                                  redirect_url, submitted_message, duplicate_policy, created_by)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                  redirect_url, submitted_message, duplicate_policy, admission,
+                                  created_by)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id, req.circleId, String(name).trim(), description || null,
     JSON.stringify(definition.questions),
@@ -208,7 +214,7 @@ router.post('/onboarding', requirePermission('onboarding.write'), async (req, re
     // step nobody remembers to take.
     onboarding.publicToken(),
     JSON.stringify(origins),
-    redirect_url || null, submitted_message || null, policy, req.admin.id
+    redirect_url || null, submitted_message || null, policy, admitting, req.admin.id
   );
 
   const form = await db.prepare('SELECT * FROM onboarding_forms WHERE id = ?').get(id);
@@ -315,11 +321,19 @@ router.put('/onboarding/:id', requirePermission('onboarding.write'), async (req,
   const policy = ['replace', 'reject', 'allow'].includes(req.body.duplicate_policy)
     ? req.body.duplicate_policy : form.duplicate_policy;
 
+  // How people get in stays changeable for the life of the form, unlike its
+  // questions. It is not a record of what anybody was asked, and the reason to
+  // change it usually arrives from running the form: an open call that turns out
+  // to need no triage, or a queue that turns out to need one. Applications
+  // already decided are untouched either way — this only governs what happens to
+  // the next submission.
+  const admitting = onboarding.normalizeAdmission(req.body.admission, form.admission);
+
   await db.prepare(`
     UPDATE onboarding_forms
     SET name = ?, description = ?, questions = ?, theme = ?, field_map = ?, cohort_ids = ?,
         status = ?, allowed_origins = ?, redirect_url = ?, submitted_message = ?,
-        duplicate_policy = ?, updated_at = datetime('now')
+        duplicate_policy = ?, admission = ?, updated_at = datetime('now')
     WHERE id = ?
   `).run(
     req.body.name ? String(req.body.name).trim() : form.name,
@@ -333,6 +347,7 @@ router.put('/onboarding/:id', requirePermission('onboarding.write'), async (req,
     req.body.redirect_url ?? form.redirect_url,
     req.body.submitted_message ?? form.submitted_message,
     policy,
+    admitting,
     form.id
   );
 
@@ -361,8 +376,9 @@ router.post('/onboarding/:id/duplicate', requirePermission('onboarding.write'), 
   await db.prepare(`
     INSERT INTO onboarding_forms (id, circle_id, name, description, questions, theme, field_map,
                                   cohort_ids, status, public_token, allowed_origins,
-                                  redirect_url, submitted_message, duplicate_policy, created_by)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?)
+                                  redirect_url, submitted_message, duplicate_policy, admission,
+                                  created_by)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id, form.circle_id, `${form.name} (copy)`, form.description,
     JSON.stringify(questions), form.theme, JSON.stringify(field_map), form.cohort_ids,
@@ -370,7 +386,11 @@ router.post('/onboarding/:id/duplicate', requirePermission('onboarding.write'), 
     // would mean closing the original closed the copy.
     onboarding.publicToken(),
     form.allowed_origins, form.redirect_url, form.submitted_message,
-    form.duplicate_policy, req.admin.id
+    // The copy admits the way the original does. It starts as a draft, so
+    // carrying the setting over cannot admit anybody until somebody publishes
+    // it, and a copy that quietly reverted to review would be a form whose
+    // author believed it behaved like the one they copied.
+    form.duplicate_policy, onboarding.normalizeAdmission(form.admission), req.admin.id
   );
 
   res.status(201).json({

@@ -22,9 +22,9 @@ const cohortRules = require('./cohortRules');
 //   · Some answers are facts, not answers. "What company do you work for?" is
 //     a column on users, and the mapping from question to column is what makes
 //     a free-written form produce a profile. See FIELDS.
-//   · Nothing it collects becomes a member on its own. A submission is an
-//     application that an administrator approves; see the migration for why an
-//     unauthenticated public endpoint must not write to users.
+//   · Who gets in is the form's decision, made once when it is written rather
+//     than per application: either somebody reads the queue and approves, or
+//     the form admits on submit. See ADMISSION and admit().
 //   · It is embedded elsewhere, so it names the origins allowed to frame it.
 //
 // Deliberately not here: filing free-written answers as feedback the way a
@@ -190,6 +190,34 @@ function foldChannel(option) {
 function foldDay(option) {
   const value = String(option || '').toLowerCase().replace(/[^a-z]/g, '').slice(0, 3);
   return DAYS.includes(value) ? value : null;
+}
+
+// ─── Who gets in ────────────────────────────────────────────
+// Two answers, and the difference between them is who is accountable for a new
+// member: a person who read the application, or the form's author who decided
+// that filling it in was enough.
+//
+//   review     — the application waits in the queue. Nothing reaches users,
+//                circle_members or consent until somebody holding
+//                onboarding.approve decides. This is the default, and the
+//                property that makes a form safe to embed on a page we do not
+//                own: the worst an abusive caller achieves is a queue to clear.
+//
+//   automatic  — submitting is the decision. The account is created on submit
+//                by exactly the same code path an administrator's approval
+//                runs, so everything that makes approval careful still applies.
+//
+// Choosing automatic is choosing to let whoever can reach the form's link
+// create a participant account, which is a real trade and is why the builder
+// says so in as many words rather than offering it as a neutral toggle.
+const ADMISSION = ['review', 'automatic'];
+
+// Used by both the create and the update route. A value that is not one of the
+// two is the caller's mistake rather than an instruction, so it falls back
+// instead of being stored — and the fallback on update is what the form already
+// had, so a caller sending a partial body does not reset the setting.
+function normalizeAdmission(value, fallback = 'review') {
+  return ADMISSION.includes(value) ? value : fallback;
 }
 
 // ─── Secrets ────────────────────────────────────────────────
@@ -842,6 +870,48 @@ async function approve(submissionId, { adminId = null, note = null } = {}) {
   };
 }
 
+// ─── Admitting without anybody reading it ───────────────────
+// The automatic half of ADMISSION, called from the public submit route the
+// moment an application is marked pending.
+//
+// It is a wrapper around approve() and deliberately nothing more. Writing a
+// second, leaner path that creates the account itself is the obvious shortcut
+// and the wrong one: approve() is where a staff address is refused, where an
+// existing member is recognised by email or phone instead of being duplicated,
+// where the circle's cohorts are joined, where consent becomes rows, and where
+// all of that is made atomic. A parallel implementation would be a second place
+// for every one of those to be got right, and it would drift.
+//
+// What this adds is the failure behaviour, which has to differ. An
+// administrator who clicks Approve and is refused reads the reason and decides
+// what to do. Nobody is reading anything here, so a refusal must not be raised
+// at the applicant — they answered the questions honestly and the form's
+// configuration is not their problem — and it must not be swallowed either,
+// because an application that is neither admitted nor waiting is one that has
+// been lost.
+//
+// So a refusal leaves the application exactly where approve() found it:
+// pending, in the queue, for somebody to look at. That is the same place a
+// review-admission form would have put it, which makes the worst outcome of
+// automatic admission "it behaved like the default" rather than a dropped
+// applicant. The reason is returned so the caller can log it.
+async function admit(submissionId, { note = 'Admitted automatically — this form admits on submit' } = {}) {
+  try {
+    // adminId stays null: decided_by names the person who decided, and here
+    // there was not one. A null there is how the queue and the audit trail tell
+    // an automatic admission from somebody's judgement.
+    const result = await approve(submissionId, { adminId: null, note });
+    return { admitted: true, ...result };
+  } catch (err) {
+    // Only a refusal this service raised is a decision not to admit. Anything
+    // else — the database being unavailable mid-transaction — is not something
+    // to report as "we chose to queue this", so it is rethrown to be handled as
+    // the failure it is.
+    if (!(err instanceof OnboardingError)) throw err;
+    return { admitted: false, reason: err.message };
+  }
+}
+
 async function reject(submissionId, { adminId = null, note = null } = {}) {
   const submission = await db.prepare('SELECT * FROM onboarding_submissions WHERE id = ?').get(submissionId);
   if (!submission) throw new OnboardingError('No such application');
@@ -902,6 +972,7 @@ module.exports = {
   normalizeDefinition, canGoOut, advice,
   hydrate, forPublic, byToken,
   resolveProfile,
-  approve, reject, reopen,
+  ADMISSION, normalizeAdmission,
+  approve, admit, reject, reopen,
   OnboardingError
 };

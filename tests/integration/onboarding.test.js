@@ -402,6 +402,209 @@ test('what a second application from one address means is the form\'s decision',
   assert.equal(blocked.sent.status, 409);
 });
 
+// ─── Who decides that an applicant is in ────────────────────
+// The form's `admission`. Review is the default and is covered by every test
+// above that asserts no account was created; these cover the other setting and,
+// just as importantly, that choosing it changes nothing about the checks that
+// protect somebody other than the applicant.
+
+test('a form reviews by default, and says so rather than leaving it unset', async () => {
+  // Stated explicitly because the whole safety argument for a publicly
+  // embeddable form rests on this being what an author gets without asking.
+  const form = await live();
+  assert.equal(form.admission, 'review');
+
+  const { sent } = await fillIn(form, WHO);
+  assert.equal(sent.body.admitted, false);
+  assert.equal(h.db.prepare('SELECT id FROM users WHERE email = ?').get('chidi@paystack.africa'), undefined);
+});
+
+test('a form set to admit automatically makes the member on submit, with nobody reviewing it', async () => {
+  const form = await live({ admission: 'automatic' });
+  assert.equal(form.admission, 'automatic');
+
+  const { sent } = await fillIn(form, WHO);
+  assert.equal(sent.status, 200, JSON.stringify(sent.body));
+  assert.equal(sent.body.admitted, true);
+
+  // Everything an administrator's approval would have done, done by submitting.
+  const user = h.db.prepare('SELECT * FROM users WHERE email = ?').get('chidi@paystack.africa');
+  assert.ok(user, 'the member should exist without anybody approving anything');
+  assert.equal(user.name, 'Chidi Nwosu');
+
+  const membership = h.db.prepare('SELECT 1 FROM circle_members WHERE circle_id = ? AND user_id = ?')
+    .get(circleId, user.id);
+  assert.ok(membership, 'they should be in the circle the form feeds');
+
+  // Nothing is left waiting, and the application records that it was decided —
+  // with no admin against it, which is how the audit trail tells an automatic
+  // admission from somebody's judgement.
+  assert.equal((await queue('pending')).body.applications.length, 0);
+
+  const row = h.db.prepare('SELECT * FROM onboarding_submissions WHERE email = ?').get('chidi@paystack.africa');
+  assert.equal(row.status, 'approved');
+  assert.equal(row.user_id, user.id);
+  assert.equal(row.decided_by, null);
+  assert.ok(row.decided_at, 'the decision should carry its time even with no person behind it');
+});
+
+test('an automatically admitted member can sign in straight away', async () => {
+  // The point of admitting on submit is that there is nothing left to wait for,
+  // and that claim is only true if the credential actually works.
+  const form = await live({ admission: 'automatic' });
+  await fillIn(form, WHO);
+
+  // Signed in the way the portal signs somebody in: the address they gave, and
+  // the last six digits of the number stored against it.
+  const token = await h.loginUser('chidi@paystack.africa');
+  assert.ok(token, 'the credential they filled in should work with no further step');
+
+  const me = await h.get('/api/auth/me', { token });
+  assert.equal(me.status, 200, JSON.stringify(me.body));
+  assert.equal(me.body.user.email, 'chidi@paystack.africa');
+});
+
+test('admitting automatically still joins the cohorts and records only the consent they gave', async () => {
+  const cohortId = h.uuid();
+  h.db.prepare("INSERT INTO cohorts (id, name, type, circle_id) VALUES (?, 'Partner programme', 'custom', ?)")
+    .run(cohortId, circleId);
+
+  const form = await live({
+    admission: 'automatic',
+    cohort_ids: [cohortId],
+    questions: [
+      ...IDENTITY,
+      {
+        type: 'multi_choice', text: 'How may we contact you?', required: false,
+        options: ['E-mail', 'WhatsApp'], maps_to: 'consent_channels'
+      }
+    ]
+  });
+
+  await fillIn(form, { ...WHO, 'How may we contact you?': ['E-mail'] });
+
+  const user = h.db.prepare('SELECT id FROM users WHERE email = ?').get('chidi@paystack.africa');
+  assert.ok(h.db.prepare('SELECT 1 FROM user_cohorts WHERE user_id = ? AND cohort_id = ?').get(user.id, cohortId));
+
+  // Silence is not consent, whoever let them in.
+  const consent = h.db.prepare("SELECT channel FROM consent WHERE user_id = ? AND status = 'granted'")
+    .all(user.id).map(r => r.channel);
+  assert.deepEqual(consent, ['email']);
+});
+
+test('a Credit Direct address is refused by an automatic form too, and waits instead of being lost', async () => {
+  // The refusal that matters most: a staff address admitted here would make a
+  // participant profile nobody can ever sign in to. Automatic admission must not
+  // be a way around it — and because nobody is reading anything, the application
+  // has to end up where a reviewing form would have put it.
+  const form = await live({ admission: 'automatic' });
+  const { sent } = await fillIn(form, { ...WHO, 'Which email should we use?': 'tunde.b@creditdirect.ng' });
+
+  // The applicant is not shown the reason — how this platform works is not
+  // their problem — but they are not told they are in either.
+  assert.equal(sent.status, 200, JSON.stringify(sent.body));
+  assert.equal(sent.body.admitted, false);
+  assert.equal(sent.body.message, 'Application received');
+
+  assert.equal(h.db.prepare('SELECT id FROM users WHERE email = ?').get('tunde.b@creditdirect.ng'), undefined);
+
+  const waiting = await queue('pending');
+  assert.equal(waiting.body.applications.length, 1, 'it must be waiting, not lost');
+  assert.equal(waiting.body.applications[0].email, 'tunde.b@creditdirect.ng');
+});
+
+test('an address that is already a member is still recognised rather than duplicated', async () => {
+  const existing = h.makeUser({ email: 'chidi@paystack.africa', name: 'Chidi Nwosu' });
+  const form = await live({ admission: 'automatic' });
+
+  const { sent } = await fillIn(form, WHO);
+  assert.equal(sent.status, 200, JSON.stringify(sent.body));
+
+  const rows = h.db.prepare('SELECT id FROM users WHERE lower(email) = ?').all('chidi@paystack.africa');
+  assert.equal(rows.length, 1, 'one person, one account');
+  assert.equal(rows[0].id, existing.id);
+});
+
+test('an automatic form still refuses a second application the way its duplicate policy says', async () => {
+  // The first one admits, which makes the applicant a member — so the second is
+  // refused as an existing member whatever the policy is.
+  const form = await live({ admission: 'automatic', duplicate_policy: 'replace' });
+  assert.equal((await fillIn(form, WHO)).sent.body.admitted, true);
+
+  const again = await fillIn(form, WHO);
+  assert.equal(again.sent.status, 409);
+  assert.match(again.sent.body.error, /already a member/i);
+});
+
+test('how people get in can be changed after the form has gone out', async () => {
+  // Unlike the questions, this is not a record of what anybody was asked, and
+  // the reason to change it usually arrives from running the form.
+  const form = await live();
+  await fillIn(form, WHO);
+  assert.equal((await queue('pending')).body.applications.length, 1);
+
+  const opened = await h.put(`/api/admin/onboarding/${form.id}`, { admission: 'automatic' }, { token: adminToken });
+  assert.equal(opened.status, 200, JSON.stringify(opened.body));
+  assert.equal(opened.body.form.admission, 'automatic');
+
+  // The application already in the queue is untouched — this governs the next
+  // submission, not one already sitting in front of somebody.
+  assert.equal((await queue('pending')).body.applications.length, 1);
+
+  const next = await fillIn(form, { ...WHO, 'Which email should we use?': 'ada@example.ng' });
+  assert.equal(next.sent.body.admitted, true);
+
+  // And back again, without disturbing the member just admitted.
+  const closed = await h.put(`/api/admin/onboarding/${form.id}`, { admission: 'review' }, { token: adminToken });
+  assert.equal(closed.body.form.admission, 'review');
+  assert.ok(h.db.prepare('SELECT id FROM users WHERE email = ?').get('ada@example.ng'));
+});
+
+test('a partial update does not quietly reset how people get in', async () => {
+  // Reopening a closed form is a body carrying nothing but a status, and it must
+  // not take automatic admission off a form that had it.
+  const form = await live({ admission: 'automatic' });
+
+  const renamed = await h.put(`/api/admin/onboarding/${form.id}`, { name: 'Renamed intake' }, { token: adminToken });
+  assert.equal(renamed.status, 200, JSON.stringify(renamed.body));
+  assert.equal(renamed.body.form.admission, 'automatic');
+});
+
+test('an unrecognised admission falls back to review rather than being stored', async () => {
+  // The safe reading of a value this route does not know is the careful one — a
+  // form must not get automatic admission by accident or by typo.
+  const made = await create({ admission: 'whenever' });
+  assert.equal(made.status, 201, JSON.stringify(made.body));
+  assert.equal(made.body.form.admission, 'review');
+
+  const live1 = await live({ admission: 'automatic' });
+  const muddled = await h.put(`/api/admin/onboarding/${live1.id}`, { admission: 'sure' }, { token: adminToken });
+  assert.equal(muddled.body.form.admission, 'automatic', 'it keeps what it had');
+});
+
+test('a copy admits the way the form it was copied from does', async () => {
+  // It starts as a draft, so carrying the setting over cannot admit anybody
+  // until somebody publishes it — and a copy that reverted to review would be a
+  // form whose author believed it behaved like the one they copied.
+  const form = await live({ admission: 'automatic' });
+  const copy = await h.post(`/api/admin/onboarding/${form.id}/duplicate`, {}, { token: adminToken });
+
+  assert.equal(copy.status, 201, JSON.stringify(copy.body));
+  assert.equal(copy.body.form.admission, 'automatic');
+  assert.equal(copy.body.form.status, 'draft');
+});
+
+test('how a form admits is not something the public form page reveals', async () => {
+  // forPublic() is an allowlist, and this is the column that most recently
+  // tested whether it still is.
+  const form = await live({ admission: 'automatic' });
+  const res = await h.get(`/api/onboarding/${form.public_token}`);
+
+  assert.equal(res.status, 200);
+  assert.equal(res.body.form.admission, undefined);
+  assert.equal(res.body.form.circle_id, undefined);
+});
+
 // ─── Deciding ───────────────────────────────────────────────
 
 test('approving is what creates the member, joins the circle and records consent', async () => {

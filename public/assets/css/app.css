@@ -104,12 +104,18 @@
 
 /* One flat ink cannot serve both themes, so the lockup ships twice and the
    theme picks. Default is dark — matching :root in tokens.css — and the light
-   variant is switched in wherever light is actually chosen. */
-.brand-logo-on-light { display: none; }
-.brand-logo-on-dark { display: block; }
+   variant is switched in wherever light is actually chosen.
 
-:root[data-theme="light"] .brand-logo-on-light { display: block; }
-:root[data-theme="light"] .brand-logo-on-dark { display: none; }
+   Both classes are written against .brand-logo-img so these rules outweigh the
+   sizing rule above, which also sets display. Without that, `display: block`
+   there beat a bare `.brand-logo-on-light` on specificity and both inks
+   rendered at once — the lockup appeared twice in dark mode, and only there,
+   because light mode's :root prefix carried enough weight to win anyway. */
+.brand-logo-img.brand-logo-on-light { display: none; }
+.brand-logo-img.brand-logo-on-dark { display: block; }
+
+:root[data-theme="light"] .brand-logo-img.brand-logo-on-light { display: block; }
+:root[data-theme="light"] .brand-logo-img.brand-logo-on-dark { display: none; }
 
 .brand-badge {
   font-family: var(--font-mono);

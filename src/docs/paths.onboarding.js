@@ -51,6 +51,7 @@ const FORM_EXAMPLE = {
   redirect_url: null,
   submitted_message: 'Thanks — we will be in touch once someone has looked at this.',
   duplicate_policy: 'replace',
+  admission: 'review',
   public_path: `/o/${FORM_TOKEN}`,
   created_at: '2026-08-20 09:14:02'
 };
@@ -201,9 +202,17 @@ const paths = {
         'profile here, against the form as it stands now — not at approval time, when the',
         'wording may have changed underneath the answers.',
         '',
-        '**This creates no account.** The application moves to `pending` and waits for somebody',
-        'holding `onboarding.approve` to decide on it. What happens when the same address',
-        'applies twice is the form\'s `duplicate_policy`.'
+        'Whether this creates an account is the form\'s `admission`, and the response says which',
+        'happened in `admitted`:',
+        '',
+        '· `review` (the default) — **no account is created.** The application moves to `pending`',
+        '  and waits for somebody holding `onboarding.approve` to decide on it.',
+        '· `automatic` — the account is created here, by the same code an approval runs: a Credit',
+        '  Direct staff address is still refused, and an existing member is recognised rather than',
+        '  duplicated. Anything that would have refused the approval leaves the application',
+        '  `pending` instead, so it is never lost — `admitted` is then `false`.',
+        '',
+        'What happens when the same address applies twice is the form\'s `duplicate_policy`.'
       ].join('\n'),
       parameters: [path('token', 'The token from the form\'s link', { type: 'string' })],
       requestBody: jsonBody(object({
@@ -219,14 +228,16 @@ const paths = {
         }
       }),
       responses: {
-        200: json('The application is in the queue.', object({
+        200: json('Sent in — queued for review, or admitted outright.', object({
           message: str(),
           answered: int('How many questions were actually asked'),
+          admitted: bool('Whether they are a member now. False on a form that queues for review, and on one that admits automatically but could not this time.'),
           submitted_message: str('What to show them now'),
           redirect_url: str('Where to send them, if anywhere')
         }), {
           message: 'Application received',
           answered: 4,
+          admitted: false,
           submitted_message: 'Thanks — we will be in touch once someone has looked at this.',
           redirect_url: null
         }),
@@ -292,6 +303,7 @@ const paths = {
         redirect_url: str('Where to send them once they have sent it in'),
         submitted_message: str('What to show them if they are not being sent anywhere'),
         duplicate_policy: str('replace | reject | allow — what a second application from one address means'),
+        admission: str('review | automatic — whether an application waits for somebody to approve it, or becomes a member on submit. Defaults to review, including when an unrecognised value is sent.'),
         status: str('draft or active')
       }), {
         name: 'Partner developer intake',
@@ -409,6 +421,7 @@ const paths = {
         questions: arrayOf(object({}), 'Ignored, beyond a check that they match, once applications exist'),
         theme: object({}), cohort_ids: arrayOf(str()), allowed_origins: arrayOf(str()),
         redirect_url: str(), submitted_message: str(), duplicate_policy: str(),
+        admission: str('review | automatic — changeable for the life of the form, unlike its questions. Applications already decided are untouched.'),
         status: str('draft, active or closed')
       }), { name: 'Partner developer intake', status: 'closed' }),
       responses: {

@@ -117,8 +117,16 @@
       // The host page's own hook: hide the section, show a confirmation, send
       // an analytics event. Cancelable so a page that wants to handle the
       // redirect itself can.
+      //
+      // `admitted` says whether that submission made them a member there and
+      // then or put an application in a queue — which is the form's own setting,
+      // not something the host page chose, and the difference between "thanks,
+      // we will be in touch" and "you can sign in now" on a confirmation the
+      // host writes itself.
       var forwarded = new CustomEvent('devcircle:onboarding:submitted', {
-        bubbles: true, cancelable: true, detail: { redirect: data.redirect || null }
+        bubbles: true,
+        cancelable: true,
+        detail: { redirect: data.redirect || null, admitted: data.admitted === true }
       });
 
       if (entry.holder.dispatchEvent(forwarded) && data.redirect) {

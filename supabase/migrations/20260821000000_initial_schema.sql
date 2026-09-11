@@ -404,6 +404,12 @@
     redirect_url TEXT,
     submitted_message TEXT,
     duplicate_policy TEXT DEFAULT 'replace' CHECK(duplicate_policy IN ('replace','reject','allow')),
+
+    -- Who decides an applicant is a member: somebody reading the queue, or the
+    -- form itself on submit. 'review' is the default because a form published
+    -- before this column existed was published on the understanding that it
+    -- could not create an account. See migration 31.
+    admission TEXT DEFAULT 'review' CHECK(admission IN ('review','automatic')),
     created_by TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()

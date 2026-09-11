@@ -709,21 +709,33 @@
       const firstName = String(answers[questions.find(q => q.maps_to === 'name')?.id] || '')
         .trim().split(' ')[0];
 
+      // A form may admit on submit rather than queue for review, and the closing
+      // words have to match which of those just happened. The author's own
+      // message still wins where they wrote one — they know what their form
+      // promised — but the fallback, the fine print and the button underneath
+      // all change, because telling somebody who is already a member that
+      // theirs is being reviewed is how a new member decides not to come back.
+      const admitted = result.admitted === true;
+
       document.getElementById('stage').innerHTML = `
         <div class="done">
           <div class="done-mark">✓</div>
           <div class="done-title">${escapeHtml(
-            firstName ? `Thank you, ${firstName}` : 'Thank you')}</div>
+            firstName
+              ? `${admitted ? 'Welcome' : 'Thank you'}, ${firstName}`
+              : (admitted ? 'You are in' : 'Thank you'))}</div>
           <p class="done-text">${escapeHtml(
             result.submitted_message ||
-            'We have your details. Someone will review this and you will hear from us at the address you gave.')}</p>
-          <p class="fine-print">
-            Your answers are held by Credit Direct while this is reviewed. Nothing is sent to you
-            on a channel you did not agree to.
-          </p>
+            (admitted
+              ? 'You are a member of the circle. Sign in with the email address you gave and the last six digits of your phone number.'
+              : 'We have your details. Someone will review this and you will hear from us at the address you gave.'))}</p>
+          <p class="fine-print">${escapeHtml(admitted
+            ? 'Your details are held by Credit Direct as a member of this circle. Nothing is sent to you on a channel you did not agree to, and you can change that any time from your profile.'
+            : 'Your answers are held by Credit Direct while this is reviewed. Nothing is sent to you on a channel you did not agree to.')}</p>
           ${!embedded && !result.redirect_url ? `
             <div class="row gap-3 justify-center mt-4">
-              <a class="btn btn-primary" href="/index.html">Go to Dev Circle →</a>
+              <a class="btn btn-primary" href="/index.html">${
+                admitted ? 'Sign in →' : 'Go to Dev Circle →'}</a>
             </div>` : ''}
         </div>`;
       reportHeight();
@@ -733,7 +745,7 @@
       // analytics event. A redirect goes through it too: this document is in a
       // frame, and navigating the frame would leave the visitor looking at a
       // page inside a box.
-      tellHost('submitted', { redirect: result.redirect_url || null });
+      tellHost('submitted', { redirect: result.redirect_url || null, admitted });
 
       if (!embedded && result.redirect_url) {
         setTimeout(() => { location.href = result.redirect_url; }, 1500);

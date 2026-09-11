@@ -65,6 +65,13 @@
     .checklist .todo { color: var(--amber-ink, var(--ash-dim)); }
     /* Worth knowing, never blocking — drawn quieter than the two that are. */
     .checklist .advisory { color: var(--ash-dim); }
+
+    /* A hint that has stopped being a hint. Used for the one setting on this
+       page that widens what a stranger can cause — it should read as a
+       consequence rather than as guidance, so it takes the gold ink the rest of
+       the product warns in. --gold-ink is redefined per theme, darker on light,
+       so this stays readable either way. */
+    .hint.consequence { color: var(--gold-ink); }
   </style>
 </head>
 <body>
@@ -159,6 +166,20 @@
                 <div id="cohortList"></div>
               </div>
 
+              <!-- Who decides. Placed above the duplicate rule because it is the
+                   more consequential of the two: one governs what a second
+                   application means, this one governs whether an application
+                   becomes an account without anybody reading it. -->
+              <div class="field">
+                <label class="label">How they get in
+                  <span class="tip" data-tip="Reviewing means nothing happens until somebody here approves it, which is what makes a form safe to embed on a page we do not own. Admitting on submit means whoever can reach the link can create a participant account — right for an open call or a conference stand, wrong for anything where eligibility is the point.">?</span></label>
+                <select class="input" id="fAdmission">
+                  <option value="review">Someone here reviews each application</option>
+                  <option value="automatic">Admit them as soon as they send it in</option>
+                </select>
+                <p class="hint" id="admissionNote"></p>
+              </div>
+
               <div class="field" style="margin-bottom:0">
                 <label class="label">If the same address applies twice
                   <span class="tip" data-tip="Forms get posted in more than one place, and people forget they applied. Somebody who is already a member is always told so, whichever this is set to.">?</span></label>
@@ -204,7 +225,7 @@
 
             <div class="card mt-4">
               <div class="card-title mb-4">What the host page can do
-                <span class="tip" data-tip="The frame reports its height as questions branch, so it never needs one set. When somebody sends the form in, the placeholder element is given a devcircle:onboarding:submitted event — enough to hide the section, show a confirmation of the host's own, or send an analytics event. Nothing else crosses between the two pages: what is typed into the form is readable only by this platform, which is the point of it being a frame.">?</span>
+                <span class="tip" data-tip="The frame reports its height as questions branch, so it never needs one set. When somebody sends the form in, the placeholder element is given a devcircle:onboarding:submitted event, carrying whether they were admitted on the spot — enough to hide the section, show a confirmation of the host's own, or send an analytics event. Nothing else crosses between the two pages: what is typed into the form is readable only by this platform, which is the point of it being a frame.">?</span>
               </div>
             </div>
           </section>
@@ -481,6 +502,8 @@
       document.getElementById('fMessage').value = form.submitted_message || '';
       document.getElementById('fRedirect').value = form.redirect_url || '';
       document.getElementById('fDuplicate').value = form.duplicate_policy || 'replace';
+      document.getElementById('fAdmission').value = form.admission || 'review';
+      renderAdmissionNote();
       document.getElementById('fOrigins').value = (form.allowed_origins || []).join('\n');
 
       document.getElementById('crumb').textContent = form.name;
@@ -761,6 +784,7 @@
       redirect_url: document.getElementById('fRedirect').value.trim() || null,
       submitted_message: document.getElementById('fMessage').value.trim() || null,
       duplicate_policy: document.getElementById('fDuplicate').value,
+      admission: document.getElementById('fAdmission').value,
       status
     };
 
@@ -932,9 +956,25 @@
     });
   });
 
+  // What the admission setting means, said under the control rather than only in
+  // its tip. Automatic admission is the one setting on this page that changes
+  // what an unauthenticated stranger can cause to happen, so it says so where it
+  // cannot be missed instead of waiting to be hovered over.
+  function renderAdmissionNote() {
+    const automatic = document.getElementById('fAdmission').value === 'automatic';
+    const note = document.getElementById('admissionNote');
+    note.textContent = automatic
+      ? 'Anyone who can reach this form becomes a member on submit, with no review. They can sign in straight away. Credit Direct staff addresses are still refused, and somebody who is already a member is recognised rather than duplicated.'
+      : 'Applications wait under Applications until somebody with permission approves them. Nothing is created until then.';
+    note.classList.toggle('consequence', automatic);
+  }
+
+  document.getElementById('fAdmission').addEventListener('change', renderAdmissionNote);
+
   document.getElementById('fName').addEventListener('input', renderPreview);
   document.getElementById('fOrigins').addEventListener('input', renderChecklist);
 
+  renderAdmissionNote();
   load();
 </script>
 </body>

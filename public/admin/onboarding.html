@@ -33,6 +33,12 @@
       background: var(--tint-2);
       color: var(--ash);
     }
+
+    /* A form that admits on submit creates members without anybody here seeing
+       them first. That is a legitimate choice and not an error, so it is drawn
+       as information rather than as an alarm — but in the ink the product warns
+       in, because it is the one row property worth noticing at a glance. */
+    .auto-admit { color: var(--gold-ink); }
   </style>
 </head>
 <body>
@@ -159,7 +165,7 @@
     if (!list.length) {
       tbody.innerHTML = `<tr><td colspan="6">${emptyState({
         title: statusFilter ? `No ${statusFilter === 'active' ? 'live' : statusFilter} forms` : 'No onboarding forms yet',
-        text: 'An onboarding form asks whatever this circle needs to know, in its own words and its own branding, and can be embedded on a page this platform does not own — a partner\'s developer docs, a campaign microsite, a conference stand. What comes back is an application: nobody becomes a member until somebody here approves them.',
+        text: 'An onboarding form asks whatever this circle needs to know, in its own words and its own branding, and can be embedded on a page this platform does not own — a partner\'s developer docs, a campaign microsite, a conference stand. What comes back is an application, and the form decides what happens to it: it waits for somebody here to approve it, or it admits them on submit.',
         action: '<a href="/admin/onboarding-new.html" class="btn btn-sm btn-primary">Write the first one</a>'
       })}</td></tr>`;
       return;
@@ -183,7 +189,12 @@
               <div class="identity-name">${escapeHtml(f.name)}</div>
               <div class="identity-sub">${questionCount(f)} question${questionCount(f) === 1 ? '' : 's'}${
                 (f.questions || []).some(q => q.visible_if) ? ' · branching' : ''}${
-                (f.cohort_ids || []).length ? ` · joins ${f.cohort_ids.length} cohort${f.cohort_ids.length === 1 ? '' : 's'}` : ''}</div>
+                (f.cohort_ids || []).length ? ` · joins ${f.cohort_ids.length} cohort${f.cohort_ids.length === 1 ? '' : 's'}` : ''}${
+                // Only the setting that is not the default is named. A form that
+                // admits on submit has no queue to watch, so this list is the one
+                // place somebody would otherwise have no way of telling it apart
+                // from a form whose applications nobody has got round to.
+                f.admission === 'automatic' ? ' · <span class="auto-admit">admits on submit</span>' : ''}</div>
             </div>
           </td>
           <td>${badge(f.status === 'active' ? 'live' : f.status,

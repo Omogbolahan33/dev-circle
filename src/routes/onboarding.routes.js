@@ -5,6 +5,7 @@ const { rateLimit } = require('../middleware/rateLimit');
 const onboarding = require('../services/onboarding');
 const surveyForm = require('../services/surveyForm');
 const circles = require('../services/circles');
+const { logger } = require('../utils/logger');
 
 const router = express.Router();
 
@@ -15,11 +16,21 @@ const router = express.Router();
 //
 //   · The token is the whole of the authorisation, and it opens exactly one
 //     form. No endpoint here takes a form id.
-//   · Nothing here writes to users, circle_members or consent. A submission is
-//     an application; it becomes a member only when an administrator approves
-//     it from the admin API. That is what makes a publicly embeddable form
-//     safe to publish at all — the worst an abusive caller achieves is a queue
-//     that needs clearing, not accounts.
+//   · A submission is an application, not a member. On a form set to review
+//     admission — the default, and what every form was before the setting
+//     existed — nothing here writes to users, circle_members or consent: it
+//     becomes a member only when an administrator approves it from the admin
+//     API. That is what makes such a form safe to embed on a page we do not
+//     own, because the worst an abusive caller achieves is a queue that needs
+//     clearing rather than accounts.
+//
+//     A form whose author chose automatic admission has given that up
+//     knowingly, and the builder puts it in those terms. Submitting then
+//     creates the account, through services/onboarding.admit() — which is a
+//     wrapper around the very approval an administrator would have run, so the
+//     staff-address refusal, the duplicate policy and the recognition of an
+//     existing member all still apply. Nothing is written here either way; this
+//     route decides, the service acts.
 //   · A caller sees what somebody filling in a form needs and nothing about
 //     which circle it feeds, which cohorts it joins them to, or how many have
 //     applied. forPublic() is an allowlist, so a column added later is private
@@ -37,8 +48,12 @@ const filling = rateLimit({ name: 'onboarding-fill', windowMs: 60_000, max: 60 }
 // an event or on a partner's intranet: dozens of real people behind one NAT,
 // filling it in within the same hour. A limit tuned for one person per address
 // would turn the launch it was built for into a wall of 429s. What makes that
-// affordable is that nothing here creates an account — the worst an abusive
-// caller achieves at this rate is a queue somebody has to clear.
+// affordable on a form that queues its applications is that no account is
+// created — the worst an abusive caller achieves at this rate is a queue
+// somebody has to clear. On one set to admit automatically this is the only
+// ceiling there is, which is the trade the builder spells out: thirty accounts
+// an hour from one address, and every one of them a participant who can sign in
+// but holds nothing beyond their own profile.
 const submitting = rateLimit({ name: 'onboarding-submit', windowMs: 3_600_000, max: 30 });
 
 const gone = res => res.status(404).json({
@@ -269,9 +284,41 @@ router.post('/:token/submit', submitting, async (req, res) => {
     submission.id
   );
 
+  // Marked pending first, then admitted — rather than writing 'approved'
+  // directly — because pending is the state admit() is allowed to decide on,
+  // and because it is where the application must remain if admitting it is
+  // refused. Ordering it this way means there is no moment at which the row is
+  // neither waiting nor decided, whatever happens next.
+  let admitted = false;
+  if (onboarding.normalizeAdmission(form.admission) === 'automatic') {
+    const outcome = await onboarding.admit(submission.id);
+    admitted = outcome.admitted;
+
+    // A form set to admit automatically that did not is worth a line in the
+    // log: it means something about this applicant needed a person, and the
+    // only other trace is a row in a queue nobody is watching.
+    if (!admitted) {
+      logger.warn('Automatic admission declined — the application is waiting for review', {
+        form: form.id, submission: submission.id, reason: outcome.reason
+      });
+    }
+  }
+
   res.json({
-    message: 'Application received',
+    message: admitted ? 'Welcome to the circle' : 'Application received',
     answered: checked.asked.length,
+
+    // Whether they are in. The runner needs it because the words it writes
+    // otherwise — somebody will review this, you will hear from us — are wrong
+    // for a form that just admitted them, and a new member being told to wait
+    // is a member who never comes back.
+    //
+    // It is not a leak of anything the form keeps private: the applicant was
+    // either admitted or not, and they are the person it happened to. What stays
+    // private is why — a refusal's reason names how this platform works and is
+    // logged rather than returned.
+    admitted,
+
     // What to do with the page now. Held on the form rather than decided here
     // so the runner and a host page embedding it agree on what "done" looks
     // like.

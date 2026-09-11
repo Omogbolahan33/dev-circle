@@ -1536,6 +1536,40 @@ function define(db) {
             ON email_templates(circle_id);
         `);
       }
+    },
+
+    {
+      id: 31,
+      name: 'onboarding_admission',
+      up() {
+        // Who decides that an applicant is a member. Until now the answer was
+        // always "an administrator, from the queue", and for a form posted on a
+        // partner's page that is the right default — it is also the reason a
+        // publicly embeddable form is safe to publish at all, since the worst an
+        // abusive caller achieves is a queue somebody has to clear.
+        //
+        // But the default is not always the answer. A circle running an open
+        // call, a conference stand handing out a QR code, an internal programme
+        // where eligibility is already settled by who was given the link — all
+        // of those have nobody to review anything, and a queue that fills up
+        // with applications nobody intends to read is worse than no queue: the
+        // person who filled the form in is told somebody will be in touch, and
+        // nobody is.
+        //
+        // So admission is the form's own setting. 'review' is the behaviour
+        // every existing form already has, and it is the default here for
+        // exactly that reason — a column added with 'automatic' as its default
+        // would silently start creating accounts from forms that were published
+        // on the understanding that it could not.
+        //
+        // What automatic does *not* relax is any check that protects somebody
+        // else: a staff address is still refused, a duplicate is still the
+        // duplicate_policy's decision, and an application that cannot be
+        // approved falls back to the queue rather than being lost. See
+        // services/onboarding.admit().
+        addColumn('onboarding_forms', 'admission',
+          "TEXT DEFAULT 'review' CHECK(admission IN ('review','automatic'))");
+      }
     }
   ];
   return migrations;
