@@ -137,7 +137,7 @@ let madeUsers = 0;
 function makeUser(overrides = {}) {
   const identity = require('../../src/utils/identity');
   const id = uuid();
-  // Every fixture member gets their own number, because the last six digits of
+  // Every fixture member gets their own number, because the last four digits of
   // it are their credential: two members sharing a number would be two members
   // sharing a password, and a test asserting that the wrong digits are refused
   // would pass for the wrong reason.
@@ -229,7 +229,7 @@ async function loginAdmin(email, password) {
 // Outside production the code comes back in the request response, which is
 // what makes the real flow exercisable here rather than reaching into the
 // database for it.
-// A participant signs in with their address and the last six digits of the
+// A participant signs in with their address and the last four digits of the
 // number on their record. The fixture looks the number up rather than being
 // told it, so a test that made a member with a particular phone still signs in
 // as them without repeating the digits.

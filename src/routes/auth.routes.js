@@ -21,7 +21,7 @@ const router = express.Router();
 //
 // Credit Direct staff — recognised by their work email domain — are asked for a
 // password. Everyone else is a participant, and a participant gives the last
-// six digits of the phone number on their record, or arrives through Developer
+// four digits of the phone number on their record, or arrives through Developer
 // Hub SSO. Participants still hold no password at all, so there is none to
 // leak, reset, or reuse from another site.
 //
@@ -84,6 +84,35 @@ function safeUser(row) {
 
 const BAD_IDENTIFIER = 'Enter the email address or phone number you registered with.';
 
+// ─── Step zero: what does the form need to know? ────────────
+
+// GET /api/auth/policy
+// Which domains mean staff, and how many digits a participant is asked for.
+//
+// The sign-in page asks once, on load, so it can answer "who is this?" against
+// every keystroke without a request per keystroke — by the time somebody has
+// finished typing their address the second field is already the right field,
+// a password or the tail of their phone number, and nobody has to press
+// Continue to find out which. Latency is the point: a field that arrives a
+// round trip after the address does not feel like the same form.
+//
+// Nothing here is a secret. /identify already answers the same question one
+// address at a time, deliberately and without a database lookup; this is that
+// answer in bulk, and it is no more of a membership oracle than that one is.
+// The client's conclusion is never trusted either — /login classifies the
+// identifier again for itself — so a page working from a stale copy of this,
+// or from none, can render the wrong label but cannot reach the wrong
+// credential.
+router.get('/policy', (req, res) => {
+  // Safe to sit in a browser cache: it changes when the deployment's
+  // configuration changes and not otherwise.
+  res.set('Cache-Control', 'public, max-age=300');
+  res.json({
+    staff_domains: config.staffEmailDomains,
+    digits: identity.PHONE_DIGITS
+  });
+});
+
 // ─── Step one: who is this? ─────────────────────────────────
 
 // POST /api/auth/identify
@@ -115,7 +144,7 @@ router.post('/identify', async (req, res) => {
 // ─── Signing in ─────────────────────────────────────────────
 // One endpoint, two audiences, because it is one form on one page.
 //
-// Staff give a password. A participant gives the last six digits of the phone
+// Staff give a password. A participant gives the last four digits of the phone
 // number they registered with — see identity.js for what that secret is worth
 // and what stands in front of it.
 //
@@ -242,7 +271,7 @@ router.post('/admin/login', login);
 
 // POST /api/auth/register
 // Creates a participant profile. No password is set: the account is signed into
-// with this address and the last six digits of the number registered against
+// with this address and the last four digits of the number registered against
 // it, so both are required here — a profile with no number is one nobody can
 // ever sign in to.
 router.post('/register', async (req, res) => {

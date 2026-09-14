@@ -6,7 +6,7 @@ beforeEach(async () => { await h.start(); });
 after(() => { h.stop(); });
 
 // ─── Phone: a sign-in credential, not a contact detail ──────
-// Its last six digits are half of what a participant signs in with, so once a
+// Its last four digits are half of what a participant signs in with, so once a
 // number is on the account the member may not move it to a different number.
 
 test('a member cannot change their phone number after registration', async () => {
@@ -24,7 +24,7 @@ test('a member cannot change their phone number after registration', async () =>
   const after = h.db.prepare('SELECT phone_normalized FROM users WHERE id = ?').get(user.id);
   assert.equal(after.phone_normalized, held, 'credential unchanged');
 
-  // And they can still sign in with the original six digits.
+  // And they can still sign in with the original four digits.
   const stillIn = await h.post('/api/auth/login', {
     identifier: user.email,
     digits: require('../../src/utils/identity').phoneDigits(held)

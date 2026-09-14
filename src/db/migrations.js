@@ -1379,7 +1379,7 @@ function define(db) {
         //
         // What deliberately does *not* relax is email, and phone joins it in
         // spirit though not in the schema. Those two are the credential — a
-        // participant signs in with their email address and the last six digits
+        // participant signs in with their email address and the last four digits
         // of their phone number — so a form that omitted either would produce
         // members who could never sign in. That is enforced where it belongs,
         // on the form, in services/onboarding.js: an onboarding form must

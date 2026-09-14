@@ -76,7 +76,7 @@ const DEMO_ADMINS = [
   }
 ];
 
-// A participant signs in with their address and the last six digits of the
+// A participant signs in with their address and the last four digits of the
 // number on their record, so an account without a number is one nobody can
 // sign in as. These two carry fixed numbers for that reason.
 const DEMO_USERS = [

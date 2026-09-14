@@ -775,7 +775,7 @@ const paths = {
         'Creates the account if that address holds none, joins them to the circle the form feeds',
         'and to its cohorts, and writes a granted consent row for every channel they ticked. They',
         'hold no password at all: like every participant, they sign in with their email address',
-        'and the last six digits of the phone number on the application.',
+        'and the last four digits of the phone number on the application.',
         '',
         'Where the address already belongs to a member — or, failing an address, the normalised',
         'phone number does — they are joined to the circle instead of getting a second account,',

@@ -210,7 +210,7 @@ const config = {
     .split(',').map(s => s.trim().toLowerCase().replace(/^@/, '')).filter(Boolean),
 
   // One-time codes. No longer the way in — participants sign in with their
-  // address and the last six digits of their number — but the delivery,
+  // address and the last four digits of their number — but the delivery,
   // hashing and throttle machinery is what email verification will be built on.
   loginCode: {
     length: 6,

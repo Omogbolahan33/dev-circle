@@ -63,6 +63,37 @@ const paths = {
   },
 
   // ─── Authentication ───────────────────────────────────────
+  '/auth/policy': {
+    get: op({
+      tag: 'Authentication',
+      auth: 'none',
+      operationId: 'authPolicy',
+      summary: 'What the sign-in form needs to know before anybody types',
+      description: [
+        'Which email domains mean Credit Direct staff, and how many digits of their phone',
+        'number a participant is asked for. The sign-in page reads this once on load so it',
+        'can classify an address on every keystroke — by the time somebody has finished',
+        'typing, the field below already knows whether it is a password or the end of their',
+        'number, and nobody has to press a button to find out.',
+        '',
+        'It is `/auth/identify` in bulk and it is no more revealing: the answer comes from',
+        'configuration, never from the database, so it says nothing about who holds an',
+        'account. `/auth/login` classifies the identifier again for itself regardless, so a',
+        'client working from a stale copy of this — or from none at all — can render the',
+        'wrong label but cannot reach the wrong credential.'
+      ].join('\n'),
+      responses: {
+        200: json('The rule this deployment signs people in by.', object({
+          staff_domains: arrayOf({ type: 'string' }, 'Domains whose holders are asked for a password. A subdomain of one of these counts'),
+          digits: int('How many digits of their phone number a participant is asked for')
+        }), {
+          staff_domains: ['creditdirect.ng', 'fcmb.com'],
+          digits: 4
+        })
+      }
+    })
+  },
+
   '/auth/identify': {
     post: op({
       tag: 'Authentication',
@@ -70,12 +101,13 @@ const paths = {
       operationId: 'identify',
       summary: 'Work out how this person signs in',
       description: [
-        'Step one of the single sign-in form. The visitor types the address they are known',
-        'by, and this says what to ask for next: a password for Credit Direct staff, and for',
-        'everybody else the last six digits of the phone number on their record.',
+        'The single sign-in form asks this about the address in front of it: a password for',
+        'Credit Direct staff, and for everybody else the last four digits of the phone number',
+        'on their record. The page itself resolves most of this locally from `/auth/policy`,',
+        'and falls back to asking here.',
         '',
         'A participant who types their **phone number** gets `method: "email_required"`. That is',
-        'not a preference: the secret is six digits of that very number, so accepting it as the',
+        'not a preference: the secret is four digits of that very number, so accepting it as the',
         'identifier would mean handing over the credential to reach the credential box.',
         '',
         'The answer comes from the identifier alone with no database lookup, so this',
@@ -92,7 +124,7 @@ const paths = {
           method: str('What to ask for next', { enum: ['password', 'phone_digits', 'email_required'] }),
           channel: str('Unused by the current scheme; always null', { nullable: true }),
           digits: int('How many digits of the phone number to ask for, when that is the method'),
-          masked: str('The identifier, masked for display back to the visitor'),
+          masked: str('The identifier, masked for display back to the visitor. A phone number is masked from the tail, because its tail is the credential'),
           sso: bool('Whether Developer Hub SSO is an option for them')
         }), {
           identifier: 'chidi@paystack.africa',
@@ -100,7 +132,7 @@ const paths = {
           audience: 'participant',
           method: 'phone_digits',
           channel: null,
-          digits: 6,
+          digits: 4,
           masked: 'c•••i@paystack.africa',
           sso: true
         }),
@@ -122,7 +154,7 @@ const paths = {
         'credential is expected follows from the address:',
         '',
         '- **Credit Direct staff** give `password`.',
-        '- **Participants** give `digits` — the last six of the phone number on their record.',
+        '- **Participants** give `digits` — the last four of the phone number on their record.',
         '  They hold no password at all. `phone_digits` and `password` are accepted as aliases',
         '  for the field, so one form can post whichever box it rendered.',
         '',
@@ -137,9 +169,9 @@ const paths = {
       requestBody: jsonBody(object({
         identifier: str('The email address. `email` is accepted as an alias'),
         password: str('Staff only: the account password', { format: 'password' }),
-        digits: str('Participants only: the last six digits of their phone number')
+        digits: str('Participants only: the last four digits of their phone number')
       }, { required: ['identifier'] }), {
-        identifier: 'chidi@paystack.africa', digits: '550142'
+        identifier: 'chidi@paystack.africa', digits: '0142'
       }),
       responses: {
         200: json('Signed in.', object({
@@ -210,7 +242,7 @@ const paths = {
       description: [
         'Creates a participant profile and puts the member in the "All Members" cohort',
         'and the root circle. No password is set and no session is returned: the account is',
-        'signed into with this address and the last six digits of the number registered',
+        'signed into with this address and the last four digits of the number registered',
         'against it, so both are required here — a profile with no number is one nobody can',
         'ever sign in to.',
         '',
@@ -435,7 +467,7 @@ const paths = {
         'Only the fields present in the body are touched.',
         '',
         '**Locked after registration:** the phone number is half the sign-in credential — its',
-        'last six digits are what a participant enters with their email — so once a number is on',
+        'last four digits are what a participant enters with their email — so once a number is on',
         'the account it cannot be changed from here; sending a *different* number returns 403. An',
         'account that arrived without one (Developer Hub SSO, landing page, import) may still SET',
         'its number once, which is the rescue path that makes the account signable-into. Email,',
@@ -1310,7 +1342,7 @@ const paths = {
         'records the channels ticked on the registration form as granted consent.',
         '',
         'No credential is handed back and none is invented: the member signs in with the',
-        'address they gave and the last six digits of the number beside it, both of which',
+        'address they gave and the last four digits of the number beside it, both of which',
         'they already have.'
       ].join('\n'),
       requestBody: jsonBody(object({

@@ -177,7 +177,7 @@
       <div class="locked-note mt-6">
         <strong>What cannot be changed here:</strong>
         your <strong>email address</strong> (it is how you are identified and sign in) and,
-        once set, your <strong>phone number</strong> — its last six digits are half your
+        once set, your <strong>phone number</strong> — its last four digits are half your
         sign-in credential, so changing it would lock you out.
         <strong>API stage, KYB status and circle memberships</strong> are managed by the
         Credit Direct team from the Developer Hub. If any of these need changing — a new
@@ -381,13 +381,13 @@
       if (user.phone_normalized || user.phone) {
         phoneInput.value = user.phone || user.phone_normalized;
         // Read-only rather than disabled: the value stays selectable (useful
-        // for confirming the last six digits) but nothing on it can be edited.
+        // for confirming the last four digits) but nothing on it can be edited.
         phoneInput.readOnly = true;
         phoneInput.setAttribute('aria-readonly', 'true');
-        phoneHint.innerHTML = '🔒 Locked after registration — the last six digits of this number ' +
+        phoneHint.innerHTML = '🔒 Locked after registration — the last four digits of this number ' +
           'are what you sign in with. Got a new number? <a href="/member/feedback.html">Ask the team to change it</a>.';
       } else {
-        phoneHint.textContent = 'Set the number you sign in with — you will be asked for its last six digits. Once set, it cannot be changed here.';
+        phoneHint.textContent = 'Set the number you sign in with — you will be asked for its last four digits. Once set, it cannot be changed here.';
       }
 
       document.getElementById('identity').innerHTML = `

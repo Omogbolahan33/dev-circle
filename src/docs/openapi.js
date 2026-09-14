@@ -44,18 +44,19 @@ There are three ways to hold a credential, and which one you use depends on who 
 ### Members — email and phone digits
 
 Developers hold no password at all, so there is none to leak, reset or reuse from another site.
-They sign in with their email address and the last six digits of the phone number on their
+They sign in with their email address and the last four digits of the phone number on their
 record — one call:
 
 \`\`\`bash
 curl -X POST https://your-deployment/api/auth/login \\
   -H 'Content-Type: application/json' \\
-  -d '{"identifier":"chidi@paystack.africa","digits":"550142"}'
+  -d '{"identifier":"chidi@paystack.africa","digits":"0142"}'
 \`\`\`
 
-A phone number is not accepted as the identifier: the secret is six digits of that very
-number. Six digits is a weak secret and is treated as one — eight failed attempts per
-address and IP are throttled for fifteen minutes.
+A phone number is not accepted as the identifier: the secret is four digits of that very
+number. Four digits is a weak secret and is treated as one — eight failed attempts per
+address and IP are throttled for fifteen minutes, and that throttle is the whole of what
+stands in front of ten thousand combinations.
 
 ### Credit Direct staff — a password
 
@@ -166,7 +167,7 @@ Fixed windows of one minute, applied per credential where there is one and per I
 
 Sign-in has its own throttle on top: eight failed attempts for one address and IP pair
 locks that pair out for 15 minutes, whichever credential was being offered. That throttle
-is most of what makes a six-digit secret defensible — see the note beside it in the
+is most of what makes a four-digit secret defensible — see the note beside it in the
 Authentication section.
 
 Every response carries \`RateLimit-Limit\`, \`RateLimit-Remaining\` and \`RateLimit-Reset\`.
@@ -191,7 +192,7 @@ changes to the same endpoint and the ticket is updated rather than duplicated.
 
 const tags = [
   { name: 'Health', description: 'Liveness, safe to poll.' },
-  { name: 'Authentication', description: 'One sign-in form, three ways to hold a credential: for developers their email address and the last six digits of their phone number, for Credit Direct staff a password, and Developer Hub SSO.' },
+  { name: 'Authentication', description: 'One sign-in form, three ways to hold a credential: for developers their email address and the last four digits of their phone number, for Credit Direct staff a password, and Developer Hub SSO.' },
   { name: 'Member profile', description: 'The signed-in developer\'s own profile, memberships, consent and engagement history.' },
   { name: 'Member surveys', description: 'Surveys open to the signed-in developer, and how they answer them.' },
   { name: 'Open surveys', description: 'Answering a survey over its link, with no account and no sign-in. The token in the path is the whole of the authorisation and opens exactly one survey; nothing here identifies the person answering.' },

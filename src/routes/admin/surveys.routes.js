@@ -778,7 +778,7 @@ router.post('/surveys/:id/responses/import', requirePermission('surveys.write'),
   // worth hearing from most — are exactly the answers that cannot be imported.
   // So the respondent is created, on the same terms the member import creates
   // one: no password, because members sign in with their address and the last
-  // six digits of their phone number.
+  // four digits of their phone number.
   const insertMember = db.prepare(`
     INSERT INTO users (id, email, name, company, password_hash) VALUES (?, ?, ?, ?, ?)
   `);

@@ -261,7 +261,7 @@ for (let i = 0; i < developers.length; i++) {
   const phone = `+234${700 + Math.floor(Math.random() * 300)}${String(Math.floor(Math.random() * 10000000)).padStart(7, '0')}`;
   const hoursAgo = Math.floor(Math.random() * 168);
 
-  // Members hold no password: they sign in with their address and the last six
+  // Members hold no password: they sign in with their address and the last four
   // digits of the number below, generated per member on the email
   // or number seeded here, so there is nothing to publish for them.
   userStmt.run(
@@ -799,8 +799,8 @@ const surveyStmt = db.prepare(`
   console.log('\nSign in at / with any of these — one form, no role to pick:');
   console.log('  Admin (full access):  admin@creditdirect.ng      password: admin123');
   console.log('  CDL Rep (limited):    engagement@creditdirect.ng password: engagement123');
-  console.log('  Developer:            adebayo@paystack.dev       last 6 digits of their phone');
-  console.log('\nA Credit Direct domain gets asked for a password; everyone else for the last six');
+  console.log('  Developer:            adebayo@paystack.dev       last 4 digits of their phone');
+  console.log('\nA Credit Direct domain gets asked for a password; everyone else for the last four');
   console.log('digits of the number on their record. Seeded developers get a random number, so');
   console.log('take the digits from the members list — or use a demo developer, whose number is fixed.');
   console.log('\nIntegration API key (shown once — endpoints reject unauthenticated calls):');

@@ -28,7 +28,7 @@ test('a Credit Direct address is asked for a password, everyone else for their p
     const res = await h.post('/api/auth/identify', { identifier });
     assert.equal(res.body.method, 'phone_digits', `${identifier} should be asked for their digits`);
     assert.equal(res.body.audience, 'participant');
-    assert.equal(res.body.digits, 6);
+    assert.equal(res.body.digits, 4);
   }
 
   const fcmb = await h.post('/api/auth/identify', { identifier: 'ope@fcmb.com' });
@@ -40,10 +40,10 @@ test('a phone number is not accepted as the identifier, because it contains the 
   assert.equal(res.status, 200);
   assert.equal(res.body.audience, 'participant');
   assert.equal(res.body.method, 'email_required',
-    'the last six digits of this very number are the credential');
+    'the last four digits of this very number are the credential');
 
   h.makeUser({ email: 'ada@example.ng', phone: '+2348030000000' });
-  const attempt = await h.post('/api/auth/login', { identifier: '08030000000', digits: '000000' });
+  const attempt = await h.post('/api/auth/login', { identifier: '08030000000', digits: '0000' });
   assert.equal(attempt.status, 400);
   assert.match(attempt.body.error, /email address you registered with/);
 });
@@ -65,12 +65,58 @@ test('nonsense in the one field is refused before anything is sent', async () =>
   assert.equal(res.status, 400);
 });
 
-// ─── Participants: the last six digits ──────────────────────
+test('the form can settle who this is locally, and gets the same answer as the server', async () => {
+  // The sign-in page reads /auth/policy once and then classifies the address on
+  // every keystroke against it, rather than asking per keystroke — which is how
+  // the second field is already the right field before anybody presses
+  // anything. That only holds while the two agree: a page deciding "password"
+  // where the server decides "digits" would render a box nobody can fill.
+  const policy = await h.get('/api/auth/policy');
+  assert.equal(policy.status, 200);
+  assert.equal(policy.body.digits, require('../../src/utils/identity').PHONE_DIGITS);
+  assert.ok(policy.body.staff_domains.includes('creditdirect.ng'));
 
-test('a member signs in with their address and the last six digits of their number', async () => {
+  // The page's rule, written the way the page writes it.
+  const locally = email => {
+    const domain = email.slice(email.lastIndexOf('@') + 1);
+    return policy.body.staff_domains.some(d => domain === d || domain.endsWith('.' + d))
+      ? 'password'
+      : 'phone_digits';
+  };
+
+  const cases = {
+    'tunde@creditdirect.ng': 'password',
+    'ope@fcmb.com': 'password',
+    'ada@mail.creditdirect.ng': 'password',
+    'ada@paystack.dev': 'phone_digits',
+    // The lookalike, which is the one a substring match would get wrong.
+    'ada@creditdirect.ng.example.com': 'phone_digits'
+  };
+
+  for (const [identifier, expected] of Object.entries(cases)) {
+    const server = await h.post('/api/auth/identify', { identifier });
+    assert.equal(server.body.method, expected, `${identifier}, decided by the server`);
+    assert.equal(locally(identifier), expected, `${identifier}, decided by the page`);
+  }
+});
+
+test('the policy says nothing about who holds an account', async () => {
+  h.makeUser({ email: 'ada@example.ng' });
+
+  const before = await h.get('/api/auth/policy');
+  h.makeUser({ email: 'chidi@paystack.africa' });
+  const after = await h.get('/api/auth/policy');
+
+  assert.deepEqual(before.body, after.body,
+    'it answers from configuration, so the member base cannot be read off it');
+});
+
+// ─── Participants: the last four digits ─────────────────────
+
+test('a member signs in with their address and the last four digits of their number', async () => {
   h.makeUser({ email: 'ada@example.ng', phone: '+2348030001234' });
 
-  const login = await h.post('/api/auth/login', { identifier: 'ada@example.ng', digits: '001234' });
+  const login = await h.post('/api/auth/login', { identifier: 'ada@example.ng', digits: '1234' });
   assert.equal(login.status, 200, JSON.stringify(login.body));
   assert.ok(login.body.token);
   assert.equal(login.body.isAdmin, false);
@@ -90,23 +136,23 @@ test('the digits are counted off the normalised number, however it was written',
     h.makeRootCircle();
     h.makeUser({ email: 'ada@example.ng', phone: written });
 
-    const login = await h.post('/api/auth/login', { identifier: 'ada@example.ng', digits: '001234' });
-    assert.equal(login.status, 200, `${written} should yield the same six digits`);
+    const login = await h.post('/api/auth/login', { identifier: 'ada@example.ng', digits: '1234' });
+    assert.equal(login.status, 200, `${written} should yield the same four digits`);
   }
 });
 
 test('spaces and dashes in what they type are ignored', async () => {
   h.makeUser({ email: 'ada@example.ng', phone: '+2348030001234' });
 
-  const login = await h.post('/api/auth/login', { identifier: 'ada@example.ng', digits: '00 12 34' });
+  const login = await h.post('/api/auth/login', { identifier: 'ada@example.ng', digits: '12 34' });
   assert.equal(login.status, 200);
 });
 
 test('the wrong digits are refused, and say no more than that', async () => {
   h.makeUser({ email: 'ada@example.ng', phone: '+2348030001234' });
 
-  const wrong = await h.post('/api/auth/login', { identifier: 'ada@example.ng', digits: '999999' });
-  const ghost = await h.post('/api/auth/login', { identifier: 'ghost@example.ng', digits: '999999' });
+  const wrong = await h.post('/api/auth/login', { identifier: 'ada@example.ng', digits: '9999' });
+  const ghost = await h.post('/api/auth/login', { identifier: 'ghost@example.ng', digits: '9999' });
 
   assert.equal(wrong.status, 401);
   assert.equal(ghost.status, 401);
@@ -119,16 +165,19 @@ test('a member with no phone number cannot sign in, and is not told that is why'
   // page, and none of those has ever had to carry a number.
   h.makeUser({ email: 'ada@example.ng', phone: null });
 
-  const attempt = await h.post('/api/auth/login', { identifier: 'ada@example.ng', digits: '000000' });
+  const attempt = await h.post('/api/auth/login', { identifier: 'ada@example.ng', digits: '0000' });
   assert.equal(attempt.status, 401);
   assert.match(attempt.body.error, /do not match an account/,
     '"this address exists but has no number" is worth nothing to them and something to an attacker');
 });
 
-test('a partial guess is refused — it is six digits or nothing', async () => {
+test('a partial guess is refused — it is four digits or nothing', async () => {
   h.makeUser({ email: 'ada@example.ng', phone: '+2348030001234' });
 
-  for (const digits of ['1234', '0012345', '', '01234']) {
+  // Nothing here is the answer, and none of it is four digits long: a shorter
+  // secret makes the exact-length check matter more, not less — without it
+  // '234' would be three guesses at once.
+  for (const digits of ['234', '01234', '', '4']) {
     const attempt = await h.post('/api/auth/login', { identifier: 'ada@example.ng', digits });
     assert.ok(attempt.status >= 400, `"${digits}" should not open a session`);
   }
@@ -139,12 +188,13 @@ test('guessing the digits is throttled', async () => {
 
   let last;
   for (let i = 0; i < 9; i++) {
-    last = await h.post('/api/auth/login', { identifier: 'ada@example.ng', digits: '000000' });
+    last = await h.post('/api/auth/login', { identifier: 'ada@example.ng', digits: '0000' });
   }
-  assert.equal(last.status, 429, 'six digits is a million combinations and no more');
+  assert.equal(last.status, 429,
+    'four digits is ten thousand combinations, and the throttle is what stands in front of them');
 
   // …and the throttle holds even once the right answer is offered
-  const correct = await h.post('/api/auth/login', { identifier: 'ada@example.ng', digits: '001234' });
+  const correct = await h.post('/api/auth/login', { identifier: 'ada@example.ng', digits: '1234' });
   assert.equal(correct.status, 429);
 });
 
@@ -218,7 +268,7 @@ test('the two halves of the form do not cross over', async () => {
   // whichever box the form posted it in, so a stale client sending `password`
   // is answered by the credential they actually hold rather than by a lecture.
   const asPassword = await h.post('/api/auth/login', {
-    identifier: 'ada@example.ng', password: '001234'
+    identifier: 'ada@example.ng', password: '1234'
   });
   assert.equal(asPassword.status, 200, 'the field name is not the credential');
 
@@ -228,12 +278,12 @@ test('the two halves of the form do not cross over', async () => {
   assert.equal(wrongSecret.status, 401);
 
   // …and staff are never asked for digits: their address goes down the
-  // password half, and six digits is not their password.
+  // password half, and four digits is not their password.
   const roleId = h.makeRole('super', ['*']);
   h.makeAdmin({ email: 'tunde@creditdirect.ng', roleId, password: 'staff-password' });
 
   const staffDigits = await h.post('/api/auth/login', {
-    identifier: 'tunde@creditdirect.ng', digits: '001234'
+    identifier: 'tunde@creditdirect.ng', digits: '1234'
   });
   assert.equal(staffDigits.status, 400, 'no password was given');
   assert.match(staffDigits.body.error, /password/i);
@@ -349,9 +399,9 @@ test('registering creates a profile but hands back no session', async () => {
   assert.equal(res.status, 201);
   assert.equal(res.body.token, undefined, 'signing in is a separate step');
   assert.equal(res.body.next.method, 'phone_digits');
-  assert.equal(res.body.next.digits, 6);
+  assert.equal(res.body.next.digits, 4);
 
-  const login = await h.post('/api/auth/login', { identifier: 'new@stitch.ng', digits: '001234' });
+  const login = await h.post('/api/auth/login', { identifier: 'new@stitch.ng', digits: '1234' });
   assert.equal(login.status, 200, 'and the digits they already know are the way in');
 });
 
@@ -379,7 +429,7 @@ test('a Credit Direct address cannot be self-registered', async () => {
 test('an administrator can give a member the number they sign in with', async () => {
   const user = h.makeUser({ email: 'ada@example.ng', phone: null });
 
-  const before = await h.post('/api/auth/login', { identifier: 'ada@example.ng', digits: '001234' });
+  const before = await h.post('/api/auth/login', { identifier: 'ada@example.ng', digits: '1234' });
   assert.equal(before.status, 401, 'no number means no way in');
 
   const roleId = h.makeRole('super', ['*']);
@@ -389,13 +439,13 @@ test('an administrator can give a member the number they sign in with', async ()
   const set = await h.put(`/api/admin/members/${user.id}`, { phone: '0803 000 1234' }, { token: adminToken });
   assert.equal(set.status, 200, JSON.stringify(set.body));
 
-  // Normalised on the way in, because the six digits are counted off the E.164
+  // Normalised on the way in, because the four digits are counted off the E.164
   // form — otherwise what an admin typed and what the member types would have
   // to match character for character.
   const row = h.db.prepare('SELECT phone, phone_normalized FROM users WHERE id = ?').get(user.id);
   assert.equal(row.phone_normalized, '+2348030001234');
 
-  const after = await h.post('/api/auth/login', { identifier: 'ada@example.ng', digits: '001234' });
+  const after = await h.post('/api/auth/login', { identifier: 'ada@example.ng', digits: '1234' });
   assert.equal(after.status, 200, 'and now they are in');
 });
 

@@ -255,13 +255,13 @@ router.put('/members/:id', requirePermission('members.write'), async (req, res) 
   const params = [];
 
   // The number is half of what a member signs in with — their address and its
-  // last six digits — so this is not an ordinary contact detail and it is the
+  // last four digits — so this is not an ordinary contact detail and it is the
   // only way to rescue somebody who has none. Members arrive through four doors
   // that never required one (SSO, the landing page, a spreadsheet, an
   // administrator typing them in), and every one of those produces an account
   // that cannot sign in until this is filled.
   //
-  // Normalised on the way in for the same reason it is everywhere else: the six
+  // Normalised on the way in for the same reason it is everywhere else: the four
   // digits are counted off the E.164 form, so 0803… and +234803… have to become
   // one number or the same person gets a different credential depending on how
   // it was typed.
@@ -312,7 +312,7 @@ router.put('/members/:id', requirePermission('members.write'), async (req, res) 
 
 // POST /api/admin/members/:id/sign-out
 // Members have no password to reset — they sign in with their address and the
-// last six digits of their phone number — so
+// last four digits of their phone number — so
 // what an operator actually needs after a report of a lost or shared device is
 // to end that member's live sessions. The next code they request is their way
 // back in.

@@ -262,7 +262,7 @@ router.put('/profile', requireAuth, async (req, res) => {
     setText('name', name);
 
     // The phone number is half the credential, not just a contact detail — its
-    // last six digits are what a participant signs in with, alongside their
+    // last four digits are what a participant signs in with, alongside their
     // email address. Once a number is on the account it cannot be changed from
     // here: a change would silently change what they sign in with, and the
     // number itself is never displayed anywhere it could be confirmed by an

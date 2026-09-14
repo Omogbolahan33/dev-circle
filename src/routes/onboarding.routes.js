@@ -222,7 +222,7 @@ router.post('/:token/submit', submitting, async (req, res) => {
   const { profile, consent } = onboarding.resolveProfile(questions, checked.answers);
 
   // Email is half the credential — a participant signs in with it and the last
-  // six digits of their phone — so an application carrying none produces a
+  // four digits of their phone — so an application carrying none produces a
   // member who could never sign in. canGoOut() already refuses to publish a
   // form that does not ask for it; this is the backstop for forms that predate
   // that rule.

@@ -47,7 +47,7 @@ const cohortRules = require('./cohortRules');
 
 const FIELDS = {
   // ── The credential ──
-  // A participant signs in with their email address and the last six digits of
+  // A participant signs in with their email address and the last four digits of
   // their phone number. Both, therefore, are required of every form that goes
   // out: one without them produces members who can never sign in, and the
   // person who filled it in has no way of knowing that happened.
@@ -63,7 +63,7 @@ const FIELDS = {
   },
   phone: {
     label: 'Phone number',
-    hint: 'The other half — its last six digits are what they sign in with',
+    hint: 'The other half — its last four digits are what they sign in with',
     column: 'phone',
     types: ['text'],
     required: true
@@ -805,7 +805,7 @@ async function approve(submissionId, { adminId = null, note = null } = {}) {
         profile.phone || null, phone,
         profile.company || null, profile.work_sector || null,
         // Participants hold no password — they sign in with this address and
-        // the last six digits of the number beside it.
+        // the last four digits of the number beside it.
         identity.NO_PASSWORD,
         profile.date_of_birth || null, profile.gender || null, profile.location_state || null,
         JSON.stringify(profile.api_products || []),

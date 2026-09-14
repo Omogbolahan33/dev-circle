@@ -43,7 +43,7 @@ test('signing in does not trigger a cache rewarm', async () => {
   const user = h.makeUser({ email: 'ada@example.ng', phone: '+2348030001234' });
 
   const { calls, value } = await countWarms(() =>
-    h.post('/api/auth/login', { identifier: user.email, digits: '001234' }));
+    h.post('/api/auth/login', { identifier: user.email, digits: '1234' }));
 
   assert.equal(value.status, 200, 'the login itself still works');
   assert.equal(calls, 0,

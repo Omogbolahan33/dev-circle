@@ -8,7 +8,7 @@
   -- Users (base + migrations 2,3,10,16, etc.)
   CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
-    -- email stays required: with the last six digits of the phone number it is
+    -- email stays required: with the last four digits of the phone number it is
     -- the whole of a participant's credential. name became nullable in
     -- migration 28 — an onboarding form decides what it asks, and a circle
     -- collecting an address and nothing else is not making a mistake.

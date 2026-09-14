@@ -7,7 +7,7 @@
 //
 // The rule: a Credit Direct email domain means staff, and staff use a
 // password. Everyone else is a participant, and a participant signs in with
-// their email address and the last six digits of the phone number they
+// their email address and the last four digits of the phone number they
 // registered — which is why an onboarding form is required to collect both.
 
 const config = require('../config');
@@ -39,22 +39,28 @@ function isStaffEmail(email) {
 }
 
 // ─── The participant's secret ───────────────────────────────
-// The last six digits of the number they registered with.
+// The last four digits of the number they registered with.
 //
-// It is a weak secret and it is worth naming as one: six digits is a million
-// combinations, and a phone number is not private the way a password is —
-// anyone who has it can derive this. What stands in front of it is the login
-// throttle (eight failures per address per address-and-IP in fifteen minutes)
-// and the rate limit on /api/auth. That is enough to make guessing impractical
-// for one attacker and not enough to make this equivalent to a password, which
-// is the trade this scheme makes knowingly.
+// It is a weak secret and it is worth naming as one: four digits is ten
+// thousand combinations, and a phone number is not private the way a password
+// is — anyone who has it can derive this. What stands in front of it is the
+// login throttle (eight failures per address-and-IP in fifteen minutes) and
+// the rate limit on /api/auth. That is enough to make guessing impractical for
+// one attacker working from one address, and it is the whole of what stands
+// there — so the throttle is not an optimisation to be tuned away.
 //
-// Six is counted off the normalised E.164 form rather than off what they
+// This was six digits. Four is what people can read off the back of a SIM
+// pack or recite without looking, and it is the length everyone already
+// recognises as "the end of my number" rather than as a code they are waiting
+// to be sent — which is the confusion the sign-in page was actually losing
+// people to. The cost is a hundredfold in guesses, paid knowingly.
+//
+// Four is counted off the normalised E.164 form rather than off what they
 // typed, so 0803 555 0142, +234 803 555 0142 and 8035550142 all yield the same
-// six digits — otherwise the same person would have a different secret
+// four digits — otherwise the same person would have a different secret
 // depending on how they wrote their number the day they registered.
 
-const PHONE_DIGITS = 6;
+const PHONE_DIGITS = 4;
 
 // The digits themselves, or null when there is no number on file or it is too
 // short to yield a secret. Null is never a match: a member with no phone number
@@ -141,7 +147,7 @@ function classify(raw) {
   // email and a password.
   //
   // It is not a participant's identifier either, and that is a security
-  // property rather than a preference. The secret is the last six digits of
+  // property rather than a preference. The secret is the last four digits of
   // this very number, so accepting the number as the thing you type in the
   // first box would mean handing over the credential to get to the credential
   // box. The sign-in page reads this and asks for their email instead.
@@ -164,10 +170,15 @@ function maskEmail(email) {
   return `${head}${DOT.repeat(3)}${tail}${domain}`;
 }
 
+// A number is masked from the tail rather than towards it, which is the
+// opposite of the usual habit. The last PHONE_DIGITS of this very number are
+// the credential, so a mask ending in them would print the secret in order to
+// say "yes, that is your number" — the head identifies it just as well.
 function maskPhone(phone) {
   const digits = phone.replace(/\D/g, '');
-  const last = digits.slice(-4);
-  return `+${digits.slice(0, 3)} ${DOT.repeat(3)} ${DOT.repeat(3)} ${last}`;
+  const head = digits.slice(0, Math.max(0, digits.length - PHONE_DIGITS));
+  const grouped = head.replace(/(\d{3})(?=\d)/g, '$1 ');
+  return `+${grouped} ${DOT.repeat(PHONE_DIGITS)}`.trim();
 }
 
 function mask(identity) {

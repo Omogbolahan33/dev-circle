@@ -276,7 +276,7 @@
     approve: {
       title: n => `Approve ${n} applicant${n === 1 ? '' : 's'}?`,
       text: n => `${n === 1 ? 'They' : 'They all'} become members of this circle, reachable on the ` +
-        'channels they consented to, signing in with their email address and the last six digits ' +
+        'channels they consented to, signing in with their email address and the last four digits ' +
         'of their phone number. Any that cannot be approved are reported back rather than ' +
         'stopping the rest.',
       ok: 'Approve', danger: false
@@ -433,7 +433,7 @@
       text: action === 'approve'
         ? `${a.name || 'They'} will be a member of this circle, reachable on the channels they ` +
           'consented to. They sign in with the email address on this application and the last ' +
-          'six digits of the phone number beside it.' +
+          'four digits of the phone number beside it.' +
           (open.application.profile?.phone ? '' :
             ' This application carries no phone number, so they will not be able to sign in ' +
             'until somebody adds one to their profile.')

@@ -86,19 +86,19 @@ test('a landing-page registration creates a profile, cohort and circle membershi
   assert.equal(inCircle, 1);
 
   // Registration hands out no credential and invents none. The member signs in
-  // with the address they gave and the last six digits of the number beside it,
+  // with the address they gave and the last four digits of the number beside it,
   // both of which they already have.
   assert.equal(res.body.temp_password, undefined);
   assert.equal(user.phone_normalized, '+2348031112222');
   assert.equal(res.body.sign_in.method, 'phone_digits');
-  assert.equal(res.body.sign_in.digits, 6);
+  assert.equal(res.body.sign_in.digits, 4);
 
   assert.ok(await h.loginUser('tola@stitch.ng'));
 
-  // Not by phone number, however it is written. The last six digits of that
+  // Not by phone number, however it is written. The last four digits of that
   // number are the secret, so the number cannot also be the identifier.
   const byPhone = await h.post('/api/auth/login', {
-    identifier: '+234 803 111 2222', digits: '112222'
+    identifier: '+234 803 111 2222', digits: '2222'
   });
   assert.equal(byPhone.status, 400);
 });

@@ -589,7 +589,7 @@
     if (chosen?.hint) tips.push(chosen.hint);
     if (chosen?.channels) tips.push(`Options have to name a channel we can message on: ${chosen.channels.join(', ').replace(/_/g, '-')}. An option that names none is refused when the form is saved, rather than losing somebody's consent quietly.`);
     if (chosen?.days) tips.push('Options have to be days of the week.');
-    if (question.maps_to === 'phone' && question.format === 'phone') tips.push('Its last six digits are what they sign in with, so it is worth saying on the form why you are asking.');
+    if (question.maps_to === 'phone' && question.format === 'phone') tips.push('Its last four digits are what they sign in with, so it is worth saying on the form why you are asking.');
 
     return `
       <div class="maps">

@@ -158,7 +158,7 @@ router.post('/landing-page/ingest', requireApiKey('landing_page'), async (req, r
   await markProcessed(eventId);
 
   // No credential to hand back and none to invent: the member signs in with
-  // this address and the last six digits of the number registered against it,
+  // this address and the last four digits of the number registered against it,
   // both of which they already have.
   res.status(201).json({
     message: 'User created',

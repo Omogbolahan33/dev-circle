@@ -43,34 +43,24 @@
 
     .signin { display: flex; align-items: center; justify-content: center; padding: var(--sp-8) var(--sp-6); }
     .signin-inner { width: 100%; max-width: 360px; }
+    .signin [hidden] { display: none !important; }
 
     .signin-title { font-family: var(--font-display); font-weight: var(--fw-bold); font-size: var(--fs-xl); letter-spacing: -0.03em; margin-bottom: var(--sp-2); }
-    .signin-sub { color: var(--ash); font-size: var(--fs-sm); margin-bottom: var(--sp-6); }
+    .signin-sub { color: var(--ash); font-size: var(--fs-sm); margin-bottom: var(--sp-6); min-height: 2.6em; }
 
-    /* Step two opens on whoever the backend says this is, so the identifier
-       stays on screen — with the way back to change it. */
-    .whoami {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: var(--sp-3);
-      background: var(--surface-2);
-      border: 1px solid var(--line);
-      border-radius: var(--r-md);
-      padding: var(--sp-3);
-      margin-bottom: var(--sp-5);
-      font-size: var(--fs-sm);
-    }
-    .whoami .value { font-family: var(--font-mono); color: var(--white); overflow-wrap: anywhere; }
-    .whoami button { color: var(--cd-blue); font-size: var(--fs-xs); flex-shrink: 0; }
-    .whoami button:hover { text-decoration: underline; }
+    /* The second field is a secret whichever audience is in front of it, so it
+       is masked whichever audience is in front of it. What changes is the
+       label above it — and the label is settled before anyone presses
+       anything, which is the whole point of resolving as they type. */
+    .secret-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-3); }
+    .reveal { font-size: var(--fs-xs); color: var(--cd-blue); letter-spacing: 0.04em; flex-shrink: 0; }
+    .reveal:hover { text-decoration: underline; }
 
-    .code-input {
-      font-family: var(--font-mono);
-      font-size: var(--fs-xl);
-      letter-spacing: 0.5em;
-      text-align: center;
-    }
+    /* It arrives mid-sentence, so it should arrive gently rather than making
+       the form jump under whoever is still typing above it. */
+    .field-appear { animation: field-in var(--duration-fast, 140ms) var(--ease-out, ease-out); }
+    @keyframes field-in { from { transform: translateY(-4px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+    @media (prefers-reduced-motion: reduce) { .field-appear { animation: none; } }
 
     .divider { display: flex; align-items: center; gap: var(--sp-3); color: var(--ash-dim); font-size: var(--fs-xs); margin: var(--sp-5) 0; }
     .divider::before, .divider::after { content: ''; flex: 1; height: 1px; background: var(--line-faint); }
@@ -145,66 +135,49 @@
         <button class="icon-btn" data-theme-toggle onclick="Theme.toggle()"><span data-theme-icon></span></button>
       </div>
       <h2 class="signin-title">Sign in</h2>
-      <p class="signin-sub" id="signinSub">Enter the email or phone number you are known by. We work out the rest.</p>
+      <p class="signin-sub" id="signinSub">Enter the email address you are known by. We work out the rest.</p>
 
-      <div class="error-box" id="error"></div>
-      <div class="note" id="note"></div>
+      <div class="error-box" id="error" role="alert"></div>
+      <div class="note" id="note" aria-live="polite"></div>
 
-      <!-- Step one: one field, everybody -->
-      <form id="stepIdentify" onsubmit="handleIdentify(event)">
+      <!-- One form. The second field settles into what this person actually
+           holds while they are still typing the first — see the script. -->
+      <form id="signinForm" onsubmit="handleSignIn(event)">
         <div class="field">
-          <label class="label" for="identifier">Email or phone number</label>
-          <input type="text" id="identifier" class="input" placeholder="you@company.ng or 0803 000 0000"
+          <label class="label" for="identifier">Email address</label>
+          <input type="text" id="identifier" class="input" placeholder="you@company.ng"
                  required autocomplete="username" autocapitalize="off" spellcheck="false">
         </div>
-        <button type="submit" class="btn btn-primary btn-block btn-lg" id="identifyBtn">Continue</button>
 
-        <div class="divider">or</div>
-        <button type="button" class="btn btn-secondary btn-block" onclick="handleSSO()">Continue with Developer Hub</button>
-        <p class="hint" style="text-align:center">
-          New here? You are registered through the
-          <a href="https://creditdirect.ng">Credit Direct</a> developer landing page.
-        </p>
-      </form>
-
-      <!-- Step two, staff: the password half of the same form -->
-      <form id="stepPassword" onsubmit="handlePassword(event)" style="display:none">
-        <div class="whoami">
-          <span class="value" id="passwordWho"></span>
-          <button type="button" onclick="startOver()">Change</button>
+        <div class="field" id="secretField" hidden>
+          <div class="secret-head">
+            <label class="label" for="secret" id="secretLabel">Password</label>
+            <button type="button" class="reveal" id="revealBtn" aria-pressed="false" aria-controls="secret">Show</button>
+          </div>
+          <input type="password" id="secret" class="input" placeholder="••••••••" autocomplete="current-password">
+          <p class="hint" id="secretHint"></p>
         </div>
 
-        <div class="field">
-          <label class="label" for="password">Password</label>
-          <input type="password" id="password" class="input" placeholder="••••••••" autocomplete="current-password">
+        <button type="submit" class="btn btn-primary btn-block btn-lg" id="signinBtn">Sign in</button>
+
+        <!-- The other ways in, and they are all the developer's: the Hub
+             handoff is for the people building on the APIs, and nobody
+             registers themselves into a Credit Direct account. So this whole
+             block goes once the address turns out to be staff. -->
+        <div id="altWays">
+          <div class="divider">or</div>
+          <button type="button" class="btn btn-secondary btn-block" onclick="handleSSO()">Continue with Developer Hub</button>
+          <p class="hint" style="text-align:center" id="footNote">
+            New here? You are registered through the
+            <a href="https://creditdirect.ng">Credit Direct</a> developer landing page.
+          </p>
+          <!-- Swapped in for the line above once we know this is a participant:
+               by then "new here?" is the wrong question and "the number we have
+               for you is wrong" is the likely one. -->
+          <p class="hint" style="text-align:center" id="changedNumber" hidden>
+            Changed your number, or never gave us one? Ask the team that onboarded you to update it.
+          </p>
         </div>
-
-        <button type="submit" class="btn btn-primary btn-block btn-lg" id="passwordBtn">Sign in</button>
-      </form>
-
-      <!-- Step two, participants: the last digits of the number on their record.
-           Nothing is sent and there is nothing to wait for — they already know
-           their own phone number. -->
-      <form id="stepDigits" onsubmit="handleDigits(event)" style="display:none">
-        <div class="whoami">
-          <span class="value" id="digitsWho"></span>
-          <button type="button" onclick="startOver()">Change</button>
-        </div>
-
-        <div class="field">
-          <label class="label" for="digits">Last 6 digits of your phone number</label>
-          <input type="text" id="digits" class="input code-input" placeholder="000000" maxlength="7"
-                 inputmode="numeric" autocomplete="off">
-          <p class="hint" id="digitsHint"></p>
-        </div>
-
-        <button type="submit" class="btn btn-primary btn-block btn-lg" id="digitsBtn">Sign in</button>
-
-        <div class="divider">or</div>
-        <button type="button" class="btn btn-secondary btn-block" onclick="handleSSO()">Continue with Developer Hub</button>
-        <p class="hint" style="text-align:center">
-          Changed your number, or never gave us one? Ask the team that onboarded you to update it.
-        </p>
       </form>
 
       <p class="legal">Credit Direct Limited · CBN Licensed · <a href="https://creditdirect.ng">creditdirect.ng</a></p>
@@ -215,15 +188,37 @@
 
 <script src="/assets/js/api.js"></script>
 <script>
-  // One field, then whatever the backend says this person needs. The page
-  // never decides who you are — it only renders the challenge it is handed.
-  let who = null;
+  // ─── One form, resolved as it is typed ────────────────────
+  // This used to be two steps: type your address, press Continue, and the
+  // backend came back with what to ask for next. The participant half of step
+  // two was six boxes in a monospaced row with the letters spaced apart, and
+  // people read that the way anyone reads that shape — as somewhere to paste a
+  // code — and then sat waiting for a text message that was never coming.
+  //
+  // So: one form, and the second field is a masked password box for everybody,
+  // because a password box is the shape of "something you already know". What
+  // differs between the two audiences is the label above it, and the label is
+  // settled before anyone presses anything — the domains that mean Credit
+  // Direct are fetched once on load and the address is classified against them
+  // on every keystroke.
+  //
+  // The page still decides nothing that matters. /auth/login classifies the
+  // address again for itself, so the worst a wrong guess up here can do is
+  // print the wrong label; it cannot let anybody in with the wrong credential.
+
+  const $ = id => document.getElementById(id);
 
   if (Auth.isLoggedIn()) {
     window.location.href = Auth.isAdmin() ? '/admin/dashboard.html' : '/member/dashboard.html';
   }
 
-  const $ = id => document.getElementById(id);
+  const identifierEl = $('identifier');
+  const secretField = $('secretField');
+  const secretEl = $('secret');
+
+  let policy = null;   // { staff_domains, digits } — the local copy of the rule
+  let method = null;   // 'password' | 'phone_digits' | 'email_required' | null
+  let digits = null;   // how many, when the method is phone_digits
 
   async function post(path, body) {
     const res = await fetch(API_BASE + path, {
@@ -234,101 +229,240 @@
     return { ok: res.ok, data: await res.json().catch(() => ({})) };
   }
 
-  function showStep(name) {
-    for (const step of ['stepIdentify', 'stepPassword', 'stepDigits']) {
-      $(step).style.display = step === name ? 'block' : 'none';
+  // ─── Working out who is typing ────────────────────────────
+
+  const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+  // The same rule the backend applies, run locally so it costs nothing to run
+  // it on every keystroke. Null means "not enough typed yet to say".
+  function resolveLocally(raw) {
+    if (!policy) return null;
+
+    const input = raw.trim();
+    if (!input) return null;
+
+    if (input.includes('@')) {
+      const email = input.toLowerCase();
+      if (!EMAIL_RE.test(email)) return null;
+
+      const domain = email.slice(email.lastIndexOf('@') + 1);
+      // The domain itself and anything under it, so mail.creditdirect.ng is
+      // staff while a lookalike like creditdirect.ng.example.com is not.
+      const staff = policy.staff_domains.some(d => domain === d || domain.endsWith('.' + d));
+
+      return staff
+        ? { method: 'password', digits: null }
+        : { method: 'phone_digits', digits: policy.digits };
     }
+
+    // Enough digits to be somebody typing their phone number, which is the one
+    // thing this box cannot take — its own last digits are the secret.
+    const looksLikeANumber = /^\+?[\d\s().-]+$/.test(input) && input.replace(/\D/g, '').length >= 7;
+    return looksLikeANumber ? { method: 'email_required', digits: null } : null;
   }
 
-  function startOver() {
-    who = null;
-    hideError();
+  // If the policy never arrived we ask the server the same question instead,
+  // debounced, so the field still resolves while they type — a beat later, and
+  // without the page having to fall back to a Continue button it no longer has.
+  let remoteTimer = null;
+
+  function resolveRemotely(raw) {
+    clearTimeout(remoteTimer);
+    remoteTimer = setTimeout(async () => {
+      const asked = raw.trim();
+      if (!asked) return;
+
+      const { ok, data } = await post('/auth/identify', { identifier: asked });
+      // They have typed on since we asked; that keystroke's answer is the one
+      // that counts, not this one.
+      if (identifierEl.value.trim() !== asked) return;
+
+      apply(ok ? { method: data.method, digits: data.digits } : null);
+    }, 250);
+  }
+
+  function resolveNow() {
+    const raw = identifierEl.value;
+    const local = resolveLocally(raw);
+
+    if (local || policy) return apply(local);
+    resolveRemotely(raw);
+  }
+
+  // ─── Rendering the second field ───────────────────────────
+
+  function apply(resolved) {
+    const next = resolved ? resolved.method : null;
+    if (next === method) return;
+
+    method = next;
+    digits = resolved ? resolved.digits : null;
+
+    // One box, two different secrets. Whatever was typed for the last audience
+    // never travels to the next one — not as a password posted as digits, and
+    // not as digits left visible under a label that now says Password.
+    secretEl.value = '';
+    conceal();
+
+    if (!next || next === 'email_required') {
+      secretField.hidden = true;
+      secretEl.required = false;
+      $('altWays').hidden = false;
+      $('footNote').hidden = false;
+      $('changedNumber').hidden = true;
+    }
+
+    if (next === 'email_required') {
+      showNote('Sign in with the email address you registered with. Your number is not the way in — ' +
+               'the end of it is what we ask you for.');
+      $('signinSub').textContent = 'Enter the email address you are known by. We work out the rest.';
+      return;
+    }
+
     hideNote();
-    $('password').value = '';
-    $('digits').value = '';
-    $('signinSub').textContent = 'Enter the email or phone number you are known by. We work out the rest.';
-    showStep('stepIdentify');
-    $('identifier').focus();
+
+    if (!next) {
+      $('signinSub').textContent = 'Enter the email address you are known by. We work out the rest.';
+      $('secretHint').textContent = '';
+      return;
+    }
+
+    if (next === 'password') {
+      $('signinSub').textContent = 'Credit Direct staff sign in with a password.';
+      $('secretLabel').textContent = 'Password';
+      $('secretHint').textContent = '';
+      secretEl.placeholder = '••••••••';
+      secretEl.setAttribute('autocomplete', 'current-password');
+      secretEl.removeAttribute('inputmode');
+    } else {
+      const n = digits || 4;
+      $('signinSub').textContent = 'You sign in with your own number — no password, and no code to wait for.';
+      // Worded as an instruction rather than as the name of a box, because the
+      // thing people got wrong here was what was being asked of them.
+      $('secretLabel').textContent = `Enter the last ${n} digits of your number`;
+      $('secretHint').textContent =
+        `The phone number you registered with — its last ${n} digits. Nobody is sending you a code.`;
+      secretEl.placeholder = '•'.repeat(n);
+      secretEl.setAttribute('autocomplete', 'off');
+      secretEl.setAttribute('inputmode', 'numeric');
+    }
+
+    secretField.hidden = false;
+    secretEl.required = true;
+
+    // Restart the entrance rather than letting a class that is already on the
+    // element swallow it, so switching between the two labels still animates.
+    secretField.classList.remove('field-appear');
+    void secretField.offsetWidth;
+    secretField.classList.add('field-appear');
+
+    // Staff have no second way in and nothing to register for.
+    $('altWays').hidden = next === 'password';
+    $('footNote').hidden = next === 'phone_digits';
+    $('changedNumber').hidden = next !== 'phone_digits';
   }
 
-  async function handleIdentify(e) {
+  // ─── Masking ──────────────────────────────────────────────
+  // Masked by default, with the usual way to look at what you typed — four
+  // digits mistyped behind dots is otherwise invisible until it is refused.
+
+  function conceal() {
+    secretEl.type = 'password';
+    $('revealBtn').textContent = 'Show';
+    $('revealBtn').setAttribute('aria-pressed', 'false');
+  }
+
+  function toggleReveal() {
+    const revealed = secretEl.type === 'text';
+    secretEl.type = revealed ? 'password' : 'text';
+    $('revealBtn').textContent = revealed ? 'Show' : 'Hide';
+    $('revealBtn').setAttribute('aria-pressed', String(!revealed));
+    secretEl.focus();
+  }
+
+  // ─── Signing in ───────────────────────────────────────────
+
+  async function handleSignIn(e) {
     e.preventDefault();
-    const identifier = $('identifier').value.trim();
+
+    const identifier = identifierEl.value.trim();
     if (!identifier) return;
 
-    await busy($('identifyBtn'), 'Checking', async () => {
-      const { ok, data } = await post('/auth/identify', { identifier });
-      if (!ok) { showError(data.error || 'Could not read that. Check it and try again.'); return; }
+    if (method === 'email_required') {
+      showError('Sign in with the email address you registered with, not your phone number.');
+      identifierEl.select();
+      return;
+    }
 
-      who = data;
+    await busy($('signinBtn'), 'Signing in', async () => {
+      const secret = secretEl.value.trim();
 
-      if (data.method === 'password') {
-        $('passwordWho').textContent = data.identifier;
-        $('signinSub').textContent = 'Credit Direct staff — your password, please.';
-        showStep('stepPassword');
-        $('password').focus();
+      // `password` is the documented alias for the digits field, so a form that
+      // has not resolved yet can still post what it was given and let the
+      // server work out what it was.
+      const { ok, data } = await post('/auth/login', method === 'phone_digits'
+        ? { identifier, digits: secret }
+        : { identifier, password: secret });
+
+      if (!ok) {
+        // The server knows what it wanted. If this page never worked it out —
+        // no policy, no identify — that answer is how the right field arrives.
+        if (data.method && data.method !== method) {
+          apply({ method: data.method, digits: data.digits });
+        }
+        showError(data.error || 'Sign in failed');
+        secretEl.select();
         return;
       }
 
-      // A phone number cannot be the identifier: its last six digits are the
-      // secret, so typing it would hand over the credential to reach the
-      // credential box. Say so and stay on the first step.
-      if (data.method === 'email_required') {
-        showError('Sign in with the email address you registered with, not your phone number.');
-        $('identifier').select();
-        return;
+      // Which side of the product they landed on is the server's answer, not
+      // this page's guess about their email domain.
+      if (data.isAdmin) {
+        // The permission list comes back with the session so the console can
+        // hide what this role cannot do, rather than offering it and failing
+        // at 403.
+        Auth.save(data.token, data.admin || data.user, true, data.permissions);
+        window.location.href = '/admin/dashboard.html';
+      } else {
+        Auth.save(data.token, data.user, false);
+        window.location.href = '/member/dashboard.html';
       }
-
-      askForDigits(data);
-    });
-  }
-
-  // Participants never type a password and never wait for anything: the secret
-  // is the tail of the number already on their record.
-  function askForDigits(data) {
-    hideNote();
-    $('digitsWho').textContent = data.identifier;
-    $('digitsHint').textContent =
-      `The last ${data.digits || 6} digits of the phone number you registered with.`;
-    $('signinSub').textContent = 'One more thing, to check it is you.';
-
-    showStep('stepDigits');
-    $('digits').focus();
-  }
-
-  async function handleDigits(e) {
-    e.preventDefault();
-    await busy($('digitsBtn'), 'Signing in', async () => {
-      const { ok, data } = await post('/auth/login', {
-        identifier: who.identifier,
-        digits: $('digits').value.trim()
-      });
-      if (!ok) { showError(data.error || 'That did not match. Check the digits and try again.'); return; }
-
-      Auth.save(data.token, data.user, false);
-      window.location.href = '/member/dashboard.html';
-    });
-  }
-
-  async function handlePassword(e) {
-    e.preventDefault();
-    await busy($('passwordBtn'), 'Signing in', async () => {
-      const { ok, data } = await post('/auth/login', {
-        identifier: who.identifier,
-        password: $('password').value
-      });
-      if (!ok) { showError(data.error || 'Sign in failed'); return; }
-
-      // The permission list comes back with the session so the console can hide
-      // what this role cannot do, rather than offering it and failing at 403.
-      Auth.save(data.token, data.admin || data.user, true, data.permissions);
-      window.location.href = '/admin/dashboard.html';
     });
   }
 
   function handleSSO() {
     showError('Single sign-on hands off to the Developer Hub in production.');
   }
+
+  // ─── Wiring ───────────────────────────────────────────────
+
+  identifierEl.addEventListener('input', () => { hideError(); resolveNow(); });
+  // Autofill does not always announce itself as typing.
+  identifierEl.addEventListener('change', resolveNow);
+
+  secretEl.addEventListener('input', () => {
+    if (method !== 'phone_digits') return;
+    // Strip, then cut. A maxlength attribute does it the other way round and
+    // spends two of the four characters on the spaces in a pasted "00 01",
+    // leaving three digits and a refusal nobody can account for.
+    const cleaned = secretEl.value.replace(/\D/g, '').slice(0, digits || 4);
+    if (cleaned !== secretEl.value) secretEl.value = cleaned;
+  });
+
+  $('revealBtn').addEventListener('click', toggleReveal);
+
+  (async function loadPolicy() {
+    try {
+      const res = await fetch(API_BASE + '/auth/policy');
+      if (res.ok) policy = await res.json();
+    } catch {
+      // resolveNow() falls through to /auth/identify on its own.
+    }
+    // The browser may have filled the address in before any of this ran.
+    resolveNow();
+  })();
+
+  // ─── Small helpers ────────────────────────────────────────
 
   async function busy(btn, label, work) {
     const original = btn.textContent;

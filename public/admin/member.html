@@ -362,7 +362,7 @@
 
   // ─── The number they sign in with ─────────────────────────
   // Not an ordinary contact detail. A member signs in with their email address
-  // and the last six digits of this, so an account with no number on it is an
+  // and the last four digits of this, so an account with no number on it is an
   // account nobody can get into — and this is the only way to fix that.
   //
   // Members reach that state through four doors that have never required a
@@ -372,7 +372,7 @@
     const current = member?.user?.phone || '';
     const given = window.prompt(
       'Phone number for this member.\n\n' +
-      'Its last six digits are what they sign in with, alongside their email ' +
+      'Its last four digits are what they sign in with, alongside their email ' +
       'address — so changing it changes their credential. Tell them.',
       current
     );
@@ -385,14 +385,14 @@
     } catch (err) { showToast(err.message, 'error'); }
   }
 
-  // Members hold no password — they sign in with their address and the last six
+  // Members hold no password — they sign in with their address and the last four
   // digits of their number — so the recovery action is ending their live
   // sessions, not issuing a credential.
   async function signOutEverywhere(btn) {
     const ok = await Shell.confirm({
       title: 'Sign this member out everywhere?',
       text: 'Every device they are signed in on stops working immediately. They can sign back in ' +
-            'with their email address and the last six digits of their phone number.',
+            'with their email address and the last four digits of their phone number.',
       ok: 'Sign out'
     });
     if (!ok) return;

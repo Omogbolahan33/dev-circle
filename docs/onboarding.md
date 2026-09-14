@@ -73,7 +73,7 @@ A form cannot go live until it collects an **email address** and a **phone
 number**, both **required** and **not behind a branch**.
 
 Those two are the credential: a participant signs in with their email address
-and the last six digits of the phone number on their record. A form that can be
+and the last four digits of the phone number on their record. A form that can be
 completed without them produces accounts nobody can get into, and the person who
 filled it in has no way of knowing that happened.
 
@@ -244,7 +244,7 @@ them, and which channels they consented to.
 - **Approve** creates the member, joins them to the circle the form feeds and to
   its cohorts, and writes a granted consent row per channel ticked. They hold no
   password: like every participant, they sign in with the email address on the
-  application and the last six digits of the phone number beside it.
+  application and the last four digits of the phone number beside it.
 - Where the address already belongs to a member — or, failing an address, the
   normalised phone number does — they are **joined to this circle** instead of
   getting a second account, and the application fills in only what their profile
@@ -405,24 +405,24 @@ deleting it would take their applications with it.
 Worth knowing here, because it is why the form is required to collect what it
 collects.
 
-A participant signs in with **their email address and the last six digits of the
+A participant signs in with **their email address and the last four digits of the
 phone number on their record**. There is no password and no one-time code. Staff
 — recognised by a Credit Direct email domain — still use a password, on the same
 form.
 
-A **phone number is not accepted as the identifier**. The secret is six digits
+A **phone number is not accepted as the identifier**. The secret is four digits
 of that very number, so accepting it in the first box would mean handing over
 the credential to reach the credential box. Typing one is answered with "sign in
 with the email address you registered with".
 
 The digits are counted off the normalised E.164 form, so `0803 555 0142`,
-`+234 803 555 0142` and `8035550142` all yield the same six — otherwise the same
+`+234 803 555 0142` and `8035550142` all yield the same four — otherwise the same
 person would have a different secret depending on how they wrote their number
 the day they registered.
 
 ### What this is worth
 
-Six digits is a million combinations, and a phone number is not private the way
+Four digits is a million combinations, and a phone number is not private the way
 a password is: anyone who has it can derive this. What stands in front of it is
 the login throttle — eight failures per address-and-IP in fifteen minutes — and
 the rate limit on `/api/auth`. That is enough to make guessing impractical for
@@ -452,5 +452,5 @@ SELECT COUNT(*) FROM users WHERE phone_normalized IS NULL AND status = 'active';
 Two ways to fix one: the member sets it themselves under **Profile**, or an
 administrator sets it on the member's page — the Phone row reads *"None — they
 cannot sign in"* and carries an **Add** button. Either way the number is
-normalised to E.164 on the way in, because the six digits are counted off that
+normalised to E.164 on the way in, because the four digits are counted off that
 form rather than off what was typed.

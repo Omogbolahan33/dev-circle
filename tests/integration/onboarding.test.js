@@ -18,7 +18,7 @@ beforeEach(async () => {
 
 // What every form has to ask, in the shape the builder posts it. The email and
 // the phone number are the credential — an approved member signs in with the
-// address and the last six digits of the number — so a form that goes out
+// address and the last four digits of the number — so a form that goes out
 // without both is refused. The name is merely advisable.
 const IDENTITY = [
   { type: 'text', text: 'What should we call you?', required: true, format: 'none', maps_to: 'name' },
@@ -455,7 +455,7 @@ test('an automatically admitted member can sign in straight away', async () => {
   await fillIn(form, WHO);
 
   // Signed in the way the portal signs somebody in: the address they gave, and
-  // the last six digits of the number stored against it.
+  // the last four digits of the number stored against it.
   const token = await h.loginUser('chidi@paystack.africa');
   assert.ok(token, 'the credential they filled in should work with no further step');
 
