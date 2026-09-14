@@ -224,7 +224,15 @@ function parseStamp(value) {
     return Number.isNaN(dateOnly.getTime()) ? null : dateOnly;
   }
 
-  let iso = text.includes('T') ? text : text.replace(' ', 'T');
+  // Everything either database produces starts with a calendar date. Anything
+  // that does not is handed to the engine as it is rather than normalised into
+  // something wrong — see the note beside the copy of this in utils/helpers.js.
+  if (!/^\d{4}-\d{2}-\d{2}[T ]/.test(text)) {
+    const native = new Date(text);
+    return Number.isNaN(native.getTime()) ? null : native;
+  }
+
+  let iso = text.replace(' ', 'T');
 
   // A third shape, and the one that put "Undated" on the admin dashboard.
   // Everywhere the SQL casts a timestamp to text itself — the dashboard reads

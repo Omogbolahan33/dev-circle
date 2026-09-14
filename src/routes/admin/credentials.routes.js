@@ -1,7 +1,7 @@
 const express = require('express');
 const db = require('../../db');
 const config = require('../../config');
-const { uuid, parseJSON } = require('../../utils/helpers');
+const { uuid, parseJSON, parseStamp, sqlTime, hasExpired } = require('../../utils/helpers');
 const emailService = require('../../services/email');
 const {
   requirePermission, generateApiKey, hashApiKey
@@ -122,7 +122,7 @@ function providers() {
 
 function keyStatus(row) {
   if (row.revoked_at) return 'revoked';
-  if (row.expires_at && new Date(row.expires_at.replace(' ', 'T')) <= new Date()) return 'expired';
+  if (hasExpired(row.expires_at)) return 'expired';
   return 'live';
 }
 
@@ -163,11 +163,19 @@ function normaliseExpiry(value) {
   if (value === null || value === undefined || value === '') return { value: null };
 
   const text = String(value).trim();
-  const date = new Date(text.includes(' ') || text.includes('T') ? text.replace(' ', 'T') : `${text}T23:59:59Z`);
-  if (Number.isNaN(date.getTime())) return { error: 'expires_at must be a date or date-time' };
+
+  // A bare date from the picker means the end of that day, not midnight at the
+  // start of it — a key set to expire "on the 14th" should work on the 14th.
+  // parseStamp reads a bare date as UTC midnight, correctly and for everybody
+  // else, so the end-of-day is stated here where it is a product decision.
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(text)
+    ? parseStamp(`${text}T23:59:59Z`)
+    : parseStamp(text);
+
+  if (!date) return { error: 'expires_at must be a date or date-time' };
   if (date.getTime() <= Date.now()) return { error: 'expires_at must be in the future' };
 
-  return { value: date.toISOString().replace('T', ' ').slice(0, 19) };
+  return { value: sqlTime(date) };
 }
 
 // ─── The whole picture ──────────────────────────────────────

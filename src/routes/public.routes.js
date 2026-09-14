@@ -1,6 +1,6 @@
 const express = require('express');
 const db = require('../db');
-const { uuid, parseJSON } = require('../utils/helpers');
+const { uuid, parseJSON, hasExpired } = require('../utils/helpers');
 const { rateLimit } = require('../middleware/rateLimit');
 const surveyForm = require('../services/surveyForm');
 const verbatims = require('../services/verbatims');
@@ -46,7 +46,7 @@ async function openSurvey(token) {
   `).get(token, surveyForm.ANONYMOUS);
 
   if (!survey) return null;
-  if (survey.expires_at && new Date(survey.expires_at.replace(' ', 'T')) < new Date()) return null;
+  if (hasExpired(survey.expires_at)) return null;
   return survey;
 }
 

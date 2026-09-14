@@ -1,6 +1,6 @@
 const express = require('express');
 const db = require('../../db');
-const { uuid, now, parseJSON, toCSV, parseCSV } = require('../../utils/helpers');
+const { uuid, now, parseJSON, toCSV, parseCSV, hasExpired } = require('../../utils/helpers');
 const { requirePermission } = require('../../middleware/auth');
 const { resolveAudience, USER_NOTIFY_COLS } = require('../../services/audience');
 const engagement = require('../../services/engagement');
@@ -416,8 +416,7 @@ router.post('/surveys/:id/duplicate', requirePermission('surveys.write'), async 
 
   // An expiry is a date, not a duration, so carrying a past one over would
   // hand back a copy that is closed before it is published
-  const expiry = survey.expires_at &&
-    new Date(String(survey.expires_at).replace(' ', 'T')) > new Date() ? survey.expires_at : null;
+  const expiry = survey.expires_at && !hasExpired(survey.expires_at) ? survey.expires_at : null;
 
   const id = uuid();
   await db.prepare(`

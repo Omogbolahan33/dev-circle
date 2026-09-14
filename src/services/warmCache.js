@@ -1,5 +1,5 @@
 const { logger } = require('../utils/logger');
-const { parseJSON } = require('../utils/helpers');
+const { parseJSON, hasExpired } = require('../utils/helpers');
 const { PERMISSIONS } = require('../middleware/auth');
 
 // Load the pages the console opens first, so a cold visit is a cache hit
@@ -88,11 +88,7 @@ async function warmShared(cache) {
   const shaped = (keys || []).map(row => ({
     ...row,
     permissions: parseJSON(row.permissions, []),
-    status: row.revoked_at
-      ? 'revoked'
-      : (row.expires_at && new Date(String(row.expires_at).replace(' ', 'T')) <= new Date()
-        ? 'expired'
-        : 'live')
+    status: row.revoked_at ? 'revoked' : (hasExpired(row.expires_at) ? 'expired' : 'live')
   }));
 
   cache.putPage('/api-keys', {

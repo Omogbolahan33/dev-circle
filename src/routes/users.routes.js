@@ -1,6 +1,6 @@
 const express = require('express');
 const db = require('../db');
-const { uuid, parseJSON, sanitizeUser, paginate, pageMeta } = require('../utils/helpers');
+const { uuid, parseJSON, sanitizeUser, paginate, pageMeta, hasExpired } = require('../utils/helpers');
 const identity = require('../utils/identity');
 const { requireAuth } = require('../middleware/auth');
 const engagement = require('../services/engagement');
@@ -799,7 +799,7 @@ router.post('/surveys/:id/start', requireAuth, async (req, res) => {
   const survey = await db.prepare('SELECT * FROM surveys WHERE id = ? AND status = ?').get(req.params.id, 'active');
   if (!survey) return res.status(404).json({ error: 'Survey not found' });
 
-  if (survey.expires_at && new Date(survey.expires_at.replace(' ', 'T')) < new Date()) {
+  if (hasExpired(survey.expires_at)) {
     return res.status(410).json({ error: 'This survey has closed' });
   }
 

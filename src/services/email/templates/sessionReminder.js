@@ -1,4 +1,5 @@
 const { wrapLayout, toPlainText, escapeHtml } = require('./layout');
+const { parseStamp } = require('../../../utils/helpers');
 
 function renderSessionReminder({
   sessionTitle,
@@ -17,7 +18,13 @@ function renderSessionReminder({
   brand = null
 }) {
   const greeting = recipientName ? `Hello ${escapeHtml(recipientName)},` : 'Hello,';
-  const timeDisplay = sessionTime || (scheduledAt ? new Date(scheduledAt).toLocaleString('en-NG', { timeZone: 'Africa/Lagos' }) + ' WAT' : null);
+  // Through parseStamp, not new Date(): a stored "2026-09-14 10:00:00" states
+  // no zone, and the engine reads an unzoned string as *local* time. Wherever
+  // the process is not running in UTC that put the wrong hour in an invitation
+  // — an hour early in WAT, which is the deployment this is written for.
+  const when = parseStamp(scheduledAt);
+  const timeDisplay = sessionTime ||
+    (when ? when.toLocaleString('en-NG', { timeZone: 'Africa/Lagos' }) + ' WAT' : null);
 
   const contentHtml = `
     <p style="margin-top: 0;">${greeting}</p>

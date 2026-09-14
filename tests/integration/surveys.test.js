@@ -29,6 +29,44 @@ async function answering(survey) {
 const respond = (survey, token, answers) =>
   h.post(`/api/users/surveys/${survey.id}/respond`, { answers }, { token });
 
+// ─── Closing time ───────────────────────────────────────────
+// An expiry that is not enforced is worse than no expiry: the survey says it
+// has closed and still takes answers. This is the end-to-end statement of it;
+// the shapes an expiry can arrive in are covered in unit/stored-timestamps.
+
+test('a survey past its expiry cannot be started', async () => {
+  const made = await create({
+    status: 'active',
+    questions: [{ type: 'text', text: 'How is it going?' }]
+  });
+  const survey = made.body.survey;
+  h.db.prepare("UPDATE surveys SET expires_at = datetime('now', '-1 hour') WHERE id = ?")
+    .run(survey.id);
+
+  const user = h.makeUser();
+  const token = await h.loginUser(user.email);
+
+  const started = await h.post(`/api/users/surveys/${survey.id}/start`, {}, { token });
+  assert.equal(started.status, 410, 'a closed survey is gone, not merely not-found');
+  assert.match(started.body.error, /closed/i);
+});
+
+test('a survey inside its expiry is still open', async () => {
+  const made = await create({
+    status: 'active',
+    questions: [{ type: 'text', text: 'How is it going?' }]
+  });
+  const survey = made.body.survey;
+  h.db.prepare("UPDATE surveys SET expires_at = datetime('now', '+1 hour') WHERE id = ?")
+    .run(survey.id);
+
+  const user = h.makeUser();
+  const token = await h.loginUser(user.email);
+
+  const started = await h.post(`/api/users/surveys/${survey.id}/start`, {}, { token });
+  assert.equal(started.status, 200, 'an hour of life left is not the same as none');
+});
+
 // ─── Writing a survey ───────────────────────────────────────
 
 test('a survey that cannot be answered is refused, with a reason per question', async () => {

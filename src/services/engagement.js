@@ -1,5 +1,5 @@
 const db = require('../db');
-const { uuid } = require('../utils/helpers');
+const { uuid, parseStamp } = require('../utils/helpers');
 
 // ─── Engagement logging ─────────────────────────────────────
 // A single writer for engagement_history so every caller records the same
@@ -32,11 +32,11 @@ function daysBetween(a, b) {
   return Math.floor((a - b) / 86400000);
 }
 
-function parseSqliteDate(value) {
-  if (!value) return null;
-  const d = new Date(String(value).replace(' ', 'T') + (String(value).endsWith('Z') ? '' : 'Z'));
-  return Number.isNaN(d.getTime()) ? null : d;
-}
+// Was parseSqliteDate, and the name was the bug: it only ever handled what
+// SQLite returns. On Postgres last_engagement_at arrives as a Date, this made
+// an Invalid Date of it, and a streak that can never read its own previous
+// entry restarts at 1 every time.
+const parseSqliteDate = parseStamp;
 
 // Recompute the streak on a qualifying action. Previously the counter only
 // ever went up, which made both engagement_streak and best_streak meaningless.

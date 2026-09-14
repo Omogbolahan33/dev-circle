@@ -12,6 +12,88 @@ function parseJSON(str, fallback = null) {
   try { return JSON.parse(str); } catch { return fallback; }
 }
 
+// ─── Reading a stored timestamp ─────────────────────────────
+// The database hands this process a timestamp in whichever shape its driver
+// prefers, and there are four:
+//
+//   SQLite     "2026-08-26 22:14:19"            datetime('now') — UTC, unmarked
+//   Postgres   Date                             a TIMESTAMPTZ, parsed by pg
+//   Postgres   "2026-08-26 22:14:19.041123+00"  where the SQL cast it to text
+//   either     "2026-08-26"                     a bare date column
+//
+// Seven call sites used to normalise this for themselves, all of them with a
+// variation on `String(value).replace(' ', 'T')`, which is correct for exactly
+// the first shape. Handed a Date — which is what pg returns, since no type
+// parser is registered for timestamps — it produces "MonTSep 14 2026 …" and
+// then an Invalid Date.
+//
+// That was not a display bug. `Invalid Date < new Date()` is false, so every
+// "has this expired?" in the codebase answered *no* on Postgres: a closed
+// survey stayed answerable, an expired API key read as live, and a member's
+// streak never continued because the previous engagement never parsed.
+//
+// So: one parser, it takes all four shapes, and it returns null rather than an
+// Invalid Date for anything else. Null is a value a caller has to deal with;
+// NaN quietly compares false against everything, which is how this hid.
+function parseStamp(value) {
+  if (value === null || value === undefined || value === '') return null;
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+
+  const text = String(value).trim();
+  if (!text) return null;
+
+  // A bare date is already UTC midnight by the spec, and appending a zone to
+  // it produces nothing any engine will parse.
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) {
+    const dateOnly = new Date(text);
+    return Number.isNaN(dateOnly.getTime()) ? null : dateOnly;
+  }
+
+  // Everything either database produces starts with a calendar date. Anything
+  // that does not is not ours to normalise, and mangling it is worse than
+  // leaving it alone — a Date stringified by something upstream reads
+  // "Mon Sep 14 2026 19:23:45 GMT+0100 (West Africa Time)", which the rules
+  // below would turn into an instant an hour wrong rather than an unreadable
+  // one. Hand those to the engine, which knows the format.
+  if (!/^\d{4}-\d{2}-\d{2}[T ]/.test(text)) {
+    const native = new Date(text);
+    return Number.isNaN(native.getTime()) ? null : native;
+  }
+
+  let iso = text.replace(' ', 'T');
+
+  // Postgres renders a cast-to-text timestamp with microseconds and the
+  // shortest legal offset — "+00", not "+00:00". Neither is in the Date Time
+  // String Format, so normalise both rather than hope the engine is lenient.
+  iso = iso.replace(/(\.\d{3})\d+/, '$1');          // microseconds → milliseconds
+  iso = iso.replace(/([+-]\d{2})(\d{2})$/, '$1:$2');  // +0530 → +05:30
+  iso = iso.replace(/([+-]\d{2})$/, '$1:00');        // +00   → +00:00
+
+  // No zone stated means UTC: that is what datetime('now') writes and it does
+  // not say so. Read as local it is out by the machine's offset.
+  const zoned = /[Zz]$|[+-]\d{2}:\d{2}$/.test(iso) ? iso : `${iso}Z`;
+
+  const parsed = new Date(zoned);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+// The inverse: the form both databases store and compare as text,
+// "YYYY-MM-DD HH:MM:SS" in UTC. Written out here because three files had their
+// own copy of the expression.
+function sqlTime(date = new Date()) {
+  const d = date instanceof Date ? date : parseStamp(date);
+  return d ? d.toISOString().replace('T', ' ').slice(0, 19) : null;
+}
+
+// Whether a stored expiry has passed. The whole point of the parser above, and
+// the one place the question is answered — an unreadable or absent expiry is
+// *not* expired, which is the existing behaviour everywhere and the safe
+// reading of "no expiry set".
+function hasExpired(value, at = new Date()) {
+  const when = parseStamp(value);
+  return when ? when.getTime() <= at.getTime() : false;
+}
+
 // `max` is the page-size ceiling and defaults to the 100 the admin tables use.
 // A few feeds raise it — the dashboard reads twelve weeks of engagement in one
 // request to draw the heat grid — and they say so at the call site rather than
@@ -141,6 +223,6 @@ function parseCSV(text) {
 }
 
 module.exports = {
-  uuid, now, parseJSON, paginate, pageMeta, buildWhere, sanitizeUser,
+  uuid, now, parseJSON, parseStamp, sqlTime, hasExpired, paginate, pageMeta, buildWhere, sanitizeUser,
   csvCell, csvRow, toCSV, parseCSV
 };

@@ -1,5 +1,5 @@
 const db = require('../db');
-const { uuid, parseJSON } = require('../utils/helpers');
+const { uuid, parseJSON, parseStamp } = require('../utils/helpers');
 const { logger } = require('../utils/logger');
 const notifications = require('./notifications');
 const engagement = require('./engagement');
@@ -17,12 +17,10 @@ class SessionError extends Error {}
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const WAT_OFFSET_MS = 60 * 60 * 1000;
 
-function parseWhen(value) {
-  if (!value) return null;
-  const iso = String(value).includes('T') ? String(value) : String(value).replace(' ', 'T') + 'Z';
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? null : d;
-}
+// This one survived by accident: String(aDate) contains the letter T — in
+// "West Africa Time" — so its own test sent the Date string down the branch
+// that happened to parse it. Rename the luck into the shared parser.
+const parseWhen = parseStamp;
 
 // Weekday and minute-of-day of a session in West Africa Time, which is how
 // members expressed their availability.
