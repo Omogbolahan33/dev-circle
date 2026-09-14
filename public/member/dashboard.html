@@ -12,11 +12,22 @@
   <link rel="stylesheet" href="/assets/css/app.css">
   <script src="/assets/js/theme.js"></script>
   <style>
-    /* Home is two columns on a desktop: what you have built up on the
-       left, actions and participation on the right. It collapses to one column
-       in the order a phone should read it. */
+    /* Home is two columns on a desktop: what you have built up on the left,
+       what is being asked of you on the right. */
     .home { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: var(--sp-5); align-items: start; }
-    @media (max-width: 880px) { .home { grid-template-columns: minmax(0, 1fr); gap: var(--sp-4); } }
+
+    /* On a phone the columns are gone, and so is the order they implied. Both
+       stacks flatten into the one flow so it can be stated outright: a survey
+       waiting on you comes before the record of what you already did. */
+    @media (max-width: 880px) {
+      .home { display: flex; flex-direction: column; gap: var(--sp-4); }
+      .home > .stack { display: contents; }
+      #invitesSection { order: 1; }
+      #sessionsSection { order: 2; }
+      #engagementSection { order: 3; }
+      .say-card { order: 4; }
+      #activitySection { order: 5; }
+    }
 
     .panel-card {
       background: var(--surface-2);
@@ -56,12 +67,10 @@
       color: var(--text-2);
     }
 
-    /* Spacing between the full-width blocks stacked above the two-column home. */
+    /* Readiness is the only full-width block above the grid now. */
     #readinessSection { margin-top: var(--sp-5); }
     #nextAction:empty + #readinessSection { margin-top: var(--sp-2); }
-    #readinessSection + .say-card { margin-top: var(--sp-5); }
-    .say-card + .home { margin-top: var(--sp-5); }
-    .say-card .btn-block { max-width: 320px; }
+    #readinessSection + .home { margin-top: var(--sp-5); }
 
     /* ── Three Concentric Activity Rings & Staged Readiness ── */
     .rings-card-body { display: flex; flex-direction: column; gap: var(--sp-3); }
@@ -213,24 +222,11 @@
       <div id="readinessContent"></div>
     </section>
 
-    <!-- The member's line to the team, directly under readiness so it is
-         visible before any scrolling. Circle/cohort membership ("where you
-         sit") is intentionally not shown to members: it only decides matching
-         and is never something a member acts on — it belongs in the console. -->
-    <section class="panel-card say-card">
-      <div class="panel-title">Say something</div>
-      <p class="text-sm muted mb-4">
-        You do not have to wait to be asked. It reaches the team building the APIs,
-        and you can follow what happens to it.
-      </p>
-      <a class="btn btn-primary btn-block" href="/member/feedback.html" data-icon="send" data-icon-size="16">Give feedback</a>
-    </section>
-
     <div class="home">
 
       <div class="stack">
         <!-- Twelve weeks of taking part, as a record rather than a score. -->
-        <section class="panel-card">
+        <section class="panel-card" id="engagementSection">
           <div class="panel-title">Your engagement</div>
           <div class="row" style="align-items:baseline;gap:var(--sp-4);margin-bottom:var(--sp-4)">
             <div>
@@ -257,7 +253,7 @@
           </div>
         </section>
 
-        <section>
+        <section id="activitySection">
           <div class="section-head">
             <h2 class="section-title">Recent activity</h2>
             <a href="/member/engagement.html" class="section-link">Full history →</a>
@@ -266,6 +262,7 @@
         </section>
       </div>
 
+      <!-- What is being asked of you, and the standing offer to ask back. -->
       <div class="stack">
         <section id="invitesSection" hidden>
           <div class="section-head">
@@ -281,6 +278,23 @@
             <a href="/member/sessions.html" class="section-link">All sessions →</a>
           </div>
           <div id="sessions"></div>
+        </section>
+
+        <!-- The member's line to the team, and the only card in this column
+             that is always here: both sections above it are conditional and
+             most members have neither, so without it this side of the page is
+             an empty half. It sits last so a survey actually waiting on
+             somebody is never pushed below a standing invitation to write in.
+             Circle/cohort membership ("where you sit") is intentionally not
+             shown to members: it only decides matching and is never something
+             a member acts on — it belongs in the console. -->
+        <section class="panel-card say-card">
+          <div class="panel-title">Say something</div>
+          <p class="text-sm muted mb-4">
+            You do not have to wait to be asked. It reaches the team building the APIs,
+            and you can follow what happens to it.
+          </p>
+          <a class="btn btn-primary btn-block" href="/member/feedback.html" data-icon="send" data-icon-size="16">Give feedback</a>
         </section>
       </div>
 
