@@ -224,8 +224,26 @@ function parseStamp(value) {
     return Number.isNaN(dateOnly.getTime()) ? null : dateOnly;
   }
 
-  const iso = text.includes('T') ? text : text.replace(' ', 'T');
-  const zoned = /[Zz]$|[+-]\d{2}:?\d{2}$/.test(iso) ? iso : `${iso}Z`;
+  let iso = text.includes('T') ? text : text.replace(' ', 'T');
+
+  // A third shape, and the one that put "Undated" on the admin dashboard.
+  // Everywhere the SQL casts a timestamp to text itself — the dashboard reads
+  // its whole overview through one UNION, which forces every arm to agree on a
+  // type — Postgres renders the value rather than handing back a Date, and it
+  // renders it with microseconds and the shortest legal offset:
+  //
+  //   2026-09-14T18:23:45.123456+00
+  //
+  // Neither six fractional digits nor a two-digit offset is in the Date Time
+  // String Format. The old guard wanted four offset digits, did not find them,
+  // and appended a Z — so the string ended "+00Z" and parsed as nothing at all.
+  // V8 would have forgiven the raw form; Safari forgives neither, so normalise
+  // both rather than lean on a lenient parser.
+  iso = iso.replace(/(\.\d{3})\d+/, '$1');          // microseconds → milliseconds
+  iso = iso.replace(/([+-]\d{2})(\d{2})$/, '$1:$2');  // +0530 → +05:30
+  iso = iso.replace(/([+-]\d{2})$/, '$1:00');        // +00   → +00:00
+
+  const zoned = /[Zz]$|[+-]\d{2}:\d{2}$/.test(iso) ? iso : `${iso}Z`;
 
   const parsed = new Date(zoned);
   return Number.isNaN(parsed.getTime()) ? null : parsed;

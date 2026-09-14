@@ -4,10 +4,15 @@ const fs = require('fs');
 const path = require('path');
 
 // ─── Reading a timestamp in the browser ─────────────────────
-// The two databases hand the browser two different shapes for the same column:
+// The two databases hand the browser three shapes for the same column:
 //
-//   SQLite     "2026-08-26 22:14:19"       — datetime('now'), UTC, unmarked
-//   Postgres   "2026-08-26T22:14:19.041Z"  — TIMESTAMPTZ, a Date through JSON
+//   SQLite     "2026-08-26 22:14:19"            — datetime('now'), UTC, unmarked
+//   Postgres   "2026-08-26T22:14:19.041Z"       — TIMESTAMPTZ, a Date through JSON
+//   Postgres   "2026-08-26 22:14:19.041123+00"  — where the SQL cast it to text
+//
+// The third appears wherever a query renders the timestamp itself rather than
+// letting the driver hand back a Date — the admin dashboard's UNION does,
+// because every arm of it has to agree on a column type.
 //
 // Three pages normalised that themselves with `.replace(' ','T') + 'Z'`, which
 // appends a second Z to the Postgres form. `…041ZZ` is not a date any browser
@@ -45,6 +50,37 @@ test('a Postgres timestamp is not given a second zone', () => {
   // And what the pages used to do with it
   assert.ok(Number.isNaN(new Date(postgres.replace(' ', 'T') + 'Z').getTime()),
     'the old normalisation really did produce an unparseable date');
+});
+
+test('a Postgres timestamp the SQL cast to text itself still parses', () => {
+  // The third shape, and the one that put the word "Undated" over every row of
+  // the admin dashboard's activity card. That card is read through a single
+  // UNION — every arm has to agree on a column type — so the timestamp is cast
+  // to text in SQL rather than coming back as a Date. Postgres renders it with
+  // microseconds and the shortest legal offset, and "+00" is two digits where
+  // the guard wanted four, so a Z was appended to a string that already had a
+  // zone and nothing parsed it.
+  assert.equal(iso('2026-08-26 22:14:19.041123+00'), '2026-08-26T22:14:19.041Z');
+  assert.equal(iso('2026-08-26 22:14:19+00'), '2026-08-26T22:14:19.000Z');
+
+  // And the old guard really did reject it, so this test fails if it returns.
+  assert.ok(!/[Zz]$|[+-]\d{2}:?\d{2}$/.test('2026-08-26T22:14:19+00'),
+    'a two-digit offset is exactly what the four-digit guard missed');
+});
+
+test('an offset is honoured however Postgres chose to write it', () => {
+  // Postgres prints the minimum that is unambiguous: hours alone when the
+  // minutes are zero, hours and minutes when they are not.
+  assert.equal(iso('2026-08-26 22:14:19+01'), '2026-08-26T21:14:19.000Z');
+  assert.equal(iso('2026-08-26 22:14:19-05'), '2026-08-27T03:14:19.000Z');
+  assert.equal(iso('2026-08-26 22:14:19+0530'), '2026-08-26T16:44:19.000Z');
+});
+
+test('microseconds are rounded off rather than refused', () => {
+  // Six fractional digits are not in the Date Time String Format. V8 forgives
+  // them and Safari does not, which is the kind of difference that ships.
+  assert.equal(iso('2026-08-26T22:14:19.041123Z'), '2026-08-26T22:14:19.041Z');
+  assert.equal(iso('2026-08-26 22:14:19.5+01'), '2026-08-26T21:14:19.500Z');
 });
 
 test('a SQLite timestamp is read as UTC, not as local time', () => {
