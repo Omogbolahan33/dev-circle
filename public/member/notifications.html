@@ -72,6 +72,8 @@
         <div class="note"><div style="flex:1;margin-left:var(--sp-3)"><div class="skeleton" style="height:14px;width:60%;margin-bottom:6px"></div><div class="skeleton" style="height:12px;width:65%"></div></div></div>
         <div class="note"><div style="flex:1;margin-left:var(--sp-3)"><div class="skeleton" style="height:14px;width:50%;margin-bottom:6px"></div><div class="skeleton" style="height:12px;width:75%"></div></div></div>
       </div>
+
+      <div class="load-more" id="more"></div>
     </div>
 
     <div class="panel" id="panel-channels">
@@ -140,13 +142,27 @@
   };
 
   let preferences = {};
+  let notes = [];
+  let paging = null;
+
+  const PAGE = 25;
+
+  // The inbox is appended like the other feeds. Marking something read reloads
+  // from page one on purpose: the read state of everything already on screen
+  // has to stay in step, and an inbox is short enough that this is cheap.
+  async function loadInbox(page = 1) {
+    const inbox = await api.get(`/users/notifications?limit=${PAGE}&page=${page}`);
+    notes = page === 1 ? inbox.notifications : notes.concat(inbox.notifications);
+    paging = inbox.pagination;
+    renderInbox(inbox);
+  }
 
   async function load() {
     try {
-      const [profile, prefs, inbox] = await Promise.all([
+      const [profile, prefs] = await Promise.all([
         api.get('/users/profile'),
         api.get('/users/notification-preferences'),
-        api.get('/users/notifications?limit=25')
+        loadInbox(1)
       ]);
 
       preferences = {};
@@ -156,7 +172,6 @@
       document.getElementById('quietStart').value = prefs.quiet_hours.start;
       document.getElementById('quietEnd').value = prefs.quiet_hours.end;
 
-      renderInbox(inbox);
       renderConsent(profile.consent);
     } catch (err) {
       showToast('Failed to load: ' + err.message, 'error');
@@ -185,11 +200,12 @@
   function renderInbox(inbox) {
     document.getElementById('readAllBtn').hidden = inbox.unread_count === 0;
     document.getElementById('unreadCount').textContent = inbox.unread_count || '';
+    renderLoadMore(document.getElementById('more'), paging, loadInbox, 'Load older');
 
     // A notification is about something, so the whole row opens that thing —
     // hunting for a small button to the right is not how anyone reads an inbox.
-    document.getElementById('inbox').innerHTML = inbox.notifications.length
-      ? inbox.notifications.map(n => `
+    document.getElementById('inbox').innerHTML = notes.length
+      ? notes.map(n => `
         <div class="note ${n.read_at ? 'read' : ''} ${n.action_url ? 'actionable' : ''}"
              ${n.action_url ? `role="link" tabindex="0" data-open="${n.id}"` : ''}>
           ${n.read_at ? '<span style="width:6px;flex-shrink:0"></span>' : '<span class="note-unread"></span>'}
@@ -233,7 +249,7 @@
     await busy(btn, 'Marking…', async () => {
       try {
         await api.post(`/users/notifications/${id}/read`, {});
-        renderInbox(await api.get('/users/notifications?limit=25'));
+        await loadInbox(1);
       } catch (err) { showToast(err.message, 'error'); }
     });
   }
@@ -242,7 +258,7 @@
     await busy(btn, 'Marking…', async () => {
       try {
         await api.post('/users/notifications/read-all', {});
-        renderInbox(await api.get('/users/notifications?limit=25'));
+        await loadInbox(1);
       } catch (err) { showToast(err.message, 'error'); }
     });
   }

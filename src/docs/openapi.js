@@ -127,7 +127,14 @@ The one exception is \`scheduled_for\` on a session, which is accepted and retur
 body is an error rather than a silent no-op, so a broken client fails loudly.
 
 **Pagination.** Endpoints that paginate take \`page\` and \`limit\` and answer with a
-\`pagination\` object. \`limit\` is capped at 100; a larger value is clamped, not rejected.
+\`pagination\` object carrying \`page\`, \`limit\`, \`total\`, \`pages\` and \`has_more\`.
+\`limit\` is capped at 100 — a larger value is clamped, not rejected — except on the feeds
+that document a higher ceiling, where it is capped at 200.
+
+Every list that grows without bound is paged: a member's engagement history and feedback,
+their inbox, the admin feedback inbox and the inbound integration event log. Walk them with
+\`page\` rather than by raising \`limit\`; the cap is a cap, and a row past it is on the
+next page rather than unreachable.
 
 **Arrays** are returned as real JSON arrays even though they are stored encoded, so a client
 never has to parse a string that contains JSON.

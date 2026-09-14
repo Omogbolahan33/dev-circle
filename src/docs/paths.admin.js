@@ -2555,11 +2555,14 @@ const paths = {
         query('status', 'Filter by triage state', { type: 'string', enum: ['open', 'reviewed', 'resolved'] }),
         query('source', 'Filter by originating system', { type: 'string', enum: ['dev_circle', 'feex', 'customer_io'] }),
         query('type', 'Filter by kind', { type: 'string', enum: ['self_initiated', 'system_triggered', 'feex_complaint'] }),
+        query('page', 'Which page, 1-based', { type: 'integer', default: 1 }),
         query('limit', 'How many to return, capped at 200', { type: 'integer', default: 50, maximum: 200 })
       ],
       responses: {
         200: json('Feedback, most recent first.', object({
-          feedback: arrayOf(ref('Feedback'), 'Feedback with the member attached')
+          feedback: arrayOf(ref('Feedback'), 'Feedback with the member attached'),
+          sources: arrayOf(object({ source: str('The originating system'), count: int('How many it has produced') }), 'Totals per source, for the filter chips — across the circle, not this page'),
+          pagination: ref('Pagination')
         }), {
           feedback: [{
             id: 'f1', user_id: MEMBER_ID, user_name: 'Chidi Nwosu',
@@ -2567,7 +2570,9 @@ const paths = {
             type: 'self_initiated', content: 'The sandbox disbursement callback fires twice.',
             category: 'sandbox', rating: 3, status: 'open', source: 'dev_circle',
             created_at: '2026-08-14 10:02:18'
-          }]
+          }],
+          sources: [{ source: 'dev_circle', count: 128 }, { source: 'feex', count: 19 }],
+          pagination: { page: 1, limit: 50, total: 147, pages: 3, has_more: true }
         })
       }
     })
@@ -2902,21 +2907,30 @@ const paths = {
       permission: 'integrations.read',
       operationId: 'listIntegrationEvents',
       summary: 'The inbound event log',
-      description: 'Everything the connected systems have sent, with the payload as received — the first place to look when an integration is not doing what it should.',
+      description: [
+        'Everything the connected systems have sent, with the payload as received — the first',
+        'place to look when an integration is not doing what it should.',
+        '',
+        'This is the fastest-growing table in the product and nothing prunes it, so it is paged.',
+        'Raising `limit` past 200 will not reach older events; `page` will.'
+      ].join('\n'),
       parameters: [
         query('source', 'Filter by system', { type: 'string', example: 'customer_io' }),
         query('processed', 'Pass 0 for events that did not land, 1 for those that did', { type: 'integer', enum: [0, 1] }),
+        query('page', 'Which page, 1-based', { type: 'integer', default: 1 }),
         query('limit', 'How many to return, capped at 200', { type: 'integer', default: 50, maximum: 200 })
       ],
       responses: {
         200: json('Events, most recent first.', object({
-          events: arrayOf(ref('IntegrationEvent'), 'Inbound events')
+          events: arrayOf(ref('IntegrationEvent'), 'Inbound events'),
+          pagination: ref('Pagination')
         }), {
           events: [{
             id: 'ev_71a4', source: 'customer_io', event_type: 'first_sandbox_call',
             payload: '{"event_type":"first_sandbox_call","user_id":"hub_8221"}',
             processed: 1, error: null, created_at: '2026-08-14 07:15:22'
-          }]
+          }],
+          pagination: { page: 1, limit: 50, total: 4120, pages: 83, has_more: true }
         })
       }
     })

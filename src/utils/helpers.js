@@ -12,12 +12,24 @@ function parseJSON(str, fallback = null) {
   try { return JSON.parse(str); } catch { return fallback; }
 }
 
-function paginate(page = 1, limit = 20) {
+// `max` is the page-size ceiling and defaults to the 100 the admin tables use.
+// A few feeds raise it — the dashboard reads twelve weeks of engagement in one
+// request to draw the heat grid — and they say so at the call site rather than
+// clamping by hand and getting the offset wrong, which is the bug below.
+function paginate(page = 1, limit = 20, { max = 100 } = {}) {
   const p = Math.max(1, parseInt(page) || 1);
-  const l = Math.min(100, Math.max(1, parseInt(limit) || 20));
+  const l = Math.min(max, Math.max(1, parseInt(limit) || 20));
   // Offset must use the clamped limit — using the raw argument skipped or
-  // repeated rows whenever the caller asked for more than the 100 cap.
+  // repeated rows whenever the caller asked for more than the cap.
   return { offset: (p - 1) * l, limit: l, page: p };
+}
+
+// The envelope every paged list answers with, so one "Load more" on the client
+// works against all of them. `pages` is 0 for an empty set rather than 1 —
+// there is no page to be on — and `has_more` saves every caller doing the
+// same arithmetic to decide whether to offer the button.
+function pageMeta({ page, limit, total }) {
+  return { page, limit, total, pages: Math.ceil(total / limit) || 0, has_more: page * limit < total };
 }
 
 function buildWhere(filters) {
@@ -129,6 +141,6 @@ function parseCSV(text) {
 }
 
 module.exports = {
-  uuid, now, parseJSON, paginate, buildWhere, sanitizeUser,
+  uuid, now, parseJSON, paginate, pageMeta, buildWhere, sanitizeUser,
   csvCell, csvRow, toCSV, parseCSV
 };

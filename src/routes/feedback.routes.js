@@ -1,6 +1,6 @@
 const express = require('express');
 const db = require('../db');
-const { uuid } = require('../utils/helpers');
+const { uuid, paginate, pageMeta } = require('../utils/helpers');
 const { requireAuth } = require('../middleware/auth');
 const engagement = require('../services/engagement');
 
@@ -57,20 +57,32 @@ router.post('/', requireAuth, async (req, res) => {
 });
 
 // GET /api/feedback — the caller's own feedback only
+// Paged for the same reason as the engagement history: it only grows, and a
+// bare `limit` meant everything past the cap was unreachable rather than
+// merely on the next page.
 router.get('/', requireAuth, async (req, res) => {
-  const { status, limit = 50 } = req.query;
-  let query = 'SELECT * FROM feedback WHERE user_id = ?';
-  const params = [req.user.id];
+  const { status } = req.query;
+  const { offset, limit, page } = paginate(req.query.page, req.query.limit || 50, { max: 200 });
 
+  const where = ['user_id = ?'];
+  const params = [req.user.id];
   if (status) {
-    query += ' AND status = ?';
+    where.push('status = ?');
     params.push(status);
   }
+  const filter = where.join(' AND ');
 
-  query += ' ORDER BY created_at DESC LIMIT ?';
-  params.push(Math.min(200, parseInt(limit, 10) || 50));
+  const [feedback, totalRow] = await Promise.all([
+    db.prepare(`SELECT * FROM feedback WHERE ${filter} ORDER BY created_at DESC LIMIT ? OFFSET ?`)
+      .all(...params, limit, offset),
+    db.prepare(`SELECT COUNT(*) as c FROM feedback WHERE ${filter}`).get(...params)
+  ]);
 
-  res.json({ feedback: await db.prepare(query).all(...params), categories: CATEGORIES });
+  res.json({
+    feedback: feedback || [],
+    categories: CATEGORIES,
+    pagination: pageMeta({ page, limit, total: Number(totalRow?.c || 0) })
+  });
 });
 
 // GET /api/feedback/:id

@@ -1,7 +1,7 @@
 const db = require('../db');
 const dbContext = require('../db/context');
 const config = require('../config');
-const { uuid, parseJSON } = require('../utils/helpers');
+const { uuid, parseJSON, pageMeta } = require('../utils/helpers');
 const engagement = require('./engagement');
 const emailService = require('./email');
 
@@ -419,23 +419,30 @@ function startDrain(intervalMs = 15 * 60 * 1000) {
 
 // ─── Inbox reads ────────────────────────────────────────────
 
-async function inbox(userId, { unreadOnly = false, limit = 50 } = {}) {
-  const [rows, unreadRow] = await Promise.all([
+// One page of the inbox. `unread_count` is the badge and counts every unread
+// notification regardless of the page; `pagination.total` counts what this
+// filter matches, which is a different number whenever unreadOnly is off.
+async function inbox(userId, { unreadOnly = false, limit = 50, offset = 0, page = 1 } = {}) {
+  const filter = `user_id = ?${unreadOnly ? ' AND read_at IS NULL' : ''}`;
+
+  const [rows, unreadRow, totalRow] = await Promise.all([
     db.prepare(`
       SELECT n.* FROM notifications n
       WHERE n.user_id = ? ${unreadOnly ? 'AND n.read_at IS NULL' : ''}
       ORDER BY n.created_at DESC
-      LIMIT ?
-    `).all(userId, limit),
+      LIMIT ? OFFSET ?
+    `).all(userId, limit, offset),
     db.prepare(`
       SELECT COUNT(*) as c FROM notifications
       WHERE user_id = ? AND read_at IS NULL
-    `).get(userId)
+    `).get(userId),
+    db.prepare(`SELECT COUNT(*) as c FROM notifications WHERE ${filter}`).get(userId)
   ]);
 
   return {
     notifications: rows || [],
-    unread_count: Number(unreadRow?.c || 0)
+    unread_count: Number(unreadRow?.c || 0),
+    pagination: pageMeta({ page, limit, total: Number(totalRow?.c || 0) })
   };
 }
 

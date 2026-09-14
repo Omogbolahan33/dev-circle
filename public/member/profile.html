@@ -390,14 +390,21 @@
         phoneHint.textContent = 'Set the number you sign in with — you will be asked for its last four digits. Once set, it cannot be changed here.';
       }
 
+      // No API stage or KYB badge beside the name: those are the Developer
+      // Hub's facts about integrating against the Credit Direct APIs, and a
+      // circle is a workspace rather than a tier of one — a member of a circle
+      // that has nothing to do with the APIs was still being labelled SANDBOX.
+      // They remain below under "Your standing", where they are at least
+      // attributed to the system that owns them.
+      const level = orbitLevel(stats.streak);
+
       document.getElementById('identity').innerHTML = `
-        ${orbitAvatar(user.name, orbitLevel(stats.streak), 'avatar-xl' + (user.api_status === 'production' ? ' avatar-teal' : ' avatar-gold'))}
+        ${orbitAvatar(user.name, level, 'avatar-xl' + (level >= 3 ? ' avatar-teal' : ' avatar-gold'))}
         <div>
           <div class="identity-title">${escapeHtml(user.name)}</div>
           <div class="identity-line">
             <span class="mono">${escapeHtml(user.email)}</span>
-            ${badge(user.api_status, user.api_status)}
-            ${user.kyb_completed ? badge('KYB done', 'active') : badge('KYB pending', 'warn')}
+            ${user.company ? `<span class="dim">${escapeHtml(user.company)}</span>` : ''}
           </div>
         </div>`;
 

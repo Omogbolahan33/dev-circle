@@ -591,6 +591,27 @@
     el.innerHTML = contentHtml;
   }
 
+  // ─── Who we think you are ─────────────────────────────────
+  // Whatever stands on this line has to be true in every circle. A circle is a
+  // workspace, not a tier of one: api_status and kyb_completed are the
+  // Developer Hub's facts about somebody integrating against the Credit Direct
+  // APIs, and they used to sit here as SANDBOX / KYB PENDING badges — which is
+  // a heading about API integration on the dashboard of a circle that may have
+  // nothing to do with the APIs. They are still on the member's record and
+  // still in the console, where the audience is the team that acts on them.
+  //
+  // What replaces them is the profile the member filled in themselves, which
+  // every circle collects: where they work, what they work on, and how long
+  // they have been here.
+  function mastheadFacts(user) {
+    const joined = parseStamp(user.created_at);
+    return [
+      user.company,
+      user.work_sector,
+      joined ? `Member since ${MONTHS[joined.getUTCMonth()]} ${joined.getUTCFullYear()}` : null
+    ].filter(Boolean);
+  }
+
   function renderMasthead({ user, stats }) {
     const hour = new Date().getHours();
     const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
@@ -600,16 +621,20 @@
       mobileName.textContent = `${user.name.split(' ')[0]}${user.company ? ' · ' + user.company : ''}`;
     }
 
+    // The tone followed api_status too. It follows the streak now — the same
+    // orbitLevel the rings around the avatar already draw, which is one shared
+    // definition rather than two, and is measured the same way in every circle.
+    const level = orbitLevel(stats.streak);
+
     document.getElementById('masthead').innerHTML = `
-      ${orbitAvatar(user.name, orbitLevel(stats.streak),
-        'avatar-xl ' + (user.api_status === 'production' ? 'avatar-teal' : 'avatar-gold'))}
+      ${orbitAvatar(user.name, level, 'avatar-xl ' + (level >= 3 ? 'avatar-teal' : 'avatar-gold'))}
       <div style="min-width:0">
         <div class="text-xs dim">${greeting}</div>
         <h1 class="masthead-name">${escapeHtml(user.name.split(' ')[0])}</h1>
         <div class="masthead-line">
-          ${user.company ? `<span>${escapeHtml(user.company)}</span><span class="dim">·</span>` : ''}
-          ${badge(user.api_status, user.api_status)}
-          ${user.kyb_completed ? badge('KYB done', 'active') : badge('KYB pending', 'warn')}
+          ${mastheadFacts(user)
+            .map(fact => `<span>${escapeHtml(fact)}</span>`)
+            .join('<span class="dim">·</span>')}
         </div>
       </div>`;
   }

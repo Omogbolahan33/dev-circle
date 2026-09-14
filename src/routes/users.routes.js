@@ -1,6 +1,6 @@
 const express = require('express');
 const db = require('../db');
-const { uuid, parseJSON, sanitizeUser } = require('../utils/helpers');
+const { uuid, parseJSON, sanitizeUser, paginate, pageMeta } = require('../utils/helpers');
 const identity = require('../utils/identity');
 const { requireAuth } = require('../middleware/auth');
 const engagement = require('../services/engagement');
@@ -522,10 +522,11 @@ router.put('/notification-preferences', requireAuth, async (req, res) => {
 
 // GET /api/users/notifications
 router.get('/notifications', requireAuth, async (req, res) => {
-  const { unread_only, limit = 50 } = req.query;
+  const { unread_only } = req.query;
+  const { offset, limit, page } = paginate(req.query.page, req.query.limit || 50);
   res.json(await notifications.inbox(req.user.id, {
     unreadOnly: unread_only === 'true',
-    limit: Math.min(100, parseInt(limit, 10) || 50)
+    limit, offset, page
   }));
 });
 
@@ -544,21 +545,37 @@ router.post('/notifications/read-all', requireAuth, async (req, res) => {
 // ─── Engagement History ─────────────────────────────────────
 
 // GET /api/users/engagement
+// Paged, because a member's history only ever grows. It used to take a `limit`
+// and nothing else, capped at 200 — so somebody past their two-hundredth event
+// could not reach the older ones from here at all, and the history page, which
+// asked for 100, quietly stopped at the hundredth.
+//
+// 200 is still the page-size ceiling rather than the usual 100: the dashboard
+// reads twelve weeks in one request to draw the heat grid.
 router.get('/engagement', requireAuth, async (req, res) => {
-  const { type, limit = 50 } = req.query;
-  let query = 'SELECT * FROM engagement_history WHERE user_id = ?';
-  const params = [req.user.id];
+  const { type } = req.query;
+  const { offset, limit, page } = paginate(req.query.page, req.query.limit || 50, { max: 200 });
 
+  const where = ['user_id = ?'];
+  const params = [req.user.id];
   if (type) {
-    query += ' AND type = ?';
+    where.push('type = ?');
     params.push(type);
   }
+  const filter = where.join(' AND ');
 
-  query += ' ORDER BY created_at DESC LIMIT ?';
-  params.push(Math.min(200, parseInt(limit, 10) || 50));
+  const [history, totalRow] = await Promise.all([
+    db.prepare(`
+      SELECT * FROM engagement_history WHERE ${filter}
+      ORDER BY created_at DESC LIMIT ? OFFSET ?
+    `).all(...params, limit, offset),
+    db.prepare(`SELECT COUNT(*) as c FROM engagement_history WHERE ${filter}`).get(...params)
+  ]);
 
-  const history = await db.prepare(query).all(...params);
-  res.json({ history });
+  res.json({
+    history: history || [],
+    pagination: pageMeta({ page, limit, total: Number(totalRow?.c || 0) })
+  });
 });
 
 // ─── Gifts ──────────────────────────────────────────────────

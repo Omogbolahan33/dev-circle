@@ -3,7 +3,7 @@ const db = require('../../db');
 const { requirePermission } = require('../../middleware/auth');
 const engagement = require('../../services/engagement');
 const notifications = require('../../services/notifications');
-const { toCSV } = require('../../utils/helpers');
+const { toCSV, paginate, pageMeta } = require('../../utils/helpers');
 const { buildXLSX } = require('../../utils/xlsx');
 const views = require('../../services/feedbackViews');
 
@@ -31,7 +31,12 @@ router.get('/feedback', requirePermission('feedback.read'), async (req, res) => 
   if (prompted === 'false') where.push('f.canonical_question_id IS NULL');
   if (prompted === 'true') where.push('f.canonical_question_id IS NOT NULL');
 
-  const [feedback, bySource] = await Promise.all([
+  // Paged. The inbox is the one admin list that only ever grows, and a bare
+  // LIMIT meant the two-hundred-and-first item was not on a later page — it
+  // was simply not reachable.
+  const { offset, limit: pageSize, page } = paginate(req.query.page, limit || 50, { max: 200 });
+
+  const [feedback, bySource, totalRow] = await Promise.all([
     db.prepare(`
       SELECT f.id, f.user_id, f.type, f.content, f.category, f.status, f.source,
              f.survey_id, f.canonical_question_id, f.prompt, f.created_at,
@@ -43,18 +48,23 @@ router.get('/feedback', requirePermission('feedback.read'), async (req, res) => 
       LEFT JOIN surveys s ON s.id = f.survey_id
       WHERE ${where.join(' AND ')}
       ORDER BY f.created_at DESC
-      LIMIT ?
-    `).all(...params, Math.min(200, parseInt(limit, 10) || 50)),
+      LIMIT ? OFFSET ?
+    `).all(...params, pageSize, offset),
     // What the sources add up to, so the filter chips can carry counts and an
     // empty result is distinguishable from a source that has never had anything
     db.prepare(`
       SELECT source, COUNT(*) as count FROM feedback
       WHERE circle_id = ? OR circle_id IS NULL
       GROUP BY source
-    `).all(req.circleId)
+    `).all(req.circleId),
+    db.prepare(`SELECT COUNT(*) as c FROM feedback f WHERE ${where.join(' AND ')}`).get(...params)
   ]);
 
-  res.json({ feedback: feedback || [], sources: bySource || [] });
+  res.json({
+    feedback: feedback || [],
+    sources: bySource || [],
+    pagination: pageMeta({ page, limit: pageSize, total: Number(totalRow?.c || 0) })
+  });
 });
 
 // ─── Views ──────────────────────────────────────────────────

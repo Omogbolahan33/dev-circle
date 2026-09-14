@@ -780,6 +780,41 @@ function badge(text, kind = '') {
   return `<span class="badge ${kind ? 'badge-' + kind : ''}">${escapeHtml(text)}</span>`;
 }
 
+// ─── Load more ──────────────────────────────────────────────
+// Every paged feed answers with the same `pagination` envelope, so the control
+// that walks it is written once. It appends rather than replacing: a feed is
+// read downwards and numbered pages would lose the reader's place — and it
+// says how far in you are, because "load more" with no number gives no sense
+// of whether one more click finishes it or forty do.
+function renderLoadMore(el, pagination, fetchPage, label = 'Load more') {
+  if (!el) return;
+
+  if (!pagination || !pagination.has_more) {
+    el.innerHTML = '';
+    return;
+  }
+
+  const shown = Math.min(pagination.page * pagination.limit, pagination.total);
+  el.innerHTML = `
+    <button type="button" class="btn btn-secondary btn-sm" data-load-more>
+      ${escapeHtml(label)} <span class="dim">· ${shown} of ${pagination.total}</span>
+    </button>`;
+
+  el.querySelector('[data-load-more]').addEventListener('click', async event => {
+    const btn = event.currentTarget;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Loading…';
+    try {
+      await fetchPage(pagination.page + 1);
+    } catch (err) {
+      // Put the button back rather than leaving a dead spinner: the next page
+      // is still there and the click is still worth making.
+      renderLoadMore(el, pagination, fetchPage, label);
+      if (typeof showToast === 'function') showToast(err.message, 'error');
+    }
+  });
+}
+
 function emptyState({ title, text = '', action = '' }) {
   return `
     <div class="empty">

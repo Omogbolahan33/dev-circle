@@ -70,6 +70,8 @@
         <div class="skeleton" style="width:76%;height:14px;margin-bottom:14px"></div>
         <div class="skeleton" style="width:90%;height:14px;margin-bottom:14px"></div>
       </div>
+
+      <div class="load-more" id="more"></div>
     </div>
   </div>
 </div>
@@ -82,13 +84,24 @@
   Shell.admin('integrations');
 
   let events = [];
+  let paging = null;
   let filter = 'all';
+
+  const PAGE = 50;
+
+  // The event log is the fastest-growing table in the product and nothing
+  // prunes it, so a page at a time and a button for the rest. Page one
+  // replaces, later pages append — a refresh should not stack duplicates.
+  async function loadPage(page = 1) {
+    const data = await api.get(`/admin/integration-events?limit=${PAGE}&page=${page}`);
+    events = page === 1 ? data.events : events.concat(data.events);
+    paging = data.pagination;
+    render();
+  }
 
   async function load() {
     try {
-      const data = await api.get('/admin/integration-events?limit=100');
-      events = data.events;
-      render();
+      await loadPage(1);
     } catch (err) {
       document.getElementById('list').innerHTML = emptyState({ title: 'Could not load events', text: err.message });
     }
@@ -103,7 +116,11 @@
     if (filter === 'pending') list = events.filter(e => !e.processed);
     else if (filter !== 'all') list = events.filter(e => e.source === filter);
 
-    document.getElementById('count').textContent = `${list.length} event${list.length === 1 ? '' : 's'}`;
+    // The chips filter what is loaded, so say which number is which.
+    const more = Boolean(paging && paging.has_more);
+    document.getElementById('count').textContent = filter === 'all'
+      ? `${events.length}${more ? ` of ${paging.total}` : ''} event${events.length === 1 ? '' : 's'}`
+      : `${list.length} of ${events.length} loaded`;
 
     const el = document.getElementById('list');
     if (!list.length) {
@@ -111,8 +128,9 @@
         title: 'No events',
         text: filter === 'all'
           ? 'Nothing has been ingested yet. Events arrive when Customer.io, Feex or the landing page post to the integration endpoints.'
-          : 'Nothing matches this filter.'
+          : more ? 'Nothing matches this filter in what is loaded so far.' : 'Nothing matches this filter.'
       });
+      renderLoadMore(document.getElementById('more'), paging, loadPage, 'Load older');
       return;
     }
 
@@ -133,6 +151,8 @@
           ${payload ? `<pre class="payload hide" id="payload-${i}">${escapeHtml(payload)}</pre>` : ''}
         </article>`;
     }).join('');
+
+    renderLoadMore(document.getElementById('more'), paging, loadPage, 'Load older');
   }
 
   function togglePayload(i) {

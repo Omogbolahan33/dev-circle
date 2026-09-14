@@ -67,21 +67,7 @@ router.get('/api-keys', preload(() => db.prepare(`
   SELECT id, name, prefix, permissions, last_used_at, expires_at, revoked_at, created_at, created_by
   FROM api_keys ORDER BY created_at DESC
 `).all()));
-router.get('/integration-events', preload(req => {
-  const { source, processed, limit = 50 } = req.query;
-  const where = ['1=1'];
-  const params = [];
-  if (source) { where.push('source = ?'); params.push(source); }
-  if (processed !== undefined && processed !== '') {
-    where.push('processed = ?'); params.push(parseInt(processed, 10));
-  }
-  return db.prepare(`
-    SELECT id, source, event_type, payload, processed, created_at, error
-    FROM integration_events
-    WHERE ${where.join(' AND ')}
-    ORDER BY created_at DESC LIMIT ?
-  `).all(...params, Math.min(200, parseInt(limit, 10) || 50));
-}));
+router.get('/integration-events', preload(req => require('./integrations.routes').eventPage(req)));
 
 // Authentication, admin status, then the circle being worked in — which is
 // what decides both the data in scope and the permissions that apply.

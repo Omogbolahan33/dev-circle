@@ -819,12 +819,14 @@ const paths = {
       summary: 'The portal inbox',
       parameters: [
         query('unread_only', 'Pass `true` to return only unread items', { type: 'string', enum: ['true', 'false'] }),
+        query('page', 'Which page, 1-based', { type: 'integer', default: 1 }),
         query('limit', 'How many to return, capped at 100', { type: 'integer', default: 50, maximum: 100 })
       ],
       responses: {
         200: json('Inbox contents and the unread count.', object({
           notifications: arrayOf(ref('Notification'), 'Most recent first'),
-          unread_count: int('Unread items across the whole inbox')
+          unread_count: int('Unread items across the whole inbox, whatever this page holds and whatever `unread_only` was set to'),
+          pagination: ref('Pagination')
         }), {
           notifications: [{
             id: 'n1', user_id: MEMBER_EXAMPLE.id, category: 'survey_invites',
@@ -834,7 +836,8 @@ const paths = {
             source_type: 'survey_invite', source_id: 's1',
             read_at: null, created_at: '2026-08-13 11:02:41'
           }],
-          unread_count: 2
+          unread_count: 2,
+          pagination: { page: 1, limit: 50, total: 2, pages: 1, has_more: false }
         })
       }
     })
@@ -872,18 +875,30 @@ const paths = {
       tag: 'Member profile',
       operationId: 'getMyEngagement',
       summary: 'This member\'s engagement history',
-      description: 'The platform\'s memory of the relationship — every survey, reward, complaint and integration milestone, most recent first.',
+      description: [
+        'The platform\'s memory of the relationship — every survey, reward, complaint and',
+        'integration milestone, most recent first.',
+        '',
+        'Paged, because it only grows. The ceiling on `limit` is 200 rather than the usual 100',
+        'so the member dashboard can read twelve weeks in one request to draw its heat grid;',
+        'anything older is on the next `page`.'
+      ].join('\n'),
       parameters: [
         query('type', 'Filter to one event type', { type: 'string', enum: ENGAGEMENT_TYPES }),
+        query('page', 'Which page, 1-based', { type: 'integer', default: 1 }),
         query('limit', 'How many to return, capped at 200', { type: 'integer', default: 50, maximum: 200 })
       ],
       responses: {
-        200: json('Engagement events.', object({ history: arrayOf(ref('EngagementEvent'), 'Most recent first') }), {
+        200: json('Engagement events.', object({
+          history: arrayOf(ref('EngagementEvent'), 'Most recent first'),
+          pagination: ref('Pagination')
+        }), {
           history: [{
             id: 'e1', user_id: MEMBER_EXAMPLE.id, type: 'survey_completed',
             reference_id: 's1', metadata: { survey_title: 'Sandbox onboarding experience' },
             source: 'dev_circle', created_at: '2026-08-12 16:40:09'
-          }]
+          }],
+          pagination: { page: 1, limit: 50, total: 37, pages: 1, has_more: false }
         })
       }
     })
@@ -1293,19 +1308,22 @@ const paths = {
       description: 'Scoped to the caller. Reading anybody else\'s feedback needs `feedback.read` and the admin endpoint.',
       parameters: [
         query('status', 'Filter by triage state', { type: 'string', enum: ['open', 'reviewed', 'resolved'] }),
+        query('page', 'Which page, 1-based', { type: 'integer', default: 1 }),
         query('limit', 'How many to return, capped at 200', { type: 'integer', default: 50, maximum: 200 })
       ],
       responses: {
         200: json('The caller\'s feedback.', object({
           feedback: arrayOf(ref('Feedback'), 'Most recent first'),
-          categories: arrayOf({ type: 'string' }, 'The categories that may be used')
+          categories: arrayOf({ type: 'string' }, 'The categories that may be used'),
+          pagination: ref('Pagination')
         }), {
           feedback: [{
             id: 'f1', type: 'self_initiated', content: 'The sandbox disbursement callback fires twice.',
             category: 'sandbox', rating: 3, status: 'reviewed', source: 'dev_circle',
             created_at: '2026-08-14 10:02:18'
           }],
-          categories: FEEDBACK_CATEGORIES
+          categories: FEEDBACK_CATEGORIES,
+          pagination: { page: 1, limit: 50, total: 4, pages: 1, has_more: false }
         })
       }
     })

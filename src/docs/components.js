@@ -102,9 +102,10 @@ const schemas = {
 
   Pagination: object({
     page: int('The page returned, 1-based', { example: 1 }),
-    limit: int('Rows per page, capped at 100', { example: 20 }),
+    limit: int('Rows per page. Capped at 100 on most endpoints; the feeds that say otherwise cap at 200', { example: 20 }),
     total: int('Rows matching the filters, across all pages', { example: 248 }),
-    pages: int('Total number of pages', { example: 13 })
+    pages: int('Total number of pages. 0 when nothing matches — there is no page to be on', { example: 13 }),
+    has_more: bool('Whether a further page exists, so a client need not do the arithmetic', { example: true })
   }),
 
   // ── People ──

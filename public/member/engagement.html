@@ -60,6 +60,8 @@
       <div class="tl-item"><div class="skeleton" style="width:48%"></div></div>
     </div>
 
+    <div class="load-more" id="more"></div>
+
   </div>
 </div>
 
@@ -79,18 +81,29 @@
   };
 
   let events = [];
+  let paging = null;
   let group = '';
+
+  const PAGE = 50;
+
+  // A page at a time, appended. The whole history used to arrive in one
+  // request capped at 100, so a member past their hundredth event simply could
+  // not see the older ones — the page had no way to ask for them and the
+  // endpoint had no way to answer.
+  async function loadPage(page = 1) {
+    const engagement = await api.get(`/users/engagement?limit=${PAGE}&page=${page}`);
+    events = page === 1 ? engagement.history : events.concat(engagement.history);
+    paging = engagement.pagination;
+    render();
+  }
 
   async function load() {
     try {
-      const [profile, engagement] = await Promise.all([
+      const [profile] = await Promise.all([
         api.get('/users/profile'),
-        api.get('/users/engagement?limit=100')
+        loadPage(1)
       ]);
-
-      events = engagement.history;
       renderFigures(profile.stats);
-      render();
     } catch (err) {
       document.getElementById('timeline').innerHTML =
         emptyState({ title: 'Could not load your history', text: err.message });
@@ -108,14 +121,24 @@
 
   function render() {
     const list = group ? events.filter(e => GROUPS[group].includes(e.type)) : events;
-    document.getElementById('count').textContent = `${list.length} event${list.length === 1 ? '' : 's'}`;
+
+    // The chips filter what has been loaded, so the count says so rather than
+    // implying it has seen everything. With nothing left to load the two
+    // numbers agree and the qualifier drops away.
+    const more = Boolean(paging && paging.has_more);
+    document.getElementById('count').textContent = group
+      ? `${list.length} of ${events.length} loaded`
+      : `${events.length}${more ? ` of ${paging.total}` : ''} event${events.length === 1 ? '' : 's'}`;
 
     const el = document.getElementById('timeline');
     if (!list.length) {
       el.innerHTML = emptyState({
         title: group ? 'Nothing of this kind yet' : 'Nothing recorded yet',
-        text: 'Your history fills in as you integrate, answer surveys and claim rewards.'
+        text: group && more
+          ? 'Nothing of this kind in what is loaded so far — there is more history below.'
+          : 'Your history fills in as you integrate, answer surveys and claim rewards.'
       });
+      renderLoadMore(document.getElementById('more'), paging, loadPage, 'Load older');
       return;
     }
 
@@ -153,6 +176,8 @@
           ${detail ? `<div class="tl-body">${escapeHtml(detail)}</div>` : ''}
         </div>`;
     }).join('');
+
+    renderLoadMore(document.getElementById('more'), paging, loadPage, 'Load older');
   }
 
   document.querySelectorAll('.chip[data-group]').forEach(chip => {

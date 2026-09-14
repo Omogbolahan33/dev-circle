@@ -126,6 +126,8 @@
         <div class="skeleton" style="height:64px;width:100%;border-radius:var(--r-lg);margin-bottom:var(--sp-3)"></div>
         <div class="skeleton" style="height:64px;width:100%;border-radius:var(--r-lg)"></div>
       </div>
+
+      <div class="load-more" id="more"></div>
     </section>
 
   </div>
@@ -164,13 +166,26 @@
   };
 
   let items = [];
+  let paging = null;
   let statusFilter = '';
   let rating = null;
 
+  const PAGE = 25;
+
+  // Appended a page at a time. This used to ask for 100 and stop there, which
+  // is a ceiling rather than a page: nothing offered the hundred-and-first.
+  async function loadPage(page) {
+    const data = await api.get(`/feedback?limit=${PAGE}&page=${page}`);
+    items = items.concat(data.feedback);
+    paging = data.pagination;
+    render();
+  }
+
   async function loadFeedback() {
     try {
-      const data = await api.get('/feedback?limit=100');
+      const data = await api.get(`/feedback?limit=${PAGE}&page=1`);
       items = data.feedback;
+      paging = data.pagination;
 
       // Populate the picker from the server's own list.
       if (!document.getElementById('fbCategory').options.length) {
@@ -201,8 +216,14 @@
 
   function render() {
     const list = statusFilter ? items.filter(f => f.status === statusFilter) : items;
-    document.getElementById('count').textContent =
-      items.length ? `${items.length} submission${items.length === 1 ? '' : 's'}` : '';
+
+    // The chips filter what is loaded; the count says which number is which.
+    const more = Boolean(paging && paging.has_more);
+    document.getElementById('count').textContent = items.length
+      ? `${items.length}${more ? ` of ${paging.total}` : ''} submission${items.length === 1 ? '' : 's'}`
+      : '';
+
+    renderLoadMore(document.getElementById('more'), paging, loadPage, 'Load older');
 
     document.getElementById('list').innerHTML = list.length
       ? list.map(f => {
