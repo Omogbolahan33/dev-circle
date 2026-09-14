@@ -24,9 +24,15 @@
       .home > .stack { display: contents; }
       #invitesSection { order: 1; }
       #sessionsSection { order: 2; }
-      #engagementSection { order: 3; }
-      .say-card { order: 4; }
-      #activitySection { order: 5; }
+      .say-card { order: 3; }
+      #activitySection { order: 4; }
+
+      /* And the heat grid does not come at all. In one column it is as wide as
+         the screen and therefore as tall, which is most of a phone screen spent
+         on twelve weeks of mostly empty squares. The streak and the count it
+         carries are both on the engagement page, one tap away — the timeline
+         below says the same thing in words. */
+      #engagementSection { display: none; }
     }
 
     .panel-card {
@@ -224,35 +230,10 @@
 
     <div class="home">
 
+      <!-- History gets the wide column to itself: the entries are one line
+           each and there are a lot of them, and it is the one thing here that
+           grows without bound. -->
       <div class="stack">
-        <!-- Twelve weeks of taking part, as a record rather than a score. -->
-        <section class="panel-card" id="engagementSection">
-          <div class="panel-title">Your engagement</div>
-          <div class="row" style="align-items:baseline;gap:var(--sp-4);margin-bottom:var(--sp-4)">
-            <div>
-              <div class="big-figure" id="streakValue">—</div>
-              <div class="text-xs dim mt-1" id="streakLabel">day streak</div>
-            </div>
-            <div class="spacer"></div>
-            <div class="text-right">
-              <div class="big-figure" style="font-size:var(--fs-xl)" id="answeredValue">—</div>
-              <div class="text-xs dim mt-1">answered</div>
-            </div>
-          </div>
-          <div class="heat" id="heat"></div>
-          <div class="heat-legend">
-            <span>12 weeks ago</span>
-            <span class="spacer"></span>
-            <span class="heat-key">
-              <span style="background:var(--tint-2)"></span>
-              <span style="background:var(--blue-line)"></span>
-              <span style="background:var(--cd-blue);opacity:.75"></span>
-              <span style="background:var(--cd-blue)"></span>
-            </span>
-            <span>today</span>
-          </div>
-        </section>
-
         <section id="activitySection">
           <div class="section-head">
             <h2 class="section-title">Recent activity</h2>
@@ -280,14 +261,12 @@
           <div id="sessions"></div>
         </section>
 
-        <!-- The member's line to the team, and the only card in this column
-             that is always here: both sections above it are conditional and
-             most members have neither, so without it this side of the page is
-             an empty half. It sits last so a survey actually waiting on
-             somebody is never pushed below a standing invitation to write in.
-             Circle/cohort membership ("where you sit") is intentionally not
-             shown to members: it only decides matching and is never something
-             a member acts on — it belongs in the console. -->
+        <!-- The member's line to the team. It sits below both conditional
+             sections so a survey actually waiting on somebody is never pushed
+             under a standing invitation to write in. Circle/cohort membership
+             ("where you sit") is intentionally not shown to members: it only
+             decides matching and is never something a member acts on — it
+             belongs in the console. -->
         <section class="panel-card say-card">
           <div class="panel-title">Say something</div>
           <p class="text-sm muted mb-4">
@@ -295,6 +274,37 @@
             and you can follow what happens to it.
           </p>
           <a class="btn btn-primary btn-block" href="/member/feedback.html" data-icon="send" data-icon-size="16">Give feedback</a>
+        </section>
+
+        <!-- Twelve weeks of taking part, as a record rather than a score.
+             Last, and in the narrow column, because the heat grid is square:
+             it is as tall as the column is wide, and it was the tallest thing
+             on the page for two numbers' worth of information. -->
+        <section class="panel-card" id="engagementSection">
+          <div class="panel-title">Your engagement</div>
+          <div class="row" style="align-items:baseline;gap:var(--sp-4);margin-bottom:var(--sp-4)">
+            <div>
+              <div class="big-figure" id="streakValue">—</div>
+              <div class="text-xs dim mt-1" id="streakLabel">day streak</div>
+            </div>
+            <div class="spacer"></div>
+            <div class="text-right">
+              <div class="big-figure" style="font-size:var(--fs-xl)" id="answeredValue">—</div>
+              <div class="text-xs dim mt-1">answered</div>
+            </div>
+          </div>
+          <div class="heat" id="heat"></div>
+          <div class="heat-legend">
+            <span>12 weeks ago</span>
+            <span class="spacer"></span>
+            <span class="heat-key">
+              <span style="background:var(--tint-2)"></span>
+              <span style="background:var(--blue-line)"></span>
+              <span style="background:var(--cd-blue);opacity:.75"></span>
+              <span style="background:var(--cd-blue)"></span>
+            </span>
+            <span>today</span>
+          </div>
         </section>
       </div>
 
@@ -367,7 +377,10 @@
       renderHeat(engagement.history, profile.stats);
       renderInvites(surveys.surveys);
       renderSessions(sessions.sessions);
-      renderTimeline(engagement.history.slice(0, 8));
+      // Twelve rather than eight: history has the wide column to itself now,
+      // and eight entries left most of it empty. "Full history" still has the
+      // rest.
+      renderTimeline(engagement.history.slice(0, 12));
     } catch (err) {
       showToast('Failed to load: ' + err.message, 'error');
     }
