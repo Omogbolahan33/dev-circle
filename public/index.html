@@ -338,9 +338,15 @@
       $('signinSub').textContent = 'No password, no code.';
       // Worded as an instruction rather than as the name of a box, because the
       // thing people got wrong here was what was being asked of them.
-      $('secretLabel').textContent = `Enter the last ${n} digits of your number`;
-      $('secretHint').textContent = 'From the number you registered with.';
-      secretEl.placeholder = '•'.repeat(n);
+      // The label names the field and the placeholder says what to type — the
+      // same division as "Password" and its dots on the staff side. Both
+      // spelling out the whole instruction was one sentence twice, stacked.
+      $('secretLabel').textContent = `Last ${n} digits`;
+      // Dots are what a password field already draws once there is something
+      // in it, so spending the empty state on them says nothing. This is the
+      // one field here somebody may not know the answer to on sight.
+      $('secretHint').textContent = '';
+      secretEl.placeholder = `Enter last ${n} digits of your phone number`;
       secretEl.setAttribute('autocomplete', 'off');
       secretEl.setAttribute('inputmode', 'numeric');
     }
