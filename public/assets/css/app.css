@@ -1661,6 +1661,11 @@ textarea.input { min-height: 90px; line-height: var(--lh-normal); }
    the list, not an action anybody came for. */
 .load-more { display: flex; justify-content: center; margin-top: var(--sp-5); }
 .load-more:empty { display: none; }
+/* The chevron points at what it fetches — down the page, not along it. */
+.load-more svg { transform: rotate(90deg); }
+.load-more .btn { animation: load-more-in var(--duration-normal) var(--ease-out); }
+@keyframes load-more-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .load-more .btn { animation: none; } }
 
 .stack { display: flex; flex-direction: column; gap: var(--sp-4); }
 .stack-tight { display: flex; flex-direction: column; gap: var(--sp-2); }

@@ -236,6 +236,26 @@
 /* A question mark beside what it explains. The sentence lives in the hover
    rather than under every control: it is there when it is wanted and takes
    no space when it is not. */
+/* A survey or form that is being answered says so in one line: an icon, the
+   count, and what it means for editing. It replaced a paragraph explaining
+   that questions used to be frozen and no longer are — which is a thing the
+   changelog should say once, not the page every time it loads. */
+.live-strip {
+  display: flex; align-items: center; gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--line-faint);
+  border-left: 2px solid var(--cd-blue);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  font-size: var(--fs-xs); color: var(--text-2);
+  animation: strip-in var(--duration-normal) var(--ease-out);
+}
+.live-strip strong { color: var(--text-1); font-family: var(--font-mono); }
+.live-strip svg { color: var(--cd-blue); flex-shrink: 0; }
+.live-note { color: var(--text-3); }
+@keyframes strip-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .live-strip { animation: none; } }
+
 .tip {
   position: relative;
   display: inline-flex; align-items: center; justify-content: center;

@@ -17,7 +17,14 @@
     .list-head { display: flex; align-items: baseline; gap: var(--sp-3); flex-wrap: wrap; }
     .list-name { font-weight: var(--fw-semibold); color: var(--text-1); }
     .list-key { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-3); }
-    .list-hint { font-size: var(--fs-xs); color: var(--text-3); margin-top: var(--sp-1); }
+    /* Beside the name rather than under it, and truncated — it is a note on
+       the field, not a paragraph about it. The full text is the title. */
+    .list-hint {
+      font-size: var(--fs-xs); color: var(--text-3);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      max-width: 42ch; min-width: 0;
+    }
+    @media (max-width: 720px) { .list-hint { display: none; } }
 
     /* One option per line. A textarea rather than a row of inputs because
        these lists are pasted as often as they are typed — a sector list
@@ -36,8 +43,18 @@
       display: flex; align-items: center; gap: var(--sp-3);
       flex-wrap: wrap; margin-top: var(--sp-3);
     }
-    .list-count { font-size: var(--fs-xs); color: var(--text-3); }
-    .dirty { color: var(--gold-ink); }
+    /* A number, not a sentence — the label above it already says what it
+       counts. Gold while it differs from what is saved. */
+    .list-count { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-3); }
+    .dirty { color: var(--gold-ink); font-weight: var(--fw-semibold); }
+
+    /* Saved. The card says so itself for a moment instead of a toast. */
+    @keyframes list-saved {
+      0%   { border-color: var(--teal); box-shadow: 0 0 0 3px var(--tint-success, rgba(13, 148, 136, 0.12)); }
+      100% { border-color: var(--line-faint); box-shadow: 0 0 0 0 transparent; }
+    }
+    .card.saved { animation: list-saved var(--duration-normal) var(--ease-out) forwards; animation-duration: 900ms; }
+    @media (prefers-reduced-motion: reduce) { .card.saved { animation: none; } }
   </style>
 </head>
 <body>
@@ -49,25 +66,13 @@
       <div class="page-head-row">
         <div>
           <h1 class="page-title">Answer lists</h1>
-          <p class="page-subtitle">
-            The answers offered when a question has a fixed set of them. A form asking for a
-            sector or a state fills its options from here, and so does a member's own profile.
-          </p>
+          <p class="page-subtitle">What forms and profiles offer as answers.</p>
         </div>
         <div class="page-actions">
           <a href="/admin/onboarding.html" class="btn btn-sm btn-secondary">Onboarding forms</a>
         </div>
       </div>
     </header>
-
-    <section class="card mb-6">
-      <p class="text-sm muted" style="max-width:68ch">
-        Each list ships with a default and this workspace can replace it — no deploy, no
-        waiting. Changing a list changes what is <strong>offered from now on</strong>; answers
-        already collected are untouched, so removing an option never rewrites the applications
-        that chose it.
-      </p>
-    </section>
 
     <div class="lists" id="lists">
       <div class="card"><div class="skeleton" style="height:120px;width:100%"></div></div>
@@ -101,31 +106,42 @@
   const toLines = options => options.join('\n');
   const fromLines = text => text.split('\n').map(l => l.trim()).filter(Boolean);
 
+  // Saving says so by the card acknowledging it, rather than by a toast
+  // sliding in over the next one somebody is about to edit.
+  function flash(field) {
+    const card = document.querySelector(`[data-field="${field}"]`);
+    if (!card) return;
+    card.classList.remove('saved');
+    void card.offsetWidth;
+    card.classList.add('saved');
+  }
+
   function render() {
     document.getElementById('lists').innerHTML = fields.map(f => `
       <section class="card" data-field="${escapeHtml(f.field)}">
         <div class="list-head">
           <span class="list-name">${escapeHtml(f.label)}</span>
           <span class="list-key">${escapeHtml(f.field)}</span>
+          ${f.hint ? `<span class="list-hint" title="${escapeHtml(f.hint)}">${escapeHtml(f.hint)}</span>` : ''}
           <span class="spacer"></span>
           ${f.customised ? badge('customised', 'warn') : badge('standard', '')}
         </div>
-        ${f.hint ? `<p class="list-hint">${escapeHtml(f.hint)}</p>` : ''}
 
         <textarea class="input list-box mt-3" data-options spellcheck="false"
           aria-label="${escapeHtml(f.label)} options, one per line">${escapeHtml(toLines(f.options))}</textarea>
 
         <div class="list-foot">
-          <button type="button" class="btn btn-sm btn-primary" data-save>Save list</button>
+          <button type="button" class="btn btn-sm btn-primary" data-save data-icon="check" data-icon-size="13">Save</button>
           ${f.customised
-            ? '<button type="button" class="btn btn-sm btn-ghost" data-reset>Back to the standard list</button>'
+            ? '<button type="button" class="btn btn-sm btn-ghost" data-reset data-icon="arrowLeft" data-icon-size="13">Reset</button>'
             : ''}
           <span class="spacer"></span>
-          <span class="list-count" data-count>${f.options.length} option${f.options.length === 1 ? '' : 's'}</span>
+          <span class="list-count" data-count>${f.options.length}</span>
         </div>
       </section>`).join('');
 
     for (const card of document.querySelectorAll('[data-field]')) bind(card);
+    Shell.icons(document.getElementById('lists'));
   }
 
   function bind(card) {
@@ -135,10 +151,9 @@
     const entry = fields.find(f => f.field === field);
 
     box.addEventListener('input', () => {
-      const n = fromLines(box.value).length;
-      count.textContent = `${n} option${n === 1 ? '' : 's'}`;
+      count.textContent = fromLines(box.value).length;
       // Unsaved is worth showing: a list edited and left is a list that still
-      // asks yesterday's question.
+      // asks yesterday's question. A colour, not a sentence.
       count.classList.toggle('dirty', toLines(entry.options) !== box.value.trim());
     });
 
@@ -147,20 +162,26 @@
         try {
           const saved = await api.put(`/admin/options/${field}`, { options: fromLines(box.value) });
           Object.assign(entry, { options: saved.options, customised: true });
-          showToast(`${entry.label} saved — ${saved.options.length} options`);
           render();
+          flash(field);
         } catch (err) { showToast(err.message, 'error'); }
       });
     });
 
     card.querySelector('[data-reset]')?.addEventListener('click', async e => {
-      if (!confirm(`Put the ${entry.label.toLowerCase()} list back to the standard one?`)) return;
+      const ok = await Shell.confirm({
+        title: `Reset ${entry.label.toLowerCase()}?`,
+        text: 'Back to the standard list.',
+        ok: 'Reset'
+      });
+      if (!ok) return;
+
       await busy(e.currentTarget, 'Resetting…', async () => {
         try {
           const reset = await api.del(`/admin/options/${field}`);
           Object.assign(entry, { options: reset.options, customised: false });
-          showToast(`${entry.label} is back to the standard list`);
           render();
+          flash(field);
         } catch (err) { showToast(err.message, 'error'); }
       });
     });

@@ -529,26 +529,18 @@
       syncCohortChecks();
 
       if (state.locked) {
-        // Applications carry the questions they were filled in under, so this
-        // is information rather than a refusal: the form is live and people
-        // are applying through it, which is worth knowing before rewording a
-        // question — not a reason nobody may fix a typo in one.
+        // One line, same as the survey builder. Applications keep the wording
+        // they were filled in under, so this is a fact about the form rather
+        // than a refusal — and a fact is a strip, not a paragraph.
         const decided = data.counts.pending + data.counts.approved + data.counts.rejected;
-        document.getElementById('lockNotice').className = 'card mb-4';
+        document.getElementById('lockNotice').className = 'live-strip mb-4';
         document.getElementById('lockNotice').innerHTML = `
-          <div class="row" style="gap:var(--sp-3);align-items:flex-start">
-            <span>📥</span>
-            <div>
-              <div class="text-sm" style="font-weight:var(--fw-medium)">
-                ${decided} ${decided === 1 ? 'person has' : 'people have'} filled this in
-              </div>
-              <p class="hint" style="margin-top:2px">
-                You can still change the questions. Each application keeps the wording it was
-                filled in under, so those ${decided === 1 ? 'details stay' : 'details stay'} filed
-                against what the person actually saw and your correction reaches whoever applies next.
-              </p>
-            </div>
-          </div>`;
+          ${icon('onboarding', 15)}
+          <strong>${decided}</strong>
+          <span>${decided === 1 ? 'application' : 'applications'}</span>
+          <span class="spacer"></span>
+          <span class="live-note">Questions still editable</span>
+          <span class="tip" data-tip="Each application keeps the wording it was filled in under. Edits reach whoever applies next.">?</span>`;
       }
 
       renderThemePanel();
@@ -628,7 +620,8 @@
     // Already filled in from the standard list, or offered as a replacement.
     const standard = chosen?.options && OPTION_TYPES.includes(question.type)
       ? `<button type="button" class="btn btn-sm btn-ghost" data-fill-options>
-           ${optionsAreBlank(question) ? 'Fill in' : 'Replace with'} the standard ${chosen.options.length} ${escapeHtml(chosen.label.toLowerCase())} options
+           ${icon('package', 13)} Use standard list
+           <span class="dim">${chosen.options.length}</span>
          </button>`
       : '';
 
@@ -981,7 +974,7 @@
   async function deleteForm(btn) {
     const ok = await Shell.confirm({
       title: 'Delete this form?',
-      text: 'The questions go. If anybody has filled it in you will be asked again, with the number.',
+      text: 'This cannot be undone.',
       ok: 'Delete',
       danger: true
     });
@@ -997,7 +990,7 @@
 
         const sure = await Shell.confirm({
           title: 'Delete the applications too?',
-          text: `${err.message} This cannot be undone.`,
+          text: err.message,
           ok: 'Delete everything',
           danger: true
         });

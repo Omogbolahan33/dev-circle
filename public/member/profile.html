@@ -165,24 +165,15 @@
 
       <div class="mt-6">
         <label class="label">API products you build against</label>
-        <p class="hint" style="margin-top:0;margin-bottom:var(--sp-2)">
-          This is the one part of your integration you can tell us directly — it helps us
-          match the right surveys and sessions to you. Your API stage and KYB status are
-          updated automatically from the Developer Hub.
-        </p>
+        <p class="hint" style="margin-top:0;margin-bottom:var(--sp-2)">Helps us match the right surveys to you.</p>
         <div class="choice-grid" id="productGroup"></div>
         <p class="hint" id="productsNote" style="display:none"></p>
       </div>
 
       <div class="locked-note mt-6">
-        <strong>What cannot be changed here:</strong>
-        your <strong>email address</strong> (it is how you are identified and sign in) and,
-        once set, your <strong>phone number</strong> — its last four digits are half your
-        sign-in credential, so changing it would lock you out.
-        <strong>API stage, KYB status and circle memberships</strong> are managed by the
-        Credit Direct team from the Developer Hub. If any of these need changing — a new
-        phone number especially — <a href="/member/feedback.html">tell the team</a> and we
-        will verify and update it.
+        <strong>Locked:</strong> email and phone — you sign in with them.
+        <strong>API stage, KYB and circles</strong> come from the Developer Hub.
+        <a href="/member/feedback.html">Ask the team</a> to change any of these.
       </div>
     </section>
 
@@ -199,7 +190,7 @@
         <div class="field">
           <label class="label">Email</label>
           <input type="email" class="input" id="fEmail" disabled>
-          <p class="hint">Your email cannot be changed — it is how you are identified and sign in. Need it changed? <a href="/member/feedback.html">Tell the team</a>.</p>
+          <p class="hint">You sign in with this. <a href="/member/feedback.html">Ask the team</a> to change it.</p>
         </div>
       </div>
       <div class="field-row">
@@ -261,10 +252,7 @@
         <h2 class="section-title">When to reach you</h2>
         <span class="ring-tag" id="ringTagAvail">Ring 2</span>
       </div>
-      <p class="text-sm muted mb-4" style="max-width:54ch">
-        We schedule sessions and send messages inside these windows. Outside them, anything
-        due is held rather than sent.
-      </p>
+      <p class="text-sm muted mb-4">We only reach you inside these windows.</p>
 
       <div class="field">
         <label class="label">Days that work</label>
@@ -288,10 +276,8 @@
         <h2 class="section-title">How to reach you</h2>
         <span class="ring-tag" id="ringTagChannels">Ring 3</span>
       </div>
-      <p class="text-sm muted mb-4" style="max-width:54ch">
-        Your preference is where we would like to reach you. Consent is your permission to do
-        it at all — manage that under
-        <a href="/member/notifications.html">notifications</a>.
+      <p class="text-sm muted mb-4">
+        Where, not whether — permission lives in <a href="/member/notifications.html">notifications</a>.
       </p>
 
       <div class="field">
@@ -384,10 +370,10 @@
         // for confirming the last four digits) but nothing on it can be edited.
         phoneInput.readOnly = true;
         phoneInput.setAttribute('aria-readonly', 'true');
-        phoneHint.innerHTML = '🔒 Locked after registration — the last four digits of this number ' +
-          'are what you sign in with. Got a new number? <a href="/member/feedback.html">Ask the team to change it</a>.';
+        phoneHint.innerHTML = 'Locked — you sign in with this. ' +
+          '<a href="/member/feedback.html">Ask the team</a> to change it.';
       } else {
-        phoneHint.textContent = 'Set the number you sign in with — you will be asked for its last four digits. Once set, it cannot be changed here.';
+        phoneHint.textContent = 'You will sign in with the last 4 digits. Locked once set.';
       }
 
       // No API stage or KYB badge beside the name: those are the Developer

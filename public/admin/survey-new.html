@@ -296,29 +296,17 @@
       renderStatus();
 
       if (state.locked) {
-        // Not a lock any more, and the builder is not disabled. Answers carry
-        // the questions they were collected under, so an edit reaches the next
-        // member and leaves the earlier ones reading as they were asked. What
-        // is worth saying is that the survey is live and being answered, which
-        // is a thing to know before rewording question four — not a refusal.
-        document.getElementById('lockNotice').className = 'card mb-4';
+        // Not a lock, so not a notice. One line saying the survey is being
+        // answered — worth knowing before rewording question four, and not
+        // worth a paragraph. The tooltip carries the why for anyone who wants it.
+        document.getElementById('lockNotice').className = 'live-strip mb-4';
         document.getElementById('lockNotice').innerHTML = `
-          <div class="row" style="gap:var(--sp-3);align-items:flex-start">
-            <span>📊</span>
-            <div>
-              <div class="text-sm" style="font-weight:var(--fw-medium)">
-                ${data.completed_count} ${survey.target_type === 'anonymous'
-                  ? `${data.completed_count === 1 ? 'person has' : 'people have'}`
-                  : `member${data.completed_count === 1 ? ' has' : 's have'}`} answered this
-              </div>
-              <p class="hint" style="margin-top:2px">
-                You can still change the questions. Answers already given keep the wording
-                they were shown, so a correction reaches whoever answers next — but a
-                question rewritten into a different question gives you two sets of answers
-                under one heading, which no chart will separate for you.
-              </p>
-            </div>
-          </div>`;
+          ${icon('activity', 15)}
+          <strong>${data.completed_count}</strong>
+          <span>answered</span>
+          <span class="spacer"></span>
+          <span class="live-note">Questions still editable</span>
+          <span class="tip" data-tip="Answers keep the wording they were shown. Edits reach whoever answers next.">?</span>`;
       }
       renderThemePanel();
     } catch (err) {
@@ -394,7 +382,7 @@
     // a survey before they may delete it is two acts for one intention, and the
     // weight is already carried where it belongs: the server refuses the first
     // press whenever there are answers to lose and names how many.
-    const remove = '<button class="btn btn-sm btn-ghost" onclick="deleteSurvey(this)">Delete</button>';
+    const remove = `<button class="btn btn-sm btn-ghost" onclick="deleteSurvey(this)">${icon('close', 14)} Delete</button>`;
 
     const views = {
       draft: {
@@ -435,7 +423,7 @@
   async function deleteSurvey(btn) {
     const ok = await Shell.confirm({
       title: 'Delete this survey?',
-      text: 'The questions go. If anybody has answered you will be asked again, with the number.',
+      text: 'This cannot be undone.',
       ok: 'Delete',
       danger: true
     });
@@ -451,7 +439,7 @@
 
         const sure = await Shell.confirm({
           title: 'Delete the answers too?',
-          text: `${err.message} This cannot be undone. To stop it taking answers without losing them, close it instead.`,
+          text: err.message,
           ok: 'Delete everything',
           danger: true
         });

@@ -175,7 +175,7 @@
                by then "new here?" is the wrong question and "the number we have
                for you is wrong" is the likely one. -->
           <p class="hint" style="text-align:center" id="changedNumber" hidden>
-            Changed your number, or never gave us one? Ask the team that onboarded you to update it.
+            Number changed? <a href="/member/feedback.html">Ask the team</a>.
           </p>
         </div>
       </form>
@@ -313,8 +313,7 @@
     }
 
     if (next === 'email_required') {
-      showNote('Sign in with the email address you registered with. Your number is not the way in — ' +
-               'the end of it is what we ask you for.');
+      showNote('Use your email address, not your phone number.');
       $('signinSub').textContent = 'Enter the email address you are known by. We work out the rest.';
       return;
     }
@@ -328,7 +327,7 @@
     }
 
     if (next === 'password') {
-      $('signinSub').textContent = 'Credit Direct staff sign in with a password.';
+      $('signinSub').textContent = 'Credit Direct staff.';
       $('secretLabel').textContent = 'Password';
       $('secretHint').textContent = '';
       secretEl.placeholder = '••••••••';
@@ -336,12 +335,11 @@
       secretEl.removeAttribute('inputmode');
     } else {
       const n = digits || 4;
-      $('signinSub').textContent = 'You sign in with your own number — no password, and no code to wait for.';
+      $('signinSub').textContent = 'No password, no code.';
       // Worded as an instruction rather than as the name of a box, because the
       // thing people got wrong here was what was being asked of them.
       $('secretLabel').textContent = `Enter the last ${n} digits of your number`;
-      $('secretHint').textContent =
-        `The phone number you registered with — its last ${n} digits. Nobody is sending you a code.`;
+      $('secretHint').textContent = 'From the number you registered with.';
       secretEl.placeholder = '•'.repeat(n);
       secretEl.setAttribute('autocomplete', 'off');
       secretEl.setAttribute('inputmode', 'numeric');

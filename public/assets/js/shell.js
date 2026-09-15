@@ -797,7 +797,8 @@ function renderLoadMore(el, pagination, fetchPage, label = 'Load more') {
   const shown = Math.min(pagination.page * pagination.limit, pagination.total);
   el.innerHTML = `
     <button type="button" class="btn btn-secondary btn-sm" data-load-more>
-      ${escapeHtml(label)} <span class="dim">· ${shown} of ${pagination.total}</span>
+      ${icon('chevron', 14)} ${escapeHtml(label)}
+      <span class="dim">${shown}/${pagination.total}</span>
     </button>`;
 
   el.querySelector('[data-load-more]').addEventListener('click', async event => {

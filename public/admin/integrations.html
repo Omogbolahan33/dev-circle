@@ -128,7 +128,7 @@
         title: 'No events',
         text: filter === 'all'
           ? 'Nothing has been ingested yet. Events arrive when Customer.io, Feex or the landing page post to the integration endpoints.'
-          : more ? 'Nothing matches this filter in what is loaded so far.' : 'Nothing matches this filter.'
+          : more ? 'None loaded yet — there is more below.' : 'Nothing matches this filter.'
       });
       renderLoadMore(document.getElementById('more'), paging, loadPage, 'Load older');
       return;

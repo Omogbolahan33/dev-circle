@@ -36,7 +36,7 @@
 
     <header class="page-head-block mb-6">
       <h1 class="page-title-lg hide-on-mobile">Your history with Credit Direct</h1>
-      <p class="lede">Everything you have done here, and everything we have recorded about your integration. Nobody else can see this.</p>
+      <p class="lede">Everything you have done here. Private to you.</p>
     </header>
 
     <div class="figures" id="figures">
@@ -135,8 +135,8 @@
       el.innerHTML = emptyState({
         title: group ? 'Nothing of this kind yet' : 'Nothing recorded yet',
         text: group && more
-          ? 'Nothing of this kind in what is loaded so far — there is more history below.'
-          : 'Your history fills in as you integrate, answer surveys and claim rewards.'
+          ? 'None loaded yet — there is more below.'
+          : 'Your history fills in as you take part.'
       });
       renderLoadMore(document.getElementById('more'), paging, loadPage, 'Load older');
       return;
