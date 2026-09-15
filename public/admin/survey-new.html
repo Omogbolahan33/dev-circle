@@ -296,14 +296,15 @@
       renderStatus();
 
       if (state.locked) {
-        // Rewriting a question that has been answered would leave the answers
-        // attached to wording nobody was shown. The look can still change:
-        // it alters how the rest of the audience sees it, not what they were
-        // asked.
+        // Not a lock any more, and the builder is not disabled. Answers carry
+        // the questions they were collected under, so an edit reaches the next
+        // member and leaves the earlier ones reading as they were asked. What
+        // is worth saying is that the survey is live and being answered, which
+        // is a thing to know before rewording question four — not a refusal.
         document.getElementById('lockNotice').className = 'card mb-4';
         document.getElementById('lockNotice').innerHTML = `
           <div class="row" style="gap:var(--sp-3);align-items:flex-start">
-            <span>🔒</span>
+            <span>📊</span>
             <div>
               <div class="text-sm" style="font-weight:var(--fw-medium)">
                 ${data.completed_count} ${survey.target_type === 'anonymous'
@@ -311,15 +312,13 @@
                   : `member${data.completed_count === 1 ? ' has' : 's have'}`} answered this
               </div>
               <p class="hint" style="margin-top:2px">
-                The questions are fixed now — changing them would leave those answers
-                attached to wording nobody was shown. Close this survey and write a new
-                version to ask differently. Its look can still be changed.
+                You can still change the questions. Answers already given keep the wording
+                they were shown, so a correction reaches whoever answers next — but a
+                question rewritten into a different question gives you two sets of answers
+                under one heading, which no chart will separate for you.
               </p>
             </div>
           </div>`;
-        document.getElementById('addToggle').classList.add('hide');
-        document.getElementById('importToggle')?.classList.add('hide');
-        document.getElementById('typeMenu')?.classList.add('hide');
       }
       renderThemePanel();
     } catch (err) {
@@ -391,24 +390,30 @@
       ? `at <span class="mono">${escapeHtml(location.origin + state.publicPath)}</span>`
       : 'to the audience it targets';
 
+    // Offered in every state, including while it is live. Making somebody close
+    // a survey before they may delete it is two acts for one intention, and the
+    // weight is already carried where it belongs: the server refuses the first
+    // press whenever there are answers to lose and names how many.
+    const remove = '<button class="btn btn-sm btn-ghost" onclick="deleteSurvey(this)">Delete</button>';
+
     const views = {
       draft: {
         badge: badge('draft', 'warn'),
         text: 'Not published. Nobody is invited and nobody can answer until you publish, ' +
               'which is the gold button at the top of this page.',
-        action: ''
+        action: remove
       },
       active: {
         badge: badge('live', 'active'),
         text: `Open and taking responses ${where}. ${answered} ` +
               'Closing stops it taking any more, and you can open it again afterwards.',
-        action: '<button class="btn btn-sm btn-secondary" onclick="closeSurvey()">Stop taking responses</button>'
+        action: '<button class="btn btn-sm btn-secondary" onclick="closeSurvey()">Stop taking responses</button>' + remove
       },
       closed: {
         badge: badge('closed', 'inactive'),
         text: `Not taking responses. ${answered} Everything it collected is kept — ` +
               'reopen it from the top of this page to start taking them again.',
-        action: ''
+        action: remove
       }
     };
 
@@ -422,6 +427,45 @@
         </div>
         ${view.action}
       </div>`;
+  }
+
+  // Two presses when there are answers to lose, one when there are not. The
+  // second dialog quotes the server's count rather than this page's, so what
+  // gets confirmed is what will actually go.
+  async function deleteSurvey(btn) {
+    const ok = await Shell.confirm({
+      title: 'Delete this survey?',
+      text: 'The questions go. If anybody has answered you will be asked again, with the number.',
+      ok: 'Delete',
+      danger: true
+    });
+    if (!ok) return;
+
+    await busy(btn, 'Deleting…', async () => {
+      try {
+        await api.del(`/admin/surveys/${state.id}`);
+        showToast('Survey deleted');
+        window.location.href = '/admin/surveys.html';
+      } catch (err) {
+        if (!/answered/i.test(err.message || '')) return showToast(err.message, 'error');
+
+        const sure = await Shell.confirm({
+          title: 'Delete the answers too?',
+          text: `${err.message} This cannot be undone. To stop it taking answers without losing them, close it instead.`,
+          ok: 'Delete everything',
+          danger: true
+        });
+        if (!sure) return;
+
+        try {
+          await api.del(`/admin/surveys/${state.id}?confirm=true`);
+          showToast('Survey and its answers deleted');
+          window.location.href = '/admin/surveys.html';
+        } catch (second) {
+          showToast(second.message, 'error');
+        }
+      }
+    });
   }
 
   async function closeSurvey() {
@@ -529,9 +573,6 @@
       try {
         let saved;
         if (state.id) {
-          // A survey with answers keeps its questions; sending them back would
-          // be refused, and rightly so.
-          if (state.locked) delete body.questions;
           saved = await api.put(`/admin/surveys/${state.id}`, body);
         } else {
           saved = await api.post('/admin/surveys', body);

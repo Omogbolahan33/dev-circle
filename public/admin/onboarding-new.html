@@ -529,28 +529,26 @@
       syncCohortChecks();
 
       if (state.locked) {
-        // Rewriting a question that somebody has answered would leave their
-        // details filed under wording nobody was shown — and here those
-        // answers are a person's name, address and employer.
+        // Applications carry the questions they were filled in under, so this
+        // is information rather than a refusal: the form is live and people
+        // are applying through it, which is worth knowing before rewording a
+        // question — not a reason nobody may fix a typo in one.
         const decided = data.counts.pending + data.counts.approved + data.counts.rejected;
         document.getElementById('lockNotice').className = 'card mb-4';
         document.getElementById('lockNotice').innerHTML = `
           <div class="row" style="gap:var(--sp-3);align-items:flex-start">
-            <span>🔒</span>
+            <span>📥</span>
             <div>
               <div class="text-sm" style="font-weight:var(--fw-medium)">
                 ${decided} ${decided === 1 ? 'person has' : 'people have'} filled this in
               </div>
               <p class="hint" style="margin-top:2px">
-                The questions are fixed now — changing them would leave those answers attached to
-                wording nobody was shown. Close this form and write a new one to ask differently.
-                Its look, where it may be embedded and where it sends people can all still change.
+                You can still change the questions. Each application keeps the wording it was
+                filled in under, so those ${decided === 1 ? 'details stay' : 'details stay'} filed
+                against what the person actually saw and your correction reaches whoever applies next.
               </p>
             </div>
           </div>`;
-        document.getElementById('addToggle').classList.add('hide');
-        document.getElementById('importToggle')?.classList.add('hide');
-        document.getElementById('typeMenu')?.classList.add('hide');
       }
 
       renderThemePanel();
@@ -562,6 +560,42 @@
   // ─── Tagging a question ───────────────────────────────────
   // The one thing a card carries here that it does not in the survey builder.
   // Everything else about the card comes from the shared editor.
+
+  // ─── The standard answers ─────────────────────────────────
+  // A tagged question whose field has a fixed set of answers gets them filled
+  // in. Nobody should be typing out thirty-seven states, and two circles
+  // typing them out separately is how one ends up asking for "FCT" and the
+  // other for "Abuja" and a cohort built on location matches neither.
+
+  const OPTION_TYPES = ['choice', 'multi_choice', 'dropdown', 'ranking'];
+
+  // Cards carry a subtext line; a dropdown and a ranking are plain words.
+  function asOptions(type, list) {
+    return ['choice', 'multi_choice'].includes(type)
+      ? list.map(label => ({ label, subtext: '' }))
+      : [...list];
+  }
+
+  function optionLabel(option) {
+    return String(option && typeof option === 'object' ? option.label : option || '').trim();
+  }
+
+  // Blank means the author has not written anything here yet — two empty rows
+  // is what a new card starts with. Filling those in is a convenience;
+  // overwriting words somebody chose is not, so that needs a click.
+  function optionsAreBlank(question) {
+    return !(question.options || []).some(optionLabel);
+  }
+
+  function fillOptions(question, field) {
+    if (!field?.options || !OPTION_TYPES.includes(question.type)) return false;
+    question.options = asOptions(question.type, field.options);
+    // Thirty-seven states as cards is a wall to scroll past, so a long list
+    // picks the control that suits it. Only from `choice`, which is the one
+    // that renders every option at once — a multi-select has to stay one.
+    if (question.type === 'choice' && question.options.length > 8) question.type = 'dropdown';
+    return true;
+  }
 
   function mapsField(question, index) {
     if (!SurveySchema.isAnswerable(question)) return '';
@@ -591,6 +625,13 @@
     if (chosen?.days) tips.push('Options have to be days of the week.');
     if (question.maps_to === 'phone' && question.format === 'phone') tips.push('Its last four digits are what they sign in with, so it is worth saying on the form why you are asking.');
 
+    // Already filled in from the standard list, or offered as a replacement.
+    const standard = chosen?.options && OPTION_TYPES.includes(question.type)
+      ? `<button type="button" class="btn btn-sm btn-ghost" data-fill-options>
+           ${optionsAreBlank(question) ? 'Fill in' : 'Replace with'} the standard ${chosen.options.length} ${escapeHtml(chosen.label.toLowerCase())} options
+         </button>`
+      : '';
+
     return `
       <div class="maps">
         <p class="maps-lead">This answer is…${tips
@@ -608,6 +649,7 @@
           ? '<p class="maps-note" style="color:var(--rose-ink)">Set the answer format to “Email address” — an address we cannot mail is an application nobody can act on.</p>' : ''}
         ${question.maps_to === 'phone' && question.format !== 'phone'
           ? '<p class="maps-note" style="color:var(--rose-ink)">Set the answer format to “Phone number”.</p>' : ''}
+        ${standard}
       </div>`;
   }
 
@@ -625,7 +667,15 @@
       if (value === 'email') question.format = 'email';
       if (value === 'phone') question.format = 'phone';
 
+      // Tagging a question as one of the fields with a fixed set of answers
+      // fills them in, as long as there is nothing to lose by doing it.
+      if (optionsAreBlank(question)) fillOptions(question, field);
+
       redraw();
+    });
+
+    cardEl.querySelector('[data-fill-options]')?.addEventListener('click', () => {
+      if (fillOptions(question, fields.find(f => f.value === question.maps_to))) redraw();
     });
   }
 
@@ -747,7 +797,7 @@
     // Checked here first so a refusal arrives against the question that caused
     // it rather than as a sentence at the top of the page. The server checks
     // the same thing again — this is not the guard, it is the explanation.
-    if (!state.locked && publishing) {
+    if (publishing) {
       const check = SurveySchema.normalizeQuestions(state.questions, { allowEmpty: false });
       state.issues = check.issues;
 
@@ -869,8 +919,7 @@
         badge: badge('draft', 'warn'),
         text: 'Not published. Its link and any embed of it show nothing until you publish, ' +
               'which is the gold button at the top of this page.',
-        action: state.locked ? '' :
-          '<button class="btn btn-sm btn-ghost" onclick="deleteForm(this)">Delete this form</button>'
+        action: '<button class="btn btn-sm btn-ghost" onclick="deleteForm(this)">Delete this form</button>'
       },
       active: {
         badge: badge('live', 'active'),
@@ -878,15 +927,15 @@
               (waiting ? ` · ${waiting} waiting on a decision.` : '.') +
               ' Closing stops it taking any more — the link and every embed of it go blank — ' +
               'and you can open it again afterwards.',
-        action: '<button class="btn btn-sm btn-secondary" onclick="closeForm()">Stop taking responses</button>'
+        action: '<button class="btn btn-sm btn-secondary" onclick="closeForm()">Stop taking responses</button>' +
+                '<button class="btn btn-sm btn-ghost" onclick="deleteForm(this)">Delete this form</button>'
       },
       closed: {
         badge: badge('closed', 'inactive'),
         text: 'Not taking responses. Its link and any page embedding it show nothing, and ' +
               'everything it already collected is still in the queue. Reopen it from the top ' +
               'of this page to start taking them again.',
-        action: state.locked ? '' :
-          '<button class="btn btn-sm btn-ghost" onclick="deleteForm(this)">Delete this form</button>'
+        action: '<button class="btn btn-sm btn-ghost" onclick="deleteForm(this)">Delete this form</button>'
       }
     };
 
@@ -926,10 +975,13 @@
   // Only offered for a form nobody has filled in. One somebody has is closed
   // instead — deleting it would take their applications with it, and those are
   // the record of what people were asked and what they were told.
+  // Two presses when there is something to lose, one when there is not — and
+  // the second dialog quotes the server's own count rather than this page's
+  // idea of it, so what is confirmed is what will actually be deleted.
   async function deleteForm(btn) {
     const ok = await Shell.confirm({
       title: 'Delete this form?',
-      text: 'Nobody has filled it in, so there is nothing to lose but the questions. This cannot be undone.',
+      text: 'The questions go. If anybody has filled it in you will be asked again, with the number.',
       ok: 'Delete',
       danger: true
     });
@@ -941,7 +993,23 @@
         showToast('Form deleted');
         window.location.href = '/admin/onboarding.html';
       } catch (err) {
-        showToast(err.message, 'error');
+        if (!/filled/i.test(err.message || '')) return showToast(err.message, 'error');
+
+        const sure = await Shell.confirm({
+          title: 'Delete the applications too?',
+          text: `${err.message} This cannot be undone.`,
+          ok: 'Delete everything',
+          danger: true
+        });
+        if (!sure) return;
+
+        try {
+          await api.del(`/admin/onboarding/${state.id}?confirm=true`);
+          showToast('Form and its applications deleted');
+          window.location.href = '/admin/onboarding.html';
+        } catch (second) {
+          showToast(second.message, 'error');
+        }
       }
     });
   }

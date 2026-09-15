@@ -924,10 +924,16 @@ router.post('/surveys/:id/respond', requireAuth, async (req, res) => {
     });
   }
 
+  // The questions go in beside the answers. An answer is stored against a
+  // question id, so without this the wording it is read under is whatever the
+  // survey says today — and the survey is editable while it is open. Keeping
+  // the definition here is what lets both be true: the author can fix a typo
+  // in question four, and the people who already answered it keep the question
+  // they were actually shown.
   await db.prepare(`
-    UPDATE survey_responses SET answers = ?, completed_at = datetime('now')
+    UPDATE survey_responses SET answers = ?, questions = ?, completed_at = datetime('now')
     WHERE id = ?
-  `).run(JSON.stringify(checked.answers), response.id);
+  `).run(JSON.stringify(checked.answers), JSON.stringify(questions), response.id);
 
   // The survey may have branched to its end before it was over — a consent
   // question answered "no" ends it there — and the ending the author wrote

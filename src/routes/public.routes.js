@@ -188,9 +188,11 @@ router.post('/surveys/:token/respond', writing, async (req, res) => {
     });
   }
 
+  // Beside the answers, the questions they were shown — see the note on the
+  // member's half of this in users.routes.js.
   await db.prepare(`
-    UPDATE survey_responses SET answers = ?, completed_at = datetime('now') WHERE id = ?
-  `).run(JSON.stringify(checked.answers), response.id);
+    UPDATE survey_responses SET answers = ?, questions = ?, completed_at = datetime('now') WHERE id = ?
+  `).run(JSON.stringify(checked.answers), JSON.stringify(questions), response.id);
 
   // The survey may have branched to its end before it was over — a consent
   // question answered "no" ends it there — and the ending the author wrote

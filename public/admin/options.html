@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" type="image/svg+xml" href="/assets/brand/favicon.svg">
+  <title>Dev Circle — Answer lists</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/css/tokens.css">
+  <link rel="stylesheet" href="/assets/css/app.css">
+  <script src="/assets/js/theme.js"></script>
+  <style>
+    .lists { display: flex; flex-direction: column; gap: var(--sp-4); }
+
+    .list-head { display: flex; align-items: baseline; gap: var(--sp-3); flex-wrap: wrap; }
+    .list-name { font-weight: var(--fw-semibold); color: var(--text-1); }
+    .list-key { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-3); }
+    .list-hint { font-size: var(--fs-xs); color: var(--text-3); margin-top: var(--sp-1); }
+
+    /* One option per line. A textarea rather than a row of inputs because
+       these lists are pasted as often as they are typed — a sector list
+       arrives from a spreadsheet column, and thirty-seven states are not
+       something anybody enters one field at a time. */
+    .list-box {
+      width: 100%;
+      min-height: 120px;
+      font-family: var(--font-mono);
+      font-size: var(--fs-xs);
+      line-height: var(--lh-loose);
+      resize: vertical;
+    }
+
+    .list-foot {
+      display: flex; align-items: center; gap: var(--sp-3);
+      flex-wrap: wrap; margin-top: var(--sp-3);
+    }
+    .list-count { font-size: var(--fs-xs); color: var(--text-3); }
+    .dirty { color: var(--gold-ink); }
+  </style>
+</head>
+<body>
+
+<div class="app">
+  <div class="app-main">
+
+    <header class="page-head">
+      <div class="page-head-row">
+        <div>
+          <h1 class="page-title">Answer lists</h1>
+          <p class="page-subtitle">
+            The answers offered when a question has a fixed set of them. A form asking for a
+            sector or a state fills its options from here, and so does a member's own profile.
+          </p>
+        </div>
+        <div class="page-actions">
+          <a href="/admin/onboarding.html" class="btn btn-sm btn-secondary">Onboarding forms</a>
+        </div>
+      </div>
+    </header>
+
+    <section class="card mb-6">
+      <p class="text-sm muted" style="max-width:68ch">
+        Each list ships with a default and this workspace can replace it — no deploy, no
+        waiting. Changing a list changes what is <strong>offered from now on</strong>; answers
+        already collected are untouched, so removing an option never rewrites the applications
+        that chose it.
+      </p>
+    </section>
+
+    <div class="lists" id="lists">
+      <div class="card"><div class="skeleton" style="height:120px;width:100%"></div></div>
+      <div class="card"><div class="skeleton" style="height:120px;width:100%"></div></div>
+    </div>
+
+  </div>
+</div>
+
+<script src="/assets/js/api.js"></script>
+<script src="/assets/js/shell.js"></script>
+<script src="/assets/js/brand.js"></script>
+<script>
+  Shell.admin('onboarding');
+
+  let fields = [];
+
+  async function load() {
+    try {
+      fields = (await api.get('/admin/options')).fields;
+      render();
+    } catch (err) {
+      document.getElementById('lists').innerHTML =
+        emptyState({ title: 'Could not load the lists', text: err.message });
+    }
+  }
+
+  // A textarea holds one option per line. Blank lines and repeats are dropped
+  // on the way in by the server, which is the same rule wherever a list is set
+  // — so the box can stay forgiving about what gets pasted into it.
+  const toLines = options => options.join('\n');
+  const fromLines = text => text.split('\n').map(l => l.trim()).filter(Boolean);
+
+  function render() {
+    document.getElementById('lists').innerHTML = fields.map(f => `
+      <section class="card" data-field="${escapeHtml(f.field)}">
+        <div class="list-head">
+          <span class="list-name">${escapeHtml(f.label)}</span>
+          <span class="list-key">${escapeHtml(f.field)}</span>
+          <span class="spacer"></span>
+          ${f.customised ? badge('customised', 'warn') : badge('standard', '')}
+        </div>
+        ${f.hint ? `<p class="list-hint">${escapeHtml(f.hint)}</p>` : ''}
+
+        <textarea class="input list-box mt-3" data-options spellcheck="false"
+          aria-label="${escapeHtml(f.label)} options, one per line">${escapeHtml(toLines(f.options))}</textarea>
+
+        <div class="list-foot">
+          <button type="button" class="btn btn-sm btn-primary" data-save>Save list</button>
+          ${f.customised
+            ? '<button type="button" class="btn btn-sm btn-ghost" data-reset>Back to the standard list</button>'
+            : ''}
+          <span class="spacer"></span>
+          <span class="list-count" data-count>${f.options.length} option${f.options.length === 1 ? '' : 's'}</span>
+        </div>
+      </section>`).join('');
+
+    for (const card of document.querySelectorAll('[data-field]')) bind(card);
+  }
+
+  function bind(card) {
+    const field = card.dataset.field;
+    const box = card.querySelector('[data-options]');
+    const count = card.querySelector('[data-count]');
+    const entry = fields.find(f => f.field === field);
+
+    box.addEventListener('input', () => {
+      const n = fromLines(box.value).length;
+      count.textContent = `${n} option${n === 1 ? '' : 's'}`;
+      // Unsaved is worth showing: a list edited and left is a list that still
+      // asks yesterday's question.
+      count.classList.toggle('dirty', toLines(entry.options) !== box.value.trim());
+    });
+
+    card.querySelector('[data-save]').addEventListener('click', async e => {
+      await busy(e.currentTarget, 'Saving…', async () => {
+        try {
+          const saved = await api.put(`/admin/options/${field}`, { options: fromLines(box.value) });
+          Object.assign(entry, { options: saved.options, customised: true });
+          showToast(`${entry.label} saved — ${saved.options.length} options`);
+          render();
+        } catch (err) { showToast(err.message, 'error'); }
+      });
+    });
+
+    card.querySelector('[data-reset]')?.addEventListener('click', async e => {
+      if (!confirm(`Put the ${entry.label.toLowerCase()} list back to the standard one?`)) return;
+      await busy(e.currentTarget, 'Resetting…', async () => {
+        try {
+          const reset = await api.del(`/admin/options/${field}`);
+          Object.assign(entry, { options: reset.options, customised: false });
+          showToast(`${entry.label} is back to the standard list`);
+          render();
+        } catch (err) { showToast(err.message, 'error'); }
+      });
+    });
+  }
+
+  load();
+</script>
+</body>
+</html>

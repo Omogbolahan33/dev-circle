@@ -1613,11 +1613,15 @@ const paths = {
       tag: 'Admin · Surveys',
       permission: 'surveys.read',
       operationId: 'getSurvey',
-      summary: 'One survey, with whether its questions can still be changed',
+      summary: 'One survey, with how far along it is',
       description: [
         'The survey as stored, the look it inherits from its circle, and whether anyone',
-        'has answered it yet. Questions are fixed the moment the first response lands,',
-        'so an editor needs to know that before it lets someone start rewriting.'
+        'has answered it yet.',
+        '',
+        '`questions_locked` no longer stops an edit — it is kept because an editor should',
+        'still say that answers exist before somebody rewrites a question. Responses carry',
+        'the definition they were collected under, so a correction changes what the next',
+        'member is asked and leaves the record of what earlier ones were asked alone.'
       ].join('\n'),
       parameters: [path('id', 'Survey id')],
       responses: {
@@ -1625,7 +1629,7 @@ const paths = {
           survey: ref('Survey'),
           circle_theme: ref('SurveyTheme'),
           completed_count: int('Members who have finished it'),
-          questions_locked: bool('True once anyone has responded')
+          questions_locked: bool('True once anyone has responded. Advisory — questions may still be edited')
         }), {
           survey: {
             id: 's1', title: 'Sandbox onboarding experience', status: 'active',
@@ -1648,16 +1652,20 @@ const paths = {
         'This is how a draft becomes active: send `{ "status": "active" }`. A survey with',
         'no questions cannot be activated.',
         '',
-        'Questions cannot be changed once anyone has responded — that would orphan the',
-        'answers already collected. Close the survey and create a new version instead.',
-        'The theme can be changed at any point, including while collecting: it changes',
-        'how the rest of the audience sees the survey, not what anyone was asked.'
+        'Questions can be changed at any point, including while answers are coming in.',
+        'That used to be refused, because an answer is stored against a question id and',
+        'rewriting the question re-labelled the answer — somebody rated the docs and the',
+        'record said they rated the sandbox. Every response now carries the definition it',
+        'was collected under, so a correction reaches the next member and leaves the',
+        'earlier ones reading as they were asked.',
+        '',
+        'The theme likewise: it changes how the rest of the audience sees the survey.'
       ].join('\n'),
       parameters: [path('id', 'Survey id')],
       requestBody: jsonBody(object({
         title: str('Survey title'),
         description: str('Shown above the questions'),
-        questions: arrayOf(ref('SurveyQuestion'), 'Only while nobody has responded'),
+        questions: arrayOf(ref('SurveyQuestion'), 'The whole list, replacing what is stored'),
         theme: ref('SurveyTheme'),
         status: str('Lifecycle state', { enum: ['draft', 'active', 'closed'] }),
         target_type: str('Who it is for', { enum: ['all', 'cohort', 'specific'] }),
@@ -1675,9 +1683,42 @@ const paths = {
         400: json('Nothing to update, an invalid value, or publishing a survey with no questions.', ref('Error'), {
           error: 'Add at least one question before publishing'
         }),
+        404: json('No such survey.', ref('Error'), { error: 'Survey not found' })
+      }
+    }),
+    delete: op({
+      tag: 'Admin · Surveys',
+      permission: 'surveys.write',
+      operationId: 'deleteSurvey',
+      summary: 'Delete a survey',
+      description: [
+        'Deletes the survey and the answers collected against it. A survey nobody has',
+        'answered goes on the first call; one with responses behind it is refused once,',
+        'with the count, and deleted on the repeat that carries `?confirm=true`. That is',
+        'the confirmation — a client does not have to invent one, and a script cannot',
+        'delete a year of answers by getting a path wrong.',
+        '',
+        'What is **not** deleted is what people wrote in their own words: verbatim feedback',
+        'filed from this survey is detached and kept, as is a scheduled session that pointed',
+        'at it. The session happened.',
+        '',
+        'To stop a survey accepting answers without destroying them, set `status: "closed"`',
+        'instead.'
+      ].join('\n'),
+      parameters: [
+        path('id', 'Survey id'),
+        query('confirm', 'Pass `true` to go ahead when answers exist', { type: 'string', enum: ['true'] })
+      ],
+      responses: {
+        200: json('Deleted.', object({
+          message: str('Always "Survey deleted"'),
+          deleted_responses: int('How many answers went with it')
+        }), { message: 'Survey deleted', deleted_responses: 51 }),
         404: json('No such survey.', ref('Error'), { error: 'Survey not found' }),
-        409: json('Questions cannot change after responses exist.', ref('Error'), {
-          error: 'Cannot change questions — 51 member(s) have already responded. Close this survey and create a new version.'
+        409: json('Answers exist and `confirm` was not passed.', ref('Error'), {
+          error: '51 people have answered "Sandbox onboarding experience". Deleting it deletes their answers too.',
+          responses: 51,
+          confirm_required: true
         })
       }
     })

@@ -270,13 +270,17 @@ router.post('/:token/submit', submitting, async (req, res) => {
     }
   }
 
+  // The questions go in beside the answers, as they were when this was filled
+  // in. An application is a record of what somebody was asked and what they
+  // said, and the form stays editable behind them — see migration 33.
   await db.prepare(`
     UPDATE onboarding_submissions
-    SET answers = ?, profile = ?, consent_channels = ?, email = ?, name = ?,
+    SET answers = ?, questions = ?, profile = ?, consent_channels = ?, email = ?, name = ?,
         status = 'pending', submitted_at = datetime('now')
     WHERE id = ?
   `).run(
     JSON.stringify(checked.answers),
+    JSON.stringify(questions),
     JSON.stringify(profile),
     JSON.stringify(consent),
     profile.email,

@@ -572,7 +572,7 @@ test('a survey inherits its circle\'s look, and overrides it where it has an opi
   assert.equal(asMemberSees.theme.logo_url, '/assets/partner.png', 'and inherits where it has none');
 });
 
-test('the look can still be changed after members have answered', async () => {
+test('a survey that has been answered can still be corrected', async () => {
   const survey = await published([{ type: 'text', text: 'Anything else?' }]);
   const { token } = await answering(survey);
   await respond(survey, token, { [survey.questions[0].id]: 'All good' });
@@ -581,9 +581,82 @@ test('the look can still be changed after members have answered', async () => {
     { theme: { accent: '#8B7CF6' } }, { token: adminToken });
   assert.equal(themed.status, 200, 'it changes how the rest see it, not what anyone was asked');
 
+  // This used to be a 409. An answer is stored against a question id, so
+  // rewriting the question re-labelled the answer — until the response started
+  // carrying the definition it was collected under.
   const rewritten = await h.put(`/api/admin/surveys/${survey.id}`,
     { questions: [{ type: 'text', text: 'Something else entirely?' }] }, { token: adminToken });
-  assert.equal(rewritten.status, 409, 'but the questions are fixed');
+  assert.equal(rewritten.status, 200, JSON.stringify(rewritten.body));
+});
+
+test('an answer keeps the question it was actually asked', async () => {
+  // The reason the edit above is safe rather than merely allowed.
+  const survey = await published([{ type: 'text', text: 'How are the docs?' }]);
+  const { token } = await answering(survey);
+  await respond(survey, token, { [survey.questions[0].id]: 'Clear enough' });
+
+  await h.put(`/api/admin/surveys/${survey.id}`,
+    { questions: [{ id: survey.questions[0].id, type: 'text', text: 'How is the sandbox?' }] },
+    { token: adminToken });
+
+  const row = h.db.prepare(
+    'SELECT questions FROM survey_responses WHERE survey_id = ? AND completed_at IS NOT NULL'
+  ).get(survey.id);
+
+  const snapshot = JSON.parse(row.questions);
+  assert.equal(snapshot[0].text, 'How are the docs?',
+    'they rated the docs, and the record has to go on saying so');
+
+  // …while the survey in front of the next member is the corrected one.
+  const now = await h.get(`/api/admin/surveys/${survey.id}`, { token: adminToken });
+  assert.equal(now.body.survey.questions[0].text, 'How is the sandbox?');
+});
+
+test('a survey can be deleted, and one with answers takes a second press', async () => {
+  const survey = await published([{ type: 'text', text: 'Anything else?' }]);
+  const { token } = await answering(survey);
+  await respond(survey, token, { [survey.questions[0].id]: 'All good' });
+
+  const first = await h.del(`/api/admin/surveys/${survey.id}`, { token: adminToken });
+  assert.equal(first.status, 409, 'answers are not thrown away on one press');
+  assert.equal(first.body.confirm_required, true);
+  assert.equal(first.body.responses, 1);
+
+  const confirmed = await h.del(`/api/admin/surveys/${survey.id}?confirm=true`, { token: adminToken });
+  assert.equal(confirmed.status, 200, JSON.stringify(confirmed.body));
+  assert.equal(confirmed.body.deleted_responses, 1);
+
+  assert.equal(Number(h.db.prepare('SELECT COUNT(*) as n FROM surveys WHERE id = ?').get(survey.id).n), 0);
+  assert.equal(Number(h.db.prepare('SELECT COUNT(*) as n FROM survey_responses WHERE survey_id = ?')
+    .get(survey.id).n), 0, 'and the answers go with it');
+});
+
+test('a draft nobody has answered is deleted without ceremony', async () => {
+  const draft = (await create({ questions: [{ type: 'text', text: 'Draft question' }] })).body.survey;
+
+  const gone = await h.del(`/api/admin/surveys/${draft.id}`, { token: adminToken });
+  assert.equal(gone.status, 200, JSON.stringify(gone.body));
+  assert.equal(gone.body.deleted_responses, 0);
+});
+
+test('deleting a survey detaches what people said in their own words', async () => {
+  // Verbatim feedback filed from a survey is a thing somebody wrote. It
+  // outlives the survey rather than being collected by the delete.
+  const survey = await published([{ type: 'text', text: 'Anything else?' }]);
+  const user = h.makeUser();
+  const token = await h.loginUser(user.email);
+
+  h.db.prepare(`
+    INSERT INTO feedback (id, user_id, type, content, survey_id, source)
+    VALUES (?, ?, 'system_triggered', 'The sandbox times out', ?, 'dev_circle')
+  `).run('fb-1', user.id, survey.id);
+
+  const gone = await h.del(`/api/admin/surveys/${survey.id}?confirm=true`, { token: adminToken });
+  assert.equal(gone.status, 200, JSON.stringify(gone.body));
+
+  const kept = h.db.prepare('SELECT content, survey_id FROM feedback WHERE id = ?').get('fb-1');
+  assert.equal(kept.content, 'The sandbox times out', 'what they wrote stays');
+  assert.equal(kept.survey_id, null, 'detached from a survey that no longer exists');
 });
 
 // ─── Brand assets ───────────────────────────────────────────

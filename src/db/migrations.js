@@ -1570,6 +1570,88 @@ function define(db) {
         addColumn('onboarding_forms', 'admission',
           "TEXT DEFAULT 'review' CHECK(admission IN ('review','automatic'))");
       }
+    },
+
+    {
+      id: 32,
+      name: 'editable_option_lists',
+      up() {
+        // The answers to the questions that have a fixed set of them: the
+        // states, the sectors, the genders, the product families.
+        //
+        // These were three hard-coded copies — one in the member's profile
+        // page, one invented by whoever built each onboarding form, one in the
+        // seed — which is why a circle could collect "Fintech" on a form and
+        // offer "fintech" on a profile, and a cohort built on either matched
+        // half the people it should have.
+        //
+        // Consolidating them into one list in the repository would have fixed
+        // the spelling and kept the real problem: a sector list that needs a
+        // deploy to add a row is a list that stops being true. Nigeria added a
+        // state once. A circle that starts onboarding insurers wants Insurance
+        // in the list this afternoon, not next release.
+        //
+        // So a row here is an override, in exactly the sense email_templates
+        // is one: absent, the list in services/vocabularies.js applies and
+        // behaves as it always did; present, it is what this circle asks. The
+        // code list stays as what ships, not as what is possible.
+        //
+        // Scoped to a circle for the same reason everything authored here is —
+        // a workspace onboarding hospitals and one onboarding banks do not
+        // share a sector list, and neither should have to argue for theirs.
+        db.exec(`
+          CREATE TABLE IF NOT EXISTS option_lists (
+            id TEXT PRIMARY KEY,
+            circle_id TEXT NOT NULL REFERENCES circles(id) ON DELETE CASCADE,
+
+            -- Which profile field these are the answers to: 'gender',
+            -- 'work_sector', 'location_state' and so on, matching the keys of
+            -- FIELDS in services/onboarding.js.
+            field TEXT NOT NULL,
+
+            -- A JSON array of the options, in the order they are offered.
+            -- Order is content here: a list of states is alphabetical so
+            -- somebody can find their own, and "Other" belongs last.
+            options TEXT NOT NULL DEFAULT '[]',
+
+            updated_at TEXT DEFAULT (datetime('now')),
+            updated_by TEXT REFERENCES admin_users(id) ON DELETE SET NULL,
+
+            UNIQUE(circle_id, field)
+          );
+          CREATE INDEX IF NOT EXISTS idx_option_lists_circle
+            ON option_lists(circle_id);
+        `);
+      }
+    },
+
+    {
+      id: 33,
+      name: 'answers_remember_what_was_asked',
+      up() {
+        // What a survey or a form asked, as the person answering it saw it.
+        //
+        // Answers are stored against question ids — {q1: 4, q2: "…"} — and the
+        // wording lived only in the survey. So editing a question after
+        // somebody answered it re-labelled their answer: they rated the docs
+        // and the record now says they rated the sandbox. That was real enough
+        // that editing was simply forbidden once a single response arrived,
+        // which is a heavy price for a typo in a question nobody has reached
+        // yet, and it left "close it and write a new one" as the only way to
+        // fix a spelling mistake.
+        //
+        // Both halves of that are fixable at once by writing the definition
+        // onto the response when it is submitted. The answer then carries its
+        // own question, the wording somebody saw is the wording their answer is
+        // read under forever, and the live definition is free to change.
+        //
+        // Null on every row that predates this, which is why every reader falls
+        // back to the survey's current questions: those responses were
+        // collected under a definition that could not have changed, so the
+        // current one *is* what they were asked.
+        addColumn('survey_responses', 'questions', 'TEXT');
+        addColumn('onboarding_submissions', 'questions', 'TEXT');
+      }
     }
   ];
   return migrations;

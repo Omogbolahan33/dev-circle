@@ -4,6 +4,7 @@ const { uuid, parseJSON, parseCSV } = require('../../utils/helpers');
 const { parseXLSX } = require('../../utils/xlsx');
 const { requirePermission } = require('../../middleware/auth');
 const onboarding = require('../../services/onboarding');
+const vocabularies = require('../../services/vocabularies');
 const onboardingImport = require('../../services/onboardingImport');
 const surveyForm = require('../../services/surveyForm');
 const circles = require('../../services/circles');
@@ -43,6 +44,11 @@ router.get('/onboarding', requirePermission('onboarding.read'), async (req, res)
 // same builder over the same definition — and what is added is the list of
 // profile fields a question may be tagged with.
 router.get('/onboarding/schema', requirePermission('onboarding.read'), async (req, res) => {
+  // One query for every list rather than one per field, and through the circle
+  // — a workspace that has replaced its sector list gets its own, not the one
+  // that shipped.
+  const options = await vocabularies.allFor(req.circleId);
+
   res.json({
     types: surveyForm.TYPES,
     operators: surveyForm.OPERATORS,
@@ -69,7 +75,17 @@ router.get('/onboarding/schema', requirePermission('onboarding.read'), async (re
       // A channel field only accepts options that name a channel, so the
       // builder can offer them rather than leaving an author to guess
       channels: field.channels ? require('../../services/notifications').CHANNELS : null,
-      days: value === 'preferred_days' ? onboarding.DAYS : null
+      days: value === 'preferred_days' ? onboarding.DAYS : null,
+
+      // The answers this field has, when it has a fixed set of them — the
+      // thirty-seven states, the four product families, the sectors cohorts
+      // are built on. The builder fills a question's options from this the
+      // moment it is tagged, so nobody types out Nigeria by hand and no two
+      // circles end up with two spellings of Fintech.
+      //
+      // Null where the answer is whatever somebody types: a company name has
+      // no list and should not pretend to.
+      options: options[value] || null
     })),
 
     theme: {
@@ -272,41 +288,29 @@ router.put('/onboarding/:id', requirePermission('onboarding.write'), async (req,
     });
   }
 
-  if (decided > 0) {
-    // The theme is still the author's to change, so it is normalized on its
-    // own rather than skipped with the questions.
-    const themed = surveyForm.themes.normalize(body.theme);
-    if (themed.issues.length) {
-      return res.status(400).json({
-        error: themed.issues[0].message,
-        issues: themed.issues.map(i => ({ index: -1, field: `theme.${i.field}`, message: i.message }))
-      });
-    }
-    theme = themed.theme;
-    warnings = themed.warnings || [];
+  // One path, whether or not anybody has applied.
+  //
+  // There used to be two: a form with applications behind it took a branch
+  // that normalised the theme and silently dropped any change to the
+  // questions, because an answer is stored against a question id and rewriting
+  // the question re-labelled the answer.
+  //
+  // Applications now carry the questions they were filled in under
+  // (migration 33), so that is no longer what happens — what somebody was
+  // asked is recorded on their application, and the form in front of the next
+  // applicant is free to be corrected. A typo in question four stopped being a
+  // reason to close the form and write a new one.
+  const definition = await onboarding.normalizeDefinition(body, {
+    createdBy: req.admin.id,
+    allowEmpty: wanted !== 'active'
+  });
 
-    if (Array.isArray(req.body.questions)) {
-      const posted = JSON.stringify(body.questions.map(q => ({ id: q.id, text: q.text, type: q.type })));
-      const held = JSON.stringify(questions.map(q => ({ id: q.id, text: q.text, type: q.type })));
-      if (posted !== held) {
-        return res.status(409).json({
-          error: `${decided} ${decided === 1 ? 'person has' : 'people have'} already filled this in, so the questions are fixed. Close it and write a new one to ask differently.`
-        });
-      }
-    }
-  } else {
-    const definition = await onboarding.normalizeDefinition(body, {
-      createdBy: req.admin.id,
-      allowEmpty: wanted !== 'active'
-    });
+  if (refuseIfNotReady(res, definition, wanted)) return;
 
-    if (refuseIfNotReady(res, definition, wanted)) return;
-
-    questions = definition.questions;
-    field_map = definition.field_map;
-    theme = definition.theme;
-    warnings = definition.warnings || [];
-  }
+  questions = definition.questions;
+  field_map = definition.field_map;
+  theme = definition.theme;
+  warnings = definition.warnings || [];
 
   // Publishing a frozen form still has to be publishable — a draft that was
   // saved without an email question must not become active through an edit
@@ -398,25 +402,44 @@ router.post('/onboarding/:id/duplicate', requirePermission('onboarding.write'), 
   });
 });
 
-// A form that nobody has filled in can be deleted. One that somebody has is
-// closed instead — deleting it would take the applications with it, and those
-// are the record of what people were asked and what they were told.
+// A form can be deleted, including one people have filled in.
+//
+// It used to refuse outright in that case and say "close it instead", which is
+// good advice and the wrong place to give it: a circle that has finished with
+// a form — a conference that happened, a pilot that ended, a duplicate created
+// by a mis-click — was left with it in the list forever, and closing something
+// you meant to delete is not the same act.
+//
+// So the advice stays and the refusal becomes a first press. A form nobody has
+// filled in goes quietly; one with applications behind it is refused once with
+// the count, and deleted on the repeat that carries `?confirm=true`.
+//
+// Members already admitted from this form are *not* touched. An account is not
+// the form that created it, and deleting the paperwork does not un-join
+// somebody — what goes is the applications, which are the record of what was
+// asked and answered.
 router.delete('/onboarding/:id', requirePermission('onboarding.write'), async (req, res) => {
   const form = await formInCircle(req);
   if (!form) return res.status(404).json({ error: 'Form not found' });
 
-  const submissions = (await db.prepare(
+  const submissions = Number((await db.prepare(
     "SELECT COUNT(*) as n FROM onboarding_submissions WHERE form_id = ? AND status != 'started'"
-  ).get(form.id)).n;
+  ).get(form.id))?.n || 0);
 
-  if (submissions > 0) {
+  const confirmed = req.query.confirm === 'true' || req.body?.confirm === true;
+
+  if (submissions > 0 && !confirmed) {
     return res.status(409).json({
-      error: `${submissions} ${submissions === 1 ? 'person has' : 'people have'} filled this in. Close it instead — deleting it would delete their applications too.`
+      error: `${submissions} ${submissions === 1 ? 'person has' : 'people have'} filled "${form.title}" in. Deleting it deletes their applications too — members already admitted keep their accounts. Close it instead if you only want it to stop accepting.`,
+      submissions,
+      confirm_required: true
     });
   }
 
+  await db.prepare('DELETE FROM onboarding_submissions WHERE form_id = ?').run(form.id);
   await db.prepare('DELETE FROM onboarding_forms WHERE id = ?').run(form.id);
-  res.json({ message: 'Form deleted' });
+
+  res.json({ message: 'Form deleted', deleted_submissions: submissions });
 });
 
 // ─── Onboarding by spreadsheet ──────────────────────────────

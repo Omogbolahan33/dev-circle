@@ -262,6 +262,55 @@ router.post('/surveys', requirePermission('surveys.write'), async (req, res) => 
   });
 });
 
+// DELETE /api/admin/surveys/:id
+// A survey can be deleted, including one that has been answered — but not by
+// accident. There was no way to delete one at all before, which meant every
+// mistake, duplicate and abandoned draft stayed in the list forever and
+// "closed" was doing the work of two different intentions.
+//
+// Answers go with it. That is the part worth a second press rather than a
+// confirm dialog on the client alone, so a survey with responses is refused
+// once, with the count, and deleted on the repeat that carries `?confirm=true`.
+// A draft nobody has answered needs no ceremony.
+//
+// What is *not* deleted is what people said in their own words: verbatim
+// feedback filed from a survey outlives it, detached rather than destroyed.
+// The same goes for a scheduled session that pointed at it — the session
+// happened.
+router.delete('/surveys/:id', requirePermission('surveys.write'), async (req, res) => {
+  const survey = await db.prepare('SELECT id, title FROM surveys WHERE id = ?').get(req.params.id);
+  if (!survey) return res.status(404).json({ error: 'Survey not found' });
+
+  const responses = Number((await db.prepare(
+    'SELECT COUNT(*) as c FROM survey_responses WHERE survey_id = ? AND completed_at IS NOT NULL'
+  ).get(survey.id))?.c || 0);
+
+  const confirmed = req.query.confirm === 'true' || req.body?.confirm === true;
+
+  if (responses > 0 && !confirmed) {
+    return res.status(409).json({
+      error: `${responses} ${responses === 1 ? 'person has' : 'people have'} answered "${survey.title}". Deleting it deletes their answers too.`,
+      responses,
+      confirm_required: true
+    });
+  }
+
+  // Detach rather than cascade. feedback.survey_id has no ON DELETE action in
+  // the SQLite schema and SET NULL in the Postgres one, so leaving it to the
+  // database would refuse the delete on one and succeed on the other — the
+  // kind of difference that only shows up in production.
+  await db.prepare('UPDATE feedback SET survey_id = NULL WHERE survey_id = ?').run(survey.id);
+  await db.prepare('UPDATE scheduled_sessions SET survey_id = NULL WHERE survey_id = ?').run(survey.id);
+
+  // Responses go with the survey — the questions they answer are about to
+  // stop existing, and an answer to a question nobody can read is not a
+  // record of anything.
+  await db.prepare('DELETE FROM survey_responses WHERE survey_id = ?').run(survey.id);
+  await db.prepare('DELETE FROM surveys WHERE id = ?').run(survey.id);
+
+  res.json({ message: 'Survey deleted', deleted_responses: responses });
+});
+
 // PUT /api/admin/surveys/:id
 router.put('/surveys/:id', requirePermission('surveys.write'), async (req, res) => {
   const survey = await db.prepare('SELECT * FROM surveys WHERE id = ?').get(req.params.id);
@@ -284,15 +333,20 @@ router.put('/surveys/:id', requirePermission('surveys.write'), async (req, res) 
   if (description !== undefined) { updates.push('description = ?'); params.push(description); }
   if (questions) {
     if (!Array.isArray(questions)) return res.status(400).json({ error: 'questions must be an array' });
-    // Editing questions after responses exist would orphan collected answers
-    const responded = Number((await db.prepare(
-      'SELECT COUNT(*) as c FROM survey_responses WHERE survey_id = ? AND completed_at IS NOT NULL'
-    ).get(survey.id))?.c || 0);
-    if (responded > 0) {
-      return res.status(409).json({
-        error: `Cannot change questions — ${responded} member(s) have already responded. Close this survey and create a new version.`
-      });
-    }
+
+    // A survey with answers behind it used to refuse this outright, because an
+    // answer is stored against a question id and rewriting the question
+    // re-labelled the answer — somebody rated the docs and the record said
+    // they rated the sandbox.
+    //
+    // Responses now carry the definition they were collected under
+    // (migration 33), so that is no longer what happens: an answer is read
+    // under the question its author actually saw, and the live definition is
+    // free to change. Which means a typo in question four is a typo somebody
+    // can fix, instead of a reason to close the survey and start again.
+    //
+    // The count still comes back with the save, because editing a question
+    // people are part-way through answering is a thing worth knowing you did.
 
     const definition = await surveyForm.normalizeDefinition(req.body, {
       createdBy: req.admin.id,

@@ -735,18 +735,22 @@ test('an application belongs to one workspace and is invisible from another', as
 
 // ─── Questions freeze once people have answered them ────────
 
-test('once an application exists the questions are fixed but the look is not', async () => {
+test('a form with applications behind it can still be corrected', async () => {
+  // This used to refuse: an answer is stored against a question id, so
+  // rewriting the question re-labelled what somebody already said. The
+  // application now carries the questions it was filled in under, so the wording
+  // in front of the next applicant is the author's to fix.
   const form = await live();
   await fillIn(form, WHO);
 
   const held = await h.get(`/api/admin/onboarding/${form.id}`, { token: adminToken });
-  assert.equal(held.body.questions_locked, true);
 
   const reworded = await h.put(`/api/admin/onboarding/${form.id}`, {
     ...held.body.form,
-    questions: [{ ...held.body.form.questions[0], text: 'Your name?' }, held.body.form.questions[1]]
+    questions: held.body.form.questions.map((q, i) => (i === 0 ? { ...q, text: 'Your name?' } : q))
   }, { token: adminToken });
-  assert.equal(reworded.status, 409);
+  assert.equal(reworded.status, 200, JSON.stringify(reworded.body));
+  assert.equal(reworded.body.form.questions[0].text, 'Your name?');
 
   const restyled = await h.put(`/api/admin/onboarding/${form.id}`, {
     ...held.body.form,
@@ -756,13 +760,46 @@ test('once an application exists the questions are fixed but the look is not', a
   assert.equal(restyled.body.form.theme.accent.toLowerCase(), '#e6b473');
 });
 
-test('a form people have filled in is closed rather than deleted', async () => {
+test('an application keeps the question it was actually asked', async () => {
+  // The whole reason the edit above is safe.
+  const form = await live();
+  await fillIn(form, WHO);
+
+  const held = await h.get(`/api/admin/onboarding/${form.id}`, { token: adminToken });
+  const asked = held.body.form.questions[0].text;
+
+  const edited = await h.put(`/api/admin/onboarding/${form.id}`, {
+    ...held.body.form,
+    questions: held.body.form.questions.map((q, i) => (i === 0 ? { ...q, text: 'Something else entirely?' } : q))
+  }, { token: adminToken });
+  assert.equal(edited.status, 200, JSON.stringify(edited.body));
+
+  const row = h.db.prepare(
+    "SELECT questions FROM onboarding_submissions WHERE form_id = ? AND status != 'started'"
+  ).get(form.id);
+  const snapshot = JSON.parse(row.questions);
+
+  assert.equal(snapshot[0].text, asked,
+    'the application records what it asked, not what the form says today');
+});
+
+test('deleting a form people have filled in takes a second press', async () => {
   const form = await live();
   await fillIn(form, WHO);
 
   const res = await h.del(`/api/admin/onboarding/${form.id}`, { token: adminToken });
-  assert.equal(res.status, 409);
+  assert.equal(res.status, 409, 'not on the first press');
+  assert.equal(res.body.confirm_required, true);
+  assert.equal(res.body.submissions, 1);
   assert.match(res.body.error, /Close it instead/);
+
+  // …and goes through on the repeat that says so.
+  const confirmed = await h.del(`/api/admin/onboarding/${form.id}?confirm=true`, { token: adminToken });
+  assert.equal(confirmed.status, 200, JSON.stringify(confirmed.body));
+  assert.equal(confirmed.body.deleted_submissions, 1);
+
+  const left = h.db.prepare('SELECT COUNT(*) as n FROM onboarding_forms WHERE id = ?').get(form.id).n;
+  assert.equal(Number(left), 0);
 
   // One nobody has filled in can go
   const untouched = await create({ name: 'Never used' });

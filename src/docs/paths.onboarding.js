@@ -347,7 +347,13 @@ const paths = {
         'Two of them carry `required: true` — the email address and the phone number. Those are',
         'the credential a member signs in with, so every form that goes out must collect both,',
         'required and not behind a branch. `recommended: true` marks a field whose absence is',
-        'only warned about. Everything else is the circle\'s to choose.'
+        'only warned about. Everything else is the circle\'s to choose.',
+        '',
+        'A field whose answer is one of a known few also carries `options`: the thirty-seven',
+        'states, the sectors, the product families. The builder fills a question\'s options from',
+        'it the moment the question is tagged, which is why two circles do not end up with two',
+        'spellings of Fintech. These are **this circle\'s** lists — see `/admin/options` to',
+        'change them — and `null` where the answer is whatever somebody types.'
       ].join('\n'),
       responses: {
         200: json('The schema.', object({
@@ -356,7 +362,7 @@ const paths = {
           operators_by_type: object({}, { description: 'Which operators each type accepts' }),
           text_formats: arrayOf(object({}), 'Formats a text answer can be held to'),
           rating_styles: arrayOf(str(), 'How a rating can be drawn'),
-          fields: arrayOf(object({}), 'Profile fields a question can be tagged with'),
+          fields: arrayOf(object({}), 'Profile fields a question can be tagged with, each with the options it offers when it has a fixed set'),
           theme: object({}, { description: 'Theme options, and this circle\'s default' })
         }), {
           fields: [
@@ -391,7 +397,7 @@ const paths = {
         200: json('The form.', object({
           form: object({}),
           counts: object({}, { description: 'pending, approved, rejected and unfinished' }),
-          questions_locked: bool('Whether anybody has filled it in yet'),
+          questions_locked: bool('Whether anybody has filled it in yet. Advisory — questions may still be edited'),
           circle_theme: object({}, { description: 'What this circle\'s forms start from' }),
           embed_snippet: str('The two lines to paste into the host page')
         }), {
@@ -408,17 +414,20 @@ const paths = {
       permission: 'onboarding.write',
       summary: 'Edit a form',
       description: [
-        'Once applications exist the questions are fixed: posting different ones answers 409,',
-        'and posting the same ones is accepted so a builder can save a theme change without',
-        'stripping the questions out of its payload first.',
+        'Questions can be changed at any point, including once applications exist. That used to',
+        'answer 409: an answer is stored against a question id, so rewriting the question filed',
+        'somebody\'s name and employer under wording they were never shown. Every application now',
+        'carries the questions it was filled in under, so a correction reaches the next applicant',
+        'and the ones already in the queue go on reading as they were asked.',
         '',
         'Publishing is checked here too, so a draft saved without an email question cannot become',
-        'active through an edit that only changed its colours.'
+        'active through an edit that only changed its colours — and that check now applies to',
+        'every edit, not only to forms nobody has filled in.'
       ].join('\n'),
       parameters: [path('id', 'Form id')],
       requestBody: jsonBody(object({
         name: str(), description: str(),
-        questions: arrayOf(object({}), 'Ignored, beyond a check that they match, once applications exist'),
+        questions: arrayOf(object({}), 'The whole list, replacing what is stored'),
         theme: object({}), cohort_ids: arrayOf(str()), allowed_origins: arrayOf(str()),
         redirect_url: str(), submitted_message: str(), duplicate_policy: str(),
         admission: str('review | automatic — changeable for the life of the form, unlike its questions. Applications already decided are untouched.'),
@@ -431,28 +440,41 @@ const paths = {
         400: json('The form could not be saved.', ref('Error'), {
           error: 'A question collecting the email address must use the "Email address" format'
         }),
-        404: json('No such form in this circle.', ref('Error'), { error: 'Form not found' }),
-        409: json('Its questions are fixed.', ref('Error'), {
-          error: '15 people have already filled this in, so the questions are fixed. Close it and write a new one to ask differently.'
-        })
+        404: json('No such form in this circle.', ref('Error'), { error: 'Form not found' })
       }
     }),
     delete: op({
       tag: 'Admin · Onboarding',
       operationId: 'deleteOnboardingForm',
       permission: 'onboarding.write',
-      summary: 'Delete a form nobody has filled in',
+      summary: 'Delete a form',
       description: [
-        'A form somebody has filled in is closed rather than deleted — deleting it would take',
-        'their applications with it, and those are the record of what people were asked and what',
-        'they were told.'
+        'A form nobody has filled in goes on the first call. One with applications behind it is',
+        'refused once, with the count, and deleted on the repeat that carries `?confirm=true` —',
+        'that is the confirmation, so a client does not have to invent one and a script cannot',
+        'delete a queue by getting a path wrong.',
+        '',
+        'The applications go with the form. **Members already admitted from it do not** — an',
+        'account is not the paperwork that created it, and deleting the form does not un-join',
+        'anybody.',
+        '',
+        'To stop a form accepting applications without destroying what it collected, set',
+        '`status: "closed"` instead.'
       ].join('\n'),
-      parameters: [path('id', 'Form id')],
+      parameters: [
+        path('id', 'Form id'),
+        query('confirm', 'Pass `true` to go ahead when applications exist', { type: 'string', enum: ['true'] })
+      ],
       responses: {
-        200: json('Deleted.', object({ message: str() }), { message: 'Form deleted' }),
+        200: json('Deleted.', object({
+          message: str('Always "Form deleted"'),
+          deleted_submissions: int('How many applications went with it')
+        }), { message: 'Form deleted', deleted_submissions: 15 }),
         404: json('No such form in this circle.', ref('Error'), { error: 'Form not found' }),
-        409: json('People have filled it in.', ref('Error'), {
-          error: '15 people have filled this in. Close it instead — deleting it would delete their applications too.'
+        409: json('Applications exist and `confirm` was not passed.', ref('Error'), {
+          error: '15 people have filled "Partner developer intake" in. Deleting it deletes their applications too — members already admitted keep their accounts. Close it instead if you only want it to stop accepting.',
+          submissions: 15,
+          confirm_required: true
         })
       }
     })
@@ -827,6 +849,113 @@ const paths = {
         404: json('No such application in this circle.', ref('Error'), { error: 'Application not found' }),
         409: json('It has already been decided.', ref('Error'), {
           error: 'This application has already been approved'
+        })
+      }
+    })
+  },
+
+  // ─── The answers with a fixed set ─────────────────────────
+  '/admin/options': {
+    get: op({
+      tag: 'Admin · Onboarding',
+      operationId: 'listOptionLists',
+      permission: 'onboarding.read',
+      summary: 'The answers to the fields that have a fixed set of them',
+      description: [
+        'The states, the sectors, the genders, the product families — every list a question',
+        'offers when its answer is one of a known few, as **this circle** asks it.',
+        '',
+        'Each ships with a default and a circle may replace it. `defaults` is what ships and',
+        '`customised` says whether the two differ, so a screen can show that a list has been',
+        'changed and offer to put it back. A field with no fixed set of answers — a company',
+        'name — is not listed here at all.'
+      ].join('\n'),
+      responses: {
+        200: json('Every list, as this circle asks it.', object({
+          fields: arrayOf(object({
+            field: str('Which profile field, matching the `fields` keys in the onboarding schema'),
+            label: str('What the builder and the member\'s profile call it'),
+            hint: str('Why it is collected, where that is worth saying', { nullable: true }),
+            options: arrayOf({ type: 'string' }, 'The answers offered, in the order they are offered'),
+            defaults: arrayOf({ type: 'string' }, 'What ships, for comparison'),
+            customised: bool('Whether this circle has replaced the default')
+          }), 'One entry per field that has a list')
+        }), {
+          fields: [{
+            field: 'work_sector',
+            label: 'Work sector',
+            hint: 'Cohorts are built on this, so a list beats free text',
+            options: ['Fintech', 'Banking', 'Insurance', 'Agritech', 'Other'],
+            defaults: ['Fintech', 'Banking', 'Lending', 'Payments', 'Insurance', 'Other'],
+            customised: true
+          }]
+        })
+      }
+    })
+  },
+
+  '/admin/options/{field}': {
+    put: op({
+      tag: 'Admin · Onboarding',
+      operationId: 'setOptionList',
+      permission: 'onboarding.write',
+      summary: 'Replace one list for this circle',
+      description: [
+        'The whole list, not a patch: reordering and removing are as much of an edit as adding,',
+        'and a list is short enough that sending all of it is simpler than describing a change',
+        'to it. Order is content — a list of states is alphabetical so somebody can find their',
+        'own, and "Other" belongs last.',
+        '',
+        'Blanks and repeats are dropped rather than refused: two identical options in a dropdown',
+        'is a fault in the list, not a choice, and it would split a cohort in two. An empty list',
+        'is refused — to go back to what ships, `DELETE` it instead.',
+        '',
+        'This changes what is *offered* from now on. Answers already collected are untouched,',
+        'so removing an option does not rewrite the applications that chose it.'
+      ].join('\n'),
+      parameters: [path('field', 'Which field, e.g. `work_sector`')],
+      requestBody: jsonBody(object({
+        options: arrayOf({ type: 'string' }, 'The answers to offer, in order')
+      }, { required: ['options'] }), {
+        options: ['Fintech', 'Banking', 'Insurance', 'Agritech', 'Renewable energy', 'Other']
+      }),
+      responses: {
+        200: json('Saved.', object({
+          field: str('The field'),
+          options: arrayOf({ type: 'string' }, 'The list as stored, cleaned'),
+          customised: bool('Always true after a write')
+        }), {
+          field: 'work_sector',
+          options: ['Fintech', 'Banking', 'Insurance', 'Agritech', 'Renewable energy', 'Other'],
+          customised: true
+        }),
+        400: json('An empty list, or a field that has no fixed set of answers.', ref('Error'), {
+          error: 'A list needs at least one option. To go back to the standard list, reset it instead.'
+        })
+      }
+    }),
+    delete: op({
+      tag: 'Admin · Onboarding',
+      operationId: 'resetOptionList',
+      permission: 'onboarding.write',
+      summary: 'Put one list back to what ships',
+      description: [
+        'Deletes the override rather than writing the default into it, so a circle that resets',
+        'goes on following the default as it changes instead of freezing today\'s copy of it.'
+      ].join('\n'),
+      parameters: [path('field', 'Which field, e.g. `work_sector`')],
+      responses: {
+        200: json('Back to the default.', object({
+          field: str('The field'),
+          options: arrayOf({ type: 'string' }, 'The list that ships'),
+          customised: bool('Always false after a reset')
+        }), {
+          field: 'work_sector',
+          options: ['Fintech', 'Banking', 'Lending', 'Payments', 'Insurance', 'Other'],
+          customised: false
+        }),
+        400: json('A field that has no fixed set of answers.', ref('Error'), {
+          error: 'company has no list of answers'
         })
       }
     })

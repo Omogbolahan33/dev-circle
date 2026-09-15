@@ -164,6 +164,9 @@ const SCHEMA_POSTGRES = `
     survey_id TEXT NOT NULL REFERENCES surveys(id) ON DELETE CASCADE,
     user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
     answers TEXT NOT NULL DEFAULT '{}',
+    -- The definition as the respondent saw it, so editing the survey later does
+    -- not re-label what they already answered. Null predates migration 33.
+    questions TEXT,
     completed_at TIMESTAMPTZ,
     triggered_by TEXT DEFAULT 'manual' CHECK(triggered_by IN ('manual','system','customer_io','link','import')),
     respondent_kind TEXT DEFAULT 'member',
@@ -432,6 +435,8 @@ const SCHEMA_POSTGRES = `
     form_id TEXT NOT NULL REFERENCES onboarding_forms(id) ON DELETE CASCADE,
     circle_id TEXT NOT NULL,
     answers TEXT NOT NULL DEFAULT '{}',
+    -- As above: what this application was asked, at the time it was filled in.
+    questions TEXT,
     profile TEXT NOT NULL DEFAULT '{}',
     consent_channels TEXT NOT NULL DEFAULT '[]',
     email TEXT,
@@ -467,6 +472,19 @@ const SCHEMA_POSTGRES = `
     updated_at TEXT DEFAULT (now()::text),
     updated_by TEXT REFERENCES admin_users(id) ON DELETE SET NULL,
     UNIQUE(circle_id, workflow)
+  );
+
+  -- The answers to the fields that have a fixed set of them. A row is an
+  -- override of the list in services/vocabularies.js, never a frozen copy of
+  -- it. Mirrors migration 32.
+  CREATE TABLE IF NOT EXISTS option_lists (
+    id TEXT PRIMARY KEY,
+    circle_id TEXT NOT NULL REFERENCES circles(id) ON DELETE CASCADE,
+    field TEXT NOT NULL,
+    options TEXT NOT NULL DEFAULT '[]',
+    updated_at TEXT DEFAULT (now()::text),
+    updated_by TEXT REFERENCES admin_users(id) ON DELETE SET NULL,
+    UNIQUE(circle_id, field)
   );
 
   CREATE TABLE IF NOT EXISTS sandbox_meta (
