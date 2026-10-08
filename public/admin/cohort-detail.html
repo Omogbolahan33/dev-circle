@@ -234,14 +234,14 @@
     document.getElementById('rows').innerHTML = members.length
       ? members.map(m => `
         <tr class="row-link" onclick="if(!event.target.closest('button'))window.location.href='/admin/member.html?id=${m.id}'">
-          <td>${identityCell(m.name, m.company || m.email, orbitLevel(m.engagement_streak))}</td>
+          <td>${identityCell(personName(m.name, m.email), m.company || m.email, orbitLevel(m.engagement_streak))}</td>
           <td>${badge(m.api_status, m.api_status)}</td>
           <td class="hide-sm mono text-xs tnum">${m.surveys_completed}/${m.surveys_invited}</td>
           <td class="hide-sm">${m.engagement_streak ? `<span class="streak">${m.engagement_streak}d</span>` : '<span class="dim">—</span>'}</td>
           <td class="text-xs muted nowrap">${formatDate(m.last_active_at)}</td>
           <td class="col-actions">
             <div class="row-actions">
-              <button class="btn btn-sm btn-ghost" onclick="removeMember('${m.id}', '${escapeHtml(m.name).replace(/'/g, '&#39;')}', this)">Remove</button>
+              <button class="btn btn-sm btn-ghost" onclick="removeMember('${m.id}', '${escapeHtml(personName(m.name, m.email)).replace(/'/g, '&#39;')}', this)">Remove</button>
             </div>
           </td>
         </tr>`).join('')

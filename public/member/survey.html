@@ -797,7 +797,7 @@
         <div class="done">
           <div class="done-mark">✓</div>
           <div class="done-title">${escapeHtml(closing.headline ||
-            (user ? `Thank you, ${user.name.split(' ')[0]}` : 'Thank you'))}</div>
+            (user && firstName(user.name) ? `Thank you, ${firstName(user.name)}` : 'Thank you'))}</div>
           <p class="done-text">${escapeHtml(doneBody)}</p>
           <p class="done-meta">
             ${result.answered} answer${result.answered === 1 ? '' : 's'} recorded${

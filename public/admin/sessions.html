@@ -272,7 +272,7 @@
       const box = document.getElementById('avail-' + id);
       if (!box) return;
 
-      const clashNames = a.unavailable.slice(0, 4).map(u => u.name).join(', ');
+      const clashNames = a.unavailable.slice(0, 4).map(u => personName(u.name, u.email)).join(', ');
 
       box.innerHTML = `
         <div class="avail">

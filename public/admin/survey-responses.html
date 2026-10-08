@@ -447,7 +447,7 @@
         return answered.slice(0, 12).map(r => `
           <blockquote class="verbatim">
             ${escapeHtml(String(r.answers[q.id]))}
-            <span class="who">${r.user_name ? escapeHtml(r.user_name) : 'Anonymous'}</span>
+            <span class="who">${r.user_id ? escapeHtml(personName(r.user_name, r.user_email)) : 'Anonymous'}</span>
           </blockquote>`).join('') +
           (answered.length > 12 ? `<p class="dim text-xs">+${answered.length - 12} more</p>` : '');
     }
@@ -506,7 +506,7 @@
           <tr class="${r.user_id ? 'row-link' : ''}"
               ${r.user_id ? `onclick="window.location.href='/admin/member.html?id=${r.user_id}'"` : ''}>
             <td>${r.user_id
-              ? identityCell(r.user_name, r.user_email)
+              ? identityCell(personName(r.user_name, r.user_email), r.user_name ? r.user_email : '')
               : `<div class="identity-meta">
                    <div class="identity-name dim">Anonymous</div>
                    <div class="identity-sub">Answered over the link</div>

@@ -112,7 +112,7 @@
         <div class="tl-item">
           <div class="tl-dot ${info.tone}"></div>
           <div class="tl-head">
-            <a class="tl-title" href="/admin/member.html?id=${a.user_id}">${escapeHtml(a.user_name || 'System')}</a>
+            <a class="tl-title" href="/admin/member.html?id=${a.user_id}">${escapeHtml(a.user_id ? personName(a.user_name, a.user_email) : 'System')}</a>
             <span class="muted text-sm">${info.text}</span>
             ${from}
             <span class="tl-time">${formatDate(a.created_at)}</span>

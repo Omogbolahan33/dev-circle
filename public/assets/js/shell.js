@@ -290,7 +290,7 @@ const Shell = {
 
           <div class="account">
             <button class="account-button" onclick="Shell.toggleAccount(event)" aria-label="Your account">
-              <span class="avatar avatar-sm">${initials(user.name || '?')}</span>
+              <span class="avatar avatar-sm">${initials(personName(user.name, user.email))}</span>
             </button>
             <div class="account-menu" id="accountMenu">
               <div class="account-head">
@@ -608,7 +608,7 @@ const Shell = {
       try {
         const data = await api.get(`/admin/members?search=${encodeURIComponent(q)}&limit=5`);
         people = (data.members || []).map(m => ({
-          kind: 'member', label: m.name, sub: m.email, icon: 'profile',
+          kind: 'member', label: personName(m.name, m.email), sub: m.email, icon: 'profile',
           href: `/admin/member.html?id=${m.id}`
         }));
       } catch { /* palette stays useful even if the lookup fails */ }
@@ -742,6 +742,22 @@ const Shell = {
 // ─── Shared render helpers ──────────────────────────────────
 // Small builders the pages call so that a member, a badge or an empty state
 // looks identical wherever it appears.
+
+// A member's name is optional since migration 28 — an onboarding form decides
+// what it asks, and a circle that collects only an address produces members
+// without one. Wherever such a person is named, their address stands in.
+// Takes the pair rather than a row because half the payloads carry them as
+// user_name / user_email.
+function personName(name, email) {
+  return (name && name.trim()) || email || '';
+}
+
+// The word a page greets somebody by, or null for a nameless member — callers
+// decide what to say instead, because half an email address is not a name.
+function firstName(name) {
+  const trimmed = name && name.trim();
+  return trimmed ? trimmed.split(/\s+/)[0] : null;
+}
 
 function initials(name) {
   return (name || '?').trim().split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase();

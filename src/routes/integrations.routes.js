@@ -390,7 +390,7 @@ router.post('/survey-responses', requireApiKey('events', 'customer_io'), async (
   await markProcessed(eventId);
 
   res.status(filed.length ? 201 : 200).json({
-    message: `${filed.length} answer(s) filed for ${user.name}`,
+    message: `${filed.length} answer(s) filed for ${user.name || user.email}`,
     user_id: user.id,
     filed,
     skipped

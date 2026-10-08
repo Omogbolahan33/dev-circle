@@ -171,7 +171,7 @@
         <div class="tl-item">
           <div class="tl-dot ${info.tone}"></div>
           <div class="tl-head">
-            <a class="tl-title" href="/admin/member.html?id=${a.user_id}">${escapeHtml(a.user_name || 'System')}</a>
+            <a class="tl-title" href="/admin/member.html?id=${a.user_id}">${escapeHtml(a.user_id ? personName(a.user_name, a.user_email) : 'System')}</a>
             <span class="muted text-sm">${info.text}</span>
             <span class="tl-time">${formatDate(a.created_at)}</span>
           </div>
@@ -207,10 +207,10 @@
     if (!items.length) { el.innerHTML = '<div class="dim text-sm">Nothing waiting for triage.</div>'; return; }
     el.innerHTML = items.map(f => `
       <a href="/admin/feedback.html?id=${f.id}" class="row" style="gap:var(--sp-3);text-decoration:none">
-        ${avatar(f.user_name, f.source === 'feex' ? '' : 'avatar-gold')}
+        ${avatar(personName(f.user_name, f.user_email), f.source === 'feex' ? '' : 'avatar-gold')}
         <span class="truncate" style="flex:1">
           <span class="text-sm" style="color:var(--white)">${escapeHtml(f.content.slice(0, 48))}${f.content.length > 48 ? '…' : ''}</span>
-          <span class="dim text-xs" style="display:block">${escapeHtml(f.user_name)} · ${formatDate(f.created_at)}</span>
+          <span class="dim text-xs" style="display:block">${escapeHtml(personName(f.user_name, f.user_email))} · ${formatDate(f.created_at)}</span>
         </span>
       </a>`).join('');
   }

@@ -153,7 +153,7 @@
         </div>
         ${rows.map(r => `
           <div class="delivery-row">
-            <span class="truncate" style="flex:1">${escapeHtml(r.user_name || r.user_id)}</span>
+            <span class="truncate" style="flex:1">${escapeHtml(personName(r.user_name, r.user_email) || r.user_id)}</span>
             <span class="text-xs muted">${escapeHtml(r.channel)}</span>
             ${badge(r.status, r.status === 'delivered' ? 'active' : r.status === 'failed' ? 'danger' : 'warn')}
             ${r.reason ? `<span class="dim text-xs">${escapeHtml(r.reason)}</span>` : ''}

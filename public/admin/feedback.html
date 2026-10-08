@@ -157,7 +157,7 @@
     open = items.find(f => f.id === id);
     if (!open) return;
 
-    document.getElementById('dName').textContent = open.user_name;
+    document.getElementById('dName').textContent = personName(open.user_name, open.user_email);
     document.getElementById('dMeta').textContent =
       [open.user_company, open.category, fmtDateTime(open.created_at)].filter(Boolean).join(' · ');
     document.getElementById('dContent').textContent = open.content;
@@ -323,7 +323,7 @@
 
       box.innerHTML = data.items.map(i => `
         <div class="q-answer">
-          <a class="q-who" href="/admin/member.html?id=${i.user_id}">${escapeHtml(i.developer)}</a>
+          <a class="q-who" href="/admin/member.html?id=${i.user_id}">${escapeHtml(personName(i.developer, i.email))}</a>
           <div class="q-body">
             ${filters.group_by !== 'question' && i.question
               ? `<div class="ev-prompt">${escapeHtml(i.question)}</div>` : ''}
@@ -428,7 +428,7 @@
   function bodyRow(r) {
     return `
       <tr>
-        <td><a href="/admin/member.html?id=${r.user_id}">${escapeHtml(r.developer)}</a></td>
+        <td><a href="/admin/member.html?id=${r.user_id}">${escapeHtml(personName(r.developer, r.email))}</a></td>
         <td class="text-xs muted">${escapeHtml(r.company || '—')}</td>
         <td class="text-xs muted">${escapeHtml(r.question || '—')}</td>
         <td>${escapeHtml(r.content)}</td>

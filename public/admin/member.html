@@ -182,14 +182,14 @@
   }
 
   function renderIdentity({ user: u, engagement }) {
-    document.getElementById('crumbName').textContent = u.name;
-    document.title = `Dev Circle — ${u.name}`;
+    document.getElementById('crumbName').textContent = personName(u.name, u.email);
+    document.title = `Dev Circle — ${personName(u.name, u.email)}`;
 
     // Rings show engagement depth at a glance, the way orbit levels do.
     document.getElementById('identity').innerHTML = `
-      ${orbitAvatar(u.name, orbitLevel(u.engagement_streak), 'avatar-lg' + (u.api_status === 'production' ? ' avatar-teal' : ' avatar-gold'))}
+      ${orbitAvatar(personName(u.name, u.email), orbitLevel(u.engagement_streak), 'avatar-lg' + (u.api_status === 'production' ? ' avatar-teal' : ' avatar-gold'))}
       <div>
-        <div class="member-name">${escapeHtml(u.name)}</div>
+        <div class="member-name">${escapeHtml(personName(u.name, u.email))}</div>
         <div class="member-meta">
           <span>${escapeHtml(u.email)}</span>
           ${u.company ? `<span>·</span><span>${escapeHtml(u.company)}</span>` : ''}

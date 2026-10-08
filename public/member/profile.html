@@ -385,11 +385,11 @@
       const level = orbitLevel(stats.streak);
 
       document.getElementById('identity').innerHTML = `
-        ${orbitAvatar(user.name, level, 'avatar-xl' + (level >= 3 ? ' avatar-teal' : ' avatar-gold'))}
+        ${orbitAvatar(personName(user.name, user.email), level, 'avatar-xl' + (level >= 3 ? ' avatar-teal' : ' avatar-gold'))}
         <div>
-          <div class="identity-title">${escapeHtml(user.name)}</div>
+          <div class="identity-title">${escapeHtml(personName(user.name, user.email))}</div>
           <div class="identity-line">
-            <span class="mono">${escapeHtml(user.email)}</span>
+            ${user.name ? `<span class="mono">${escapeHtml(user.email)}</span>` : ''}
             ${user.company ? `<span class="dim">${escapeHtml(user.company)}</span>` : ''}
           </div>
         </div>`;

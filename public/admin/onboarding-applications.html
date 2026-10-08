@@ -357,7 +357,7 @@
       document.getElementById('oneBody').innerHTML = `
         ${data.existing_member ? `
           <div class="known">
-            <strong>${escapeHtml(data.existing_member.name)}</strong> already holds this address,
+            <strong>${escapeHtml(personName(data.existing_member.name, data.existing_member.email))}</strong> already holds this address,
             since ${escapeHtml(String(data.existing_member.created_at).slice(0, 10))}.
             Approving this joins them to this circle rather than making a second account,
             and fills in only what their profile does not already have.

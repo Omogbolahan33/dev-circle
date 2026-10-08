@@ -1116,7 +1116,7 @@ router.get('/surveys/:id/export', requirePermission('export.read'), async (req, 
     // rather than left blank, so a column of empty cells is not read as a
     // fault in the export.
     return [
-      r.user_name || 'Anonymous', r.user_email || '', r.user_company || '',
+      r.user_name || (r.user_id ? '' : 'Anonymous'), r.user_email || '', r.user_company || '',
       r.completed_at, r.triggered_by,
       // A question this member was never shown is left empty rather than
       // marked unanswered: they did not decline it, it was not put to them.

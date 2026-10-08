@@ -303,7 +303,7 @@
             <td class="col-tight" onclick="event.stopPropagation()">
               <button class="check${selection.has(m.id) ? ' on' : ''}" onclick="toggleOne('${m.id}')">✓</button>
             </td>
-            <td>${identityCell(m.name, m.company || m.email, orbitLevel(m.engagement_streak))}</td>
+            <td>${identityCell(personName(m.name, m.email), m.company || m.email, orbitLevel(m.engagement_streak))}</td>
             <td>
               ${badge(m.api_status, m.api_status)}
               ${m.status === 'suspended' ? badge('suspended', 'suspended') : ''}

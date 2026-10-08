@@ -62,6 +62,8 @@
       font-size: var(--fs-2xl);
       letter-spacing: -0.03em;
       line-height: 1.1;
+      /* A nameless member is greeted by their address, which has no spaces */
+      overflow-wrap: anywhere;
     }
     .masthead-line {
       display: flex;
@@ -615,7 +617,7 @@
 
     const mobileName = document.getElementById('mobileUserName');
     if (mobileName) {
-      mobileName.textContent = `${user.name.split(' ')[0]}${user.company ? ' · ' + user.company : ''}`;
+      mobileName.textContent = `${firstName(user.name) || user.email}${user.company ? ' · ' + user.company : ''}`;
     }
 
     // The tone followed api_status too. It follows the streak now — the same
@@ -624,10 +626,10 @@
     const level = orbitLevel(stats.streak);
 
     document.getElementById('masthead').innerHTML = `
-      ${orbitAvatar(user.name, level, 'avatar-xl ' + (level >= 3 ? 'avatar-teal' : 'avatar-gold'))}
+      ${orbitAvatar(personName(user.name, user.email), level, 'avatar-xl ' + (level >= 3 ? 'avatar-teal' : 'avatar-gold'))}
       <div style="min-width:0">
         <div class="text-xs dim">${greeting}</div>
-        <h1 class="masthead-name">${escapeHtml(user.name.split(' ')[0])}</h1>
+        <h1 class="masthead-name">${escapeHtml(firstName(user.name) || user.email)}</h1>
         <div class="masthead-line">
           ${mastheadFacts(user)
             .map(fact => `<span>${escapeHtml(fact)}</span>`)

@@ -206,7 +206,7 @@
         ? `member${data.total === 1 ? '' : 's'} match right now`
         : 'No members match these rules yet';
       faces.innerHTML = data.members.slice(0, 8)
-        .map(m => `<span title="${escapeHtml(m.name)}">${avatar(m.name, 'avatar-sm')}</span>`).join('');
+        .map(m => `<span title="${escapeHtml(personName(m.name, m.email))}">${avatar(personName(m.name, m.email), 'avatar-sm')}</span>`).join('');
     } catch (err) {
       count.textContent = '—';
       list.textContent = err.message;
