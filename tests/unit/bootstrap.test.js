@@ -8,7 +8,7 @@ const Database = require('better-sqlite3');
 
 const { SCHEMA } = require('../../src/db/schema');
 const migrations = require('../../src/db/migrations');
-const { ensureDemoAccounts, DEMO_ADMINS, DEMO_USERS } = require('../../src/db/bootstrap');
+const { ensureDemoAccounts, DEMO_ADMINS } = require('../../src/db/bootstrap');
 
 function freshDb() {
   const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'devcircle-boot-')), 'test.db');
@@ -25,7 +25,6 @@ test('bootstrap creates the first-run accounts on an empty database', async () =
 
   assert.equal(result.skipped, false);
   assert.ok(result.created.admins >= 2);
-  assert.ok(result.created.users >= 2);
 
   const admin = db.prepare("SELECT * FROM admin_users WHERE email = 'admin@creditdirect.ng'").get();
   assert.ok(admin);
@@ -41,12 +40,23 @@ test('bootstrap creates the first-run accounts on an empty database', async () =
     'SELECT 1 AS ok FROM circle_admins WHERE admin_id = ?'
   ).get(admin.id);
   assert.ok(grant, 'super admin must be granted on the default circle');
+});
 
-  for (const user of DEMO_USERS) {
-    const row = db.prepare('SELECT * FROM users WHERE email = ?').get(user.email);
-    assert.ok(row, user.email);
-    assert.equal(row.status, 'active');
-  }
+// The bootstrap runs on every boot. It used to insert two demo members
+// (Adebayo Martins, Emeka Okafor) whenever they were missing, so deleting them
+// lasted until the next restart. Members are the operator's; it makes none.
+test('bootstrap creates no members, and a deleted member stays deleted', async () => {
+  const db = freshDb();
+  await ensureDemoAccounts(db, { force: true });
+  assert.equal(db.prepare('SELECT COUNT(*) AS c FROM users').get().c, 0);
+
+  db.prepare(
+    `INSERT INTO users (id, email, name, password_hash, status)
+     VALUES ('u1', 'someone@example.com', 'Someone', 'x', 'active')`
+  ).run();
+  db.prepare("DELETE FROM users WHERE id = 'u1'").run();
+  await ensureDemoAccounts(db, { force: true });
+  assert.equal(db.prepare('SELECT COUNT(*) AS c FROM users').get().c, 0);
 });
 
 test('bootstrap is idempotent', async () => {
@@ -55,7 +65,6 @@ test('bootstrap is idempotent', async () => {
   const again = await ensureDemoAccounts(db, { force: true });
 
   assert.equal(again.created.admins, 0);
-  assert.equal(again.created.users, 0);
   assert.equal(db.prepare('SELECT COUNT(*) AS c FROM admin_users').get().c, DEMO_ADMINS.length);
 });
 
@@ -74,9 +83,6 @@ test('bootstrap never rewrites an account that already exists', async () => {
     "UPDATE admin_users SET password_hash = ?, status = 'inactive', is_global = 0, role_id = ? WHERE email = 'admin@creditdirect.ng'"
   ).run(chosen, readOnly.id);
 
-  db.prepare("UPDATE users SET phone = '+2348039999999', status = 'inactive' WHERE email = ?")
-    .run(DEMO_USERS[0].email);
-
   await ensureDemoAccounts(db, { force: true });
 
   const admin = db.prepare("SELECT * FROM admin_users WHERE email = 'admin@creditdirect.ng'").get();
@@ -85,8 +91,4 @@ test('bootstrap never rewrites an account that already exists', async () => {
   assert.equal(admin.status, 'inactive', 'a deactivated admin must stay deactivated');
   assert.equal(admin.is_global, 0, 'a demoted admin must not be re-promoted');
   assert.equal(admin.role_id, readOnly.id, 'a role change must not be reverted');
-
-  const member = db.prepare('SELECT * FROM users WHERE email = ?').get(DEMO_USERS[0].email);
-  assert.equal(member.phone, '+2348039999999', 'a corrected phone number must survive a restart');
-  assert.equal(member.status, 'inactive');
 });

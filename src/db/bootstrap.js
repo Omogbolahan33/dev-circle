@@ -1,13 +1,16 @@
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const config = require('../config');
-const { NO_PASSWORD } = require('../utils/identity');
 
 // ─── Bootstrap accounts ─────────────────────────────────────
 // A fresh deploy applies schema and then leaves every table empty, so there is
 // nobody to sign in as. This creates the roles, the default circle, the "All
-// Members" cohort and a first set of accounts if — and only if — they are
+// Members" cohort and the first admin accounts if — and only if — they are
 // missing. Nothing that already exists is touched.
+//
+// It creates no members. It runs on every boot, so any member it knew about
+// came back each time one was deleted. Demo members come from `npm run seed`,
+// which runs only when asked for.
 //
 // The passwords below are the ones a first deploy starts with. They are no
 // longer printed anywhere in the UI, and because this is insert-only, changing
@@ -76,28 +79,6 @@ const DEMO_ADMINS = [
   }
 ];
 
-// A participant signs in with their address and the last four digits of the
-// number on their record, so an account without a number is one nobody can
-// sign in as. These two carry fixed numbers for that reason.
-const DEMO_USERS = [
-  {
-    email: 'adebayo@paystack.dev',
-    name: 'Adebayo Martins',
-    phone: '+2348030000001',
-    company: 'Paystack',
-    work_sector: 'Fintech',
-    api_status: 'production'
-  },
-  {
-    email: 'emeka@kuda.ng',
-    name: 'Emeka Okafor',
-    phone: '+2348030000002',
-    company: 'Kuda Bank',
-    work_sector: 'Banking',
-    api_status: 'production'
-  }
-];
-
 function uuid() {
   return crypto.randomUUID();
 }
@@ -125,7 +106,7 @@ async function ensureDemoAccounts(database, { force = false } = {}) {
   if (!force && !shouldSeed()) return { skipped: true, reason: 'disabled' };
 
   const q = queries(database);
-  const created = { roles: 0, admins: 0, users: 0, circles: 0 };
+  const created = { roles: 0, admins: 0, circles: 0 };
 
   for (const role of DEMO_ROLES) {
     const existing = await q.get('SELECT id FROM roles WHERE name = ?', role.name);
@@ -189,7 +170,7 @@ async function ensureDemoAccounts(database, { force = false } = {}) {
     );
   }
 
-  let cohort = await q.get(
+  const cohort = await q.get(
     "SELECT id FROM cohorts WHERE name = 'All Members' AND (circle_id = ? OR circle_id IS NULL)",
     circle.id
   );
@@ -200,36 +181,6 @@ async function ensureDemoAccounts(database, { force = false } = {}) {
        VALUES (?, 'All Members', 'Every registered user', 'system', '#A0A0B8', ?)`,
       id, circle.id
     );
-    cohort = { id };
-  }
-
-  for (const user of DEMO_USERS) {
-    const existing = await q.get('SELECT id FROM users WHERE lower(email) = ?', user.email);
-    let userId;
-    if (existing) {
-      // Left alone for the same reason as the admins above: the phone number is
-      // half of a member's credential, so rewriting it on boot would undo any
-      // correction made to the record.
-      userId = existing.id;
-    } else {
-      userId = uuid();
-      await q.run(
-        `INSERT INTO users (id, email, name, phone, phone_normalized, password_hash,
-                            company, work_sector, api_status, status)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')`,
-        userId, user.email, user.name, user.phone, user.phone, NO_PASSWORD,
-        user.company, user.work_sector, user.api_status
-      );
-      created.users++;
-    }
-    await q.run(
-      'INSERT INTO user_cohorts (user_id, cohort_id) VALUES (?, ?) ON CONFLICT (user_id, cohort_id) DO NOTHING',
-      userId, cohort.id
-    );
-    await q.run(
-      'INSERT INTO circle_members (circle_id, user_id) VALUES (?, ?) ON CONFLICT (circle_id, user_id) DO NOTHING',
-      circle.id, userId
-    );
   }
 
   return { skipped: false, created, circleId: circle.id };
@@ -239,6 +190,5 @@ module.exports = {
   ensureDemoAccounts,
   shouldSeed,
   DEMO_ADMINS,
-  DEMO_USERS,
   DEMO_ROLES
 };
