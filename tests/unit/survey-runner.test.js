@@ -179,3 +179,194 @@ for (const [label, file] of Object.entries(PAGES)) {
     assert.equal(scope.rendered, 1);
   });
 }
+
+// ─── The rest of the walk's state, on a one-page survey ─────
+// Routing the footer button was the visible half of the bug. The other half is
+// what the page believed about itself: which question it was "on". On a survey
+// that shows everything at once there is no such question, and a cursor left
+// pointing at one is how the footer button came to walk a survey nobody could
+// walk — and how the progress strip came to mark a tick as "here" under a
+// question the member was never being asked.
+
+function nodesFor(ids) {
+  const nodes = {};
+  for (const id of ids) {
+    nodes[id] = { id, innerHTML: '', textContent: '', classList: { add() {}, remove() {}, toggle() {} } };
+  }
+  return nodes;
+}
+
+const DOM_IDS = ['foot', 'progressStrip', 'progressTrack', 'progressText', 'progressTime'];
+
+// begin() with the first two questions answered, so a cursor that is placed at
+// all lands somewhere other than zero.
+function beginScope(layout) {
+  const answers = {};
+  QUESTIONS.slice(0, 2).forEach(q => { answers[q.id] = 'Yes'; });
+
+  const scope = {
+    theme: { layout, progress: 'bar' },
+    cursor: 0,
+    pageCursor: 0,
+    answers,
+    rendered: 0,
+
+    asked: () => QUESTIONS,
+    paging: () => layout === 'n_per_page' || layout === 'by_section',
+    pagesNow: () => [QUESTIONS],
+    render: () => { scope.rendered++; },
+    SurveySchema: {
+      isAnswerable: () => true,
+      isAnswered: (question, value) => value !== undefined
+    }
+  };
+  scope.nodes = nodesFor(DOM_IDS);
+  scope.document = { getElementById: id => scope.nodes[id] || null };
+  return scope;
+}
+
+function progressScope(layout, { answered = 0, progress = 'steps', cursor = 2 } = {}) {
+  const answers = {};
+  QUESTIONS.slice(0, answered).forEach(q => { answers[q.id] = 'Yes'; });
+
+  const scope = {
+    theme: { layout, progress },
+    survey: { time_estimate_min: 5 },
+    questions: QUESTIONS,
+    answers,
+    cursor,
+    pageCursor: 0,
+
+    asked: () => QUESTIONS,
+    answerable: () => QUESTIONS,
+    paging: () => layout === 'n_per_page' || layout === 'by_section',
+    pagesNow: () => [QUESTIONS],
+    SurveySchema: {
+      isAnswerable: () => true,
+      isAnswered: (question, value) => value !== undefined
+    }
+  };
+  scope.nodes = nodesFor(DOM_IDS);
+  scope.document = { getElementById: id => scope.nodes[id] || null };
+  return scope;
+}
+
+const count = (haystack, needle) => haystack.split(needle).length - 1;
+
+for (const [label, file] of Object.entries(PAGES)) {
+  const html = fs.readFileSync(file, 'utf8');
+
+  test(`${label}: a survey on one page opens on no particular question`, () => {
+    const scope = beginScope('all_at_once');
+    const begin = load(html, 'begin', scope);
+
+    begin();
+
+    assert.equal(scope.cursor, 0, 'every question is on screen; none of them is the current one');
+    assert.equal(scope.pageCursor, 0);
+    assert.equal(scope.rendered, 1);
+    assert.equal(scope.nodes.progressStrip.classList.contains?.('hide'), undefined);
+  });
+
+  test(`${label}: one question per screen still opens on the first unanswered one`, () => {
+    const scope = beginScope('one_per_page');
+    const begin = load(html, 'begin', scope);
+
+    begin();
+
+    assert.equal(scope.cursor, 2, 'the member is taken to the first question they have not answered');
+    assert.equal(scope.rendered, 1);
+  });
+
+  test(`${label}: a paged survey still opens on the page holding the first unanswered one`, () => {
+    const scope = beginScope('n_per_page');
+    scope.pagesNow = () => [QUESTIONS.slice(0, 2), QUESTIONS.slice(2, 4), QUESTIONS.slice(4)];
+    const begin = load(html, 'begin', scope);
+
+    begin();
+
+    assert.equal(scope.pageCursor, 1, 'the unanswered third question is on the second page');
+  });
+
+  test(`${label}: the progress strip marks no tick as current on a one-page survey`, () => {
+    const scope = progressScope('all_at_once', { answered: 2 });
+    const updateProgress = load(html, 'updateProgress', scope);
+
+    updateProgress();
+
+    const track = scope.nodes.progressTrack.innerHTML;
+    assert.equal(count(track, '<span class="step'), QUESTIONS.length, 'one tick per question');
+    assert.equal(count(track, ' done'), 2, 'the answered ones are filled');
+    assert.equal(count(track, ' here'), 0, 'nothing is "here": the member is being asked all of them');
+    assert.equal(scope.nodes.progressText.textContent, '2 of 7 answered');
+  });
+
+  test(`${label}: the progress strip marks the question on screen when there is one`, () => {
+    const scope = progressScope('one_per_page', { answered: 2, cursor: 2 });
+    const updateProgress = load(html, 'updateProgress', scope);
+
+    updateProgress();
+
+    const track = scope.nodes.progressTrack.innerHTML;
+    assert.equal(count(track, ' here'), 1, 'exactly one question is on screen');
+    assert.equal(
+      track.replace(/\n/g, '').includes('<span class="step here"></span>'),
+      true,
+      'and it is the third tick, the question the cursor is on'
+    );
+    assert.match(scope.nodes.progressText.textContent, /Question 3 of 7/);
+  });
+}
+
+// ─── The progress strip follows an answer, in every layout ──
+// It did not: updateProgress() was called from answer() only on the
+// one-question-per-screen layout, so a survey on one page sat on "0 of 7
+// answered" with empty ticks while the member filled it in, and a paged
+// survey's bar only moved when they turned the page.
+
+function answerScope(layout) {
+  const scope = {
+    theme: { layout, progress: 'steps' },
+    questions: QUESTIONS,
+    answers: {},
+    errors: {},
+    dirty: false,
+
+    progressUpdated: 0,
+    redrawn: 0,
+
+    asked: () => QUESTIONS,
+    paging: () => layout === 'n_per_page' || layout === 'by_section',
+    pagesNow: () => [QUESTIONS],
+    isLast: () => false,
+
+    updateProgress: () => { scope.progressUpdated++; },
+    renderAll: () => { scope.redrawn++; },
+    renderPages: () => { scope.redrawn++; },
+    renderOne: () => { scope.redrawn++; },
+    showError: () => {},
+    scheduleSave: () => {},
+    reportHeight: () => {},
+
+    SurveySchema: { isAnswerable: () => true }
+  };
+  return { scope, question: QUESTIONS[0] };
+}
+
+for (const [label, file] of Object.entries(PAGES)) {
+  const html = fs.readFileSync(file, 'utf8');
+
+  for (const [layout, name] of [['all_at_once', 'one page'], ['n_per_page', 'pages'], ['one_per_page', 'one question per screen']]) {
+    test(`${label}: answering updates the progress strip (${name})`, () => {
+      const { scope, question } = answerScope(layout);
+      const answer = load(html, 'answer', scope);
+
+      answer(question, 'Yes');
+
+      assert.equal(scope.answers[question.id], 'Yes');
+      assert.equal(scope.dirty, true);
+      assert.equal(scope.progressUpdated, 1, 'the strip is redrawn from the answer');
+      assert.equal(scope.redrawn, 0, 'and nothing else is, so the control the member is using keeps its focus');
+    });
+  }
+}
