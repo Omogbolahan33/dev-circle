@@ -360,17 +360,24 @@
     // Coming back to a half-finished survey opens on the first thing not yet
     // answered rather than making them walk through what they have done — or
     // on the page that holds it, when the survey is paged.
-    const list = asked();
-    const firstUnanswered = list.findIndex(q =>
-      SurveySchema.isAnswerable(q) && !SurveySchema.isAnswered(q, answers[q.id]));
+    //
+    // A survey shown all at once has no question to open on: every question is
+    // already on screen. So there is no cursor to place, and leaving it at zero
+    // is the truthful state — it is what the footer button and the progress
+    // strip read to know that nothing here is the "current" question.
+    if (theme.layout !== 'all_at_once') {
+      const list = asked();
+      const firstUnanswered = list.findIndex(q =>
+        SurveySchema.isAnswerable(q) && !SurveySchema.isAnswered(q, answers[q.id]));
 
-    if (paging()) {
-      const pages = pagesNow();
-      pageCursor = firstUnanswered === -1 ? 0
-        : pages.findIndex(p => p.some(q => q.id === list[firstUnanswered].id));
-      if (pageCursor === -1) pageCursor = 0;
-    } else {
-      cursor = firstUnanswered === -1 ? 0 : firstUnanswered;
+      if (paging()) {
+        const pages = pagesNow();
+        pageCursor = firstUnanswered === -1 ? 0
+          : pages.findIndex(p => p.some(q => q.id === list[firstUnanswered].id));
+        if (pageCursor === -1) pageCursor = 0;
+      } else {
+        cursor = firstUnanswered === -1 ? 0 : firstUnanswered;
+      }
     }
 
     render();
@@ -584,10 +591,16 @@
       document.getElementById('nextBtn').innerHTML = isLast()
         ? `${icon('check', 15)} Submit`
         : `Next ${icon('arrowRight', 15)}`;
-    } else if (theme.layout !== 'all_at_once' && !paging()) {
+    } else {
+      // Nothing about the set of questions changed, so no control is redrawn —
+      // but the progress strip follows the answers in every layout. It used to
+      // be skipped here for a survey on one page and for a paged one, which
+      // left the ticks empty and "0 of 7 answered" on screen while the member
+      // was answering.
       updateProgress();
-      // Ranking redraws itself from its new order
-      if (question.type === 'ranking') renderOne();
+      // Ranking redraws itself from its new order, on the layout that shows one
+      // question at a time.
+      if (theme.layout !== 'all_at_once' && !paging() && question.type === 'ranking') renderOne();
     }
 
     showError(question);
@@ -610,7 +623,16 @@
 
     const list = answerable();
     const done = list.filter(q => SurveySchema.isAnswered(q, answers[q.id])).length;
-    const position = Math.min(list.length, asked().slice(0, cursor + 1).filter(SurveySchema.isAnswerable).length);
+
+    // Where the member is, which only a one-question-per-screen survey has: a
+    // paged survey is at a page rather than a question, and a survey on one
+    // page has every question in front of them at once. Without this, an
+    // all-at-once survey marked a tick as "here" from a cursor nobody could
+    // see — and, since that cursor never moves now, it would have sat on the
+    // first question for the whole survey.
+    const onOnePage = theme.layout === 'all_at_once';
+    const position = onOnePage ? null
+      : Math.min(list.length, asked().slice(0, cursor + 1).filter(SurveySchema.isAnswerable).length);
 
     const track = document.getElementById('progressTrack');
 
@@ -621,7 +643,7 @@
     if (stepMode) {
       track.innerHTML = `<div class="steps">${list.map((q, i) => {
         const answered = SurveySchema.isAnswered(q, answers[q.id]);
-        return `<span class="step${answered ? ' done' : i === position - 1 ? ' here' : ''}"></span>`;
+        return `<span class="step${answered ? ' done' : !onOnePage && i === position - 1 ? ' here' : ''}"></span>`;
       }).join('')}</div>`;
     } else if (theme.progress === 'count') {
       track.innerHTML = '';
@@ -651,6 +673,14 @@
   const isLast = () => cursor >= asked().length - 1;
 
   function goNext() {
+    // All on one page: there is nowhere to walk to. The footer button is
+    // Submit, and the whole survey is already on screen, so it submits. The
+    // single-question path below would otherwise move an invisible cursor on
+    // — one step per click — which meant a seven-question survey took seven
+    // clicks on Submit before anything was sent, and a click that landed on an
+    // unanswered question it could not see went nowhere at all.
+    if (theme.layout === 'all_at_once') return submit();
+
     if (paging()) {
       const page = pagesNow()[pageCursor] || [];
 
@@ -696,6 +726,12 @@
   }
 
   function goBack() {
+    // Symmetry with goNext: an all-at-once survey is one screen, so "back" has
+    // no earlier question to mean. The footer hides the button; this keeps a
+    // stray call (a keyboard shortcut, a future layout change) from walking an
+    // invisible cursor backwards through the survey.
+    if (theme.layout === 'all_at_once') return;
+
     if (paging()) {
       if (pageCursor === 0) return;
       pageCursor--;

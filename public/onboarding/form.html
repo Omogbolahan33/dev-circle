@@ -326,17 +326,23 @@
     document.getElementById('foot').classList.remove('hide');
     if (theme.progress !== 'none') document.getElementById('progressStrip').classList.remove('hide');
 
-    const list = asked();
-    const firstUnanswered = list.findIndex(q =>
-      SurveySchema.isAnswerable(q) && !SurveySchema.isAnswered(q, answers[q.id]));
+    // Opening on the first thing not yet answered — or on the page that holds
+    // it, when the form is paged. A form shown all at once has no question to
+    // open on, so there is no cursor to place; leaving it at zero is what tells
+    // the footer button and the progress strip that nothing is "current".
+    if (theme.layout !== 'all_at_once') {
+      const list = asked();
+      const firstUnanswered = list.findIndex(q =>
+        SurveySchema.isAnswerable(q) && !SurveySchema.isAnswered(q, answers[q.id]));
 
-    if (paging()) {
-      const pages = pagesNow();
-      pageCursor = firstUnanswered === -1 ? 0
-        : pages.findIndex(p => p.some(q => q.id === list[firstUnanswered].id));
-      if (pageCursor === -1) pageCursor = 0;
-    } else {
-      cursor = firstUnanswered === -1 ? 0 : firstUnanswered;
+      if (paging()) {
+        const pages = pagesNow();
+        pageCursor = firstUnanswered === -1 ? 0
+          : pages.findIndex(p => p.some(q => q.id === list[firstUnanswered].id));
+        if (pageCursor === -1) pageCursor = 0;
+      } else {
+        cursor = firstUnanswered === -1 ? 0 : firstUnanswered;
+      }
     }
 
     render();
@@ -512,9 +518,12 @@
       if (theme.layout === 'all_at_once') { renderAll(); reportHeight(); return; }
       if (paging()) { renderPages(); reportHeight(); return; }   // the pages re-cut with the set
       updateProgress();
-    } else if (theme.layout !== 'all_at_once' && !paging()) {
+    } else {
+      // Nothing about the set of questions changed, so no control is redrawn —
+      // but the progress strip follows the answers in every layout, including
+      // the one that shows the whole form at once.
       updateProgress();
-      if (question.type === 'ranking') renderOne();
+      if (theme.layout !== 'all_at_once' && !paging() && question.type === 'ranking') renderOne();
     }
 
     showError(question);
@@ -538,7 +547,13 @@
 
     const list = answerable();
     const done = list.filter(q => SurveySchema.isAnswered(q, answers[q.id])).length;
-    const position = Math.min(list.length, asked().slice(0, cursor + 1).filter(SurveySchema.isAnswerable).length);
+
+    // Where the member is: a position that only a one-question-per-screen form
+    // has. Paged forms are at a page, and a form on one page has every question
+    // in front of them, so neither marks a tick as "here".
+    const onOnePage = theme.layout === 'all_at_once';
+    const position = onOnePage ? null
+      : Math.min(list.length, asked().slice(0, cursor + 1).filter(SurveySchema.isAnswerable).length);
     const track = document.getElementById('progressTrack');
 
     // A step per question fills unevenly under a page, where the member
@@ -548,7 +563,7 @@
     if (stepMode) {
       track.innerHTML = `<div class="steps">${list.map((q, i) => {
         const answered = SurveySchema.isAnswered(q, answers[q.id]);
-        return `<span class="step${answered ? ' done' : i === position - 1 ? ' here' : ''}"></span>`;
+        return `<span class="step${answered ? ' done' : !onOnePage && i === position - 1 ? ' here' : ''}"></span>`;
       }).join('')}</div>`;
     } else if (theme.progress === 'count') {
       track.innerHTML = '';
@@ -574,6 +589,15 @@
   const isLast = () => cursor >= asked().length - 1;
 
   function goNext() {
+    // All on one page: there is nowhere to walk to. The footer button is Send,
+    // and the whole form is already on screen, so it submits. The
+    // single-question path below would otherwise move an invisible cursor on —
+    // one step per click — which meant a seven-question form took seven clicks
+    // on Send before anything was sent, and a click that landed on an
+    // unanswered question it could not see went nowhere at all. The survey
+    // runner has the same guard, for the same reason.
+    if (theme.layout === 'all_at_once') return submit();
+
     if (paging()) {
       const page = pagesNow()[pageCursor] || [];
 
@@ -620,6 +644,10 @@
   }
 
   function goBack() {
+    // Symmetry with goNext: an all-at-once form is one screen, so "back" has no
+    // earlier question to mean.
+    if (theme.layout === 'all_at_once') return;
+
     if (paging()) {
       if (pageCursor === 0) return;
       pageCursor--;
