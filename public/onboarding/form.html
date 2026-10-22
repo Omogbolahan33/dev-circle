@@ -574,6 +574,15 @@
   const isLast = () => cursor >= asked().length - 1;
 
   function goNext() {
+    // All on one page: there is nowhere to walk to. The footer button is Send,
+    // and the whole form is already on screen, so it submits. The
+    // single-question path below would otherwise move an invisible cursor on —
+    // one step per click — which meant a seven-question form took seven clicks
+    // on Send before anything was sent, and a click that landed on an
+    // unanswered question it could not see went nowhere at all. The survey
+    // runner has the same guard, for the same reason.
+    if (theme.layout === 'all_at_once') return submit();
+
     if (paging()) {
       const page = pagesNow()[pageCursor] || [];
 
@@ -620,6 +629,10 @@
   }
 
   function goBack() {
+    // Symmetry with goNext: an all-at-once form is one screen, so "back" has no
+    // earlier question to mean.
+    if (theme.layout === 'all_at_once') return;
+
     if (paging()) {
       if (pageCursor === 0) return;
       pageCursor--;
