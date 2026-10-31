@@ -59,6 +59,24 @@ test('a written answer is filed as feedback against the member', async () => {
   assert.equal(filed[0].question_id, 'q3');
 });
 
+test('feedback items can be independently deleted with confirmation', async () => {
+  const user = h.makeUser({ password: 'dev-password' });
+  const survey = makeSurvey();
+  await respond(user, survey, { q3: 'Please improve the SDK examples.' });
+  const item = h.db.prepare("SELECT id FROM feedback WHERE user_id = ? AND source = 'survey'").get(user.id);
+
+  const first = await h.del(`/api/admin/feedback/${item.id}`, { token: adminToken });
+  assert.equal(first.status, 409);
+  assert.equal(first.body.confirm_required, true);
+  assert.equal(first.body.linked_response, true);
+
+  const removed = await h.del(`/api/admin/feedback/${item.id}?confirm=true`, { token: adminToken });
+  assert.equal(removed.status, 200, JSON.stringify(removed.body));
+  assert.equal(Number(h.db.prepare('SELECT COUNT(*) AS c FROM feedback WHERE id = ?').get(item.id).c), 0);
+  assert.equal(Number(h.db.prepare('SELECT COUNT(*) AS c FROM survey_responses WHERE survey_id = ? AND user_id = ?')
+    .get(survey.id, user.id).c), 1, 'the feedback action does not also erase the survey response');
+});
+
 test('the question is kept with the answer', async () => {
   const user = h.makeUser({ password: 'dev-password' });
   const survey = makeSurvey();

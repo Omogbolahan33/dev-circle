@@ -43,6 +43,25 @@ for (const [method, endpoint] of FORBIDDEN_FOR_READ_ONLY) {
   });
 }
 
+test('delete capabilities are distinct, assignable permissions', async () => {
+  const res = await h.get('/api/admin/permissions', { token: superToken });
+  assert.equal(res.status, 200);
+  const keys = res.body.permissions.map(p => p.key);
+  assert.ok(keys.includes('members.delete'));
+  assert.ok(keys.includes('responses.delete'));
+  assert.ok(keys.includes('surveys.delete'));
+  assert.ok(keys.includes('feedback.delete'));
+
+  const surveyDelete = await h.del('/api/admin/surveys/no-such-survey', { token: readOnlyToken });
+  const feedbackDelete = await h.del('/api/admin/feedback/no-such-feedback', { token: readOnlyToken });
+  assert.equal(surveyDelete.status, 403);
+  assert.equal(feedbackDelete.status, 403);
+
+  const member = h.makeUser();
+  const denied = await h.del(`/api/admin/members/${member.id}`, { token: readOnlyToken });
+  assert.equal(denied.status, 403);
+});
+
 test('a read-only role cannot export member data', async () => {
   const res = await h.get('/api/admin/export?format=csv', { token: readOnlyToken });
   assert.equal(res.status, 403);

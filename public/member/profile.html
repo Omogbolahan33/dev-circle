@@ -224,7 +224,9 @@
       <div class="field-row">
         <div class="field">
           <label class="label">Location</label>
-          <input type="text" class="input" id="fLocation" placeholder="Lagos">
+          <select class="input" id="fLocation">
+            <option value="">Select state</option>
+          </select>
           <p class="hint asked-hint hide" data-asked="location_state"></p>
         </div>
         <div class="field">
@@ -269,7 +271,9 @@
         </div>
         <div class="field">
           <label class="label">Preferred research</label>
-          <input type="text" class="input" id="fPreferredResearch" placeholder="e.g. product testing, interviews">
+          <select class="input" id="fPreferredResearch">
+            <option value="">Select preferred research</option>
+          </select>
         </div>
       </div>
     </section>
@@ -379,6 +383,13 @@
       const profile = await api.get('/users/profile');
       const { user, stats, consent, circles, cohorts, readiness } = profile;
       renderStanding(user, circles, cohorts);
+      const fillSelect = (id, options, placeholder) => {
+        const select = document.getElementById(id);
+        select.innerHTML = `<option value="">${escapeHtml(placeholder)}</option>` +
+          options.map(value => `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`).join('');
+      };
+      fillSelect('fLocation', profile.location_options || [], 'Select state');
+      fillSelect('fPreferredResearch', profile.preferred_research_options || [], 'Select preferred research');
 
       // The one part of the integration a member declares themselves.
       const catalog = (profile.product_catalog || []).length

@@ -137,6 +137,13 @@
     created_at TIMESTAMPTZ DEFAULT NOW()
   );
 
+  -- Participation consent is separate from communication-channel consent.
+  -- A row records an explicit grant; withdrawal deletes the member account.
+  CREATE TABLE IF NOT EXISTS developer_circle_consent (
+    user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    granted_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+
   -- Surveys (with anonymous support - migration 25)
   CREATE TABLE IF NOT EXISTS surveys (
     id TEXT PRIMARY KEY,

@@ -10,6 +10,7 @@ const circles = require('../services/circles');
 const scheduler = require('../services/scheduler');
 const surveyForm = require('../services/surveyForm');
 const readiness = require('../services/readiness');
+const vocabularies = require('../services/vocabularies');
 
 const router = express.Router();
 
@@ -22,7 +23,7 @@ router.get('/profile', requireAuth, async (req, res) => {
   const user = await engagement.decayStale(req.user) || req.user;
   const id = user.id;
 
-  const [cohorts, consent, memberCircles, stats] = await Promise.all([
+  const [cohorts, consent, memberCircles, stats, participationConsent] = await Promise.all([
     db.prepare(`
       SELECT c.id, c.name, c.color, c.description
       FROM cohorts c
@@ -45,7 +46,8 @@ router.get('/profile', requireAuth, async (req, res) => {
       UNION ALL
       SELECT 'unread', CAST(COUNT(*) AS INTEGER), CAST(NULL AS INTEGER)
       FROM notifications WHERE user_id = ? AND read_at IS NULL
-    `).all(id, id, id, id)
+    `).all(id, id, id, id),
+    db.prepare('SELECT granted_at FROM developer_circle_consent WHERE user_id = ?').get(id)
   ]);
 
   // Setting preferred channels automatically grants consent
@@ -90,6 +92,7 @@ router.get('/profile', requireAuth, async (req, res) => {
       brand: theme ? circles.brandOf({ theme, survey_theme: null }) : null
     })),
     consent,
+    participation_consent: participationConsent || null,
     stats: {
       surveys_completed: Number(byK.sr?.n2 || 0),
       surveys_invited: Number(byK.sr?.n || 0),
@@ -108,7 +111,9 @@ router.get('/profile', requireAuth, async (req, res) => {
     // Research profile choices shown on the member's editable profile.
     product_catalog: readiness.PARTICIPANT_PRODUCTS.map(p => ({ key: p, label: p })),
     age_groups: readiness.AGE_GROUPS,
-    segments: readiness.SEGMENTS
+    segments: readiness.SEGMENTS,
+    location_options: await vocabularies.listFor('location_state', req.circleId),
+    preferred_research_options: await vocabularies.listFor('preferred_research', req.circleId)
   });
 });
 
@@ -311,8 +316,18 @@ router.put('/profile', requireAuth, async (req, res) => {
       throw new TypeError(`Unknown employment type: ${employment}`);
     }
     setText('employment', employment || null);
+    if (preferred_research !== undefined && preferred_research !== null && preferred_research !== '') {
+      const researchOptions = await vocabularies.listFor('preferred_research', req.circleId);
+      if (!researchOptions.includes(preferred_research)) {
+        throw new TypeError(`Unknown preferred research option: ${preferred_research}`);
+      }
+    }
     setText('preferred_research', preferred_research || null);
     setText('gender', gender);
+    if (location_state !== undefined && location_state !== null && location_state !== '') {
+      const allowedLocations = await vocabularies.listFor('location_state', req.circleId);
+      if (!allowedLocations.includes(location_state)) throw new TypeError(`Unknown location: ${location_state}`);
+    }
     setText('location_state', location_state);
     setJson('preferred_channels', preferred_channels);
     setJson('preferred_days', preferred_days);
@@ -384,8 +399,52 @@ router.put('/profile', requireAuth, async (req, res) => {
 
 // GET /api/users/consent
 router.get('/consent', requireAuth, async (req, res) => {
-  const consent = await db.prepare('SELECT * FROM consent WHERE user_id = ?').all(req.user.id);
-  res.json({ consent, channels: notifications.CHANNELS });
+  const [consent, participationConsent] = await Promise.all([
+    db.prepare('SELECT * FROM consent WHERE user_id = ?').all(req.user.id),
+    db.prepare('SELECT granted_at FROM developer_circle_consent WHERE user_id = ?').get(req.user.id)
+  ]);
+  res.json({ consent, participation_consent: participationConsent || null, channels: notifications.CHANNELS });
+});
+
+// POST /api/users/participation-consent
+// The presence of this row records a member's agreement to participate in
+// Developer Circle. Withdrawal is not a reversible channel-level toggle: it
+// permanently deletes the member account and all associated data.
+router.post('/participation-consent', requireAuth, async (req, res) => {
+  await db.prepare(`
+    INSERT INTO developer_circle_consent (user_id)
+    VALUES (?) ON CONFLICT (user_id) DO NOTHING
+  `).run(req.user.id);
+  const consent = await db.prepare(
+    'SELECT granted_at FROM developer_circle_consent WHERE user_id = ?'
+  ).get(req.user.id);
+  res.json({ participation_consent: consent });
+});
+
+// DELETE /api/users/participation-consent — withdrawal permanently erases the account.
+router.delete('/participation-consent', requireAuth, async (req, res) => {
+  const userId = req.user.id;
+  const [responses, feedback, memberships] = await Promise.all([
+    db.prepare('SELECT COUNT(*) AS c FROM survey_responses WHERE user_id = ?').get(userId),
+    db.prepare('SELECT COUNT(*) AS c FROM feedback WHERE user_id = ?').get(userId),
+    db.prepare('SELECT COUNT(*) AS c FROM circle_members WHERE user_id = ?').get(userId)
+  ]);
+
+  if (req.query.confirm !== 'true') {
+    return res.status(409).json({
+      error: 'Withdrawing Developer Circle participation permanently deletes your account and all associated data. This cannot be undone.',
+      confirm_required: true,
+      survey_responses: Number(responses?.c || 0),
+      feedback: Number(feedback?.c || 0),
+      circles: Number(memberships?.c || 0)
+    });
+  }
+
+  await db.atomic(async () => {
+    await db.prepare('DELETE FROM sessions WHERE subject_id = ?').run(userId);
+    await db.prepare('DELETE FROM users WHERE id = ?').run(userId);
+  });
+  res.json({ message: 'Participation withdrawn; account and associated data permanently deleted' });
 });
 
 // POST /api/users/consent
@@ -959,7 +1018,7 @@ router.post('/surveys/:id/respond', requireAuth, async (req, res) => {
 
   // Free-text answers are feedback, so they are filed with the rest of it
   // rather than left inside this one response's JSON where nobody can find them
-  const { filed } = await verbatims.record(req.user.id, survey, checked.answers);
+  const { filed } = await verbatims.record(req.user.id, survey, checked.answers, { responseId: response.id });
 
   const { streak } = await engagement.record(req.user.id, 'survey_completed', {
     referenceId: survey.id,

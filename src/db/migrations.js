@@ -1706,6 +1706,20 @@ function define(db) {
           CREATE INDEX IF NOT EXISTS idx_session_attendance_user ON session_attendance(user_id);
         `);
       }
+    },
+    {
+      id: 37,
+      name: 'developer_circle_participation_consent',
+      up() {
+        return db.exec(`
+          CREATE TABLE IF NOT EXISTS developer_circle_consent (
+            user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+            granted_at TEXT NOT NULL DEFAULT (datetime('now'))
+          );
+          INSERT INTO developer_circle_consent (user_id)
+          SELECT id FROM users;
+        `);
+      }
     }
   ];
   return migrations;

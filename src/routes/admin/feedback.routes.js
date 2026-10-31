@@ -220,6 +220,33 @@ router.get('/feedback/export/count', requirePermission('export.read'), async (re
   });
 });
 
+// DELETE /api/admin/feedback/:id — removes one feedback row. If it came from a
+// survey, the corresponding response remains in Surveys; deleting the response
+// there also removes any other linked verbatims.
+router.delete('/feedback/:id', requirePermission('feedback.delete'), async (req, res) => {
+  const fb = await db.prepare(`
+    SELECT id, type, source, content, survey_id, response_id, user_id
+    FROM feedback
+    WHERE id = ? AND (circle_id = ? OR circle_id IS NULL)
+  `).get(req.params.id, req.circleId);
+  if (!fb) return res.status(404).json({ error: 'Feedback not found' });
+
+  if (req.query.confirm !== 'true' && req.body?.confirm !== true) {
+    const linkedResponse = fb.type === 'survey_response' && Boolean(fb.survey_id || fb.response_id);
+    return res.status(409).json({
+      error: linkedResponse
+        ? 'Delete this feedback item? Its survey response will remain in Surveys.'
+        : 'Delete this feedback item permanently?',
+      confirm_required: true,
+      linked_response: linkedResponse
+    });
+  }
+
+  const removed = await db.prepare('DELETE FROM feedback WHERE id = ?').run(fb.id);
+  if (!removed?.changes) return res.status(404).json({ error: 'Feedback not found' });
+  res.json({ message: 'Feedback item deleted' });
+});
+
 // PUT /api/admin/feedback/:id
 // This marks how far the engagement team has got through *reading* feedback.
 // It is triage state, not ticket resolution — Dev Circle collects information,

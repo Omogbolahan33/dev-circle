@@ -68,6 +68,11 @@ const DAY_LABELS = [
 // These are the labels that fold cleanly.
 const CHANNEL_LABELS = ['Email', 'SMS', 'WhatsApp', 'A phone call', 'In the portal'];
 
+const PREFERRED_RESEARCH = [
+  'Product testing', 'User interviews', 'Surveys', 'Usability testing',
+  'Focus groups', 'Prototype testing', 'Beta testing', 'Other'
+];
+
 // Which profile field gets which list. A field absent from here has no fixed
 // set of answers — a company name is whatever somebody types.
 const FOR_FIELD = {
@@ -77,7 +82,8 @@ const FOR_FIELD = {
   api_products: API_PRODUCTS,
   preferred_days: DAY_LABELS,
   preferred_channels: CHANNEL_LABELS,
-  consent_channels: CHANNEL_LABELS
+  consent_channels: CHANNEL_LABELS,
+  preferred_research: PREFERRED_RESEARCH
 };
 
 // Which fields have a list at all. A company name has none and should not
@@ -223,6 +229,7 @@ module.exports = {
   API_PRODUCTS,
   DAY_LABELS,
   CHANNEL_LABELS,
+  PREFERRED_RESEARCH,
   FIELDS_WITH_OPTIONS,
   shipped,
   parseOptions,

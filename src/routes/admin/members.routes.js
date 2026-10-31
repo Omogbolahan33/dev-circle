@@ -148,6 +148,44 @@ router.get('/members/:id', requirePermission('members.read'), async (req, res) =
   });
 });
 
+// DELETE /api/admin/members/:id
+// This is a permanent account deletion, not a circle-only removal. It clears
+// the member and their linked survey responses, feedback, consent, and history
+// across all circles, so the server requires an explicit second confirmation.
+router.delete('/members/:id', requirePermission('members.delete'), async (req, res) => {
+  const user = await db.prepare(`
+    SELECT u.id, u.name, u.email
+    FROM users u JOIN circle_members cm ON cm.user_id = u.id
+    WHERE u.id = ? AND cm.circle_id = ?
+  `).get(req.params.id, req.circleId);
+  if (!user) return res.status(404).json({ error: 'Member not found in this circle' });
+
+  const [responseCount, feedbackCount] = await Promise.all([
+    db.prepare('SELECT COUNT(*) AS c FROM survey_responses WHERE user_id = ?').get(user.id),
+    db.prepare('SELECT COUNT(*) AS c FROM feedback WHERE user_id = ?').get(user.id)
+  ]);
+
+  if (req.query.confirm !== 'true' && req.body?.confirm !== true) {
+    return res.status(409).json({
+      error: `Delete ${user.name || user.email} permanently? This removes the account and its data from every circle.`,
+      confirm_required: true,
+      survey_responses: Number(responseCount?.c || 0),
+      feedback: Number(feedbackCount?.c || 0)
+    });
+  }
+
+  await db.atomic(async () => {
+    await db.prepare('DELETE FROM sessions WHERE subject_id = ?').run(user.id);
+    await db.prepare('DELETE FROM users WHERE id = ?').run(user.id);
+  });
+
+  res.json({
+    message: 'Member and associated data deleted',
+    deleted_survey_responses: Number(responseCount?.c || 0),
+    deleted_feedback: Number(feedbackCount?.c || 0)
+  });
+});
+
 // GET /api/admin/members/:id/timeline
 // Everything about one developer in a single stream: what they did, what they
 // said, and what we sent them — from every source, in the order it happened.

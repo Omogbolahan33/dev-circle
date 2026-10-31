@@ -253,7 +253,7 @@
         }</div><div class="figure-label">Questions</div></div>`;
 
       renderAnalysis(survey.questions, completed);
-      renderIndividual(survey.questions, completed);
+      renderIndividual(survey.questions, responses);
 
       // Arrived here to import rather than to read. Opened after the survey
       // has loaded, because the drawer describes this survey's own columns and
@@ -482,10 +482,11 @@
 
   const round = n => (Number.isInteger(n) ? n : n.toFixed(1));
 
-  function renderIndividual(questions, completed) {
+  function renderIndividual(questions, responses) {
     const table = document.getElementById('responseTable');
+    const canDelete = Auth.can('responses.delete');
 
-    if (!completed.length) {
+    if (!responses.length) {
       table.innerHTML = `<tbody><tr><td>${emptyState({ title: 'Nothing submitted yet' })}</td></tr></tbody>`;
       return;
     }
@@ -499,10 +500,11 @@
           <th>Respondent</th>
           ${asked.map(q => `<th>${escapeHtml(q.text.slice(0, 34))}${q.text.length > 34 ? '…' : ''}</th>`).join('')}
           <th>Submitted</th>
+          ${canDelete ? '<th>Actions</th>' : ''}
         </tr>
       </thead>
       <tbody>
-        ${completed.map(r => `
+        ${responses.map(r => `
           <tr class="${r.user_id ? 'row-link' : ''}"
               ${r.user_id ? `onclick="window.location.href='/admin/member.html?id=${r.user_id}'"` : ''}>
             <td>${r.user_id
@@ -528,9 +530,32 @@
               }
               return `<td class="text-sm">${escapeHtml(text)}</td>`;
             }).join('')}
-            <td class="text-xs muted nowrap">${formatDate(r.completed_at)}</td>
+            <td class="text-xs muted nowrap">${r.completed_at ? formatDate(r.completed_at) : '<span class="dim">In progress</span>'}</td>
+            ${canDelete ? `<td onclick="event.stopPropagation()"><button class="btn btn-sm btn-ghost" onclick="deleteResponse('${r.id}', event)">Delete</button></td>` : ''}
           </tr>`).join('')}
       </tbody>`;
+  }
+
+  async function deleteResponse(responseId, event) {
+    event?.stopPropagation();
+    const path = `/admin/surveys/${encodeURIComponent(surveyId)}/responses/${encodeURIComponent(responseId)}`;
+    try {
+      await api.del(path);
+    } catch (err) {
+      if (err.status !== 409 || !err.body?.confirm_required) {
+        showToast(err.message || 'Could not delete response', 'error');
+        return;
+      }
+      if (!window.confirm(`${err.message}\n\n${err.body.linked_feedback} linked feedback item(s) will also be deleted.`)) return;
+      try {
+        await api(`${path}?confirm=true`, { method: 'DELETE' });
+      } catch (confirmedError) {
+        showToast(confirmedError.message || 'Could not delete response', 'error');
+        return;
+      }
+    }
+    showToast('Response and linked verbatims deleted');
+    await load();
   }
 
   async function exportResponses(btn) {

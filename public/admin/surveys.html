@@ -84,6 +84,7 @@
 <script src="/assets/js/brand.js"></script>
 <script>
   Shell.admin('surveys');
+  const canDeleteSurveys = Auth.can('surveys.delete');
 
   let surveys = [];
   let statusFilter = '';
@@ -156,10 +157,34 @@
               <button class="btn btn-sm btn-ghost" onclick="duplicate('${s.id}', this)">Duplicate</button>
               <a class="btn btn-sm btn-ghost" href="/admin/survey-responses.html?id=${s.id}">Responses</a>
               <a class="btn btn-sm btn-ghost" href="/admin/survey-responses.html?id=${s.id}&import=1">Import</a>
+              ${canDeleteSurveys ? `<button class="btn btn-sm btn-danger" onclick="deleteSurvey('${s.id}', event)">Delete</button>` : ''}
             </div>
           </td>
         </tr>`;
     }).join('');
+  }
+
+  async function deleteSurvey(id, event) {
+    event?.stopPropagation();
+    const finish = result => {
+      showToast(`Survey deleted · ${result.deleted_responses} response(s), ${result.deleted_feedback} feedback item(s)`);
+      surveys = surveys.filter(s => s.id !== id);
+      render();
+    };
+    try {
+      const result = await api.del(`/admin/surveys/${encodeURIComponent(id)}`);
+      finish(result);
+    } catch (err) {
+      if (err.status !== 409 || !err.body?.confirm_required) {
+        showToast(err.message || 'Could not delete survey', 'error');
+        return;
+      }
+      if (!window.confirm(`${err.message}\n\nThe survey, responses, and linked feedback will be permanently deleted.`)) return;
+      try {
+        const result = await api(`/admin/surveys/${encodeURIComponent(id)}?confirm=true`, { method: 'DELETE' });
+        finish(result);
+      } catch (confirmedError) { showToast(confirmedError.message || 'Could not delete survey', 'error'); }
+    }
   }
 
   // Invites go out through the member's consented channel; the response
