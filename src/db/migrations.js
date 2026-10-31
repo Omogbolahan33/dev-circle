@@ -1652,6 +1652,15 @@ function define(db) {
         addColumn('survey_responses', 'questions', 'TEXT');
         addColumn('onboarding_submissions', 'questions', 'TEXT');
       }
+    },
+    {
+      id: 34,
+      name: 'participant_age_group_products_segment',
+      up() {
+        addColumn('users', 'age_group', 'TEXT');
+        addColumn('users', 'products', "TEXT DEFAULT '[]'");
+        addColumn('users', 'segment', 'TEXT');
+      }
     }
   ];
   return migrations;

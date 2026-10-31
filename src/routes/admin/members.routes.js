@@ -30,7 +30,7 @@ async function loadMemberPage(query, circleId) {
         SELECT u.id, u.email, u.name, u.phone, u.company, u.work_sector,
                u.status, u.api_status, u.kyb_completed, u.engagement_streak,
                u.preferred_channels, u.preferred_days, u.api_products,
-               u.gender, u.location_state, u.date_of_birth,
+               u.gender, u.location_state, u.age_group, u.products, u.segment,
                u.last_active_at, u.created_at,
                COUNT(*) OVER() as _total
         FROM ${from}
@@ -78,6 +78,7 @@ async function loadMemberPage(query, circleId) {
       preferred_channels: parseJSON(m.preferred_channels, []),
       preferred_days: parseJSON(m.preferred_days, []),
       api_products: parseJSON(m.api_products, []),
+      products: parseJSON(m.products, []),
       surveys_completed: Number(m.surveys_completed || 0),
       surveys_invited: Number(m.surveys_invited || 0),
       cohorts
@@ -246,7 +247,7 @@ router.get('/members/:id/timeline', requirePermission('members.read'), async (re
 // PUT /api/admin/members/:id
 router.put('/members/:id', requirePermission('members.write'), async (req, res) => {
   const {
-    status, api_status, kyb_completed, work_sector, api_products, location_state, gender, phone
+    status, api_status, kyb_completed, work_sector, api_products, products, age_group, segment, location_state, gender, phone
   } = req.body;
   const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
   if (!user) return res.status(404).json({ error: 'Member not found' });
@@ -285,6 +286,12 @@ router.put('/members/:id', requirePermission('members.write'), async (req, res) 
   if (work_sector !== undefined) { updates.push('work_sector = ?'); params.push(work_sector); }
   if (location_state !== undefined) { updates.push('location_state = ?'); params.push(location_state); }
   if (gender !== undefined) { updates.push('gender = ?'); params.push(gender); }
+  if (age_group !== undefined) { updates.push('age_group = ?'); params.push(age_group); }
+  if (segment !== undefined) { updates.push('segment = ?'); params.push(segment); }
+  if (products !== undefined) {
+    if (!Array.isArray(products)) return res.status(400).json({ error: 'products must be an array' });
+    updates.push('products = ?'); params.push(JSON.stringify(products));
+  }
   if (api_products !== undefined) {
     if (!Array.isArray(api_products)) return res.status(400).json({ error: 'api_products must be an array' });
     updates.push('api_products = ?'); params.push(JSON.stringify(api_products));
@@ -399,7 +406,12 @@ router.post('/import', requirePermission('members.import'), async (req, res) => 
       // An .xlsx straight from Excel — no "save as CSV" step required
       rows = parseXLSX(xlsx_base64);
     } else if (csv) {
-      rows = parseCSV(csv);
+      // The Beta Circle panel export has a title and update-summary above its
+      // real header. Start parsing at that header while leaving regular CSVs
+      // untouched.
+      const lines = String(csv).split(/\r?\n/);
+      const headerAt = lines.findIndex(line => /\bFirst Name\b/i.test(line) && /\bEmail Address\b/i.test(line));
+      rows = parseCSV(headerAt > 0 ? lines.slice(headerAt).join('\n') : csv);
     } else if (Array.isArray(importUsers)) {
       rows = importUsers;
     } else {
@@ -421,8 +433,8 @@ router.post('/import', requirePermission('members.import'), async (req, res) => 
   const existsStmt = db.prepare('SELECT id FROM users WHERE email = ?');
   const insertStmt = db.prepare(`
     INSERT INTO users (id, email, name, phone, phone_normalized, company, work_sector, password_hash,
-                       date_of_birth, gender, location_state, api_products)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                       age_group, gender, location_state, products, segment)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const allCohort = await db.prepare("SELECT id FROM cohorts WHERE name = 'All Members'").get();
   const cohortStmt = db.prepare('INSERT OR IGNORE INTO user_cohorts (user_id, cohort_id) VALUES (?, ?)');
@@ -479,7 +491,7 @@ router.post('/import', requirePermission('members.import'), async (req, res) => 
         await insertStmt.run(
           id, row.email, row.name, row.phone, identity.normalizePhone(row.phone),
           row.company, row.work_sector, identity.NO_PASSWORD,
-          row.date_of_birth, row.gender, row.location_state, JSON.stringify(row.api_products)
+          row.age_group, row.gender, row.location_state, JSON.stringify(row.products), row.segment
         );
         if (allCohort) await cohortStmt.run(id, allCohort.id);
         if (cohort_id) await cohortStmt.run(id, cohort_id);
@@ -519,7 +531,7 @@ router.post('/import', requirePermission('members.import'), async (req, res) => 
 // Columns an export can carry. The order here is the order in the file.
 const EXPORT_COLUMNS = [
   'id', 'email', 'name', 'phone', 'company', 'work_sector', 'gender', 'location_state',
-  'date_of_birth', 'age', 'api_products', 'status', 'api_status', 'kyb_completed',
+  'age_group', 'products', 'segment', 'status', 'api_status', 'kyb_completed',
   'engagement_streak', 'surveys_completed', 'gifts_claimed', 'feedback_submitted',
   'cohorts', 'circles', 'consented_channels', 'preferred_days', 'preferred_channels',
   'last_active_at', 'created_at'
@@ -530,10 +542,9 @@ async function selectMembers(query) {
 
   const rows = await db.prepare(`
     SELECT u.id, u.email, u.name, u.phone, u.company, u.work_sector,
-           u.gender, u.location_state, u.date_of_birth, u.api_products,
+           u.gender, u.location_state, u.age_group, u.products, u.segment,
            u.status, u.api_status, u.kyb_completed, u.engagement_streak,
            u.preferred_channels, u.preferred_days, u.last_active_at, u.created_at,
-           CAST((julianday('now') - julianday(u.date_of_birth)) / 365.25 AS INTEGER) as age,
            COALESCE(sr_x.n, 0) as surveys_completed,
            COALESCE(ug_x.n, 0) as gifts_claimed,
            COALESCE(fb_x.n, 0) as feedback_submitted,
@@ -572,7 +583,7 @@ async function selectMembers(query) {
 
   return rows.map(u => ({
     ...u,
-    api_products: parseJSON(u.api_products, []),
+    products: parseJSON(u.products, []),
     preferred_channels: parseJSON(u.preferred_channels, []),
     preferred_days: parseJSON(u.preferred_days, []),
     cohorts: u.cohorts ? u.cohorts.split('; ') : [],

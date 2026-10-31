@@ -164,10 +164,9 @@
       <div class="membership mt-4" id="membership"><span class="skeleton" style="display:inline-block;height:12px;width:180px"></span></div>
 
       <div class="mt-6">
-        <label class="label">API products you build against</label>
-        <p class="hint" style="margin-top:0;margin-bottom:var(--sp-2)">Helps us match the right surveys to you.</p>
+        <label class="label">Products you use</label>
+        <p class="hint" style="margin-top:0;margin-bottom:var(--sp-2)">Select all that apply so we can match you with relevant research.</p>
         <div class="choice-grid" id="productGroup"></div>
-        <p class="hint" id="productsNote" style="display:none"></p>
       </div>
 
       <div class="locked-note mt-6">
@@ -229,21 +228,36 @@
           <p class="hint asked-hint hide" data-asked="location_state"></p>
         </div>
         <div class="field">
-          <label class="label">Date of birth</label>
-          <input type="date" class="input" id="fBirth">
-          <p class="hint asked-hint hide" data-asked="date_of_birth"></p>
+          <label class="label">Age group</label>
+          <select class="input" id="fAgeGroup">
+            <option value="">Select age group</option>
+            <option>18 - 24</option><option>25 - 34</option><option>35 - 44</option>
+            <option>45 - 54</option><option>55 - 64</option>
+          </select>
+          <p class="hint">We use age ranges for research matching, not your date of birth.</p>
         </div>
       </div>
 
-      <div class="field">
-        <label class="label">Gender</label>
-        <select class="input" id="fGender">
-          <option value="">Prefer not to say</option>
-          <option value="female">Female</option>
-          <option value="male">Male</option>
-          <option value="other">Other</option>
-        </select>
-        <p class="hint asked-hint hide" data-asked="gender"></p>
+      <div class="field-row">
+        <div class="field">
+          <label class="label">Gender</label>
+          <select class="input" id="fGender">
+            <option value="">Prefer not to say</option>
+            <option value="female">Female</option>
+            <option value="male">Male</option>
+            <option value="other">Other</option>
+          </select>
+          <p class="hint asked-hint hide" data-asked="gender"></p>
+        </div>
+        <div class="field">
+          <label class="label">Participant segment</label>
+          <select class="input" id="fSegment">
+            <option value="">Select segment</option>
+            <option>Single Product</option><option>Multi-Product</option>
+            <option>Power Tester</option><option>General / App</option>
+          </select>
+          <p class="hint">Choose the group that best describes your product use.</p>
+        </div>
       </div>
     </section>
 
@@ -343,7 +357,8 @@
   // Product catalog with plain-language labels, falling back to a small
   // built-in list if the API did not supply one.
   const FALLBACK_PRODUCTS = {
-    payments: 'Payments', lending: 'Lending', identity: 'Identity', credit_scoring: 'Credit scoring'
+    'Mobile App': 'Mobile App', Yield: 'Yield', BNPL: 'BNPL',
+    'Salaried Loans': 'Salaried Loans', 'CD Business': 'CD Business'
   };
 
   async function load() {
@@ -356,7 +371,7 @@
       const catalog = (profile.product_catalog || []).length
         ? Object.fromEntries(profile.product_catalog.map(p => [p.key, p.label]))
         : FALLBACK_PRODUCTS;
-      renderChoices('productGroup', catalog, user.api_products || []);
+      renderChoices('productGroup', catalog, user.products || []);
       showWhoIsAsking(profile.readiness);
 
       // Phone is a sign-in credential: once a number is on the account it is
@@ -406,8 +421,9 @@
       document.getElementById('fCompany').value = user.company || '';
       document.getElementById('fSector').value = user.work_sector || '';
       document.getElementById('fLocation').value = user.location_state || '';
-      document.getElementById('fBirth').value = user.date_of_birth || '';
+      document.getElementById('fAgeGroup').value = user.age_group || '';
       document.getElementById('fGender').value = user.gender || '';
+      document.getElementById('fSegment').value = user.segment || '';
       document.getElementById('fTimeStart').value = user.preferred_time_start || '10:00';
       document.getElementById('fTimeEnd').value = user.preferred_time_end || '14:00';
 
@@ -516,13 +532,14 @@
         company: document.getElementById('fCompany').value.trim(),
         work_sector: document.getElementById('fSector').value,
         location_state: document.getElementById('fLocation').value.trim(),
-        date_of_birth: document.getElementById('fBirth').value || null,
+        age_group: document.getElementById('fAgeGroup').value || null,
+        segment: document.getElementById('fSegment').value || null,
         gender: document.getElementById('fGender').value,
         preferred_channels: getChoices('channelGroup'),
         preferred_days: getChoices('dayGroup'),
         preferred_time_start: document.getElementById('fTimeStart').value,
         preferred_time_end: document.getElementById('fTimeEnd').value,
-        api_products: getChoices('productGroup')
+        products: getChoices('productGroup')
       };
 
       // A locked phone field is shown read-only; only send it when the member

@@ -105,12 +105,10 @@ router.get('/profile', requireAuth, async (req, res) => {
     readiness: readiness.computeReadiness(user, consent, {
       wanted: await readiness.wantedFor(req.user.id)
     }),
-    // The product families a member may record themselves, with display
-    // labels — one canonical list shared with the picker on the dashboard.
-    product_catalog: readiness.SELF_SERVE_PRODUCTS.map(p => ({
-      key: p,
-      label: readiness.PRODUCT_LABELS[p] || p
-    }))
+    // Research profile choices shown on the member's editable profile.
+    product_catalog: readiness.PARTICIPANT_PRODUCTS.map(p => ({ key: p, label: p })),
+    age_groups: readiness.AGE_GROUPS,
+    segments: readiness.SEGMENTS
   });
 });
 
@@ -236,7 +234,7 @@ router.put('/profile', requireAuth, async (req, res) => {
   const {
     name, phone, company, work_sector,
     preferred_channels, preferred_days, preferred_time_start, preferred_time_end,
-    date_of_birth, gender, location_state, api_products
+    age_group, products, segment, gender, location_state, api_products
   } = req.body;
 
   // req.user is the row the session was minted from; read the live record so a
@@ -301,7 +299,14 @@ router.put('/profile', requireAuth, async (req, res) => {
     setText('work_sector', work_sector);
     setText('preferred_time_start', preferred_time_start);
     setText('preferred_time_end', preferred_time_end);
-    setText('date_of_birth', date_of_birth);
+    if (age_group !== undefined && age_group !== null && age_group !== '' && !readiness.AGE_GROUPS.includes(age_group)) {
+      throw new TypeError(`Unknown age group: ${age_group}`);
+    }
+    if (segment !== undefined && segment !== null && segment !== '' && !readiness.SEGMENTS.includes(segment)) {
+      throw new TypeError(`Unknown segment: ${segment}`);
+    }
+    setText('age_group', age_group || null);
+    setText('segment', segment || null);
     setText('gender', gender);
     setText('location_state', location_state);
     setJson('preferred_channels', preferred_channels);
@@ -314,6 +319,12 @@ router.put('/profile', requireAuth, async (req, res) => {
         throw new TypeError(`Unknown API product(s): ${invalid.join(', ')}. Valid: ${allowed.join(', ')}`);
       }
       setJson('api_products', [...new Set(api_products)]);
+    }
+    if (products !== undefined) {
+      if (!Array.isArray(products)) throw new TypeError('products must be an array');
+      const invalid = products.filter(p => !readiness.PARTICIPANT_PRODUCTS.includes(p));
+      if (invalid.length) throw new TypeError(`Unknown product(s): ${invalid.join(', ')}`);
+      setJson('products', [...new Set(products)]);
     }
   } catch (err) {
     return res.status(400).json({ error: err.message });

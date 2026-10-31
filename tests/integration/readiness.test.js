@@ -41,13 +41,13 @@ const readinessFor = async user =>
 const taskKeys = readiness =>
   readiness.rings.flatMap(r => r.tasks.map(t => t.key));
 
-test('a member is asked for the eight things every member needs, whatever any form says', async () => {
+test('a member is asked for the eleven things every member needs, whatever any form says', async () => {
   const user = h.makeUser();
   const readiness = await readinessFor(user);
 
   assert.equal(readiness.total_rings, 3);
   for (const key of [
-    'name', 'phone', 'company', 'work_sector',
+    'name', 'phone', 'company', 'work_sector', 'age_group', 'products', 'segment',
     'preferred_days', 'preferred_time',
     'preferred_channels', 'consent'
   ]) {
@@ -59,7 +59,7 @@ test('a property no form asks for is not in anybody\'s rings', async () => {
   const user = h.makeUser({ location_state: null, gender: null });
   const readiness = await readinessFor(user);
 
-  for (const key of ['location_state', 'gender', 'date_of_birth']) {
+  for (const key of ['location_state', 'gender']) {
     assert.ok(!taskKeys(readiness).includes(key),
       `nobody asked for ${key}, so nobody should be nagged about it`);
   }
@@ -146,14 +146,14 @@ test('several forms in a circle ask for the union of what they collect', async (
   ]);
   await publishForm([
     ...CREDENTIAL,
-    { type: 'date', text: 'Born?', required: false, maps_to: 'date_of_birth' }
+    { type: 'select', text: 'Gender?', required: false, options: ['Female', 'Male'], maps_to: 'gender' }
   ], { name: 'Second intake' });
 
-  const user = h.makeUser({ location_state: null, date_of_birth: null });
+  const user = h.makeUser({ location_state: null, gender: null });
   const keys = taskKeys(await readinessFor(user));
 
   assert.ok(keys.includes('location_state'));
-  assert.ok(keys.includes('date_of_birth'));
+  assert.ok(keys.includes('gender'));
 });
 
 test('an added task holds the ring open until it is answered', async () => {

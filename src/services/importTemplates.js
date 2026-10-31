@@ -64,11 +64,12 @@ const TEMPLATES = {
         examples: ['Fintech', 'Banking']
       },
       {
-        key: 'date_of_birth',
-        aliases: ['dob'],
-        label: 'Date of birth',
-        notes: 'YYYY-MM-DD. Feeds the age bands on the analytics page. Leave blank if unknown.',
-        examples: ['1994-04-12', '1988-11-30']
+        key: 'age_group',
+        aliases: ['age', 'age band'],
+        label: 'Age group',
+        notes: 'Age band rather than date of birth. Leave blank if unknown.',
+        suggested: ['18 - 24', '25 - 34', '35 - 44', '45 - 54', '55 - 64'],
+        examples: ['25 - 34', '35 - 44']
       },
       {
         key: 'gender',
@@ -85,14 +86,21 @@ const TEMPLATES = {
         examples: ['Lagos', 'Ogun']
       },
       {
-        key: 'api_products',
-        label: 'API products',
-        notes: 'Which product families they integrate. Separate several with a semicolon.',
-        suggested: ['payments', 'lending', 'identity', 'credit_scoring'],
-        examples: ['payments;lending', 'lending'],
-        // Stored as a JSON array, so the string has to be split on the way in
+        key: 'products',
+        aliases: ['api_products'],
+        label: 'Products',
+        notes: 'Products the participant uses. Separate several with a semicolon; checkbox columns such as Mobile App and Yield are also recognised.',
+        suggested: ['Mobile App', 'Yield', 'BNPL', 'Salaried Loans', 'CD Business'],
+        examples: ['Mobile App; Yield', 'BNPL'],
         parse: value => String(value).split(/[;|]/).map(s => s.trim()).filter(Boolean),
         empty: () => []
+      },
+      {
+        key: 'segment',
+        label: 'Segment',
+        notes: 'Participant segment.',
+        suggested: ['Single Product', 'Multi-Product', 'Power Tester', 'General / App'],
+        examples: ['Multi-Product', 'Power Tester']
       }
     ]
   }
@@ -118,10 +126,13 @@ function list() {
 function normaliseRow(key, row) {
   const { columns } = get(key);
   const out = {};
+  const keyOf = value => String(value).trim().toLowerCase().replace(/[ _-]+/g, ' ');
+  const values = Object.fromEntries(Object.entries(row).map(([k, v]) => [keyOf(k), v]));
+  const lookup = name => values[keyOf(name)];
 
   for (const column of columns) {
     const names = [column.key, ...(column.aliases || [])];
-    const found = names.map(n => row[n]).find(v => v !== undefined && v !== null && String(v).trim() !== '');
+    const found = names.map(lookup).find(v => v !== undefined && v !== null && String(v).trim() !== '');
 
     if (found === undefined) {
       out[column.key] = column.empty ? column.empty() : null;
@@ -132,9 +143,23 @@ function normaliseRow(key, row) {
     out[column.key] = column.parse ? column.parse(value) : value;
   }
 
-  // Email is the identity key and is matched case-insensitively everywhere else
-  if (out.email) out.email = out.email.toLowerCase();
+  // Accept the participant panel's split-name and checkbox-product layout.
+  if (!out.name) {
+    const first = lookup('First Name');
+    const last = lookup('Last Name');
+    out.name = [first, last].filter(Boolean).map(String).join(' ').trim() || null;
+  }
+  if (!out.email) out.email = lookup('Email Address') || null;
+  if (key === 'members') {
+    if (!out.phone) out.phone = lookup('Phone') || null;
+    if (!out.location_state) out.location_state = lookup('State') || null;
+    if (!out.segment) out.segment = null;
+    const products = ['Mobile App', 'Yield', 'BNPL', 'Salaried Loans', 'CD Business']
+      .filter(name => ['✓', 'yes', 'true', '1', 'x'].includes(String(lookup(name) || '').trim().toLowerCase()));
+    if (products.length) out.products = [...new Set([...(out.products || []), ...products])];
+  }
 
+  if (out.email) out.email = String(out.email).toLowerCase();
   return out;
 }
 

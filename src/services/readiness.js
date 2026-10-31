@@ -14,6 +14,10 @@ const PRODUCT_LABELS = {
   credit_scoring: 'Credit scoring'
 };
 
+const PARTICIPANT_PRODUCTS = ['Mobile App', 'Yield', 'BNPL', 'Salaried Loans', 'CD Business'];
+const AGE_GROUPS = ['18 - 24', '25 - 34', '35 - 44', '45 - 54', '55 - 64'];
+const SEGMENTS = ['Single Product', 'Multi-Product', 'Power Tester', 'General / App'];
+
 // ─── Member Readiness & Staged Task Rings ────────────────────
 // Members are required to provide key information to participate effectively:
 //   1. Profile Details (Name, Phone, Company, Work Sector)
@@ -105,22 +109,28 @@ const PROPERTIES = [
     value: user => user.location_state
   },
   {
-    key: 'date_of_birth', ring: 'profile', label: 'Date of birth',
-    description: 'Used for the age bands in research, never shown to anyone else',
-    filled: user => Boolean(String(user.date_of_birth || '').trim()),
-    value: user => user.date_of_birth
+    key: 'age_group', ring: 'profile', label: 'Age group', always: true,
+    description: 'Choose your age range',
+    filled: user => Boolean(String(user.age_group || '').trim()),
+    value: user => user.age_group
+  },
+  {
+    key: 'products', ring: 'profile', label: 'Products', always: true,
+    description: 'Select the products you use',
+    filled: user => toArray(user.products).length > 0,
+    value: user => toArray(user.products).join(', ')
+  },
+  {
+    key: 'segment', ring: 'profile', label: 'Participant segment', always: true,
+    description: 'Choose the segment that best describes you',
+    filled: user => Boolean(String(user.segment || '').trim()),
+    value: user => user.segment
   },
   {
     key: 'gender', ring: 'profile', label: 'Gender',
     description: 'Optional, and used only in aggregate',
     filled: user => Boolean(String(user.gender || '').trim()),
     value: user => user.gender
-  },
-  {
-    key: 'api_products', ring: 'profile', label: 'API products',
-    description: 'Which product families you build against',
-    filled: user => toArray(user.api_products).length > 0,
-    value: user => toArray(user.api_products).map(p => PRODUCT_LABELS[p] || p).join(', ')
   },
 
   // ── Ring 2: when to reach you ──
@@ -342,5 +352,8 @@ module.exports = {
   wantedFor,
   PROPERTIES,
   SELF_SERVE_PRODUCTS,
-  PRODUCT_LABELS
+  PRODUCT_LABELS,
+  PARTICIPANT_PRODUCTS,
+  AGE_GROUPS,
+  SEGMENTS
 };

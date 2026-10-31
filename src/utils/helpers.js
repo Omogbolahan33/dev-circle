@@ -135,6 +135,7 @@ function sanitizeUser(user) {
   safe.preferred_channels = parseJSON(safe.preferred_channels, []);
   safe.preferred_days = parseJSON(safe.preferred_days, []);
   safe.api_products = parseJSON(safe.api_products, []);
+  safe.products = parseJSON(safe.products, []);
   safe.notification_prefs = parseJSON(safe.notification_prefs, {});
   return safe;
 }

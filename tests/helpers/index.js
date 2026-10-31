@@ -156,6 +156,9 @@ function makeUser(overrides = {}) {
     preferred_time_start: '09:00',
     preferred_time_end: '17:00',
     api_products: [],
+    age_group: '25 - 34',
+    products: ['Mobile App'],
+    segment: 'Single Product',
     location_state: 'Lagos',
     gender: 'female',
     date_of_birth: '1994-01-01',
@@ -167,9 +170,9 @@ function makeUser(overrides = {}) {
                        company, work_sector, api_status,
                        kyb_completed, engagement_streak, preferred_channels, preferred_days,
                        preferred_time_start, preferred_time_end, api_products,
-                       location_state, gender, date_of_birth, status,
+                       location_state, gender, date_of_birth, age_group, products, segment, status,
                        quiet_hours_start, quiet_hours_end)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)
   `).run(
     id, user.email, user.name,
     user.phone, identity.normalizePhone(user.phone),
@@ -180,6 +183,7 @@ function makeUser(overrides = {}) {
     JSON.stringify(user.preferred_channels), JSON.stringify(user.preferred_days),
     user.preferred_time_start, user.preferred_time_end,
     JSON.stringify(user.api_products), user.location_state, user.gender, user.date_of_birth,
+    user.age_group, JSON.stringify(user.products), user.segment,
     // Fixtures default to no quiet window (start === end), so delivery
     // assertions do not depend on what time of day the suite runs. Tests that
     // care about quiet hours set the window explicitly.
