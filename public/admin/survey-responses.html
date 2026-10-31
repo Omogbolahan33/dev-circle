@@ -106,6 +106,19 @@
       </div>
 
       <div class="panel" id="panel-individual">
+        <div class="toolbar mb-4" id="responseTools">
+          <label class="inline-field">
+            <span>Response status</span>
+            <select class="input" id="responseStatusFilter">
+              <option value="all">All responses</option>
+              <option value="completed">Completed</option>
+              <option value="in_progress">In progress</option>
+            </select>
+          </label>
+          <span class="result-count" id="responseFilterCount"></span>
+          <span class="spacer"></span>
+          <button class="btn btn-sm btn-danger hide" id="deleteInProgressBtn" onclick="deleteInProgress(this)">Delete all in progress</button>
+        </div>
         <div class="table-shell">
           <div class="table-scroll">
             <table class="data-table" id="responseTable"><tbody><tr><td><div class="skeleton" style="width:100%;height:140px"></div></td></tr></tbody></table>
@@ -203,6 +216,9 @@
   Shell.admin('surveys');
 
   const surveyId = param('id');
+  let allResponses = [];
+  let responseQuestions = [];
+  let responseStatusFilter = 'all';
   if (!surveyId) window.location.href = '/admin/surveys.html';
 
   async function load() {
@@ -210,6 +226,8 @@
       const data = await api.get(`/admin/surveys/${surveyId}/responses`);
       const survey = data.survey;
       const responses = data.responses;
+      allResponses = responses;
+      responseQuestions = survey.questions;
       const completed = responses.filter(r => r.completed_at);
 
       document.getElementById('crumbName').textContent = survey.title;
@@ -485,9 +503,27 @@
   function renderIndividual(questions, responses) {
     const table = document.getElementById('responseTable');
     const canDelete = Auth.can('responses.delete');
+    const completed = responses.filter(r => Boolean(r.completed_at));
+    const inProgress = responses.filter(r => !r.completed_at);
+    const visible = responseStatusFilter === 'completed' ? completed
+      : responseStatusFilter === 'in_progress' ? inProgress : responses;
+    const filter = document.getElementById('responseStatusFilter');
+    filter.value = responseStatusFilter;
+    filter.innerHTML = `
+      <option value="all">All responses (${responses.length})</option>
+      <option value="completed">Completed (${completed.length})</option>
+      <option value="in_progress">In progress (${inProgress.length})</option>`;
+    filter.value = responseStatusFilter;
+    document.getElementById('responseFilterCount').textContent = `Showing ${visible.length} of ${responses.length}`;
+    const bulkDelete = document.getElementById('deleteInProgressBtn');
+    bulkDelete.classList.toggle('hide', !canDelete);
+    bulkDelete.disabled = !inProgress.length;
 
-    if (!responses.length) {
-      table.innerHTML = `<tbody><tr><td>${emptyState({ title: 'Nothing submitted yet' })}</td></tr></tbody>`;
+    if (!visible.length) {
+      const title = responseStatusFilter === 'in_progress' ? 'No responses in progress'
+        : responseStatusFilter === 'completed' ? 'No completed responses yet'
+        : 'Nothing submitted yet';
+      table.innerHTML = `<tbody><tr><td>${emptyState({ title })}</td></tr></tbody>`;
       return;
     }
 
@@ -504,7 +540,7 @@
         </tr>
       </thead>
       <tbody>
-        ${responses.map(r => `
+        ${visible.map(r => `
           <tr class="${r.user_id ? 'row-link' : ''}"
               ${r.user_id ? `onclick="window.location.href='/admin/member.html?id=${r.user_id}'"` : ''}>
             <td>${r.user_id
@@ -556,6 +592,41 @@
     }
     showToast('Response and linked verbatims deleted');
     await load();
+  }
+
+  document.getElementById('responseStatusFilter').addEventListener('change', event => {
+    responseStatusFilter = event.target.value;
+    renderIndividual(responseQuestions, allResponses);
+  });
+
+  async function deleteInProgress(btn) {
+    const path = `/admin/surveys/${encodeURIComponent(surveyId)}/responses?status=in_progress`;
+    const finish = result => {
+      showToast(`Removed ${result.deleted_responses} unfinished response(s) and ${result.deleted_feedback} feedback item(s)`);
+      responseStatusFilter = 'in_progress';
+      return load();
+    };
+    await busy(btn, 'Removing…', async () => {
+      try {
+        const result = await api.del(path);
+        await finish(result);
+      } catch (err) {
+        if (err.status !== 409 || !err.body?.confirm_required) {
+          showToast(err.message || 'Could not remove unfinished responses', 'error');
+          return;
+        }
+        const feedback = Number(err.body.feedback || 0);
+        const extra = feedback ? ` ${feedback} linked feedback item(s) will also be removed.` : '';
+        if (!window.confirm(`${err.message}${extra}\n\nThey will need to start over.`)) return;
+        try {
+          const result = await api(`${path}&confirm=true`, { method: 'DELETE' });
+          await finish(result);
+        } catch (confirmedError) {
+          showToast(confirmedError.message || 'Could not remove unfinished responses', 'error');
+        }
+      }
+    });
+    if (btn) btn.disabled = !allResponses.some(r => !r.completed_at);
   }
 
   async function exportResponses(btn) {

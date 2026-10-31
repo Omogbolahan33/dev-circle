@@ -535,6 +535,7 @@ const SCHEMA_POSTGRES = `
   CREATE INDEX IF NOT EXISTS idx_survey_responses_survey ON survey_responses(survey_id);
   CREATE INDEX IF NOT EXISTS idx_survey_responses_user ON survey_responses(user_id);
   CREATE INDEX IF NOT EXISTS idx_survey_responses_anon ON survey_responses(anonymous_key_hash) WHERE anonymous_key_hash IS NOT NULL;
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_survey_responses_anon_key_unique ON survey_responses(survey_id, anonymous_key_hash) WHERE anonymous_key_hash IS NOT NULL;
   CREATE INDEX IF NOT EXISTS idx_survey_responses_external ON survey_responses(survey_id, external_response_id) WHERE external_response_id IS NOT NULL;
   CREATE INDEX IF NOT EXISTS idx_questions_normalized ON questions(normalized, type);
   CREATE INDEX IF NOT EXISTS idx_questions_external ON questions(external_source, external_ref);

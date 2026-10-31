@@ -665,9 +665,8 @@ router.delete('/surveys/:id/responses/:responseId', requirePermission('responses
     const linked = Number((await db.prepare(`
       SELECT COUNT(*) AS c FROM feedback
       WHERE response_id = ?
-         OR (? IS NOT NULL AND survey_id = ? AND type = 'survey_response'
-             AND user_id = ?)
-    `).get(response.id, response.user_id, survey.id, response.user_id))?.c || 0);
+         OR (response_id IS NULL AND survey_id = ? AND type = 'survey_response' AND user_id = ?)
+    `).get(response.id, survey.id, response.user_id))?.c || 0);
     return res.status(409).json({
       error: 'Deleting this response also deletes its survey verbatims from Feedback. Confirm to continue.',
       confirm_required: true,
@@ -680,14 +679,76 @@ router.delete('/surveys/:id/responses/:responseId', requirePermission('responses
     const removed = await db.prepare(`
       DELETE FROM feedback
       WHERE response_id = ?
-         OR (? IS NOT NULL AND survey_id = ? AND type = 'survey_response'
-             AND user_id = ?)
-    `).run(response.id, response.user_id, survey.id, response.user_id);
+         OR (response_id IS NULL AND survey_id = ? AND type = 'survey_response' AND user_id = ?)
+    `).run(response.id, survey.id, response.user_id);
     deletedFeedback = Number(removed?.changes || 0);
     await db.prepare('DELETE FROM survey_responses WHERE id = ?').run(response.id);
   });
 
   res.json({ message: 'Survey response deleted', deleted_feedback: deletedFeedback });
+});
+
+// DELETE /api/admin/surveys/:id/responses?status=in_progress
+// Remove every unfinished response for this survey in one confirmed operation.
+// These rows hold saved progress, so deleting them means a member starts over.
+router.delete('/surveys/:id/responses', requirePermission('responses.delete'), async (req, res) => {
+  if (req.query.status !== 'in_progress') {
+    return res.status(400).json({ error: 'Only status=in_progress can be bulk-deleted here' });
+  }
+
+  const survey = await db.prepare('SELECT id FROM surveys WHERE id = ? AND circle_id = ?')
+    .get(req.params.id, req.circleId);
+  if (!survey) return res.status(404).json({ error: 'Survey not found' });
+
+  const [responseRow, feedbackRow] = await Promise.all([
+    db.prepare('SELECT COUNT(*) AS c FROM survey_responses WHERE survey_id = ? AND completed_at IS NULL').get(survey.id),
+    db.prepare(`
+      SELECT COUNT(*) AS c FROM feedback
+      WHERE response_id IN (
+        SELECT id FROM survey_responses WHERE survey_id = ? AND completed_at IS NULL
+      ) OR (response_id IS NULL AND survey_id = ? AND type = 'survey_response' AND user_id IN (
+        SELECT user_id FROM survey_responses
+        WHERE survey_id = ? AND completed_at IS NULL AND user_id IS NOT NULL
+      ))
+    `).get(survey.id, survey.id, survey.id)
+  ]);
+  const responses = Number(responseRow?.c || 0);
+  const feedback = Number(feedbackRow?.c || 0);
+
+  if (responses && req.query.confirm !== 'true' && req.body?.confirm !== true) {
+    return res.status(409).json({
+      error: `Delete ${responses} unfinished response(s) and their saved progress? Those members will need to start over.`,
+      confirm_required: true,
+      responses,
+      feedback
+    });
+  }
+
+  let deletedFeedback = 0;
+  let deletedResponses = 0;
+  await db.atomic(async () => {
+    const removedFeedback = await db.prepare(`
+      DELETE FROM feedback
+      WHERE response_id IN (
+        SELECT id FROM survey_responses WHERE survey_id = ? AND completed_at IS NULL
+      ) OR (response_id IS NULL AND survey_id = ? AND type = 'survey_response' AND user_id IN (
+        SELECT user_id FROM survey_responses
+        WHERE survey_id = ? AND completed_at IS NULL AND user_id IS NOT NULL
+      ))
+    `).run(survey.id, survey.id, survey.id);
+    deletedFeedback = Number(removedFeedback?.changes || 0);
+
+    const removedResponses = await db.prepare(
+      'DELETE FROM survey_responses WHERE survey_id = ? AND completed_at IS NULL'
+    ).run(survey.id);
+    deletedResponses = Number(removedResponses?.changes || 0);
+  });
+
+  res.json({
+    message: 'Unfinished survey responses and saved progress deleted',
+    deleted_responses: deletedResponses,
+    deleted_feedback: deletedFeedback
+  });
 });
 
 // ─── Responses collected elsewhere ──────────────────────────

@@ -30,9 +30,9 @@ const slotId = index => `q${index + 1}_${uuid().slice(0, 8)}`;
 // so it survives being pasted into a chat, a slide or a QR code.
 const publicToken = () => crypto.randomBytes(24).toString('base64url');
 
-// The key an anonymous respondent carries to come back to their own
-// half-finished response. Hashed at rest, like every other bearer secret here
-// — a leaked database should not hand over the ability to edit submissions.
+// The key an anonymous respondent carries for the eventual submission. It is
+// hashed when that completed response is recorded, like every other bearer
+// secret here — a leaked database should not reveal the key itself.
 const responseKey = () => crypto.randomBytes(24).toString('base64url');
 const hashKey = key => crypto.createHash('sha256').update(String(key)).digest('hex');
 

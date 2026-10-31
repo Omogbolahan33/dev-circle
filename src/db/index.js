@@ -299,11 +299,26 @@ if (config.isPostgres) {
         fingerprint
       });
       await ensureBootstrapAccounts();
+      readyError = null;
     } catch (err) {
       readyError = err;
       logger.error('Failed to init Postgres', { message: err.message, stack: err.stack });
       throw err;
     }
+  }
+
+  // A cold-start connection can fail while the provider is waking or the
+  // pooler is saturated. Let the readiness middleware make a fresh attempt on
+  // the next request instead of awaiting the same rejected boot promise again.
+  function retryPostgresReady() {
+    if (!readyError) return ready;
+    readyError = null;
+    ready = initPostgres();
+    live.ready = ready;
+    // serverless imports the app before it awaits readiness; mark the promise
+    // handled immediately while preserving rejection for explicit awaiters.
+    ready.catch(() => {});
+    return ready;
   }
 
   function createPgDbLike(pgModule) {
@@ -347,9 +362,13 @@ if (config.isPostgres) {
   live._pool = pool;
   live._pg = pg;
   ready = initPostgres();
+  // Handle rejection immediately: app imports can take long enough that Node
+  // otherwise reports this promise as unhandled before boot attaches its catch.
+  ready.catch(() => {});
 
-  // Expose ready promise for server.js to await
+  // Expose readiness/retry hooks for server.js and serverless middleware.
   live.ready = ready;
+  live.retryReady = retryPostgresReady;
   live.readyError = () => readyError;
 
   // Provide sqlite-like helpers that pg doesn't normally have, for call sites

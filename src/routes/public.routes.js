@@ -87,34 +87,32 @@ router.get('/surveys/:token', opening, async (req, res) => {
 });
 
 // POST /api/public/surveys/:token/start
-// Begins a submission and hands back the key that owns it. A caller that
-// already holds a key gets its answers back instead of a second blank
-// submission, so a refreshed tab is not a new respondent.
+// Hands the tab a key for its eventual submission. Anonymous drafts live in
+// that tab's sessionStorage, not in survey_responses; only a completed answer
+// becomes a database row. Existing keys are still checked for completed and
+// legacy in-progress responses.
 router.post('/surveys/:token/start', writing, async (req, res) => {
   const survey = await openSurvey(req.params.token);
   if (!survey) return gone(res);
 
-  const existing = await responseFor(survey, req.body?.response_key);
+  const suppliedKey = typeof req.body?.response_key === 'string' && /^[A-Za-z0-9_-]{32}$/.test(req.body.response_key)
+    ? req.body.response_key : null;
+  const existing = await responseFor(survey, suppliedKey);
   if (existing) {
     if (existing.completed_at) {
       return res.status(409).json({ error: 'You have already answered this one. Thank you.' });
     }
     return res.json({
       survey: surveyForm.forPublic(survey),
-      response_key: req.body.response_key,
+      response_key: suppliedKey,
       answers: parseJSON(existing.answers, {})
     });
   }
 
-  const key = surveyForm.responseKey();
-  await db.prepare(`
-    INSERT INTO survey_responses (id, survey_id, user_id, respondent_kind, anonymous_key_hash, triggered_by)
-    VALUES (?, ?, NULL, 'anonymous', ?, 'link')
-  `).run(uuid(), survey.id, surveyForm.hashKey(key));
+  const key = suppliedKey || surveyForm.responseKey();
 
-  // Deliberately no engagement event: engagement is a record of what a member
-  // has done, and there is no member here. Writing one would either need an
-  // account invented for the occasion or a row pointing at nobody.
+  // Deliberately no engagement event or response row at start: engagement is
+  // a record of what a member has done, and anonymous progress remains local.
 
   res.json({
     survey: surveyForm.forPublic(survey),
@@ -126,14 +124,15 @@ router.post('/surveys/:token/start', writing, async (req, res) => {
   });
 });
 
-// PATCH /api/public/surveys/:token/progress — keep what has been answered
+// PATCH /api/public/surveys/:token/progress — legacy compatibility only.
+// The current browser saves anonymous progress in sessionStorage and does not
+// call this endpoint, so anonymous draft answers are never written here.
 router.patch('/surveys/:token/progress', writing, async (req, res) => {
   const survey = await openSurvey(req.params.token);
   if (!survey) return gone(res);
 
   const response = await responseFor(survey, req.body?.response_key);
-  if (!response) return res.status(404).json({ error: 'Start the survey first' });
-  if (response.completed_at) return res.status(409).json({ error: 'Already completed' });
+  if (response?.completed_at) return res.status(409).json({ error: 'Already completed' });
 
   const { answers } = req.body;
   if (!answers || typeof answers !== 'object' || Array.isArray(answers)) {
@@ -150,8 +149,9 @@ router.patch('/surveys/:token/progress', writing, async (req, res) => {
     return res.status(413).json({ error: 'That is more than a survey in progress can hold' });
   }
 
-  await db.prepare('UPDATE survey_responses SET answers = ? WHERE id = ?').run(serialized, response.id);
-  res.json({ saved: Object.keys(kept).length });
+  // Do not persist anonymous progress. Keep the endpoint response compatible
+  // with older clients while they continue to hold their draft locally.
+  res.json({ saved: Object.keys(kept).length, browser_only: true });
 });
 
 // POST /api/public/surveys/:token/respond — submit
@@ -159,9 +159,11 @@ router.post('/surveys/:token/respond', writing, async (req, res) => {
   const survey = await openSurvey(req.params.token);
   if (!survey) return gone(res);
 
-  const response = await responseFor(survey, req.body?.response_key);
-  if (!response) return res.status(404).json({ error: 'Start the survey first' });
-  if (response.completed_at) return res.status(409).json({ error: 'Already completed' });
+  const key = typeof req.body?.response_key === 'string' && /^[A-Za-z0-9_-]{32}$/.test(req.body.response_key)
+    ? req.body.response_key : null;
+  if (!key) return res.status(400).json({ error: 'A valid response key is required' });
+  let response = await responseFor(survey, key);
+  if (response?.completed_at) return res.status(409).json({ error: 'Already completed' });
 
   const { answers } = req.body;
   if (!answers || typeof answers !== 'object') {
@@ -190,9 +192,28 @@ router.post('/surveys/:token/respond', writing, async (req, res) => {
 
   // Beside the answers, the questions they were shown — see the note on the
   // member's half of this in users.routes.js.
-  await db.prepare(`
-    UPDATE survey_responses SET answers = ?, questions = ?, completed_at = datetime('now') WHERE id = ?
-  `).run(JSON.stringify(checked.answers), JSON.stringify(questions), response.id);
+  if (response) {
+    // Retain compatibility for respondents who started before anonymous drafts
+    // moved to the browser; new submissions create their row only now.
+    await db.prepare(`
+      UPDATE survey_responses SET answers = ?, questions = ?, completed_at = datetime('now') WHERE id = ?
+    `).run(JSON.stringify(checked.answers), JSON.stringify(questions), response.id);
+  } else {
+    response = { id: uuid() };
+    try {
+      await db.prepare(`
+        INSERT INTO survey_responses
+          (id, survey_id, user_id, answers, questions, completed_at, triggered_by, respondent_kind, anonymous_key_hash)
+        VALUES (?, ?, NULL, ?, ?, datetime('now'), 'link', 'anonymous', ?)
+      `).run(response.id, survey.id, JSON.stringify(checked.answers), JSON.stringify(questions), surveyForm.hashKey(key));
+    } catch (err) {
+      // A repeated final request is idempotently refused once its first write
+      // has completed, including two submissions racing on the same key.
+      const alreadySubmitted = await responseFor(survey, key);
+      if (alreadySubmitted?.completed_at) return res.status(409).json({ error: 'Already completed' });
+      throw err;
+    }
+  }
 
   // The survey may have branched to its end before it was over — a consent
   // question answered "no" ends it there — and the ending the author wrote

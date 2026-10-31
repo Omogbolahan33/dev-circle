@@ -1720,6 +1720,17 @@ function define(db) {
           SELECT id FROM users;
         `);
       }
+    },
+    {
+      id: 38,
+      name: 'unique_anonymous_survey_response_keys',
+      up() {
+        return db.exec(`
+          CREATE UNIQUE INDEX IF NOT EXISTS idx_survey_responses_anon_key_unique
+            ON survey_responses(survey_id, anonymous_key_hash)
+            WHERE anonymous_key_hash IS NOT NULL;
+        `);
+      }
     }
   ];
   return migrations;

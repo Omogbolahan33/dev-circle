@@ -69,6 +69,14 @@ function diagnoseConnectionError(err) {
       fix: 'Check the host in DATABASE_URL for typos; on a fresh deploy DNS may just need a minute.'
     };
   }
+  if (/Connection terminated due to connection timeout|timeout exceeded when trying to connect/i.test(message)) {
+    return {
+      reason: 'Postgres did not provide a connection before the pool acquisition timeout',
+      fix: 'Check that the database is awake and reachable, verify DATABASE_URL and pool capacity, ' +
+        'and for Supabase serverless apps use the transaction-mode pooler on port 6543. ' +
+        'If the timeout is intermittent, inspect concurrent connections before increasing PG_CONNECTION_TIMEOUT_MS.'
+    };
+  }
   if (/ETIMEDOUT|ECONNREFUSED/.test(code + ' ' + message)) {
     return {
       reason: 'The database address refused or timed out on the connection',
@@ -441,7 +449,11 @@ async function exec(sql) {
   for (const stmt of statementsIn(sql)) {
     const final = translateSqliteToPostgres(stmt);
     // The translator turns a PRAGMA into a comment; there is nothing to send.
-    if (final && !/^\s*--/.test(final)) await p.query(final);
+    // DDL during a cold start can race a transient pooler timeout just like a
+    // normal request query, so use the same bounded acquisition retry here.
+    if (final && !/^\s*--/.test(final)) {
+      await withRetry(() => p.query(final), final.slice(0, 60));
+    }
   }
 }
 

@@ -205,9 +205,25 @@
   const overLink = !!linkToken;
 
   // A member's session is their identity. Over a link there is no identity —
-  // only a key held in this browser that owns one half-finished submission.
+  // only a key held in this tab for the eventual anonymous submission. The
+  // unfinished answers themselves stay in sessionStorage.
   const KEY_STORE = `devcircle_survey_key_${linkToken}`;
+  const ANSWERS_STORE = `devcircle_survey_answers_${linkToken}`;
   let responseKey = overLink ? sessionStorage.getItem(KEY_STORE) : null;
+
+  function readLinkAnswers() {
+    if (!overLink) return null;
+    try {
+      const raw = sessionStorage.getItem(ANSWERS_STORE);
+      if (raw === null) return null;
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
+    } catch { return null; }
+  }
+
+  function writeLinkAnswers(nextAnswers) {
+    if (overLink) sessionStorage.setItem(ANSWERS_STORE, JSON.stringify(nextAnswers));
+  }
 
   if (!overLink && !Auth.requireAuth(false)) throw new Error('Redirecting');
 
@@ -216,7 +232,7 @@
       ? api.post(`/public/surveys/${linkToken}/start`, { response_key: responseKey })
       : api.post(`/users/surveys/${param('id')}/start`),
     progress: body => overLink
-      ? api.patch(`/public/surveys/${linkToken}/progress`, { ...body, response_key: responseKey })
+      ? Promise.resolve().then(() => writeLinkAnswers(body.answers))
       : api.patch(`/users/surveys/${survey.id}/progress`, body),
     respond: body => overLink
       ? api.post(`/public/surveys/${linkToken}/respond`, { ...body, response_key: responseKey })
@@ -258,16 +274,20 @@
       const data = await api2.start();
       survey = data.survey;
       questions = survey.questions || [];
-      answers = data.answers || {};
+      const browserDraft = readLinkAnswers();
+      answers = overLink ? (browserDraft || data.answers || {}) : (data.answers || {});
       theme = SurveyTheme.resolve(survey.theme);
 
-      // The key is kept for this tab only. It is the sole way back to this
-      // submission, and it is not written to localStorage on purpose: a shared
-      // or public machine should not leave the previous person's answers
-      // reachable by whoever opens the link next.
+      // Both the response key and any unfinished answers are kept for this tab
+      // only. They are not written to localStorage on purpose: a shared or
+      // public machine should not leave the previous person's draft reachable
+      // by whoever opens the link next.
       if (overLink && data.response_key) {
         responseKey = data.response_key;
         sessionStorage.setItem(KEY_STORE, responseKey);
+        // Migrate any legacy server-saved draft into this tab. New anonymous
+        // drafts are stored only here until final submission.
+        if (!browserDraft && Object.keys(answers).length) writeLinkAnswers(answers);
       }
 
       applyTheme();
@@ -821,7 +841,10 @@
 
       document.getElementById('progressStrip').classList.add('hide');
       document.getElementById('foot').classList.add('hide');
-      if (overLink) sessionStorage.removeItem(KEY_STORE);
+      if (overLink) {
+        sessionStorage.removeItem(KEY_STORE);
+        sessionStorage.removeItem(ANSWERS_STORE);
+      }
 
       // The survey may have ended early — a consent question answered "no"
       // ends it there — and the words for that ending were written for the
@@ -867,15 +890,14 @@
   async function exitSurvey(btn) {
     await busy(btn, 'Saving…', async () => {
       if (dirty) await save();
-      // Over a link there is no home to go to. Saying the answers are kept for
-      // this tab is the honest version: the key lives in sessionStorage, so
-      // reopening the link here resumes and reopening it elsewhere does not.
+      // Anonymous drafts stay in this tab's session storage. Closing the tab
+      // clears them; no unfinished answers are sent to the database.
       if (overLink) {
         document.getElementById('stage').innerHTML = `
           <div class="done">
-            <div class="done-title">Saved for now</div>
-            <p class="done-text">Your answers are kept in this browser. Open the same link again
-            to pick up where you left off.</p>
+            <div class="done-title">Saved in this tab</div>
+            <p class="done-text">Your draft is kept in this tab until you close it. Return to the survey
+            in this tab to continue; closing it will discard the draft.</p>
           </div>`;
         document.getElementById('progressStrip').classList.add('hide');
         document.getElementById('foot').classList.add('hide');
@@ -885,17 +907,23 @@
     });
   }
 
-  // Closing the tab, switching apps, or locking a phone mid-question. keepalive
-  // is what lets the request outlive the page; sendBeacon cannot carry the
-  // authorization header, and a token in a query string is a token in a log.
+  // Members use a keepalive request so a save can outlive the page. Anonymous
+  // link drafts never leave this tab: flush them to sessionStorage before the
+  // page is hidden, and let closing the tab discard them by design.
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState !== 'hidden' || !dirty || !survey) return;
-    if (overLink && !responseKey) return;
     clearTimeout(saveTimer);
+    if (overLink) {
+      try {
+        writeLinkAnswers(answers);
+        dirty = false;
+      } catch { /* the draft stays in memory until the tab closes */ }
+      return;
+    }
     fetch(api2.progressUrl(), {
       method: 'PATCH',
-      headers: overLink ? { 'Content-Type': 'application/json' } : Auth.headers(),
-      body: JSON.stringify(overLink ? { answers, response_key: responseKey } : { answers }),
+      headers: Auth.headers(),
+      body: JSON.stringify({ answers }),
       keepalive: true
     }).then(() => { dirty = false; }).catch(() => {});
   });
