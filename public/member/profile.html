@@ -259,6 +259,19 @@
           <p class="hint">Choose the group that best describes your product use.</p>
         </div>
       </div>
+      <div class="field-row">
+        <div class="field">
+          <label class="label">Employment</label>
+          <select class="input" id="fEmployment">
+            <option value="">Select employment type</option>
+            <option>Salary Earner</option><option>Entrepreneur</option><option>Student</option>
+          </select>
+        </div>
+        <div class="field">
+          <label class="label">Preferred research</label>
+          <input type="text" class="input" id="fPreferredResearch" placeholder="e.g. product testing, interviews">
+        </div>
+      </div>
     </section>
 
     <section class="section" id="availability">
@@ -424,6 +437,8 @@
       document.getElementById('fAgeGroup').value = user.age_group || '';
       document.getElementById('fGender').value = user.gender || '';
       document.getElementById('fSegment').value = user.segment || '';
+      document.getElementById('fEmployment').value = user.employment || '';
+      document.getElementById('fPreferredResearch').value = user.preferred_research || '';
       document.getElementById('fTimeStart').value = user.preferred_time_start || '10:00';
       document.getElementById('fTimeEnd').value = user.preferred_time_end || '14:00';
 
@@ -534,6 +549,8 @@
         location_state: document.getElementById('fLocation').value.trim(),
         age_group: document.getElementById('fAgeGroup').value || null,
         segment: document.getElementById('fSegment').value || null,
+        employment: document.getElementById('fEmployment').value || null,
+        preferred_research: document.getElementById('fPreferredResearch').value.trim() || null,
         gender: document.getElementById('fGender').value,
         preferred_channels: getChoices('channelGroup'),
         preferred_days: getChoices('dayGroup'),

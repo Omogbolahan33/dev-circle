@@ -59,9 +59,16 @@ const TEMPLATES = {
         key: 'work_sector',
         aliases: ['sector'],
         label: 'Work sector',
-        notes: 'Free text, but stick to one spelling so cohorts group cleanly.',
+        notes: 'Industry or sector, separate from employment type.',
         suggested: ['Fintech', 'Banking', 'Lending', 'Payments', 'Insurance', 'Other'],
         examples: ['Fintech', 'Banking']
+      },
+      {
+        key: 'employment',
+        label: 'Employment',
+        notes: 'Employment type, for example Salary Earner or Entrepreneur.',
+        suggested: ['Salary Earner', 'Entrepreneur', 'Student'],
+        examples: ['Salary Earner', 'Entrepreneur']
       },
       {
         key: 'age_group',
@@ -87,7 +94,6 @@ const TEMPLATES = {
       },
       {
         key: 'products',
-        aliases: ['api_products'],
         label: 'Products',
         notes: 'Products the participant uses. Separate several with a semicolon; checkbox columns such as Mobile App and Yield are also recognised.',
         suggested: ['Mobile App', 'Yield', 'BNPL', 'Salaried Loans', 'CD Business'],
@@ -101,6 +107,32 @@ const TEMPLATES = {
         notes: 'Participant segment.',
         suggested: ['Single Product', 'Multi-Product', 'Power Tester', 'General / App'],
         examples: ['Multi-Product', 'Power Tester']
+      },
+      {
+        key: 'status',
+        label: 'Status',
+        notes: 'Member status: active, inactive, or suspended.',
+        suggested: ['active', 'inactive', 'suspended'],
+        examples: ['active']
+      },
+      {
+        key: 'preferred_research',
+        label: 'Preferred research',
+        notes: 'Research topics or formats the participant prefers.',
+        examples: ['Product testing; interviews']
+      },
+      {
+        key: 'last_contacted',
+        label: 'Last contacted',
+        notes: 'Date the participant was last contacted. ISO date recommended.',
+        examples: ['2026-10-13']
+      },
+      {
+        key: 'sessions',
+        label: 'Sessions',
+        notes: 'Number of research sessions completed.',
+        examples: ['2'],
+        parse: value => /^\d+$/.test(value) ? Number(value) : value
       }
     ]
   }
@@ -160,6 +192,7 @@ function normaliseRow(key, row) {
   }
 
   if (out.email) out.email = String(out.email).toLowerCase();
+  if (out.status) out.status = String(out.status).trim().toLowerCase();
   return out;
 }
 

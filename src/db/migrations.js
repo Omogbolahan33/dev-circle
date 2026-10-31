@@ -1661,6 +1661,16 @@ function define(db) {
         addColumn('users', 'products', "TEXT DEFAULT '[]'");
         addColumn('users', 'segment', 'TEXT');
       }
+    },
+    {
+      id: 35,
+      name: 'beta_circle_participant_properties',
+      up() {
+        addColumn('users', 'employment', 'TEXT');
+        addColumn('users', 'last_contacted', 'TEXT');
+        addColumn('users', 'sessions', 'INTEGER DEFAULT 0');
+        addColumn('users', 'preferred_research', 'TEXT');
+      }
     }
   ];
   return migrations;

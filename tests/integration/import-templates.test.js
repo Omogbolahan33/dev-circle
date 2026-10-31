@@ -79,7 +79,7 @@ test('the example rows survive normalisation into the shape the database wants',
   const normalised = templates.normaliseRow('members', rows[0]);
 
   assert.equal(normalised.email, 'ada.obi@zilla.ng');
-  assert.deepEqual(normalised.api_products, ['payments', 'lending'],
+  assert.deepEqual(normalised.products, ['Mobile App', 'Yield'],
     'the semicolon list must become an array');
   assert.match(normalised.phone, /^\+/, 'the leading + must survive the round trip');
 });
@@ -88,21 +88,38 @@ test('a column alias in an uploaded sheet still lands', () => {
   // Someone exporting from another system may head the columns differently
   const normalised = templates.normaliseRow('members', {
     email: 'ADA@Zilla.NG', full_name: 'Ada Obi', sector: 'Fintech',
-    state: 'Lagos', dob: '1994-04-12', organisation: 'Zilla'
+    state: 'Lagos', age_group: '25 - 34', organisation: 'Zilla'
   });
 
   assert.equal(normalised.name, 'Ada Obi');
   assert.equal(normalised.work_sector, 'Fintech');
   assert.equal(normalised.location_state, 'Lagos');
-  assert.equal(normalised.date_of_birth, '1994-04-12');
+  assert.equal(normalised.age_group, '25 - 34');
   assert.equal(normalised.company, 'Zilla');
   assert.equal(normalised.email, 'ada@zilla.ng', 'email is the identity key and is lowercased');
+});
+
+test('participant-panel columns map to user-property names and types', () => {
+  const normalised = templates.normaliseRow('members', {
+    'First Name': 'Ada', 'Last Name': 'Obi', 'Email Address': 'ada@example.ng',
+    Employment: 'Salary Earner', Status: 'Active', 'Preferred Research': 'Product testing',
+    'Last Contacted': '2026-10-13', Sessions: '2', 'Products #': '1',
+    'Mobile App': '✓', Yield: '–'
+  });
+
+  assert.equal(normalised.name, 'Ada Obi');
+  assert.equal(normalised.employment, 'Salary Earner');
+  assert.equal(normalised.status, 'active');
+  assert.equal(normalised.preferred_research, 'Product testing');
+  assert.equal(normalised.last_contacted, '2026-10-13');
+  assert.equal(normalised.sessions, 2);
+  assert.deepEqual(normalised.products, ['Mobile App']);
 });
 
 test('a blank optional column becomes null, not the string "undefined"', () => {
   const normalised = templates.normaliseRow('members', { email: 'a@b.ng', name: 'A B' });
   assert.equal(normalised.company, null);
-  assert.deepEqual(normalised.api_products, []);
+  assert.deepEqual(normalised.products, []);
 });
 
 // ─── Delivery ───────────────────────────────────────────────
@@ -189,8 +206,11 @@ test('the columns endpoint returns what the drawer needs to describe the upload'
   assert.equal(email.required, true);
   assert.ok(email.notes);
 
-  const products = res.body.columns.find(c => c.key === 'api_products');
-  assert.ok(products.suggested.includes('lending'));
+  const products = res.body.columns.find(c => c.key === 'products');
+  assert.ok(products.suggested.includes('Mobile App'));
+  for (const key of ['employment', 'last_contacted', 'sessions', 'preferred_research', 'status']) {
+    assert.ok(res.body.columns.some(c => c.key === key), `${key} should be advertised`);
+  }
 });
 
 // ─── Writer ─────────────────────────────────────────────────

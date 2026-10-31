@@ -234,7 +234,7 @@ router.put('/profile', requireAuth, async (req, res) => {
   const {
     name, phone, company, work_sector,
     preferred_channels, preferred_days, preferred_time_start, preferred_time_end,
-    age_group, products, segment, gender, location_state, api_products
+    age_group, products, segment, employment, preferred_research, gender, location_state, api_products
   } = req.body;
 
   // req.user is the row the session was minted from; read the live record so a
@@ -307,6 +307,11 @@ router.put('/profile', requireAuth, async (req, res) => {
     }
     setText('age_group', age_group || null);
     setText('segment', segment || null);
+    if (employment !== undefined && employment !== null && employment !== '' && !readiness.EMPLOYMENT_TYPES.includes(employment)) {
+      throw new TypeError(`Unknown employment type: ${employment}`);
+    }
+    setText('employment', employment || null);
+    setText('preferred_research', preferred_research || null);
     setText('gender', gender);
     setText('location_state', location_state);
     setJson('preferred_channels', preferred_channels);
