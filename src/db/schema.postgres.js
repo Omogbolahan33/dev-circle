@@ -44,6 +44,13 @@ const SCHEMA_POSTGRES = `
     location_state TEXT,
     country TEXT DEFAULT 'NG',
     api_products TEXT DEFAULT '[]',
+    age_group TEXT,
+    products TEXT DEFAULT '[]',
+    segment TEXT,
+    employment TEXT,
+    last_contacted TEXT,
+    sessions INTEGER DEFAULT 0,
+    preferred_research TEXT,
     notification_prefs TEXT DEFAULT '{}',
     quiet_hours_start TEXT DEFAULT '22:00',
     quiet_hours_end TEXT DEFAULT '08:00',
@@ -135,6 +142,13 @@ const SCHEMA_POSTGRES = `
     granted_at TIMESTAMPTZ,
     withdrawn_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT NOW()
+  );
+
+  -- Participation consent is separate from communication-channel consent.
+  -- A row records an explicit grant; withdrawal deletes the member account.
+  CREATE TABLE IF NOT EXISTS developer_circle_consent (
+    user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    granted_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   );
 
   -- Surveys (with anonymous support - migration 25)
@@ -334,6 +348,16 @@ const SCHEMA_POSTGRES = `
     dispatched_at TIMESTAMPTZ DEFAULT NOW(),
     UNIQUE (session_id, offset_minutes)
   );
+
+  CREATE TABLE IF NOT EXISTS session_attendance (
+    session_id TEXT NOT NULL REFERENCES scheduled_sessions(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    status TEXT NOT NULL CHECK(status IN ('attended','no_show')),
+    marked_by TEXT,
+    marked_at TIMESTAMPTZ DEFAULT NOW(),
+    PRIMARY KEY(session_id, user_id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_session_attendance_user ON session_attendance(user_id);
 
   -- Sessions (auth)
   CREATE TABLE IF NOT EXISTS sessions (

@@ -14,6 +14,11 @@ const PRODUCT_LABELS = {
   credit_scoring: 'Credit scoring'
 };
 
+const PARTICIPANT_PRODUCTS = ['Mobile App', 'Yield', 'BNPL', 'Salaried Loans', 'CD Business'];
+const AGE_GROUPS = ['18 - 24', '25 - 34', '35 - 44', '45 - 54', '55 - 64'];
+const SEGMENTS = ['Single Product', 'Multi-Product', 'Power Tester', 'General / App'];
+const EMPLOYMENT_TYPES = ['Salary Earner', 'Entrepreneur', 'Student'];
+
 // ─── Member Readiness & Staged Task Rings ────────────────────
 // Members are required to provide key information to participate effectively:
 //   1. Profile Details (Name, Phone, Company, Work Sector)
@@ -53,7 +58,8 @@ function toArray(val) {
 // So the catalogue is the union of two things:
 //
 //   · `always: true` — what every member needs regardless of any form. The
-//     original eight, unchanged, so no ring loses a task it used to have.
+//     original profile, availability and reachability tasks remain, with
+//     participant-panel fields added to the profile ring.
 //   · everything else — a property is asked for only when an active onboarding
 //     form in one of the member's circles is configured to collect it. See
 //     wantedFor(). A circle that never asks about gender never nags anybody
@@ -105,22 +111,40 @@ const PROPERTIES = [
     value: user => user.location_state
   },
   {
-    key: 'date_of_birth', ring: 'profile', label: 'Date of birth',
-    description: 'Used for the age bands in research, never shown to anyone else',
-    filled: user => Boolean(String(user.date_of_birth || '').trim()),
-    value: user => user.date_of_birth
+    key: 'age_group', ring: 'profile', label: 'Age group', always: true,
+    description: 'Choose your age range',
+    filled: user => Boolean(String(user.age_group || '').trim()),
+    value: user => user.age_group
+  },
+  {
+    key: 'products', ring: 'profile', label: 'Products', always: true,
+    description: 'Select the products you use',
+    filled: user => toArray(user.products).length > 0,
+    value: user => toArray(user.products).join(', ')
+  },
+  {
+    key: 'segment', ring: 'profile', label: 'Participant segment', always: true,
+    description: 'Choose the segment that best describes you',
+    filled: user => Boolean(String(user.segment || '').trim()),
+    value: user => user.segment
+  },
+  {
+    key: 'employment', ring: 'profile', label: 'Employment', always: true,
+    description: 'Tell us your current employment type',
+    filled: user => Boolean(String(user.employment || '').trim()),
+    value: user => user.employment
+  },
+  {
+    key: 'preferred_research', ring: 'profile', label: 'Preferred research', always: true,
+    description: 'Tell us what research activities interest you',
+    filled: user => Boolean(String(user.preferred_research || '').trim()),
+    value: user => user.preferred_research
   },
   {
     key: 'gender', ring: 'profile', label: 'Gender',
     description: 'Optional, and used only in aggregate',
     filled: user => Boolean(String(user.gender || '').trim()),
     value: user => user.gender
-  },
-  {
-    key: 'api_products', ring: 'profile', label: 'API products',
-    description: 'Which product families you build against',
-    filled: user => toArray(user.api_products).length > 0,
-    value: user => toArray(user.api_products).map(p => PRODUCT_LABELS[p] || p).join(', ')
   },
 
   // ── Ring 2: when to reach you ──
@@ -200,9 +224,8 @@ const RINGS = [
 ];
 
 // `wanted` is the set of onboarding maps_to tags the member's circles collect,
-// from wantedFor(). Omitted, the rings hold only the always-wanted properties —
-// which is what they held before any of this, so every caller that has not been
-// taught about forms still gets the eight it used to.
+// from wantedFor(). Omitted, the rings hold the always-wanted profile,
+// availability and reachability properties.
 function computeReadiness(user, consentList = [], { wanted } = {}) {
   if (!user) return null;
 
@@ -342,5 +365,9 @@ module.exports = {
   wantedFor,
   PROPERTIES,
   SELF_SERVE_PRODUCTS,
-  PRODUCT_LABELS
+  PRODUCT_LABELS,
+  PARTICIPANT_PRODUCTS,
+  AGE_GROUPS,
+  SEGMENTS,
+  EMPLOYMENT_TYPES
 };

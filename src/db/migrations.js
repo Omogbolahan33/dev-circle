@@ -1652,6 +1652,74 @@ function define(db) {
         addColumn('survey_responses', 'questions', 'TEXT');
         addColumn('onboarding_submissions', 'questions', 'TEXT');
       }
+    },
+    {
+      id: 34,
+      name: 'participant_age_group_products_segment',
+      up() {
+        addColumn('users', 'age_group', 'TEXT');
+        addColumn('users', 'products', "TEXT DEFAULT '[]'");
+        addColumn('users', 'segment', 'TEXT');
+      }
+    },
+    {
+      id: 35,
+      name: 'beta_circle_participant_properties',
+      up() {
+        addColumn('users', 'employment', 'TEXT');
+        addColumn('users', 'last_contacted', 'TEXT');
+        addColumn('users', 'sessions', 'INTEGER DEFAULT 0');
+        addColumn('users', 'preferred_research', 'TEXT');
+        // Recover the latest real research contact for members with delivery
+        // history. Simulated, failed, queued and in-portal items are not contact.
+        db.exec(`
+          UPDATE users
+             SET last_contacted = (
+               SELECT MAX(d.sent_at) FROM message_deliveries d
+               WHERE d.user_id = users.id
+                 AND d.status = 'sent' AND d.channel <> 'in_portal'
+                 AND d.source_type IN ('blast','survey_invite','survey_reminder','session_invite','session_reminder')
+             )
+           WHERE last_contacted IS NULL
+             AND EXISTS (
+               SELECT 1 FROM message_deliveries d
+               WHERE d.user_id = users.id
+                 AND d.status = 'sent' AND d.channel <> 'in_portal'
+                 AND d.source_type IN ('blast','survey_invite','survey_reminder','session_invite','session_reminder')
+             );
+        `);
+      }
+    },
+    {
+      id: 36,
+      name: 'per_member_session_attendance',
+      up() {
+        db.exec(`
+          CREATE TABLE IF NOT EXISTS session_attendance (
+            session_id TEXT NOT NULL REFERENCES scheduled_sessions(id) ON DELETE CASCADE,
+            user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            status TEXT NOT NULL CHECK(status IN ('attended','no_show')),
+            marked_by TEXT,
+            marked_at TEXT DEFAULT (datetime('now')),
+            PRIMARY KEY(session_id, user_id)
+          );
+          CREATE INDEX IF NOT EXISTS idx_session_attendance_user ON session_attendance(user_id);
+        `);
+      }
+    },
+    {
+      id: 37,
+      name: 'developer_circle_participation_consent',
+      up() {
+        return db.exec(`
+          CREATE TABLE IF NOT EXISTS developer_circle_consent (
+            user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+            granted_at TEXT NOT NULL DEFAULT (datetime('now'))
+          );
+          INSERT INTO developer_circle_consent (user_id)
+          SELECT id FROM users;
+        `);
+      }
     }
   ];
   return migrations;

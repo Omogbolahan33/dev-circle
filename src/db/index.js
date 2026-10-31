@@ -244,6 +244,22 @@ if (config.isPostgres) {
         }
       }
 
+      // Backfill the latest actual outbound research contact for members whose
+      // legacy delivery history predates the last_contacted property.
+      await pg.query(`
+        UPDATE users u
+           SET last_contacted = d.last_sent
+          FROM (
+            SELECT user_id, MAX(sent_at)::text AS last_sent
+            FROM message_deliveries
+            WHERE status = 'sent' AND channel <> 'in_portal'
+              AND source_type IN ('blast','survey_invite','survey_reminder','session_invite','session_reminder')
+            GROUP BY user_id
+          ) d
+         WHERE d.user_id = u.id
+           AND (u.last_contacted IS NULL OR u.last_contacted < d.last_sent)
+      `);
+
       // ── 3. Check it actually worked ──
       // This exists because it did not, for two releases, in silence. Twenty
       // three of the schema's statements were being discarded by the splitter

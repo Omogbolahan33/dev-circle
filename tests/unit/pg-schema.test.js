@@ -85,7 +85,7 @@ test('every table in the schema is parsed, with its columns', () => {
 
   const users = tables.find(t => t.name === 'users');
   const columns = users.columns.map(c => c.name);
-  for (const expected of ['id', 'email', 'name', 'phone_normalized', 'api_products']) {
+  for (const expected of ['id', 'email', 'name', 'phone_normalized', 'api_products', 'age_group', 'products', 'segment', 'employment', 'last_contacted', 'sessions', 'preferred_research']) {
     assert.ok(columns.includes(expected), `users should carry ${expected}`);
   }
   // A table-level constraint is not a column

@@ -273,42 +273,39 @@ router.post('/surveys', requirePermission('surveys.write'), async (req, res) => 
 // once, with the count, and deleted on the repeat that carries `?confirm=true`.
 // A draft nobody has answered needs no ceremony.
 //
-// What is *not* deleted is what people said in their own words: verbatim
-// feedback filed from a survey outlives it, detached rather than destroyed.
-// The same goes for a scheduled session that pointed at it — the session
-// happened.
-router.delete('/surveys/:id', requirePermission('surveys.write'), async (req, res) => {
-  const survey = await db.prepare('SELECT id, title FROM surveys WHERE id = ?').get(req.params.id);
+// Survey deletion includes its responses and survey-generated feedback so
+// answers do not linger in Feedback after their survey is removed. A linked
+// scheduled session is retained, but detached from the deleted survey.
+router.delete('/surveys/:id', requirePermission('surveys.delete'), async (req, res) => {
+  const survey = await db.prepare('SELECT id, title FROM surveys WHERE id = ? AND circle_id = ?')
+    .get(req.params.id, req.circleId);
   if (!survey) return res.status(404).json({ error: 'Survey not found' });
 
-  const responses = Number((await db.prepare(
-    'SELECT COUNT(*) as c FROM survey_responses WHERE survey_id = ? AND completed_at IS NOT NULL'
-  ).get(survey.id))?.c || 0);
-
+  const [responseRow, feedbackRow] = await Promise.all([
+    db.prepare('SELECT COUNT(*) AS c FROM survey_responses WHERE survey_id = ?').get(survey.id),
+    db.prepare("SELECT COUNT(*) AS c FROM feedback WHERE survey_id = ? AND type = 'survey_response'").get(survey.id)
+  ]);
+  const responses = Number(responseRow?.c || 0);
+  const feedback = Number(feedbackRow?.c || 0);
   const confirmed = req.query.confirm === 'true' || req.body?.confirm === true;
 
-  if (responses > 0 && !confirmed) {
+  if ((responses || feedback) && !confirmed) {
     return res.status(409).json({
-      error: `${responses} ${responses === 1 ? 'person has' : 'people have'} answered "${survey.title}". Deleting it deletes their answers too.`,
+      error: `Deleting "${survey.title}" permanently removes its ${responses} response(s) and ${feedback} linked feedback item(s).`,
       responses,
+      feedback,
       confirm_required: true
     });
   }
 
-  // Detach rather than cascade. feedback.survey_id has no ON DELETE action in
-  // the SQLite schema and SET NULL in the Postgres one, so leaving it to the
-  // database would refuse the delete on one and succeed on the other — the
-  // kind of difference that only shows up in production.
-  await db.prepare('UPDATE feedback SET survey_id = NULL WHERE survey_id = ?').run(survey.id);
-  await db.prepare('UPDATE scheduled_sessions SET survey_id = NULL WHERE survey_id = ?').run(survey.id);
+  await db.atomic(async () => {
+    await db.prepare('DELETE FROM feedback WHERE survey_id = ? AND type = ?').run(survey.id, 'survey_response');
+    await db.prepare('UPDATE scheduled_sessions SET survey_id = NULL WHERE survey_id = ?').run(survey.id);
+    await db.prepare('DELETE FROM survey_responses WHERE survey_id = ?').run(survey.id);
+    await db.prepare('DELETE FROM surveys WHERE id = ?').run(survey.id);
+  });
 
-  // Responses go with the survey — the questions they answer are about to
-  // stop existing, and an answer to a question nobody can read is not a
-  // record of anything.
-  await db.prepare('DELETE FROM survey_responses WHERE survey_id = ?').run(survey.id);
-  await db.prepare('DELETE FROM surveys WHERE id = ?').run(survey.id);
-
-  res.json({ message: 'Survey deleted', deleted_responses: responses });
+  res.json({ message: 'Survey, responses, and linked feedback deleted', deleted_responses: responses, deleted_feedback: feedback });
 });
 
 // PUT /api/admin/surveys/:id
@@ -646,6 +643,51 @@ router.get('/surveys/:id/responses', requirePermission('surveys.read'), async (r
       };
     })
   });
+});
+
+// DELETE /api/admin/surveys/:id/responses/:responseId
+// Survey free-text answers are also filed into feedback for cross-survey
+// analysis. Removing one response removes those linked verbatims as well, so
+// the answer does not survive as an apparently independent quote.
+router.delete('/surveys/:id/responses/:responseId', requirePermission('responses.delete'), async (req, res) => {
+  const survey = await db.prepare(
+    'SELECT id FROM surveys WHERE id = ? AND circle_id = ?'
+  ).get(req.params.id, req.circleId);
+  if (!survey) return res.status(404).json({ error: 'Survey not found' });
+
+  const response = await db.prepare(`
+    SELECT id, user_id, respondent_kind, completed_at
+    FROM survey_responses WHERE id = ? AND survey_id = ?
+  `).get(req.params.responseId, survey.id);
+  if (!response) return res.status(404).json({ error: 'Survey response not found' });
+
+  if (req.query.confirm !== 'true' && req.body?.confirm !== true) {
+    const linked = Number((await db.prepare(`
+      SELECT COUNT(*) AS c FROM feedback
+      WHERE response_id = ?
+         OR (? IS NOT NULL AND survey_id = ? AND type = 'survey_response'
+             AND user_id = ?)
+    `).get(response.id, response.user_id, survey.id, response.user_id))?.c || 0);
+    return res.status(409).json({
+      error: 'Deleting this response also deletes its survey verbatims from Feedback. Confirm to continue.',
+      confirm_required: true,
+      linked_feedback: linked
+    });
+  }
+
+  let deletedFeedback = 0;
+  await db.atomic(async () => {
+    const removed = await db.prepare(`
+      DELETE FROM feedback
+      WHERE response_id = ?
+         OR (? IS NOT NULL AND survey_id = ? AND type = 'survey_response'
+             AND user_id = ?)
+    `).run(response.id, response.user_id, survey.id, response.user_id);
+    deletedFeedback = Number(removed?.changes || 0);
+    await db.prepare('DELETE FROM survey_responses WHERE id = ?').run(response.id);
+  });
+
+  res.json({ message: 'Survey response deleted', deleted_feedback: deletedFeedback });
 });
 
 // ─── Responses collected elsewhere ──────────────────────────

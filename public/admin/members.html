@@ -76,6 +76,7 @@
                 <th class="hide-sm">Surveys</th>
                 <th class="hide-sm">Streak</th>
                 <th>Last active</th>
+                <th id="memberActionsHead" class="hide">Actions</th>
               </tr>
             </thead>
             <tbody id="rows"><tr><td colspan="7"><div class="skeleton" style="width:100%;height:160px"></div></td></tr></tbody>
@@ -273,22 +274,25 @@
 
   async function load(page = 1) {
     currentPage = page;
-    document.getElementById('rows').innerHTML = skeletonRows(6, 7);
+    document.getElementById('rows').innerHTML = skeletonRows(6, Auth.can('members.delete') ? 8 : 7);
     try {
       const data = await api.get(`/admin/members?${queryString(page)}`);
       render(data);
     } catch (err) {
       document.getElementById('rows').innerHTML =
-        `<tr><td colspan="7">${emptyState({ title: 'Could not load members', text: err.message })}</td></tr>`;
+        `<tr><td colspan="${Auth.can('members.delete') ? 8 : 7}">${emptyState({ title: 'Could not load members', text: err.message })}</td></tr>`;
     }
   }
 
   function render({ members, pagination }) {
     pageIds = members.map(m => m.id);
     const tbody = document.getElementById('rows');
+    const canDelete = Auth.can('members.delete');
+    const colspan = canDelete ? 8 : 7;
+    document.getElementById('memberActionsHead')?.classList.toggle('hide', !canDelete);
 
     if (!members.length) {
-      tbody.innerHTML = `<tr><td colspan="7">${emptyState({
+      tbody.innerHTML = `<tr><td colspan="${colspan}">${emptyState({
         title: 'No members match these filters',
         text: 'Try clearing a filter, or import members from a spreadsheet.',
         action: '<button class="btn btn-sm btn-secondary" onclick="resetFilters()">Clear filters</button>'
@@ -312,6 +316,7 @@
             <td class="hide-sm mono text-xs tnum">${m.surveys_completed}/${m.surveys_invited}</td>
             <td class="hide-sm">${m.engagement_streak ? `<span class="streak">${m.engagement_streak}d</span>` : '<span class="dim">—</span>'}</td>
             <td class="text-xs muted nowrap">${formatDate(m.last_active_at)}</td>
+            ${canDelete ? `<td onclick="event.stopPropagation()"><button class="btn btn-sm btn-ghost" onclick="deleteMember('${m.id}', event)">Delete</button></td>` : ''}
           </tr>`;
       }).join('');
     }
@@ -333,6 +338,30 @@
       </span>` : '';
 
     syncCheckAll();
+  }
+
+  async function deleteMember(id, event) {
+    event?.stopPropagation();
+    try {
+      await api.del(`/admin/members/${encodeURIComponent(id)}`);
+    } catch (err) {
+      if (err.status !== 409 || !err.body?.confirm_required) {
+        showToast(err.message || 'Could not delete member', 'error');
+        return;
+      }
+      const counts = `${err.body.survey_responses} survey response(s) and ${err.body.feedback} feedback item(s)`;
+      if (!window.confirm(`${err.message}\n\nThis will also delete ${counts}.`)) return;
+      try {
+        await api(`/admin/members/${encodeURIComponent(id)}?confirm=true`, { method: 'DELETE' });
+      } catch (confirmedError) {
+        showToast(confirmedError.message || 'Could not delete member', 'error');
+        return;
+      }
+    }
+    selection.delete(id);
+    syncBulkBar();
+    showToast('Member and associated data deleted');
+    await load(currentPage);
   }
 
   // A click anywhere on the row opens the member; the checkbox cell stops

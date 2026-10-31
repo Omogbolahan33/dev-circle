@@ -82,6 +82,27 @@ test('a member can record the API products they build against', async () => {
   assert.deepEqual(dup.body.user.api_products, ['payments']);
 });
 
+test('location and preferred research are dropdown vocabularies, not free text', async () => {
+  const user = h.makeUser({ email: 'dropdowns@example.ng' });
+  const token = await h.loginUser(user.email);
+  const profile = await h.get('/api/users/profile', { token });
+  assert.ok(profile.body.location_options.includes('Lagos'));
+  assert.ok(profile.body.preferred_research_options.includes('Product testing'));
+  assert.ok(profile.body.preferred_research_options.includes('User interviews'));
+
+  const badLocation = await h.put('/api/users/profile', { location_state: 'Somewhere' }, { token });
+  assert.equal(badLocation.status, 400);
+  const badResearch = await h.put('/api/users/profile', { preferred_research: 'Free text value' }, { token });
+  assert.equal(badResearch.status, 400);
+
+  const saved = await h.put('/api/users/profile', {
+    location_state: 'Lagos', preferred_research: 'User interviews'
+  }, { token });
+  assert.equal(saved.status, 200, JSON.stringify(saved.body));
+  const row = h.db.prepare('SELECT location_state, preferred_research FROM users WHERE id = ?').get(user.id);
+  assert.deepEqual(row, { location_state: 'Lagos', preferred_research: 'User interviews' });
+});
+
 test('unknown product families are rejected without a half-write', async () => {
   const user = h.makeUser({ email: 'eni@example.ng' });
   const token = await h.loginUser(user.email);

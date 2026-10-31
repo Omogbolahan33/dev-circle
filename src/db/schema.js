@@ -62,6 +62,13 @@ const SCHEMA = `
     created_at TEXT DEFAULT (datetime('now'))
   );
 
+  -- Participation consent is separate from communication-channel consent.
+  -- A row records an explicit grant; withdrawal deletes the member account.
+  CREATE TABLE IF NOT EXISTS developer_circle_consent (
+    user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    granted_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
   -- Surveys
   CREATE TABLE IF NOT EXISTS surveys (
     id TEXT PRIMARY KEY,

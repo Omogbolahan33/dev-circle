@@ -625,10 +625,45 @@ test('a survey can be deleted, and one with answers takes a second press', async
   const confirmed = await h.del(`/api/admin/surveys/${survey.id}?confirm=true`, { token: adminToken });
   assert.equal(confirmed.status, 200, JSON.stringify(confirmed.body));
   assert.equal(confirmed.body.deleted_responses, 1);
+  assert.equal(confirmed.body.deleted_feedback, 1);
 
   assert.equal(Number(h.db.prepare('SELECT COUNT(*) as n FROM surveys WHERE id = ?').get(survey.id).n), 0);
   assert.equal(Number(h.db.prepare('SELECT COUNT(*) as n FROM survey_responses WHERE survey_id = ?')
     .get(survey.id).n), 0, 'and the answers go with it');
+  assert.equal(Number(h.db.prepare('SELECT COUNT(*) as n FROM feedback WHERE survey_id = ?')
+    .get(survey.id).n), 0, 'and linked survey verbatims do not remain in Feedback');
+});
+
+test('a response can be deleted separately, with its feedback verbatims', async () => {
+  const survey = await published([{ type: 'text', text: 'What should improve?' }]);
+  const { user, token } = await answering(survey);
+  await respond(survey, token, { [survey.questions[0].id]: 'Clearer examples' });
+
+  const response = h.db.prepare(
+    'SELECT id FROM survey_responses WHERE survey_id = ? AND user_id = ?'
+  ).get(survey.id, user.id);
+  // A legacy feedback row may predate response_id and even its question pointer.
+  // Deleting the response must still remove it rather than leave the duplicate
+  // answer stranded in Feedback.
+  h.db.prepare(`
+    INSERT INTO feedback (id, user_id, type, content, source, survey_id, circle_id)
+    VALUES (?, ?, 'survey_response', 'Legacy linked copy', 'survey', ?, ?)
+  `).run(h.uuid(), user.id, survey.id, h.db.prepare('SELECT circle_id FROM surveys WHERE id = ?').get(survey.id).circle_id);
+  assert.equal(Number(h.db.prepare(
+    "SELECT COUNT(*) AS n FROM feedback WHERE survey_id = ? AND user_id = ? AND type = 'survey_response'"
+  ).get(survey.id, user.id).n), 2);
+
+  const first = await h.del(`/api/admin/surveys/${survey.id}/responses/${response.id}`, { token: adminToken });
+  assert.equal(first.status, 409);
+  assert.equal(first.body.confirm_required, true);
+  assert.equal(first.body.linked_feedback, 2);
+
+  const removed = await h.del(`/api/admin/surveys/${survey.id}/responses/${response.id}?confirm=true`, { token: adminToken });
+  assert.equal(removed.status, 200, JSON.stringify(removed.body));
+  assert.equal(Number(h.db.prepare('SELECT COUNT(*) AS n FROM survey_responses WHERE id = ?').get(response.id).n), 0);
+  assert.equal(Number(h.db.prepare(
+    "SELECT COUNT(*) AS n FROM feedback WHERE survey_id = ? AND user_id = ? AND type = 'survey_response'"
+  ).get(survey.id, user.id).n), 0);
 });
 
 test('a draft nobody has answered is deleted without ceremony', async () => {

@@ -134,6 +134,7 @@
   </div>
   <div class="drawer-foot">
     <button class="btn btn-secondary" onclick="Shell.closeDrawer('fbDrawer')">Close</button>
+    <button class="btn btn-danger hide" id="dDelete" onclick="deleteFeedback(open?.id, this)">Delete feedback</button>
     <button class="btn btn-primary" id="dSave" onclick="saveTriage()">Save triage</button>
   </div>
 </aside>
@@ -144,6 +145,7 @@
 <script src="/assets/js/brand.js"></script>
 <script>
   Shell.admin('feedback');
+  const canDeleteFeedback = Auth.can('feedback.delete');
 
   const SOURCE_LABELS = {
     dev_circle: 'Dev Circle', survey: 'Survey answer', external_survey: 'Form run elsewhere',
@@ -179,6 +181,7 @@
     document.getElementById('dFeexNote').classList.toggle('hide', !isFeex);
     document.getElementById('dSurveyNote').classList.toggle('hide', open.source !== 'survey');
     document.getElementById('dSave').classList.toggle('hide', readOnly);
+    document.getElementById('dDelete').classList.toggle('hide', !canDeleteFeedback);
 
     document.querySelectorAll('#dStatus button').forEach(b =>
       b.classList.toggle('active', b.dataset.status === open.status));
@@ -206,6 +209,33 @@
         Shell.closeDrawer('fbDrawer');
         view === 'table' ? loadTable() : loadGroups();
       } catch (err) { showToast(err.message, 'error'); }
+    });
+  }
+
+  async function deleteFeedback(id, buttonOrEvent) {
+    if (!id) return;
+    const button = buttonOrEvent?.currentTarget || buttonOrEvent;
+    const remove = async () => {
+      await api(`/admin/feedback/${encodeURIComponent(id)}?confirm=true`, { method: 'DELETE' });
+      showToast('Feedback deleted');
+      if (open?.id === id) Shell.closeDrawer('fbDrawer');
+      view === 'table' ? loadTable() : loadGroups();
+    };
+
+    await busy(button, 'Deleting…', async () => {
+      try {
+        await api.del(`/admin/feedback/${encodeURIComponent(id)}`);
+      } catch (err) {
+        if (err.status !== 409 || !err.body?.confirm_required) {
+          showToast(err.message || 'Could not delete feedback', 'error');
+          return;
+        }
+        if (!window.confirm(err.message)) return;
+        try { await remove(); }
+        catch (confirmedError) { showToast(confirmedError.message || 'Could not delete feedback', 'error'); }
+        return;
+      }
+      await remove();
     });
   }
 
@@ -335,6 +365,7 @@
               <span>${formatDate(i.created_at)}</span>
             </div>
           </div>
+          ${canDeleteFeedback ? `<button class="btn btn-sm btn-ghost" onclick="deleteFeedback('${i.id}', event)">Delete</button>` : ''}
         </div>`).join('');
     } catch (err) {
       box.innerHTML = `<div class="q-answer"><div class="q-body">${escapeHtml(err.message)}</div></div>`;
@@ -369,7 +400,8 @@
     { key: 'content', label: 'What they said', wide: true },
     { key: 'came_from', label: 'Came from' },
     { key: 'source', label: 'Source' },
-    { key: 'created_at', label: 'When' }
+    { key: 'created_at', label: 'When' },
+    ...(canDeleteFeedback ? [{ key: 'actions', label: 'Actions' }] : [])
   ];
 
   let view = 'grouped';
@@ -435,6 +467,7 @@
         <td class="text-xs muted">${escapeHtml(r.came_from || '—')}</td>
         <td class="text-xs muted">${escapeHtml((r.source || '').replace(/_/g, ' '))}</td>
         <td class="text-xs muted">${formatDate(r.created_at)}</td>
+        ${canDeleteFeedback ? `<td><button class="btn btn-sm btn-ghost" onclick="deleteFeedback('${r.id}', event)">Delete</button></td>` : ''}
       </tr>`;
   }
 

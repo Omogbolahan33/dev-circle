@@ -84,6 +84,7 @@ sweeper.unref();
 const PERMISSIONS = [
   { key: 'members.read', label: 'View members', group: 'Members' },
   { key: 'members.write', label: 'Edit members and end their sessions', group: 'Members' },
+  { key: 'members.delete', label: 'Delete members and their associated data', group: 'Members' },
   { key: 'members.import', label: 'Bulk import members', group: 'Members' },
   { key: 'cohorts.read', label: 'View cohorts', group: 'Cohorts' },
   { key: 'cohorts.write', label: 'Create and edit cohorts', group: 'Cohorts' },
@@ -92,7 +93,10 @@ const PERMISSIONS = [
   { key: 'sessions.read', label: 'View scheduled sessions', group: 'Sessions' },
   { key: 'sessions.write', label: 'Schedule sessions and send reminders', group: 'Sessions' },
   { key: 'surveys.read', label: 'View surveys and responses', group: 'Surveys' },
+  { key: 'responses.delete', label: 'Delete individual survey responses', group: 'Surveys' },
+  { key: 'surveys.delete', label: 'Delete surveys and their responses', group: 'Surveys' },
   { key: 'surveys.write', label: 'Create and edit surveys', group: 'Surveys' },
+  { key: 'feedback.delete', label: 'Delete individual feedback items', group: 'Feedback' },
   { key: 'surveys.invite', label: 'Send survey invitations', group: 'Surveys' },
   { key: 'blasts.send', label: 'Send message blasts', group: 'Messaging' },
   // An onboarding form is authored with the survey builder over the same

@@ -167,7 +167,7 @@
       document.getElementById('quietStart').value = prefs.quiet_hours.start;
       document.getElementById('quietEnd').value = prefs.quiet_hours.end;
 
-      renderConsent(profile.consent);
+      renderConsent(profile.consent, profile.participation_consent);
     } catch (err) {
       showToast('Failed to load: ' + err.message, 'error');
     }
@@ -258,11 +258,11 @@
     });
   }
 
-  function renderConsent(consent) {
+  function renderConsent(consent, participationConsent = null) {
     const byChannel = {};
     consent.forEach(c => { byChannel[c.channel] = c; });
 
-    document.getElementById('consent').innerHTML = ALL_CHANNELS.map(ch => {
+    const channels = ALL_CHANNELS.map(ch => {
       const status = byChannel[ch] ? byChannel[ch].status : 'pending';
       const granted = status === 'granted';
 
@@ -281,7 +281,25 @@
             ${granted ? icon('close', 13) + ' Withdraw' : icon('check', 13) + ' Allow'}
           </button>
         </div>`;
-    }).join('');
+    }).join('') + (() => {
+      const granted = Boolean(participationConsent);
+      return `
+        <div class="consent-row">
+          <div style="flex:1">
+            <div class="consent-channel">Developer Circle participation</div>
+            <div class="consent-note">
+              ${granted
+                ? 'You consent to participating in Developer Circle. Withdrawing permanently deletes your account and all associated data.'
+                : 'Not consented. Agreeing records your participation consent.'}
+            </div>
+          </div>
+          <button class="btn btn-sm ${granted ? 'btn-ghost' : 'btn-secondary'}"
+                  onclick="toggleParticipationConsent(${granted}, this)">
+            ${granted ? icon('close', 13) + ' Withdraw & delete' : icon('check', 13) + ' Agree'}
+          </button>
+        </div>`;
+    })();
+    document.getElementById('consent').innerHTML = channels;
   }
 
   async function toggleConsent(channel, status, btn) {
@@ -295,8 +313,36 @@
           showToast(`${CHANNEL_LABELS[channel]} allowed`);
         }
         const data = await api.get('/users/consent');
-        renderConsent(data.consent);
+        renderConsent(data.consent, data.participation_consent);
       } catch (err) { showToast(err.message, 'error'); }
+    });
+  }
+
+  async function toggleParticipationConsent(granted, btn) {
+    await busy(btn, granted ? 'Preparing deletion…' : 'Saving consent…', async () => {
+      try {
+        if (!granted) {
+          await api.post('/users/participation-consent', {});
+          const data = await api.get('/users/consent');
+          renderConsent(data.consent, data.participation_consent);
+          showToast('Developer Circle participation consent recorded');
+          return;
+        }
+
+        let confirmation;
+        try {
+          await api.del('/users/participation-consent');
+        } catch (err) {
+          if (err.status !== 409 || !err.body?.confirm_required) throw err;
+          confirmation = err.body;
+        }
+        if (!confirmation) return;
+        const details = `${confirmation.survey_responses} survey response(s), ${confirmation.feedback} feedback item(s), and membership in ${confirmation.circles} circle(s)`;
+        if (!window.confirm(`${confirmation.error}\n\nThis will permanently delete ${details}. This cannot be undone. Continue?`)) return;
+
+        await api(`/users/participation-consent?confirm=true`, { method: 'DELETE' });
+        Auth.logout();
+      } catch (err) { showToast(err.message || 'Could not update participation consent', 'error'); }
     });
   }
 
