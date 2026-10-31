@@ -72,6 +72,17 @@
         </section>
 
         <section class="card">
+          <div class="card-title mb-4">Gender</div>
+          <div id="genderChart"><div class="skeleton" style="width:100%;height:150px"></div></div>
+        </section>
+
+        <section class="card">
+          <div class="card-title mb-4">Products members use</div>
+          <div id="participantProductChart"><div class="skeleton" style="width:100%;height:150px"></div></div>
+          <p class="hint">Members may select more than one product.</p>
+        </section>
+
+        <section class="card">
           <div class="card-title mb-4">API products in use</div>
           <div id="productChart"><div class="skeleton" style="width:100%;height:150px"></div></div>
         </section>
@@ -87,9 +98,24 @@
         </section>
 
         <section class="card">
-          <div class="card-title mb-4">Age band</div>
+          <div class="card-title mb-4">Age group</div>
           <div id="ageChart"><div class="skeleton" style="width:100%;height:150px"></div></div>
           <div class="coverage" id="coverage"></div>
+        </section>
+
+        <section class="card">
+          <div class="card-title mb-4">Participant segment</div>
+          <div id="segmentChart"><div class="skeleton" style="width:100%;height:150px"></div></div>
+        </section>
+
+        <section class="card">
+          <div class="card-title mb-4">Employment</div>
+          <div id="employmentChart"><div class="skeleton" style="width:100%;height:150px"></div></div>
+        </section>
+
+        <section class="card">
+          <div class="card-title mb-4">Preferred research</div>
+          <div id="researchChart"><div class="skeleton" style="width:100%;height:150px"></div></div>
         </section>
 
         <section class="card">
@@ -144,12 +170,17 @@
 
       const counts = rows => Object.fromEntries(rows.map(r => [r.label, r.count]));
 
-      bars('statusChart',  counts(demo.api_status),        v => v === 'production' ? 'var(--teal)' : 'var(--cd-gold)');
-      bars('sectorChart',  counts(demo.work_sector),       'var(--cd-blue)');
-      bars('productChart', counts(demo.api_products),      'var(--cd-gold)');
-      bars('depthChart',   counts(demo.engagement_depth),  'var(--teal)');
-      bars('ageChart',     counts(demo.age_band),          'var(--violet)');
-      bars('stateChart',   counts(demo.location_state),    'var(--cd-blue)');
+      bars('statusChart',          counts(demo.api_status),        v => v === 'production' ? 'var(--teal)' : 'var(--cd-gold)');
+      bars('sectorChart',          counts(demo.work_sector),       'var(--cd-blue)');
+      bars('genderChart',          counts(demo.gender),             'var(--violet)');
+      bars('participantProductChart', counts(demo.products),       'var(--cd-gold)', demo.total);
+      bars('productChart',         counts(demo.api_products),      'var(--cd-blue)');
+      bars('depthChart',           counts(demo.engagement_depth),  'var(--teal)');
+      bars('ageChart',             counts(demo.age_group),          'var(--violet)');
+      bars('segmentChart',         counts(demo.segment),           'var(--cd-blue)');
+      bars('employmentChart',      counts(demo.employment),         'var(--cd-gold)');
+      bars('researchChart',        counts(demo.preferred_research), 'var(--teal)');
+      bars('stateChart',           counts(demo.location_state),    'var(--cd-blue)');
 
       const kybDone = (demo.kyb.find(r => r.label === 'Completed') || { count: 0 }).count;
       bars('kybChart', { Completed: kybDone, Pending: demo.total - kybDone },
@@ -165,11 +196,22 @@
 
       // Say plainly how much of the base each demographic chart covers, so
       // nobody reads a distribution built on partial data as complete.
-      const gaps = Object.entries(demo.data_coverage)
-        .filter(([, missing]) => missing > 0)
-        .map(([field, missing]) => `${missing} of ${demo.total} missing ${field.replace('no_', '').replace(/_/g, ' ')}`);
-      document.getElementById('coverage').textContent = gaps.length
-        ? `Data coverage: ${gaps.join(' · ')}.`
+      const coverageLabels = [
+        ['no_age_group', 'age group'],
+        ['no_gender', 'gender'],
+        ['no_products', 'products used'],
+        ['no_api_products', 'API products'],
+        ['no_segment', 'participant segment'],
+        ['no_employment', 'employment'],
+        ['no_preferred_research', 'preferred research'],
+        ['no_location', 'state']
+      ];
+      const gaps = coverageLabels
+        .filter(([field]) => Number(demo.data_coverage[field] || 0) > 0)
+        .map(([field, label]) => `${demo.data_coverage[field]} of ${demo.total} missing ${label}`);
+      document.getElementById('coverage').textContent = !demo.total
+        ? 'No member data to assess.'
+        : gaps.length ? `Data coverage: ${gaps.join(' · ')}.`
         : 'Every member has these fields recorded.';
     } catch (err) {
       showToast('Failed to load analytics: ' + err.message, 'error');
@@ -178,7 +220,7 @@
 
   // colour may be a constant or a function of the label, so a chart can carry
   // the product's own meaning (sandbox gold, production teal, cohort colours).
-  function bars(id, data, colour) {
+  function bars(id, data, colour, denominator = null) {
     const entries = Object.entries(data).sort((a, b) => b[1] - a[1]);
     const el = document.getElementById(id);
 
@@ -189,6 +231,7 @@
 
     const max = Math.max(...entries.map(e => e[1]), 1);
     const total = entries.reduce((sum, e) => sum + e[1], 0);
+    const percentageBase = denominator || total;
 
     el.innerHTML = entries.map(([label, count]) => `
       <div class="bar-row">
@@ -196,7 +239,7 @@
         <span class="bar-track">
           <span class="bar-fill" style="width:${(count / max) * 100}%;background:${typeof colour === 'function' ? colour(label) : colour}"></span>
         </span>
-        <span class="bar-count">${count}${total ? ` · ${Math.round((count / total) * 100)}%` : ''}</span>
+        <span class="bar-count">${count}${percentageBase ? ` · ${Math.round((count / percentageBase) * 100)}%` : ''}</span>
       </div>`).join('');
   }
 

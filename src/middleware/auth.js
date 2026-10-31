@@ -94,6 +94,7 @@ const PERMISSIONS = [
   { key: 'sessions.write', label: 'Schedule sessions and send reminders', group: 'Sessions' },
   { key: 'surveys.read', label: 'View surveys and responses', group: 'Surveys' },
   { key: 'responses.delete', label: 'Delete individual survey responses', group: 'Surveys' },
+  { key: 'responses.update', label: 'Mark saved survey responses as submitted', group: 'Surveys' },
   { key: 'surveys.delete', label: 'Delete surveys and their responses', group: 'Surveys' },
   { key: 'surveys.write', label: 'Create and edit surveys', group: 'Surveys' },
   { key: 'feedback.delete', label: 'Delete individual feedback items', group: 'Feedback' },

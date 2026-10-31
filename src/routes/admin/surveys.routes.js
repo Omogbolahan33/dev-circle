@@ -645,6 +645,57 @@ router.get('/surveys/:id/responses', requirePermission('surveys.read'), async (r
   });
 });
 
+// POST /api/admin/surveys/:id/responses/:responseId/submit
+// An admin may finalize saved progress, but only when it passes the same server
+// validation as an ordinary submission. This changes response status without
+// recording a member engagement event.
+router.post('/surveys/:id/responses/:responseId/submit', requirePermission('responses.update'), async (req, res) => {
+  const survey = await db.prepare('SELECT * FROM surveys WHERE id = ? AND circle_id = ?')
+    .get(req.params.id, req.circleId);
+  if (!survey) return res.status(404).json({ error: 'Survey not found' });
+
+  const response = await db.prepare(`
+    SELECT id, user_id, answers, completed_at
+    FROM survey_responses WHERE id = ? AND survey_id = ?
+  `).get(req.params.responseId, survey.id);
+  if (!response) return res.status(404).json({ error: 'Survey response not found' });
+  if (response.completed_at) return res.status(409).json({ error: 'This response is already submitted.' });
+
+  const hydrated = surveyForm.hydrate(survey);
+  const answers = parseJSON(response.answers, {});
+  if (!answers || typeof answers !== 'object' || Array.isArray(answers)) {
+    return res.status(400).json({ error: 'Saved answers are not a valid response object.' });
+  }
+  const checked = surveyForm.checkResponse(hydrated.questions, answers);
+  if (!checked.ok) {
+    return res.status(400).json({
+      error: checked.missing.length
+        ? 'This response cannot be marked submitted because required answers are missing.'
+        : 'This response contains answers that are no longer valid for the survey.',
+      missing: checked.missing,
+      errors: checked.errors
+    });
+  }
+
+  let completed = false;
+  let filedFeedback = 0;
+  await db.atomic(async () => {
+    const updated = await db.prepare(`
+      UPDATE survey_responses
+      SET answers = ?, questions = ?, completed_at = datetime('now')
+      WHERE id = ? AND survey_id = ? AND completed_at IS NULL
+    `).run(JSON.stringify(checked.answers), JSON.stringify(hydrated.questions), response.id, survey.id);
+    completed = Number(updated?.changes || 0) > 0;
+    if (!completed) return;
+
+    const filed = await verbatims.record(response.user_id || null, survey, checked.answers, { responseId: response.id });
+    filedFeedback = filed.filed;
+  });
+
+  if (!completed) return res.status(409).json({ error: 'This response is already submitted.' });
+  res.json({ message: 'Response marked submitted', filed_feedback: filedFeedback });
+});
+
 // DELETE /api/admin/surveys/:id/responses/:responseId
 // Survey free-text answers are also filed into feedback for cross-survey
 // analysis. Removing one response removes those linked verbatims as well, so

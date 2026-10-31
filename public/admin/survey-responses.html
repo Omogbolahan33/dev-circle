@@ -62,6 +62,16 @@
     .rank-pos { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--blue-ink); }
 
     .asked-note { font-size: var(--fs-xs); color: var(--gold-ink); margin-bottom: var(--sp-3); }
+
+    .actions-menu { position: relative; display: inline-block; }
+    .actions-menu > summary { list-style: none; cursor: pointer; display: inline-flex; align-items: center; gap: var(--sp-2); }
+    .actions-menu > summary::-webkit-details-marker { display: none; }
+    .actions-menu-pop { position: absolute; z-index: 40; top: calc(100% + 6px); right: 0; min-width: 210px; padding: var(--sp-1); border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface-3); box-shadow: 0 10px 28px rgba(0,0,0,.18); }
+    .actions-menu-item { display: flex; align-items: center; width: 100%; padding: var(--sp-2) var(--sp-3); border: 0; border-radius: var(--r-sm); background: transparent; color: var(--white); font: inherit; font-size: var(--fs-sm); text-align: left; text-decoration: none; cursor: pointer; white-space: nowrap; }
+    .actions-menu-item:hover:not(:disabled) { background: var(--tint-2); text-decoration: none; }
+    .actions-menu-item.danger { color: var(--rose-ink); }
+    .actions-menu-item:disabled { opacity: .45; cursor: not-allowed; }
+    .actions-menu-divider { height: 1px; margin: var(--sp-1) var(--sp-2); background: var(--line); }
   </style>
 </head>
 <body>
@@ -116,8 +126,6 @@
             </select>
           </label>
           <span class="result-count" id="responseFilterCount"></span>
-          <span class="spacer"></span>
-          <button class="btn btn-sm btn-danger hide" id="deleteInProgressBtn" onclick="deleteInProgress(this)">Delete all in progress</button>
         </div>
         <div class="table-shell">
           <div class="table-scroll">
@@ -236,13 +244,26 @@
       document.getElementById('subtitle').textContent =
         [survey.description, survey.engagement_mode, `~${survey.time_estimate_min} min`].filter(Boolean).join(' · ');
 
+      const canDeleteResponses = Auth.can('responses.delete');
       document.getElementById('actions').innerHTML = `
         ${badge(survey.status, survey.status === 'active' ? 'active' : survey.status === 'draft' ? 'warn' : 'inactive')}
-        ${survey.public_path
-          ? `<button class="btn btn-sm btn-secondary" onclick="copyLink(this)">Copy link</button>` : ''}
-        <a class="btn btn-sm btn-secondary" href="/admin/survey-new.html?id=${survey.id}">Edit</a>
-        <button class="btn btn-sm btn-secondary" onclick="openImport()">Import responses</button>
-        <button class="btn btn-sm btn-secondary" onclick="exportResponses(this)">Export CSV</button>`;
+        <details class="actions-menu" id="surveyActionsMenu">
+          <summary class="btn btn-sm btn-secondary" aria-label="More survey actions">More actions <span aria-hidden="true">⌄</span></summary>
+          <div class="actions-menu-pop" aria-label="Survey actions">
+            ${survey.public_path
+              ? '<button class="actions-menu-item" onclick="copyLink(this); closeActionsMenu(this)">Copy link</button>' : ''}
+            <a class="actions-menu-item" href="/admin/survey-new.html?id=${survey.id}">Edit survey</a>
+            <button class="actions-menu-item" onclick="openImport(); closeActionsMenu(this)">Import responses</button>
+            <button class="actions-menu-item" onclick="exportResponses(this); closeActionsMenu(this)">Export CSV</button>
+            ${canDeleteResponses ? `<div class="actions-menu-divider" role="separator"></div>
+              <button class="actions-menu-item danger" id="deleteInProgressAction" disabled onclick="deleteInProgress(this); closeActionsMenu(this)">Delete all in progress</button>` : ''}
+          </div>
+        </details>`;
+
+      window.closeActionsMenu = (element) => {
+        const menu = element?.closest('details.actions-menu');
+        if (menu) menu.open = false;
+      };
 
       window.copyLink = async (btn) => {
         await busy(btn, 'Copying…', async () => {
@@ -503,6 +524,7 @@
   function renderIndividual(questions, responses) {
     const table = document.getElementById('responseTable');
     const canDelete = Auth.can('responses.delete');
+    const canMarkSubmitted = Auth.can('responses.update');
     const completed = responses.filter(r => Boolean(r.completed_at));
     const inProgress = responses.filter(r => !r.completed_at);
     const visible = responseStatusFilter === 'completed' ? completed
@@ -515,9 +537,11 @@
       <option value="in_progress">In progress (${inProgress.length})</option>`;
     filter.value = responseStatusFilter;
     document.getElementById('responseFilterCount').textContent = `Showing ${visible.length} of ${responses.length}`;
-    const bulkDelete = document.getElementById('deleteInProgressBtn');
-    bulkDelete.classList.toggle('hide', !canDelete);
-    bulkDelete.disabled = !inProgress.length;
+    const bulkDelete = document.getElementById('deleteInProgressAction');
+    if (bulkDelete) {
+      bulkDelete.disabled = !inProgress.length;
+      bulkDelete.textContent = `Delete all in progress (${inProgress.length})`;
+    }
 
     if (!visible.length) {
       const title = responseStatusFilter === 'in_progress' ? 'No responses in progress'
@@ -536,7 +560,7 @@
           <th>Respondent</th>
           ${asked.map(q => `<th>${escapeHtml(q.text.slice(0, 34))}${q.text.length > 34 ? '…' : ''}</th>`).join('')}
           <th>Submitted</th>
-          ${canDelete ? '<th>Actions</th>' : ''}
+          ${visible.some(r => canDelete || (canMarkSubmitted && !r.completed_at)) ? '<th>Actions</th>' : ''}
         </tr>
       </thead>
       <tbody>
@@ -567,9 +591,31 @@
               return `<td class="text-sm">${escapeHtml(text)}</td>`;
             }).join('')}
             <td class="text-xs muted nowrap">${r.completed_at ? formatDate(r.completed_at) : '<span class="dim">In progress</span>'}</td>
-            ${canDelete ? `<td onclick="event.stopPropagation()"><button class="btn btn-sm btn-ghost" onclick="deleteResponse('${r.id}', event)">Delete</button></td>` : ''}
+            ${canDelete || (canMarkSubmitted && !r.completed_at) ? `<td onclick="event.stopPropagation()"><details class="actions-menu">
+              <summary class="btn btn-sm btn-ghost" aria-label="More actions for response">More</summary>
+              <div class="actions-menu-pop" aria-label="Response actions">
+                ${canMarkSubmitted && !r.completed_at ? `<button class="actions-menu-item" onclick="markResponseSubmitted('${r.id}', this); closeActionsMenu(this)">Mark as submitted</button>` : ''}
+                ${canDelete ? `<button class="actions-menu-item danger" onclick="deleteResponse('${r.id}', event); closeActionsMenu(this)">Delete response</button>` : ''}
+              </div>
+            </details></td>` : ''}
           </tr>`).join('')}
       </tbody>`;
+  }
+
+  async function markResponseSubmitted(responseId, btn) {
+    if (!window.confirm('Mark this saved response as submitted? Required answers will be validated, and it will appear in completed results.')) return;
+    const path = `/admin/surveys/${encodeURIComponent(surveyId)}/responses/${encodeURIComponent(responseId)}/submit`;
+    await busy(btn, 'Submitting…', async () => {
+      try {
+        const result = await api.post(path, {});
+        showToast(result.message || 'Response marked submitted');
+        await load();
+      } catch (err) {
+        const missing = (err.body?.missing || []).map(id => responseQuestions.find(q => q.id === id)?.text || id);
+        const detail = missing.length ? ` Missing: ${missing.join(', ')}.` : '';
+        showToast(`${err.message || 'Could not mark response submitted'}${detail}`, 'error');
+      }
+    });
   }
 
   async function deleteResponse(responseId, event) {
@@ -626,7 +672,11 @@
         }
       }
     });
-    if (btn) btn.disabled = !allResponses.some(r => !r.completed_at);
+    if (btn) {
+      const remaining = allResponses.filter(r => !r.completed_at).length;
+      btn.disabled = !remaining;
+      btn.textContent = `Delete all in progress (${remaining})`;
+    }
   }
 
   async function exportResponses(btn) {
@@ -770,6 +820,15 @@
       }
     });
   }
+
+  document.addEventListener('click', event => {
+    document.querySelectorAll('.actions-menu[open]').forEach(menu => {
+      if (!menu.contains(event.target)) menu.open = false;
+    });
+  }, true);
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape') document.querySelectorAll('.actions-menu[open]').forEach(menu => { menu.open = false; });
+  });
 
   document.querySelectorAll('.tab[data-panel]').forEach(tab => {
     tab.addEventListener('click', () => {

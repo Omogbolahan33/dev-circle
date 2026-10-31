@@ -139,26 +139,20 @@ router.get('/dashboard', requirePermission('members.read'), async (req, res) => 
 });
 
 // GET /api/admin/demography
-// The blueprint asks for an at-a-glance view of demography, age, and products.
-// None of that data existed before; these are the real distributions.
+// The analytics view uses the profile fields members actually provide. In
+// particular, age is their selected age group, not a DOB-derived estimate;
+// participant products remain distinct from API products in use.
 async function loadDemography(circleId) {
   // Aggregations stay in SQL. Shipping every member row to Node to GROUP BY
   // is the plan that gets worse as the base grows; UNION ALL is one round-trip
-  // and the same JSON the page already reads.
-  // Age is computed once in the CTE — the previous plan ran julianday twice
-  // per member, per UNION arm.
+  // and the same JSON the page already reads. Multi-select product fields count
+  // distinct members per option, not duplicate selections.
   return db.prepare(`
     WITH scoped AS (
       SELECT u.id, u.work_sector, u.location_state, u.gender, u.api_status,
-             u.kyb_completed, u.api_products, u.engagement_streak,
-             u.preferred_channels, u.preferred_days, u.date_of_birth,
-             CASE
-               WHEN u.date_of_birth IS NULL OR u.date_of_birth = '' THEN 'Unspecified'
-               WHEN (julianday('now') - julianday(u.date_of_birth)) / 365.25 < 25 THEN 'Under 25'
-               WHEN (julianday('now') - julianday(u.date_of_birth)) / 365.25 < 35 THEN '25–34'
-               WHEN (julianday('now') - julianday(u.date_of_birth)) / 365.25 < 45 THEN '35–44'
-               ELSE '45+'
-             END as age_band
+             u.kyb_completed, u.api_products, u.products, u.age_group, u.segment,
+             u.employment, u.preferred_research, u.engagement_streak,
+             u.preferred_channels, u.preferred_days
       FROM users u
       JOIN circle_members cm ON cm.user_id = u.id
       WHERE cm.circle_id = ?
@@ -185,10 +179,24 @@ async function loadDemography(circleId) {
     SELECT 'kyb', CASE WHEN CAST(kyb_completed AS TEXT) IN ('1', 'true', 't') THEN 'Completed' ELSE 'Pending' END, COUNT(*)
       FROM scoped GROUP BY 2
     UNION ALL
-    SELECT 'age_band', age_band, COUNT(*)
+    SELECT 'age_group', COALESCE(NULLIF(age_group, ''), 'Unspecified'), COUNT(*)
       FROM scoped GROUP BY 2
     UNION ALL
-    SELECT 'api_products', json_each.value, COUNT(*)
+    SELECT 'segment', COALESCE(NULLIF(segment, ''), 'Unspecified'), COUNT(*)
+      FROM scoped GROUP BY 2
+    UNION ALL
+    SELECT 'employment', COALESCE(NULLIF(employment, ''), 'Unspecified'), COUNT(*)
+      FROM scoped GROUP BY 2
+    UNION ALL
+    SELECT 'preferred_research', COALESCE(NULLIF(preferred_research, ''), 'Unspecified'), COUNT(*)
+      FROM scoped GROUP BY 2
+    UNION ALL
+    SELECT 'products', json_each.value, COUNT(DISTINCT scoped.id)
+      FROM scoped, json_each(scoped.products)
+      WHERE COALESCE(json_each.value, '') != ''
+      GROUP BY 2
+    UNION ALL
+    SELECT 'api_products', json_each.value, COUNT(DISTINCT scoped.id)
       FROM scoped, json_each(scoped.api_products)
       WHERE COALESCE(json_each.value, '') != ''
       GROUP BY 2
@@ -224,8 +232,8 @@ async function loadDemography(circleId) {
     UNION ALL
     SELECT 'coverage', 'total', COUNT(*) FROM scoped
     UNION ALL
-    SELECT 'coverage', 'no_date_of_birth',
-           SUM(CASE WHEN date_of_birth IS NULL OR date_of_birth = '' THEN 1 ELSE 0 END) FROM scoped
+    SELECT 'coverage', 'no_age_group',
+           SUM(CASE WHEN age_group IS NULL OR age_group = '' THEN 1 ELSE 0 END) FROM scoped
     UNION ALL
     SELECT 'coverage', 'no_gender',
            SUM(CASE WHEN gender IS NULL OR gender = '' THEN 1 ELSE 0 END) FROM scoped
@@ -234,7 +242,19 @@ async function loadDemography(circleId) {
            SUM(CASE WHEN location_state IS NULL OR location_state = '' THEN 1 ELSE 0 END) FROM scoped
     UNION ALL
     SELECT 'coverage', 'no_products',
+           SUM(CASE WHEN products IS NULL OR products = '' OR products = '[]' THEN 1 ELSE 0 END) FROM scoped
+    UNION ALL
+    SELECT 'coverage', 'no_api_products',
            SUM(CASE WHEN api_products IS NULL OR api_products = '' OR api_products = '[]' THEN 1 ELSE 0 END) FROM scoped
+    UNION ALL
+    SELECT 'coverage', 'no_segment',
+           SUM(CASE WHEN segment IS NULL OR segment = '' THEN 1 ELSE 0 END) FROM scoped
+    UNION ALL
+    SELECT 'coverage', 'no_employment',
+           SUM(CASE WHEN employment IS NULL OR employment = '' THEN 1 ELSE 0 END) FROM scoped
+    UNION ALL
+    SELECT 'coverage', 'no_preferred_research',
+           SUM(CASE WHEN preferred_research IS NULL OR preferred_research = '' THEN 1 ELSE 0 END) FROM scoped
   `).all(circleId);
 }
 
@@ -254,8 +274,15 @@ function presentDemography(rows) {
     work_sector: ranked('work_sector'),
     location_state: ranked('location_state').slice(0, 15),
     gender: ranked('gender'),
-    age_band: ranked('age_band'),
+    age_group: ranked('age_group'),
+    // Keep the old key as an alias for clients that still ask for it; this is
+    // now the member-selected age group rather than a DOB-derived estimate.
+    age_band: ranked('age_group'),
+    products: ranked('products'),
     api_products: ranked('api_products'),
+    segment: ranked('segment'),
+    employment: ranked('employment'),
+    preferred_research: ranked('preferred_research'),
     api_status: ranked('api_status'),
     kyb: ranked('kyb'),
     engagement_depth: ranked('engagement_depth'),
@@ -263,10 +290,14 @@ function presentDemography(rows) {
     preferred_channels: ranked('preferred_channels'),
     preferred_days: ranked('preferred_days'),
     data_coverage: {
-      no_date_of_birth: Number(coverage.no_date_of_birth || 0),
+      no_age_group: Number(coverage.no_age_group || 0),
       no_gender: Number(coverage.no_gender || 0),
       no_location: Number(coverage.no_location || 0),
-      no_products: Number(coverage.no_products || 0)
+      no_products: Number(coverage.no_products || 0),
+      no_api_products: Number(coverage.no_api_products || 0),
+      no_segment: Number(coverage.no_segment || 0),
+      no_employment: Number(coverage.no_employment || 0),
+      no_preferred_research: Number(coverage.no_preferred_research || 0)
     }
   };
 }

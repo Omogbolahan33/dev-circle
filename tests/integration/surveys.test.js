@@ -634,6 +634,44 @@ test('a survey can be deleted, and one with answers takes a second press', async
     .get(survey.id).n), 0, 'and linked survey verbatims do not remain in Feedback');
 });
 
+test('an admin can mark a valid saved response as submitted', async () => {
+  const survey = await published([{ id: 'q1', type: 'text', text: 'What changed?', required: true }]);
+  const { user, token } = await answering(survey);
+  await h.call('PATCH', `/api/users/surveys/${survey.id}/progress`, {
+    token, body: { answers: { q1: 'The flow is clearer now.' } }
+  });
+  const response = h.db.prepare(
+    'SELECT id FROM survey_responses WHERE survey_id = ? AND user_id = ?'
+  ).get(survey.id, user.id);
+
+  const marked = await h.post(
+    `/api/admin/surveys/${survey.id}/responses/${response.id}/submit`, {}, { token: adminToken }
+  );
+  assert.equal(marked.status, 200, JSON.stringify(marked.body));
+  assert.equal(marked.body.message, 'Response marked submitted');
+  const saved = h.db.prepare('SELECT completed_at, questions FROM survey_responses WHERE id = ?').get(response.id);
+  assert.ok(saved.completed_at);
+  assert.ok(JSON.parse(saved.questions).some(q => q.id === 'q1'));
+  assert.equal(Number(h.db.prepare('SELECT COUNT(*) AS c FROM feedback WHERE response_id = ?').get(response.id).c), 1);
+  assert.equal(Number(h.db.prepare("SELECT COUNT(*) AS c FROM engagement_history WHERE user_id = ? AND type = 'survey_completed'").get(user.id).c), 0,
+    'admin reclassification does not fabricate member engagement');
+});
+
+test('an in-progress response with missing required answers cannot be marked submitted', async () => {
+  const survey = await published([{ id: 'q1', type: 'text', text: 'Required answer', required: true }]);
+  const { user, token } = await answering(survey);
+  const response = h.db.prepare(
+    'SELECT id FROM survey_responses WHERE survey_id = ? AND user_id = ?'
+  ).get(survey.id, user.id);
+
+  const marked = await h.post(
+    `/api/admin/surveys/${survey.id}/responses/${response.id}/submit`, {}, { token: adminToken }
+  );
+  assert.equal(marked.status, 400);
+  assert.deepEqual(marked.body.missing, ['q1']);
+  assert.equal(h.db.prepare('SELECT completed_at FROM survey_responses WHERE id = ?').get(response.id).completed_at, null);
+});
+
 test('unfinished responses can be filtered and bulk-deleted with their saved progress', async () => {
   const survey = await published([{ type: 'text', text: 'Anything to add?' }]);
   const { user, token } = await answering(survey);

@@ -137,28 +137,45 @@ const paths = {
           work_sector: arrayOf(object({ label: str('Sector'), count: int('Members') }), 'By industry'),
           location_state: arrayOf(object({ label: str('State'), count: int('Members') }), 'Top 15 states'),
           gender: arrayOf(object({ label: str('Gender'), count: int('Members') }), 'By gender'),
-          age_band: arrayOf(object({ label: str('Band'), count: int('Members') }), 'Under 25 / 25–34 / 35–44 / 45+'),
-          api_products: arrayOf(object({ label: str('Product'), count: int('Members') }), 'A member counts once per product'),
+          age_group: arrayOf(object({ label: str('Age group'), count: int('Members') }), 'Member-selected age group'),
+          age_band: arrayOf(object({ label: str('Age group'), count: int('Members') }), 'Legacy alias for age_group'),
+          products: arrayOf(object({ label: str('Participant product'), count: int('Members') }), 'Member-selected products; members may appear in more than one'),
+          api_products: arrayOf(object({ label: str('API product'), count: int('Members') }), 'API products in use; a member counts once per product'),
+          segment: arrayOf(object({ label: str('Segment'), count: int('Members') }), 'Participant segment'),
+          employment: arrayOf(object({ label: str('Employment'), count: int('Members') }), 'Employment type'),
+          preferred_research: arrayOf(object({ label: str('Research type'), count: int('Members') }), 'Preferred research activity'),
           api_status: arrayOf(object({ label: str('Stage'), count: int('Members') }), 'Sandbox against production'),
           kyb: arrayOf(object({ label: str('Completed or Pending'), count: int('Members') }), 'KYB progress'),
           engagement_depth: arrayOf(object({ label: str('Band'), count: int('Members') }), 'How many surveys members have answered'),
           data_coverage: object({
-            no_date_of_birth: int('Members with no date of birth'),
+            no_age_group: int('Members with no age group'),
             no_gender: int('Members with no gender'),
             no_location: int('Members with no state'),
-            no_products: int('Members with no products recorded')
-          }, { description: 'How much of the base is missing from each breakdown above.' })
+            no_products: int('Members with no participant products recorded'),
+            no_api_products: int('Members with no API products recorded'),
+            no_segment: int('Members with no participant segment'),
+            no_employment: int('Members with no employment type'),
+            no_preferred_research: int('Members with no preferred research type')
+          }, { description: 'How much of the base is missing from each profile-field breakdown.' })
         }), {
           total: 248,
           work_sector: [{ label: 'Fintech', count: 121 }, { label: 'Unspecified', count: 44 }],
           location_state: [{ label: 'Lagos', count: 160 }],
           gender: [{ label: 'male', count: 141 }, { label: 'female', count: 92 }],
-          age_band: [{ label: '25–34', count: 118 }],
+          age_group: [{ label: '25 - 34', count: 118 }],
+          age_band: [{ label: '25 - 34', count: 118 }],
+          products: [{ label: 'Mobile App', count: 143 }],
           api_products: [{ label: 'lending', count: 143 }],
+          segment: [{ label: 'Single Product', count: 118 }],
+          employment: [{ label: 'Salary Earner', count: 136 }],
+          preferred_research: [{ label: 'User interviews', count: 82 }],
           api_status: [{ label: 'sandbox', count: 191 }],
           kyb: [{ label: 'Pending', count: 173 }],
           engagement_depth: [{ label: 'Never responded', count: 61 }],
-          data_coverage: { no_date_of_birth: 88, no_gender: 15, no_location: 21, no_products: 40 }
+          data_coverage: {
+            no_age_group: 88, no_gender: 15, no_location: 21, no_products: 40,
+            no_api_products: 28, no_segment: 49, no_employment: 33, no_preferred_research: 57
+          }
         })
       }
     })
@@ -1892,6 +1909,29 @@ const paths = {
         400: json('The copy could not be normalised, or the circle is unknown.', ref('Error'),
           { error: 'Unknown circle_id' }),
         404: json('No such survey.', ref('Error'), { error: 'Survey not found' })
+      }
+    })
+  },
+
+  '/admin/surveys/{id}/responses/{responseId}/submit': {
+    post: op({
+      tag: 'Admin · Surveys',
+      permission: 'responses.update',
+      operationId: 'markSurveyResponseSubmitted',
+      summary: 'Mark a valid saved response as submitted',
+      description: 'Validates saved answers against the survey, records the question snapshot and linked free-text feedback, then marks the response complete. Missing required answers are refused. This status change does not create a member engagement event.',
+      parameters: [path('id', 'Survey id'), path('responseId', 'Response id')],
+      requestBody: jsonBody(object({}), {}, { required: false }),
+      responses: {
+        200: json('The response is now submitted.', object({
+          message: str('Human summary'), filed_feedback: int('New feedback items filed')
+        }), { message: 'Response marked submitted', filed_feedback: 1 }),
+        400: json('Saved answers are incomplete or invalid.', ref('Error'), {
+          error: 'This response cannot be marked submitted because required answers are missing.',
+          missing: ['q1']
+        }),
+        404: json('Survey or response not found in this circle.', ref('Error'), { error: 'Survey response not found' }),
+        409: json('The response is already submitted.', ref('Error'), { error: 'This response is already submitted.' })
       }
     })
   },
