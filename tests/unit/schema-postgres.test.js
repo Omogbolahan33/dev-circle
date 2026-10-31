@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 
 const { SCHEMA_POSTGRES } = require('../../src/db/schema.postgres');
+const { statementsIn } = require('../../src/db/sql');
 
 // The Postgres schema is applied statement-by-statement (pg.exec splits on
 // ';'). A CREATE TABLE that REFERENCES another table must therefore appear
@@ -23,6 +24,17 @@ function createTableName(stmt) {
 function referencedTables(stmt) {
   return [...stmt.matchAll(/REFERENCES\s+(\w+)\s*\(/gi)].map(m => m[1]);
 }
+
+test('Postgres SQL splitter ignores semicolons inside comments', () => {
+  assert.deepEqual(statementsIn('-- a comment; with punctuation\nCREATE TABLE example (id TEXT);\nSELECT 1;'), [
+    'CREATE TABLE example (id TEXT)',
+    'SELECT 1'
+  ]);
+
+  const schemaStatements = statementsIn(SCHEMA_POSTGRES);
+  assert.ok(schemaStatements.some(s => /CREATE TABLE IF NOT EXISTS developer_circle_consent/i.test(s)));
+  assert.ok(!schemaStatements.some(s => /^withdrawal\b/i.test(s)));
+});
 
 test('postgres schema creates referenced tables before their foreign keys', () => {
   const created = new Set();
