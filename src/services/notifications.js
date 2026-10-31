@@ -202,6 +202,23 @@ const insertDelivery = () => db.prepare(`
   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 `);
 
+// A contact date means an actual outbound research touch, not a queued,
+// simulated, failed, or in-portal item. Sign-in codes are sent by sendDirect
+// and are deliberately outside this list.
+const CONTACT_SOURCE_TYPES = new Set([
+  'blast', 'survey_invite', 'survey_reminder', 'session_invite', 'session_reminder'
+]);
+
+async function recordSuccessfulContact(userId, sourceType, channel, status, sentAt) {
+  if (status !== 'sent' || channel === 'in_portal' || !CONTACT_SOURCE_TYPES.has(sourceType)) return;
+  await db.prepare(`
+    UPDATE users SET last_contacted = CASE
+      WHEN last_contacted IS NULL OR last_contacted < ? THEN ?
+      ELSE last_contacted END
+    WHERE id = ?
+  `).run(sentAt, sentAt, userId);
+}
+
 // Send one message to one member across every channel they allow.
 // `workflow` + `templateData` let a caller name the business event (a session
 // invite, a gift, a feedback reply…) so the email it renders uses the matching
@@ -245,11 +262,14 @@ async function notify(user, {
       outcome = { status: 'failed', ref: null, error: err.message };
     }
 
+    const sentAt = ['sent', 'simulated'].includes(outcome.status)
+      ? new Date().toISOString().replace('T', ' ').slice(0, 19)
+      : null;
     await insertDelivery().run(
       uuid(), sourceType, sourceId, user.id, channel,
-      outcome.status, outcome.error || null, outcome.ref || null,
-      ['sent', 'simulated'].includes(outcome.status) ? new Date().toISOString().replace('T', ' ').slice(0, 19) : null
+      outcome.status, outcome.error || null, outcome.ref || null, sentAt
     );
+    await recordSuccessfulContact(user.id, sourceType, channel, outcome.status, sentAt);
     results.push({ channel, status: outcome.status, reason: outcome.error || null });
   }
 
@@ -396,11 +416,14 @@ async function drainDeferred() {
       source_id: source?.source_id || null
     });
 
+    const sentAt = new Date().toISOString().replace('T', ' ').slice(0, 19);
     await db.prepare(`
       UPDATE message_deliveries
       SET status = ?, reason = ?, provider_ref = ?, sent_at = datetime('now')
       WHERE id = ?
     `).run(outcome.status, outcome.error || null, outcome.ref || null, row.id);
+    await recordSuccessfulContact(row.user_id, row.source_type, row.channel, outcome.status,
+      outcome.status === 'sent' ? sentAt : null);
 
     released++;
   }

@@ -1670,6 +1670,41 @@ function define(db) {
         addColumn('users', 'last_contacted', 'TEXT');
         addColumn('users', 'sessions', 'INTEGER DEFAULT 0');
         addColumn('users', 'preferred_research', 'TEXT');
+        // Recover the latest real research contact for members with delivery
+        // history. Simulated, failed, queued and in-portal items are not contact.
+        db.exec(`
+          UPDATE users
+             SET last_contacted = (
+               SELECT MAX(d.sent_at) FROM message_deliveries d
+               WHERE d.user_id = users.id
+                 AND d.status = 'sent' AND d.channel <> 'in_portal'
+                 AND d.source_type IN ('blast','survey_invite','survey_reminder','session_invite','session_reminder')
+             )
+           WHERE last_contacted IS NULL
+             AND EXISTS (
+               SELECT 1 FROM message_deliveries d
+               WHERE d.user_id = users.id
+                 AND d.status = 'sent' AND d.channel <> 'in_portal'
+                 AND d.source_type IN ('blast','survey_invite','survey_reminder','session_invite','session_reminder')
+             );
+        `);
+      }
+    },
+    {
+      id: 36,
+      name: 'per_member_session_attendance',
+      up() {
+        db.exec(`
+          CREATE TABLE IF NOT EXISTS session_attendance (
+            session_id TEXT NOT NULL REFERENCES scheduled_sessions(id) ON DELETE CASCADE,
+            user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            status TEXT NOT NULL CHECK(status IN ('attended','no_show')),
+            marked_by TEXT,
+            marked_at TEXT DEFAULT (datetime('now')),
+            PRIMARY KEY(session_id, user_id)
+          );
+          CREATE INDEX IF NOT EXISTS idx_session_attendance_user ON session_attendance(user_id);
+        `);
       }
     }
   ];

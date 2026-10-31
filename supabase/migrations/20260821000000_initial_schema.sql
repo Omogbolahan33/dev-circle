@@ -335,6 +335,16 @@
     UNIQUE (session_id, offset_minutes)
   );
 
+  CREATE TABLE IF NOT EXISTS session_attendance (
+    session_id TEXT NOT NULL REFERENCES scheduled_sessions(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    status TEXT NOT NULL CHECK(status IN ('attended','no_show')),
+    marked_by TEXT,
+    marked_at TIMESTAMPTZ DEFAULT NOW(),
+    PRIMARY KEY(session_id, user_id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_session_attendance_user ON session_attendance(user_id);
+
   -- Sessions (auth)
   CREATE TABLE IF NOT EXISTS sessions (
     token_hash TEXT PRIMARY KEY,

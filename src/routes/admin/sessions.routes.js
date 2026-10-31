@@ -74,6 +74,57 @@ router.get('/:id', requirePermission('sessions.read'), async (req, res) => {
   });
 });
 
+// POST /api/admin/sessions/:id/attendance
+// An elapsed session is not proof that an invited member attended. Staff record
+// attendance explicitly; the user-level research-session total follows only
+// actual attended marks (imports remain the historical baseline).
+router.post('/:id/attendance', requirePermission('sessions.write'), async (req, res) => {
+  const { user_id, status } = req.body || {};
+  if (!user_id) return res.status(400).json({ error: 'user_id is required' });
+  if (!['attended', 'no_show'].includes(status)) {
+    return res.status(400).json({ error: 'status must be attended or no_show' });
+  }
+
+  const session = await db.prepare(
+    'SELECT id FROM scheduled_sessions WHERE id = ? AND circle_id = ?'
+  ).get(req.params.id, req.circleId);
+  if (!session) return res.status(404).json({ error: 'Session not found' });
+
+  const member = await db.prepare(`
+    SELECT u.id FROM users u
+    JOIN circle_members cm ON cm.user_id = u.id
+    WHERE u.id = ? AND cm.circle_id = ?
+  `).get(user_id, req.circleId);
+  if (!member) return res.status(404).json({ error: 'Member not found in this circle' });
+
+  await db.atomic(async () => {
+    const previous = await db.prepare(
+      'SELECT status FROM session_attendance WHERE session_id = ? AND user_id = ?'
+    ).get(session.id, user_id);
+    const before = previous?.status === 'attended' ? 1 : 0;
+    const after = status === 'attended' ? 1 : 0;
+
+    await db.prepare(`
+      INSERT INTO session_attendance (session_id, user_id, status, marked_by, marked_at)
+      VALUES (?, ?, ?, ?, datetime('now'))
+      ON CONFLICT(session_id, user_id) DO UPDATE SET
+        status = excluded.status, marked_by = excluded.marked_by, marked_at = datetime('now')
+    `).run(session.id, user_id, status, req.admin.id);
+
+    const delta = after - before;
+    if (delta) {
+      await db.prepare(`
+        UPDATE users
+        SET sessions = CASE WHEN sessions + ? < 0 THEN 0 ELSE sessions + ? END
+        WHERE id = ?
+      `).run(delta, delta, user_id);
+    }
+  });
+
+  const current = await db.prepare('SELECT sessions FROM users WHERE id = ?').get(user_id);
+  res.json({ session_id: session.id, user_id, attendance: status, sessions: Number(current?.sessions || 0) });
+});
+
 function validate(body) {
   const { title, scheduled_for, type, target_type, channels, reminder_offsets } = body;
 

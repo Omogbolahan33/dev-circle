@@ -99,6 +99,16 @@ test('a column alias in an uploaded sheet still lands', () => {
   assert.equal(normalised.email, 'ada@zilla.ng', 'email is the identity key and is lowercased');
 });
 
+test('a formatted member CSV with email/name headers maps its rows', () => {
+  const rows = parseCSV('email,name,products,status,sessions\na@b.ng,Ada Obi,Mobile App,active,0');
+  const normalized = templates.normaliseRow('members', rows[0]);
+  assert.equal(normalized.email, 'a@b.ng');
+  assert.equal(normalized.name, 'Ada Obi');
+  assert.deepEqual(normalized.products, ['Mobile App']);
+  assert.equal(normalized.status, 'active');
+  assert.equal(normalized.sessions, 0);
+});
+
 test('participant-panel columns map to user-property names and types', () => {
   const normalised = templates.normaliseRow('members', {
     'First Name': 'Ada', 'Last Name': 'Obi', 'Email Address': 'ada@example.ng',
