@@ -10,6 +10,7 @@ const circles = require('../services/circles');
 const scheduler = require('../services/scheduler');
 const surveyForm = require('../services/surveyForm');
 const readiness = require('../services/readiness');
+const memberFieldCatalog = require('../services/memberFieldCatalog');
 const vocabularies = require('../services/vocabularies');
 
 const router = express.Router();
@@ -113,7 +114,10 @@ router.get('/profile', requireAuth, async (req, res) => {
     age_groups: readiness.AGE_GROUPS,
     segments: readiness.SEGMENTS,
     location_options: await vocabularies.listFor('location_state', req.circleId),
-    preferred_research_options: await vocabularies.listFor('preferred_research', req.circleId)
+    preferred_research_options: await vocabularies.listFor('preferred_research', req.circleId),
+    // A single metadata source for editable member fields and their finite
+    // choices; forms and targeting surfaces can render the same definitions.
+    profile_field_catalog: await memberFieldCatalog.profileCatalogue(db, req.circleId)
   });
 });
 

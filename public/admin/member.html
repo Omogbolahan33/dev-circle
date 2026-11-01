@@ -206,7 +206,12 @@
               onclick="toggleStatus('${u.status}', this)">${u.status === 'active' ? 'Deactivate' : 'Activate'}</button>`;
   }
 
-  function renderRail({ user: u, cohorts, consent }) {
+  function renderRail({ user: u, cohorts, consent, profile_fields = [] }) {
+    const profileRows = profile_fields.map(field => {
+      const raw = u[field.key];
+      const value = Array.isArray(raw) ? raw.join(', ') : raw;
+      return `<div class="kv-row"><span class="kv-key">${escapeHtml(field.label)}</span><span class="kv-val">${escapeHtml(value || '—')}</span></div>`;
+    }).join('');
     document.getElementById('details').innerHTML = `
       <div class="kv-row">
         <span class="kv-key">Phone</span>
@@ -217,9 +222,7 @@
           <button class="btn btn-sm btn-ghost" onclick="editPhone()">${u.phone ? 'Change' : 'Add'}</button>
         </span>
       </div>
-      <div class="kv-row"><span class="kv-key">Sector</span><span class="kv-val">${escapeHtml(u.work_sector || '—')}</span></div>
-      <div class="kv-row"><span class="kv-key">State</span><span class="kv-val">${escapeHtml(u.location_state || '—')}</span></div>
-      <div class="kv-row"><span class="kv-key">Products</span><span class="kv-val">${(u.api_products || []).length ? (u.api_products).map(p => escapeHtml(p)).join(', ') : '—'}</span></div>
+      ${profileRows}
       <div class="kv-row"><span class="kv-key">Hub ID</span><span class="kv-val mono text-xs">${escapeHtml(u.dev_hub_user_id || 'Not linked')}</span></div>
       <div class="kv-row"><span class="kv-key">Joined</span><span class="kv-val">${formatDate(u.created_at)}</span></div>
       <div class="kv-row"><span class="kv-key">Last active</span><span class="kv-val">${formatDate(u.last_active_at)}</span></div>

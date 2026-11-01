@@ -348,6 +348,38 @@ test('every value the catalogue offers actually selects members', async () => {
   }
 });
 
+test('member profile attributes share one catalogue with cohort and export criteria', async () => {
+  h.makeUser({
+    age_group: '25 - 34', products: ['Mobile App'], segment: 'Power Tester',
+    employment: 'Student', preferred_research: 'Surveys'
+  });
+
+  const [forExport, forCohorts] = await Promise.all([
+    h.get('/api/admin/export/fields', { token }),
+    h.get('/api/admin/cohorts/rule-fields', { token })
+  ]);
+  const expected = ['age_group', 'products', 'segment', 'employment', 'preferred_research'];
+  const exportFields = new Map(forExport.body.criteria.map(field => [field.field, field]));
+
+  for (const key of expected) {
+    assert.ok(exportFields.has(key), `${key} should be available as a criterion`);
+  }
+  assert.deepEqual(forCohorts.body.fields, forExport.body.criteria);
+  assert.deepEqual(exportFields.get('age_group').values.map(option => option.value),
+    ['18 - 24', '25 - 34', '35 - 44', '45 - 54', '55 - 64']);
+  assert.ok(exportFields.get('products').values.some(option => option.value === 'Mobile App'));
+
+  const preview = await h.post('/api/admin/cohorts/preview', {
+    filter_rules: [
+      { field: 'age_group', op: 'eq', value: '25 - 34' },
+      { field: 'products', op: 'eq', value: 'Mobile App' },
+      { field: 'segment', op: 'eq', value: 'Power Tester' },
+      { field: 'employment', op: 'eq', value: 'Student' }
+    ]
+  }, { token });
+  assert.equal(preview.body.total, 1);
+});
+
 // ─── Failure modes ──────────────────────────────────────────
 
 test('an unknown criterion is refused rather than silently dropped', async () => {

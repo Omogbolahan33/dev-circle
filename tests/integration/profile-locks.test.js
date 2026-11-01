@@ -89,6 +89,11 @@ test('location and preferred research are dropdown vocabularies, not free text',
   assert.ok(profile.body.location_options.includes('Lagos'));
   assert.ok(profile.body.preferred_research_options.includes('Product testing'));
   assert.ok(profile.body.preferred_research_options.includes('User interviews'));
+  const fieldOptions = Object.fromEntries(profile.body.profile_field_catalog.map(field => [field.key, field.values]));
+  assert.deepEqual(fieldOptions.age_group.map(option => option.value),
+    ['18 - 24', '25 - 34', '35 - 44', '45 - 54', '55 - 64']);
+  assert.ok(fieldOptions.work_sector.some(option => option.value === 'Fintech'));
+  assert.ok(fieldOptions.gender.some(option => option.value === 'female'));
 
   const badLocation = await h.put('/api/users/profile', { location_state: 'Somewhere' }, { token });
   assert.equal(badLocation.status, 400);

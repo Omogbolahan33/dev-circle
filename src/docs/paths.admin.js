@@ -224,6 +224,12 @@ const paths = {
       responses: {
         200: json('Everything on record for this member.', object({
           user: ref('Member'),
+          profile_fields: arrayOf(object({
+            key: str('Member profile field key'),
+            label: str('Display label'),
+            input: str('Control type'),
+            values: arrayOf(object({ value: str('Stored value'), label: str('Display label') }), 'Available choices')
+          }), 'Shared profile field metadata and choices'),
           cohorts: arrayOf(ref('Cohort'), 'Cohorts they belong to'),
           consent: arrayOf(ref('ConsentRecord'), 'Consent per channel'),
           engagement: arrayOf(ref('EngagementEvent'), 'Last 50 engagement events'),
@@ -236,6 +242,7 @@ const paths = {
           deliveries: arrayOf(ref('MessageDelivery'), 'Last 25 outbound attempts')
         }), {
           user: { id: MEMBER_ID, email: 'chidi@paystack.africa', name: 'Chidi Nwosu', status: 'active' },
+          profile_fields: [],
           cohorts: [{ id: 'c1', name: 'All Members' }],
           consent: [{ channel: 'email', status: 'granted' }],
           engagement: [{ id: 'e1', type: 'survey_completed', created_at: '2026-08-12 16:40:09' }],

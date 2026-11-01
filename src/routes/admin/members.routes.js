@@ -8,6 +8,7 @@ const { requirePermission, destroyAllSessionsFor } = require('../../middleware/a
 const { memberFilters } = require('../../services/audience');
 const engagement = require('../../services/engagement');
 const cohortRules = require('../../services/cohortRules');
+const memberFieldCatalog = require('../../services/memberFieldCatalog');
 const circles = require('../../services/circles');
 const verbatims = require('../../services/verbatims');
 
@@ -136,6 +137,7 @@ router.get('/members/:id', requirePermission('members.read'), async (req, res) =
 
   res.json({
     user: sanitizeUser(user),
+    profile_fields: await memberFieldCatalog.profileCatalogue(db, req.circleId),
     cohorts,
     consent,
     engagement: engagementRows,

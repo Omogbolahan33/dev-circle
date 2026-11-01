@@ -205,15 +205,7 @@
       </div>
       <div class="field">
         <label class="label">Work sector</label>
-        <select class="input" id="fSector">
-          <option value="">Not specified</option>
-          <option value="Fintech">Fintech</option>
-          <option value="Banking">Banking</option>
-          <option value="Lending">Lending</option>
-          <option value="Payments">Payments</option>
-          <option value="Insurance">Insurance</option>
-          <option value="Other">Other</option>
-        </select>
+        <select class="input" id="fSector"><option value="">Select work sector</option></select>
       </div>
 
       <!-- These three are only *asked* for when a circle's onboarding form
@@ -231,11 +223,7 @@
         </div>
         <div class="field">
           <label class="label">Age group</label>
-          <select class="input" id="fAgeGroup">
-            <option value="">Select age group</option>
-            <option>18 - 24</option><option>25 - 34</option><option>35 - 44</option>
-            <option>45 - 54</option><option>55 - 64</option>
-          </select>
+          <select class="input" id="fAgeGroup"><option value="">Select age group</option></select>
           <p class="hint">We use age ranges for research matching, not your date of birth.</p>
         </div>
       </div>
@@ -243,31 +231,19 @@
       <div class="field-row">
         <div class="field">
           <label class="label">Gender</label>
-          <select class="input" id="fGender">
-            <option value="">Prefer not to say</option>
-            <option value="female">Female</option>
-            <option value="male">Male</option>
-            <option value="other">Other</option>
-          </select>
+          <select class="input" id="fGender"><option value="">Prefer not to say</option></select>
           <p class="hint asked-hint hide" data-asked="gender"></p>
         </div>
         <div class="field">
           <label class="label">Participant segment</label>
-          <select class="input" id="fSegment">
-            <option value="">Select segment</option>
-            <option>Single Product</option><option>Multi-Product</option>
-            <option>Power Tester</option><option>General / App</option>
-          </select>
+          <select class="input" id="fSegment"><option value="">Select segment</option></select>
           <p class="hint">Choose the group that best describes your product use.</p>
         </div>
       </div>
       <div class="field-row">
         <div class="field">
           <label class="label">Employment</label>
-          <select class="input" id="fEmployment">
-            <option value="">Select employment type</option>
-            <option>Salary Earner</option><option>Entrepreneur</option><option>Student</option>
-          </select>
+          <select class="input" id="fEmployment"><option value="">Select employment type</option></select>
         </div>
         <div class="field">
           <label class="label">Preferred research</label>
@@ -371,30 +347,45 @@
       : '<span class="dim text-xs">You are not in any group yet.</span>';
   }
 
-  // Product catalog with plain-language labels, falling back to a small
-  // built-in list if the API did not supply one.
-  const FALLBACK_PRODUCTS = {
-    'Mobile App': 'Mobile App', Yield: 'Yield', BNPL: 'BNPL',
-    'Salaried Loans': 'Salaried Loans', 'CD Business': 'CD Business'
-  };
-
   async function load() {
     try {
       const profile = await api.get('/users/profile');
       const { user, stats, consent, circles, cohorts, readiness } = profile;
       renderStanding(user, circles, cohorts);
-      const fillSelect = (id, options, placeholder) => {
+      const fieldCatalog = Object.fromEntries((profile.profile_field_catalog || []).map(field => [field.key, field]));
+      const fillSelect = (id, fieldKey, fallbackOptions, placeholder) => {
         const select = document.getElementById(id);
+        const options = fieldCatalog[fieldKey]?.values || fallbackOptions || [];
         select.innerHTML = `<option value="">${escapeHtml(placeholder)}</option>` +
-          options.map(value => `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`).join('');
+          options.map(option => {
+            const value = typeof option === 'object' ? option.value : option;
+            const label = typeof option === 'object' ? option.label : option;
+            return `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`;
+          }).join('');
       };
-      fillSelect('fLocation', profile.location_options || [], 'Select state');
-      fillSelect('fPreferredResearch', profile.preferred_research_options || [], 'Select preferred research');
+      fillSelect('fSector', 'work_sector', [], 'Select work sector');
+      fillSelect('fLocation', 'location_state', profile.location_options || [], 'Select state');
+      fillSelect('fAgeGroup', 'age_group', [], 'Select age group');
+      fillSelect('fGender', 'gender', [], 'Prefer not to say');
+      fillSelect('fSegment', 'segment', [], 'Select segment');
+      fillSelect('fEmployment', 'employment', [], 'Select employment type');
+      fillSelect('fPreferredResearch', 'preferred_research', profile.preferred_research_options || [], 'Select preferred research');
+      const setSelectValue = (id, value) => {
+        const select = document.getElementById(id);
+        if (value && !Array.from(select.options).some(option => option.value === value)) {
+          const option = document.createElement('option');
+          option.value = value;
+          option.textContent = value;
+          select.appendChild(option);
+        }
+        select.value = value || '';
+      };
 
       // The one part of the integration a member declares themselves.
-      const catalog = (profile.product_catalog || []).length
-        ? Object.fromEntries(profile.product_catalog.map(p => [p.key, p.label]))
-        : FALLBACK_PRODUCTS;
+      const participantChoices = fieldCatalog.products?.values || [];
+      const catalog = participantChoices.length
+        ? Object.fromEntries(participantChoices.map(option => [option.value, option.label]))
+        : Object.fromEntries((profile.product_catalog || []).map(product => [product.key, product.label]));
       renderChoices('productGroup', catalog, user.products || []);
       showWhoIsAsking(profile.readiness);
 
@@ -443,13 +434,13 @@
       document.getElementById('fEmail').value = user.email || '';
       document.getElementById('fPhone').value = user.phone || '';
       document.getElementById('fCompany').value = user.company || '';
-      document.getElementById('fSector').value = user.work_sector || '';
-      document.getElementById('fLocation').value = user.location_state || '';
-      document.getElementById('fAgeGroup').value = user.age_group || '';
-      document.getElementById('fGender').value = user.gender || '';
-      document.getElementById('fSegment').value = user.segment || '';
-      document.getElementById('fEmployment').value = user.employment || '';
-      document.getElementById('fPreferredResearch').value = user.preferred_research || '';
+      setSelectValue('fSector', user.work_sector);
+      setSelectValue('fLocation', user.location_state);
+      setSelectValue('fAgeGroup', user.age_group);
+      setSelectValue('fGender', user.gender);
+      setSelectValue('fSegment', user.segment);
+      setSelectValue('fEmployment', user.employment);
+      setSelectValue('fPreferredResearch', user.preferred_research);
       document.getElementById('fTimeStart').value = user.preferred_time_start || '10:00';
       document.getElementById('fTimeEnd').value = user.preferred_time_end || '14:00';
 

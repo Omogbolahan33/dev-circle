@@ -1,5 +1,6 @@
 const db = require('../db');
 const { parseJSON } = require('../utils/helpers');
+const { PROFILE_FIELDS } = require('./memberFieldCatalog');
 
 // ─── Cohort rule engine ─────────────────────────────────────
 // Turns a stored filter_rules definition into SQL and resolves it to a member
@@ -18,19 +19,6 @@ const { parseJSON } = require('../utils/helpers');
 const CHANNELS = ['email', 'whatsapp', 'sms', 'calls', 'in_portal'];
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
-// Values already present in the member base. Filtering by a value nobody holds
-// returns nothing, so the list is drawn from the data rather than guessed.
-const distinct = column => async database => ((await database.prepare(
-  `SELECT DISTINCT ${column} AS value FROM users
-   WHERE COALESCE(${column}, '') != '' ORDER BY value`
-).all()) || []).map(r => r.value);
-
-// Same, for the JSON array columns
-const distinctInArray = column => async database => ((await database.prepare(
-  `SELECT DISTINCT json_each.value AS value FROM users, json_each(users.${column})
-   WHERE COALESCE(json_each.value, '') != '' ORDER BY value`
-).all()) || []).map(r => r.value);
-
 // Free text a member typed. A dropdown of everything anyone has ever written
 // would be unusable, so these stay open and lean on "contains".
 const OPEN_TEXT = new Set(['company']);
@@ -46,21 +34,9 @@ const FIELDS = {
     sql: 'u.status', type: 'text', label: 'Account status',
     values: ['active', 'inactive', 'suspended']
   },
-  work_sector: {
-    sql: 'u.work_sector', type: 'text', label: 'Work sector',
-    values: distinct('work_sector')
-  },
   company: {
     sql: 'u.company', type: 'text', label: 'Company'
     // deliberately open: one per member, so a list would be as long as the base
-  },
-  location_state: {
-    sql: 'u.location_state', type: 'text', label: 'State',
-    values: distinct('location_state')
-  },
-  gender: {
-    sql: 'u.gender', type: 'text', label: 'Gender',
-    values: distinct('gender')
   },
   kyb_completed: { sql: 'u.kyb_completed', type: 'bool', label: 'KYB completed' },
   engagement_streak: { sql: 'u.engagement_streak', type: 'number', label: 'Engagement streak' },
@@ -75,10 +51,13 @@ const FIELDS = {
     json: 'u.preferred_channels', type: 'array', label: 'Preferred channel',
     values: CHANNELS
   },
-  api_products: {
-    json: 'u.api_products', type: 'array', label: 'API product',
-    values: distinctInArray('api_products')
-  },
+  ...Object.fromEntries(PROFILE_FIELDS.map(field => [field.key, {
+    ...(field.storage.column ? { sql: `u.${field.storage.column}` } : {}),
+    ...(field.storage.json ? { json: `u.${field.storage.json}` } : {}),
+    type: field.type,
+    label: field.label,
+    values: field.values
+  }])),
 
   // Derived values
   age: {

@@ -436,6 +436,12 @@ const paths = {
           }),
           unread_notifications: int('Unread items in the portal inbox'),
           readiness: ref('Readiness'),
+          profile_field_catalog: arrayOf(object({
+            key: str('Member profile field key'),
+            label: str('Display label'),
+            input: str('Control type'),
+            values: arrayOf(object({ value: str('Stored value'), label: str('Display label') }), 'Available choices')
+          }), 'Shared profile field metadata and choices'),
           product_catalog: arrayOf(object({
             key: str('Product family key'),
             label: str('Display label')
