@@ -145,7 +145,7 @@ const Shell = {
   },
 
   // Member portal: top bar, no palette — four destinations do not need one.
-  portal(activeId) {
+  portal(activeId, { deferBrand = false } = {}) {
     if (!Auth.requireAuth(false)) throw new Error('Redirecting');
     this.activeId = activeId;
 
@@ -157,7 +157,7 @@ const Shell = {
     this._bindKeys(false);
     this._loadUnread();
     this.injectIcons();
-    this.applyBrand();
+    if (!deferBrand) this.applyBrand();
   },
 
   // Paint the shell with the active workspace's brand, and name it. Admins get
@@ -165,7 +165,7 @@ const Shell = {
   // /users/profile. A circle with no brand falls back to the product look, and
   // one with no logo is named rather than left blank — signed in, the chrome
   // should say whose circle you are in, not whose software it is.
-  async applyBrand() {
+  async applyBrand(profileData = null) {
     if (!window.Brand) return;
     try {
       const activeId = Auth.getCircle();
@@ -175,7 +175,7 @@ const Shell = {
         const me = await api.get('/auth/me');
         list = me.circles;
       } else {
-        const profile = await api.get('/users/profile');
+        const profile = profileData || await api.get('/users/profile');
         list = profile.circles;
       }
 

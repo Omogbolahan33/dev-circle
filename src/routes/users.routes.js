@@ -17,6 +17,60 @@ const router = express.Router();
 
 // ─── Profile ────────────────────────────────────────────────
 
+// GET /api/users/dashboard — lean payload for the member home screen
+router.get('/dashboard', requireAuth, async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
+  if (!user) return res.status(404).json({ error: 'Member not found' });
+  await engagement.decayStale(user);
+
+  const [consent, memberCircles, stats] = await Promise.all([
+    db.prepare('SELECT channel, status, granted_at, withdrawn_at FROM consent WHERE user_id = ?').all(user.id),
+    circles.forUser(user.id),
+    db.prepare(`
+      SELECT 'sr' as k,
+             CAST(COUNT(*) AS INTEGER) as n,
+             CAST(SUM(CASE WHEN completed_at IS NOT NULL THEN 1 ELSE 0 END) AS INTEGER) as n2
+      FROM survey_responses WHERE user_id = ?
+      UNION ALL
+      SELECT 'gifts', CAST(COUNT(*) AS INTEGER), CAST(NULL AS INTEGER)
+      FROM user_gifts WHERE user_id = ?
+      UNION ALL
+      SELECT 'feedback', CAST(COUNT(*) AS INTEGER), CAST(NULL AS INTEGER)
+      FROM feedback WHERE user_id = ?
+    `).all(user.id, user.id, user.id)
+  ]);
+
+  const byK = Object.fromEntries((stats || []).map(row => [row.k, row]));
+  const circlesForBrand = (memberCircles || []).map(({ theme, ...circle }) => ({
+    ...circle,
+    brand: theme ? circles.brandOf({ theme, survey_theme: null }) : null
+  }));
+
+  res.json({
+    user: {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      company: user.company,
+      work_sector: user.work_sector,
+      created_at: user.created_at
+    },
+    circles: circlesForBrand,
+    stats: {
+      surveys_completed: Number(byK.sr?.n2 || 0),
+      surveys_invited: Number(byK.sr?.n || 0),
+      gifts_claimed: Number(byK.gifts?.n || 0),
+      feedback_submitted: Number(byK.feedback?.n || 0),
+      streak: user.engagement_streak,
+      best_streak: user.best_streak
+    },
+    readiness: readiness.computeReadiness(user, consent, {
+      wanted: await readiness.wantedFor(user.id)
+    })
+  });
+});
+
 // GET /api/users/profile
 router.get('/profile', requireAuth, async (req, res) => {
   // Profile edits must be visible immediately, even when a later request lands
@@ -646,15 +700,18 @@ router.get('/engagement', requireAuth, async (req, res) => {
     params.push(type);
   }
   const filter = where.join(' AND ');
+  const summaryOnly = req.query.summary === '1';
 
   const [history, totalRow] = await Promise.all([
     db.prepare(`
       SELECT * FROM engagement_history WHERE ${filter}
       ORDER BY created_at DESC LIMIT ? OFFSET ?
     `).all(...params, limit, offset),
-    db.prepare(`SELECT COUNT(*) as c FROM engagement_history WHERE ${filter}`).get(...params)
+    summaryOnly ? Promise.resolve(null)
+      : db.prepare(`SELECT COUNT(*) as c FROM engagement_history WHERE ${filter}`).get(...params)
   ]);
 
+  if (summaryOnly) return res.json({ history: history || [] });
   res.json({
     history: history || [],
     pagination: pageMeta({ page, limit, total: Number(totalRow?.c || 0) })

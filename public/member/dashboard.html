@@ -259,7 +259,7 @@
 <script src="/assets/js/brand.js"></script>
 <script src="/assets/js/activity.js"></script>
 <script>
-  Shell.portal('dashboard');
+  Shell.portal('dashboard', { deferBrand: true });
 
   const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
@@ -296,28 +296,62 @@
 
   async function load() {
     showDashSkeletons();
-    try {
-      const [profile, surveys, engagement, sessions] = await Promise.all([
-        api.get('/users/profile'),
-        api.get('/users/surveys'),
-        api.get('/users/engagement?limit=200'),
-        api.get('/users/sessions')
-      ]);
 
+    const profileTask = api.get('/users/dashboard').then(profile => {
+      if (!profile) return null;
       renderMasthead(profile);
       renderImpact(profile.stats);
-      renderNextAction(profile, surveys.surveys, sessions.sessions);
       renderReadiness(profile.readiness);
-      renderHeat(engagement.history, profile.stats);
-      renderInvites(surveys.surveys);
-      renderSessions(sessions.sessions);
-      // Twelve rather than eight: history has the wide column to itself now,
-      // and eight entries left most of it empty. "Full history" still has the
-      // rest.
-      renderTimeline(engagement.history.slice(0, 12));
-    } catch (err) {
-      showToast('Failed to load: ' + err.message, 'error');
-    }
+      Shell.applyBrand(profile);
+      return profile;
+    }).catch(err => {
+      showToast('Could not load your dashboard profile: ' + err.message, 'error');
+      return null;
+    });
+
+    const surveyTask = api.get('/users/surveys').then(data => {
+      const surveys = data?.surveys || [];
+      renderInvites(surveys);
+      return surveys;
+    }).catch(err => {
+      showToast('Could not load surveys: ' + err.message, 'error');
+      renderInvites([]);
+      return [];
+    });
+
+    const sessionTask = api.get('/users/sessions').then(data => {
+      const sessions = data?.sessions || [];
+      renderSessions(sessions);
+      return sessions;
+    }).catch(err => {
+      showToast('Could not load sessions: ' + err.message, 'error');
+      renderSessions([]);
+      return [];
+    });
+
+    const engagementTask = api.get('/users/engagement?limit=200&summary=1').then(data => {
+      const history = data?.history || [];
+      renderTimeline(history.slice(0, 12));
+      return history;
+    }).catch(err => {
+      showToast('Could not load activity: ' + err.message, 'error');
+      renderTimeline([]);
+      return [];
+    });
+
+    // The hero chooses between sessions and surveys, so it waits for just
+    // those two feeds—not for profile stats or the activity history.
+    const actionTask = Promise.all([surveyTask, sessionTask]).then(([surveys, sessions]) => {
+      renderNextAction(null, surveys, sessions);
+    });
+
+    // The activity grid needs the member's streak, but it need not hold up the
+    // hero, invitations, or session list while either request is in flight.
+    const heatTask = Promise.all([profileTask, engagementTask]).then(([profile, history]) => {
+      if (profile) renderHeat(history, profile.stats);
+    });
+
+    await Promise.all([profileTask, surveyTask, sessionTask, engagementTask, actionTask, heatTask]);
   }
 
   function renderReadiness(readiness) {

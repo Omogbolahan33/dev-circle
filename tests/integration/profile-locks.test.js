@@ -66,6 +66,20 @@ test('an account with no number can set one exactly once', async () => {
   assert.equal(again.status, 403);
 });
 
+test('member dashboard endpoint returns a lean view model without profile form catalogues', async () => {
+  const user = h.makeUser({ email: 'dashboard-summary@example.ng', company: 'Example Co', work_sector: 'Fintech' });
+  const token = await h.loginUser(user.email);
+
+  const response = await h.get('/api/users/dashboard', { token });
+  assert.equal(response.status, 200, JSON.stringify(response.body));
+  assert.equal(response.body.user.company, 'Example Co');
+  assert.ok(Array.isArray(response.body.circles));
+  assert.ok(Array.isArray(response.body.readiness.rings));
+  assert.equal(response.body.profile_field_catalog, undefined);
+  assert.equal(response.body.location_options, undefined);
+  assert.equal(response.headers.get('cache-control'), 'no-store');
+});
+
 test('saved profile fields are loaded again from the authenticated profile session', async () => {
   const user = h.makeUser({ email: 'reopen-profile@example.ng' });
   const token = await h.loginUser(user.email);
