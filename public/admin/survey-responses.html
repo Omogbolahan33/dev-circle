@@ -69,13 +69,15 @@
     .pie-legend { display: flex; flex-direction: column; gap: var(--sp-2); }
     .pie-legend-row { display: grid; grid-template-columns: 12px minmax(70px, 1fr) auto; gap: var(--sp-2); align-items: center; font-size: var(--fs-sm); }
     .pie-swatch { width: 10px; height: 10px; border-radius: 3px; }
+    .summary-visual { cursor: pointer; }
+    .summary-visual:focus-visible { outline: 2px solid var(--cd-blue); outline-offset: 4px; border-radius: var(--r-sm); }
     .word-cloud { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: var(--sp-2) var(--sp-4); min-height: 150px; padding: var(--sp-5); border: 1px solid var(--line-faint); border-radius: var(--r-md); background: var(--surface-1); }
     .word-cloud-word { font-weight: var(--fw-semibold); line-height: 1.15; }
     [data-drill-kind] { cursor: pointer; }
     [data-drill-kind]:focus-visible { outline: 2px solid var(--cd-blue); outline-offset: 2px; }
     .chart-bar-row[data-drill-kind]:hover, .pie-legend-row[data-drill-kind]:hover { color: var(--white); }
     .word-cloud-word[data-drill-kind]:hover { text-decoration: underline; text-underline-offset: 3px; }
-    .dist-col[data-drill-kind]:hover .dist-bar { background: var(--violet); }
+    .dist-bar[data-drill-kind]:hover { background: var(--violet); }
     .grid-cell[data-drill-kind]:hover { outline: 2px solid var(--cd-blue); }
     .drill-results:not([hidden]) { margin-top: var(--sp-4); padding: var(--sp-4); border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface-1); }
     .drill-results-head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); margin-bottom: var(--sp-2); font-size: var(--fs-sm); }
@@ -382,7 +384,7 @@
           ${shown.length < completed.length
             ? `<p class="asked-note">Asked of ${shown.length} of ${completed.length} — the rest were branched past it.</p>`
             : ''}
-          ${answers.length ? `<div class="summary-visual">${summary(q, answers, answered)}<div class="drill-results" data-drill-results hidden aria-live="polite"></div></div>` : '<p class="dim text-sm">No answers to this question.</p>'}
+          ${answers.length ? `<div class="summary-visual" tabindex="0" role="group" aria-label="Question response chart; activate for all responses">${summary(q, answers, answered)}<div class="drill-results" data-drill-results hidden aria-live="polite"></div></div>` : '<p class="dim text-sm">No answers to this question.</p>'}
         </section>`;
     }).join('');
   }
@@ -451,10 +453,10 @@
         return ranked.map((row, i) => {
           const preference = worst <= 1 ? 100 : Math.max(2, ((worst - row.avg) / (worst - 1)) * 100);
           return `
-            <div class="rank-row" role="button" tabindex="0" data-drill-kind="ranking" data-value="${escapeHtml(row.option)}">
+            <div class="rank-row">
               <span class="rank-pos">#${i + 1}</span>
               <span class="truncate" title="${escapeHtml(row.option)}">${escapeHtml(row.option)}</span>
-              <span class="chart-track" title="Higher bar means a better average position"><span class="chart-fill" style="width:${preference}%"></span></span>
+              <span class="chart-track" title="Higher bar means a better average position"><span class="chart-fill" role="button" tabindex="0" data-drill-kind="ranking" data-value="${escapeHtml(row.option)}" aria-label="${escapeHtml(row.option)} ranked" style="width:${preference}%"></span></span>
               <span class="rank-meta mono text-xs dim">avg ${row.avg.toFixed(1)} · first by ${row.first}</span>
             </div>`;
         }).join('');
@@ -538,9 +540,7 @@
       }).join(', ');
       return `
         <div class="pie-chart-layout">
-          <div class="pie-chart" role="button" tabindex="0" data-drill-kind="pie"
-               data-slices="${encodeURIComponent(JSON.stringify(sorted))}"
-               aria-label="Pie chart. Activate to inspect a slice." style="background:conic-gradient(${slices})"></div>
+          <div class="pie-chart" role="img" aria-label="Pie chart of ${answers.length} responses" style="background:conic-gradient(${slices})"></div>
           <div class="pie-legend">
             ${sorted.map(([label, count], i) => `
               <div class="pie-legend-row" role="button" tabindex="0" data-drill-kind="choice" data-value="${escapeHtml(label)}">
@@ -554,9 +554,9 @@
 
     const max = Math.max(...sorted.map(([, count]) => count));
     return `<div class="chart-bars">${sorted.map(([label, count]) => `
-      <div class="chart-bar-row" role="button" tabindex="0" data-drill-kind="choice" data-value="${escapeHtml(label)}">
+      <div class="chart-bar-row">
         <span class="truncate" title="${escapeHtml(label)}">${escapeHtml(label)}</span>
-        <span class="chart-track"><span class="chart-fill" style="width:${count / max * 100}%"></span></span>
+        <span class="chart-track"><span class="chart-fill" role="button" tabindex="0" data-drill-kind="choice" data-value="${escapeHtml(label)}" aria-label="${escapeHtml(label)} responses" style="width:${count / max * 100}%"></span></span>
         <span class="mono text-xs">${count} · ${Math.round(count / answers.length * 100)}%</span>
       </div>`).join('')}</div>`;
   }
@@ -615,9 +615,9 @@
   function barSeries(series, label) {
     const max = Math.max(...series.map(item => item.count), 1);
     return `<div class="chart-bars" aria-label="${escapeHtml(label)}">${series.map(item => `
-      <div class="chart-bar-row"${item.count ? ` role="button" tabindex="0" ${drillAttrs(item.drill)}` : ''}>
+      <div class="chart-bar-row">
         <span class="truncate" title="${escapeHtml(item.label)}">${escapeHtml(item.label)}</span>
-        <span class="chart-track"><span class="chart-fill" style="width:${item.count / max * 100}%"></span></span>
+        <span class="chart-track"><span class="chart-fill"${item.count ? ` role="button" tabindex="0" ${drillAttrs(item.drill)} aria-label="${escapeHtml(item.label)} responses"` : ''} style="width:${item.count / max * 100}%"></span></span>
         <span class="mono text-xs">${item.count}</span>
       </div>`).join('')}</div>`;
   }
@@ -692,41 +692,14 @@
     return String(answer ?? '');
   }
 
-  function openDrill(target, event) {
-    const section = target.closest('[data-summary-question]');
+  function showDrillResults(section, label, matches, drillKey) {
     const results = section?.querySelector('[data-drill-results]');
-    const entry = section && analysisDrillData.get(section.dataset.summaryQuestion);
-    if (!entry || !results) return;
-    const kind = target.dataset.drillKind;
-    let selectedTarget = target;
-    let label = target.dataset.value || target.querySelector('.truncate')?.textContent.trim() || target.textContent.trim();
-
-    if (kind === 'pie') {
-      let slices;
-      try { slices = JSON.parse(decodeURIComponent(target.dataset.slices)); } catch { return; }
-      let portion = 0;
-      if (Number.isFinite(event.clientX) && Number.isFinite(event.clientY) && (event.clientX || event.clientY)) {
-        const rect = target.getBoundingClientRect();
-        const angle = (Math.atan2(event.clientY - rect.top - rect.height / 2, event.clientX - rect.left - rect.width / 2) * 180 / Math.PI + 450) % 360;
-        portion = angle / 360;
-      }
-      const total = slices.reduce((sum, slice) => sum + slice[1], 0);
-      let passed = 0;
-      const slice = slices.find(item => {
-        passed += item[1];
-        return portion <= passed / total;
-      }) || slices[0];
-      if (!slice) return;
-      label = slice[0];
-      selectedTarget = { dataset: { drillKind: 'choice', value: label } };
-    }
-
-    const drillKey = `${selectedTarget.dataset.drillKind}:${selectedTarget.dataset.value || selectedTarget.dataset.bucket || ''}`;
+    if (!results) return;
     if (!results.hidden && results.dataset.activeDrill === drillKey) {
       results.hidden = true;
       return;
     }
-    const matches = entry.records.filter(record => matchesDrill(entry.question, record, selectedTarget));
+    const entry = analysisDrillData.get(section.dataset.summaryQuestion);
     results.dataset.activeDrill = drillKey;
     results.innerHTML = `
       <div class="drill-results-head">
@@ -739,6 +712,22 @@
           <span class="who">${record.user_id ? escapeHtml(personName(record.user_name, record.user_email)) : 'Anonymous'}</span>
         </blockquote>`).join('') : '<p class="dim text-sm">No responses in this group.</p>'}`;
     results.hidden = false;
+  }
+
+  function openAllResponses(section) {
+    const entry = section && analysisDrillData.get(section.dataset.summaryQuestion);
+    if (!entry) return;
+    showDrillResults(section, 'All responses', entry.records, 'all');
+  }
+
+  function openDrill(target) {
+    const section = target.closest('[data-summary-question]');
+    const entry = section && analysisDrillData.get(section.dataset.summaryQuestion);
+    if (!entry) return;
+    const label = target.dataset.value || target.querySelector('.truncate')?.textContent.trim() || target.textContent.trim();
+    const drillKey = [target.dataset.drillKind, target.dataset.row || '', target.dataset.value || '', target.dataset.bucket || '', target.dataset.min || '', target.dataset.max || ''].join(':');
+    const matches = entry.records.filter(record => matchesDrill(entry.question, record, target));
+    showDrillResults(section, label, matches, drillKey);
   }
 
   // The spread, not just the middle: a flat distribution and a hard split have
@@ -755,9 +744,9 @@
       ${from === 1 ? `<div class="avg">${avg.toFixed(1)}<span class="of"> / ${to} average</span></div>` : ''}
       <div class="dist">
         ${Object.keys(counts).map(v => `
-          <div class="dist-col"${counts[v] ? ` role="button" tabindex="0" data-drill-kind="rating" data-value="${v}"` : ''}>
+          <div class="dist-col">
             <span class="dist-n">${counts[v]}</span>
-            <span class="dist-bar" style="height:${(counts[v] / max) * 100}%"></span>
+            <span class="dist-bar"${counts[v] ? ` role="button" tabindex="0" data-drill-kind="rating" data-value="${v}" aria-label="Rating ${v}"` : ''} style="height:${(counts[v] / max) * 100}%"></span>
             <span class="dist-x">${v}</span>
           </div>`).join('')}
       </div>
@@ -1086,15 +1075,28 @@
       if (results) results.hidden = true;
       return;
     }
+    if (event.target.closest('[data-drill-results]')) return;
     const graphic = event.target.closest('[data-drill-kind]');
-    if (graphic) openDrill(graphic, event);
+    if (graphic) {
+      openDrill(graphic);
+      return;
+    }
+    const visual = event.target.closest('.summary-visual');
+    if (visual) openAllResponses(visual.closest('[data-summary-question]'));
   });
   analysisRoot.addEventListener('keydown', event => {
     if (!['Enter', ' '].includes(event.key)) return;
     const graphic = event.target.closest('[data-drill-kind]');
-    if (!graphic) return;
-    event.preventDefault();
-    openDrill(graphic, event);
+    if (graphic) {
+      event.preventDefault();
+      openDrill(graphic);
+      return;
+    }
+    const visual = event.target.closest('.summary-visual');
+    if (visual) {
+      event.preventDefault();
+      openAllResponses(visual.closest('[data-summary-question]'));
+    }
   });
 
   document.querySelectorAll('.tab[data-panel]').forEach(tab => {
