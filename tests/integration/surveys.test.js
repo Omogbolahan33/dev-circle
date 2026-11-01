@@ -65,6 +65,23 @@ test('members can list and read only their own completed survey answers', async 
 // has closed and still takes answers. This is the end-to-end statement of it;
 // the shapes an expiry can arrive in are covered in unit/stored-timestamps.
 
+test('completed responses with an empty legacy question snapshot fall back to the survey definition', async () => {
+  const made = await create({
+    status: 'active',
+    questions: [{ type: 'text', text: 'What was your experience?' }]
+  });
+  const { token, survey } = await answering(made.body.survey);
+  const question = survey.questions[0];
+  await respond(survey, token, { [question.id]: 'Very positive' });
+  const responseId = h.db.prepare('SELECT id FROM survey_responses WHERE survey_id = ?').get(survey.id).id;
+  h.db.prepare("UPDATE survey_responses SET questions = '[]' WHERE id = ?").run(responseId);
+
+  const detail = await h.get(`/api/users/surveys/answered/${responseId}`, { token });
+  assert.equal(detail.status, 200, JSON.stringify(detail.body));
+  assert.equal(detail.body.response.questions[0].text, 'What was your experience?');
+  assert.equal(detail.body.response.answers[question.id], 'Very positive');
+});
+
 test('a survey past its expiry cannot be started', async () => {
   const made = await create({
     status: 'active',

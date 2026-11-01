@@ -15,6 +15,16 @@ const vocabularies = require('../services/vocabularies');
 
 const router = express.Router();
 
+function responseQuestionList(snapshot, liveDefinition) {
+  let questions = parseJSON(snapshot, null);
+  // Older completed rows may carry the column's empty-array default rather
+  // than NULL. Treat that like a missing snapshot and use the survey definition.
+  if (!Array.isArray(questions) || questions.length === 0) {
+    questions = parseJSON(liveDefinition, []);
+  }
+  return Array.isArray(questions) ? questions : [];
+}
+
 // ─── Profile ────────────────────────────────────────────────
 
 // GET /api/users/dashboard — lean payload for the member home screen
@@ -957,8 +967,8 @@ router.get('/surveys/answered', requireAuth, async (req, res) => {
 
   const responses = (rows || []).map(row => {
     const answers = parseJSON(row.answers, {});
-    const questions = parseJSON(row.response_questions, parseJSON(row.live_questions, []));
-    const asked = surveyForm.visible(Array.isArray(questions) ? questions : [], answers);
+    const questions = responseQuestionList(row.response_questions, row.live_questions);
+    const asked = surveyForm.visible(questions, answers);
     return {
       id: row.id,
       survey_id: row.survey_id,
@@ -986,7 +996,7 @@ router.get('/surveys/answered/:responseId', requireAuth, async (req, res) => {
   if (!row) return res.status(404).json({ error: 'Survey response not found' });
 
   const answers = parseJSON(row.answers, {});
-  const questions = parseJSON(row.response_questions, parseJSON(row.live_questions, []));
+  const questions = responseQuestionList(row.response_questions, row.live_questions);
   res.json({
     response: {
       id: row.id,
@@ -996,7 +1006,7 @@ router.get('/surveys/answered/:responseId', requireAuth, async (req, res) => {
       engagement_mode: row.engagement_mode,
       completed_at: row.completed_at,
       answers,
-      questions: surveyForm.visible(Array.isArray(questions) ? questions : [], answers)
+      questions: surveyForm.visible(questions, answers)
     }
   });
 });
