@@ -297,7 +297,7 @@ const QuestionBuilder = (() => {
         return `
           <div class="question-subtext-editor is-open">
             <textarea class="input" data-set="description" maxlength="500" aria-label="Question subtext"
-              placeholder="Optional helper text shown under the question.">${escapeHtml(question.description || '')}</textarea>
+              placeholder="Subtext…">${escapeHtml(question.description || '')}</textarea>
             <button type="button" class="question-subtext-link" data-toggle-subtext>Done</button>
           </div>`;
       }

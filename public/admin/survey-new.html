@@ -298,17 +298,11 @@
       renderStatus();
 
       if (data.questions_locked) {
-        // Not a lock, so not a notice. One line saying the survey is being
-        // answered — worth knowing before rewording question four, and not
-        // worth a paragraph. The tooltip carries the why for anyone who wants it.
         document.getElementById('lockNotice').className = 'live-strip mb-4';
         document.getElementById('lockNotice').innerHTML = `
-          ${icon('activity', 15)}
-          <strong>${data.completed_count}</strong>
-          <span>answered</span>
+          <strong>${data.completed_count} response${data.completed_count === 1 ? '' : 's'}</strong>
           <span class="spacer"></span>
-          <span class="live-note">Questions still editable</span>
-          <span class="tip" data-tip="Answers keep the wording they were shown. Edits reach whoever answers next.">?</span>`;
+          <span class="live-note">Edits affect future responses</span>`;
       }
       renderThemePanel();
     } catch (err) {
