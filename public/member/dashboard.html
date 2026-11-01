@@ -41,6 +41,8 @@
       border-radius: var(--r-xl);
       padding: var(--sp-5);
     }
+    .home .panel-card { padding:var(--sp-3) 0; border:0; border-top:1px solid var(--line-faint); border-radius:0; background:transparent; }
+    #readinessSection { background:linear-gradient(115deg,var(--surface-2),var(--surface-1)); border-color:var(--line-faint); border-radius:var(--r-xl); }
     .section-title { display:flex; align-items:center; gap:var(--sp-2); }
     .section-title-icon { display:inline-flex; align-items:center; color:var(--cd-blue); }
     .panel-title {
@@ -77,72 +79,62 @@
       color: var(--text-2);
     }
 
-    /* Setup status stays compact; details are available on demand. */
-    #readinessSection { margin-top: var(--sp-5); }
-    #nextAction:empty + #readinessSection { margin-top: var(--sp-2); }
-    #readinessSection:not([hidden]) + .home { margin-top: var(--sp-5); }
-
-    .profile-setup-card.is-ready { padding:0; border:0; background:transparent; }
-    .setup-ready { margin:0; }
-    .setup-ready summary {
-      display:flex; align-items:center; gap:var(--sp-2); padding:8px 12px;
-      border:1px solid var(--line-faint); border-radius:var(--r-lg);
-      background:var(--surface-1); color:var(--text-2); cursor:pointer; list-style:none;
-    }
-    .setup-ready summary::-webkit-details-marker { display:none; }
-    .setup-ready summary:focus-visible { outline:2px solid var(--cd-blue); outline-offset:2px; }
-    .setup-ready-mark { color:var(--teal); font-weight:var(--fw-bold); }
-    .setup-ready-title { color:var(--text-1); font-size:var(--fs-xs); font-weight:var(--fw-semibold); }
-    .setup-ready-meta { flex:1; color:var(--text-3); font-size:var(--fs-xs); }
-    .impact-heading { grid-column:1/-1; color:var(--text-3); font-size:10px; font-weight:var(--fw-semibold); text-transform:uppercase; letter-spacing:.1em; }
-    .setup-ready-toggle { color:var(--cd-blue); font-size:var(--fs-xs); white-space:nowrap; }
-    .impact-strip { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:var(--sp-3); margin:var(--sp-4) 0; }
-    .impact-tile { display:flex; align-items:center; gap:var(--sp-3); min-width:0; padding:var(--sp-3) var(--sp-4); border:1px solid var(--line-faint); border-radius:var(--r-lg); background:var(--surface-1); }
-    .impact-number { color:var(--cd-blue); font-family:var(--font-display); font-size:var(--fs-xl); font-weight:var(--fw-bold); line-height:1; font-variant-numeric:tabular-nums; }
-    .impact-label { color:var(--text-2); font-size:var(--fs-xs); line-height:1.25; }
+    /* One visual readiness panel; no nested tiles. */
+    #readinessSection { margin-top:var(--sp-4); }
+    #nextAction:empty + #readinessSection { margin-top:var(--sp-2); }
+    .impact-strip + .home { margin-top:var(--sp-3); }
+    .readiness-panel { display:grid; grid-template-columns:minmax(150px,190px) 1fr; gap:var(--sp-5); align-items:center; }
+    .readiness-visual { display:grid; place-items:center; }
+    .readiness-svg { width:168px; height:168px; overflow:visible; }
+    .readiness-track { fill:none; stroke:var(--line); opacity:.45; }
+    .readiness-arc { fill:none; stroke-linecap:round; transition:stroke-dashoffset .7s ease; }
+    .readiness-center { fill:var(--text-1); font:700 22px var(--font-display); }
+    .readiness-center-label { fill:var(--text-3); font:600 8px var(--font-mono); letter-spacing:.1em; }
+    .readiness-copy { min-width:0; }
+    .readiness-head { display:flex; align-items:center; justify-content:space-between; gap:var(--sp-3); margin-bottom:var(--sp-3); }
+    .readiness-title { margin:0; font:700 var(--fs-md) var(--font-display); }
+    .readiness-legend { display:flex; flex-direction:column; }
+    .readiness-item { display:grid; grid-template-columns:10px 1fr auto; gap:var(--sp-2); align-items:center; padding:7px 0; border-bottom:1px solid var(--line-faint); }
+    .readiness-item:last-child { border-bottom:0; }
+    .readiness-swatch { width:8px; height:8px; border-radius:50%; }
+    .readiness-item-name { color:var(--text-1); font-size:var(--fs-xs); font-weight:var(--fw-semibold); }
+    .readiness-item-note { color:var(--text-3); font-size:10px; }
+    .readiness-item-score { color:var(--text-2); font:500 var(--fs-xs) var(--font-mono); }
+    .readiness-foot { display:flex; align-items:center; justify-content:space-between; gap:var(--sp-3); margin-top:var(--sp-3); }
+    .readiness-missing { color:var(--text-3); font-size:var(--fs-xs); }
+    .readiness-edit { display:inline-flex; align-items:center; gap:5px; color:var(--text-3); }
+    .readiness-edit:hover { color:var(--cd-blue); }
+    .impact-strip { display:flex; align-items:center; gap:var(--sp-5); margin:var(--sp-3) 0; padding:var(--sp-2) 0; border-block:1px solid var(--line-faint); }
+    .impact-heading { color:var(--text-3); font-size:10px; font-weight:var(--fw-semibold); text-transform:uppercase; letter-spacing:.1em; white-space:nowrap; }
+    .impact-tile { display:flex; align-items:center; gap:var(--sp-2); min-width:0; padding:0 var(--sp-4); border-left:1px solid var(--line-faint); }
+    .impact-number { color:var(--text-1); font:700 var(--fs-lg) var(--font-display); line-height:1; font-variant-numeric:tabular-nums; }
+    .impact-label { color:var(--text-3); font-size:var(--fs-xs); white-space:nowrap; }
     .impact-info { display:flex; align-items:baseline; gap:var(--sp-2); min-width:0; }
-    .impact-icon { display:grid; place-items:center; width:34px; height:34px; flex:0 0 auto; border-radius:11px; background:var(--cd-blue-dim); color:var(--cd-blue); }
+    .impact-icon { display:inline-flex; color:var(--cd-blue); opacity:.85; }
     .dashboard-action { display:grid; grid-template-columns:56px minmax(0,1fr); align-items:start; gap:var(--sp-4); }
-    .action-visual { display:grid; place-items:center; width:52px; height:52px; border:1px solid var(--cd-blue-40); border-radius:17px; background:var(--surface-1); color:var(--cd-blue); box-shadow:inset 0 0 20px var(--cd-blue-dim); }
+    .action-visual { display:grid; place-items:center; width:52px; height:52px; border-radius:50%; background:var(--cd-blue-dim); color:var(--cd-blue); }
     .action-copy { min-width:0; }
     .next-action.quiet { background:linear-gradient(115deg,var(--surface-2),var(--surface-1)); border:1px solid var(--line-faint); border-radius:var(--r-xl); padding:var(--sp-5); }
-    .next-action.quiet .action-visual { color:var(--text-3); border-color:var(--line-faint); box-shadow:none; }
+    .next-action.quiet .action-visual { color:var(--text-3); background:var(--surface-3); }
     .next-action.quiet .eyebrow { color:var(--text-3); }
     .next-action.quiet .headline { margin-bottom:var(--sp-1); }
-    .next-action.quiet .detail { margin-bottom:var(--sp-3); }
-    @media(max-width:600px) {
-      .impact-strip { grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px; }
-      .dashboard-action { grid-template-columns:40px minmax(0,1fr); gap:var(--sp-3); padding:var(--sp-4); }
-      .action-visual { width:40px; height:40px; border-radius:13px; }
-      .impact-tile { align-items:flex-start; flex-direction:column; gap:var(--sp-1); padding:var(--sp-2); }
-      .impact-info { align-items:flex-start; flex-direction:column; gap:2px; }
-      .impact-icon { width:28px; height:28px; border-radius:9px; }
-      .impact-number { font-size:var(--fs-lg); }
-      .impact-label { font-size:10px; }
-    }
-    .setup-ready-details { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:var(--sp-2); padding:var(--sp-3) 0; }
-    .setup-ring { padding:var(--sp-2) var(--sp-3); border:1px solid var(--line-faint); border-radius:var(--r-md); background:var(--surface-1); }
-    .setup-ring-head { display:flex; justify-content:space-between; gap:var(--sp-2); font-size:var(--fs-xs); }
-    .setup-ring-head strong { color:var(--text-1); font-weight:var(--fw-semibold); }
-    .setup-ring-head span { color:var(--teal); }
-    .setup-ring-track { height:4px; margin-top:7px; border-radius:var(--r-full); background:var(--surface-3); overflow:hidden; }
-    .setup-ring-fill { height:100%; border-radius:inherit; background:var(--teal); }
-    .setup-ring-note { margin-top:5px; color:var(--text-3); font-size:10px; }
-    .setup-detail-footer { display:flex; justify-content:flex-end; }
-    .setup-nudge {
-      display:flex; align-items:center; justify-content:space-between; gap:var(--sp-4);
-      padding:var(--sp-4); border-radius:var(--r-lg);
-      background:var(--surface-1); border:1px solid var(--line-faint);
-    }
-    .setup-nudge-copy { display:flex; flex-direction:column; gap:3px; min-width:0; }
-    .setup-nudge-label { color:var(--text-3); font-size:10px; font-weight:var(--fw-semibold); text-transform:uppercase; letter-spacing:.08em; }
-    .setup-nudge-copy strong { color:var(--text-1); font-size:var(--fs-sm); }
-    .setup-nudge-detail { color:var(--text-3); font-size:var(--fs-xs); }
     @media(max-width:700px) {
-      .setup-ready summary { flex-wrap:wrap; }
-      .setup-ready-meta { flex-basis:calc(100% - 24px); order:3; }
-      .setup-ready-details { grid-template-columns:1fr; }
-      .setup-nudge { align-items:flex-start; flex-direction:column; }
+      .readiness-panel { grid-template-columns:118px 1fr; gap:var(--sp-3); }
+      .readiness-svg { width:118px; height:118px; }
+      .readiness-foot { align-items:flex-start; flex-direction:column; }
+      .impact-strip { justify-content:space-between; gap:var(--sp-1); }
+      .impact-heading { display:none; }
+      .impact-tile { padding:0 var(--sp-2); gap:5px; }
+      .impact-info { align-items:flex-start; flex-direction:column; gap:2px; }
+      .impact-number { font-size:var(--fs-md); }
+      .impact-label { font-size:10px; white-space:normal; }
+      .dashboard-action { grid-template-columns:40px minmax(0,1fr); gap:var(--sp-3); padding:var(--sp-4); }
+      .action-visual { width:40px; height:40px; }
+    }
+    @media(max-width:420px) {
+      .readiness-panel { grid-template-columns:1fr; }
+      .readiness-svg { width:132px; height:132px; }
+      .readiness-visual { margin-bottom:calc(var(--sp-2) * -1); }
     }
 
     .mobile-breadcrumb {
@@ -176,15 +168,15 @@
     <!-- Who we think you are, before anything is asked of you. -->
     <header class="masthead" id="masthead"></header>
 
-    <section class="impact-strip" id="impactStrip" aria-label="Your contributions" hidden></section>
-
-    <!-- Lead with the next real opportunity, not account status. -->
+    <!-- Lead with the next real opportunity. -->
     <div id="nextAction"></div>
 
-    <!-- Setup is secondary: actionable when incomplete, expandable when done. -->
-    <section class="panel-card profile-setup-card" id="readinessSection" hidden aria-label="Profile setup">
+    <!-- Keep the three-ring picture visible; keep its copy spare. -->
+    <section class="panel-card readiness-card" id="readinessSection" hidden aria-label="Profile readiness">
       <div id="readinessContent"></div>
     </section>
+
+    <section class="impact-strip" id="impactStrip" aria-label="Your contributions" hidden></section>
 
     <div class="home">
 
@@ -333,54 +325,56 @@
     const el = document.getElementById('readinessContent');
     if (!section || !el || !readiness) return;
 
-    section.hidden = false;
-    if (readiness.is_complete) {
-      section.classList.add('is-ready');
-      const rings = readiness.rings || [];
-      const ringDetails = rings.map(ring => `
-        <div class="setup-ring">
-          <div class="setup-ring-head">
-            <strong>${escapeHtml(ring.name)}</strong>
-            <span>${Math.round(ring.percentage || 0)}% complete</span>
-          </div>
-          <div class="setup-ring-track"><div class="setup-ring-fill" style="width:${Math.max(0, Math.min(100, ring.percentage || 0))}%"></div></div>
-          <div class="setup-ring-note">${escapeHtml(ring.subtitle || '')}</div>
-        </div>`).join('');
-      el.innerHTML = `
-        <details class="setup-ready">
-          <summary>
-            <span class="setup-ready-mark" aria-hidden="true">✓</span>
-            <strong class="setup-ready-title">Setup</strong>
-            <span class="setup-ready-meta">Profile · availability · contact · 3/3 complete</span>
-            <span class="setup-ready-toggle">View progress</span>
-          </summary>
-          <div class="setup-ready-details">${ringDetails}</div>
-          <div class="setup-detail-footer"><a class="section-link" href="/member/profile.html">Edit profile →</a></div>
-        </details>`;
-      return;
-    }
-
-    section.classList.remove('is-ready');
-    const tasks = readiness.unfinished_tasks || [];
-    const action = readiness.next_action || {
-      action_url: '/member/profile.html',
-      action_label: 'Finish setup',
-      headline: 'Finish your profile setup'
-    };
-    const taskSummary = tasks.length
-      ? tasks.slice(0, 3).map(task => task.label).join(' · ') + (tasks.length > 3 ? ` · +${tasks.length - 3} more` : '')
-      : 'Finish the remaining setup details.';
-
-    el.innerHTML = `
-      <div class="setup-nudge">
-        <div class="setup-nudge-copy">
-          <span class="setup-nudge-label">${tasks.length} item${tasks.length === 1 ? '' : 's'} to complete</span>
-          <strong>${escapeHtml(action.headline || 'Finish your profile setup')}</strong>
-          <span class="setup-nudge-detail">${escapeHtml(taskSummary)}</span>
+    const rings = readiness.rings || [];
+    const geometry = [
+      { radius:64, length:402.12 },
+      { radius:50, length:314.16 },
+      { radius:36, length:226.19 }
+    ];
+    const arcs = rings.slice(0, 3).map((ring, index) => {
+      const { radius, length } = geometry[index];
+      const percentage = Math.max(0, Math.min(100, Number(ring.percentage) || 0));
+      const offset = (length * (1 - percentage / 100)).toFixed(2);
+      const color = escapeHtml(ring.color || '#0D9488');
+      return `<circle class="readiness-arc" cx="80" cy="80" r="${radius}" stroke-width="8" ` +
+        `stroke-dasharray="${length}" stroke-dashoffset="${offset}" stroke="${color}" transform="rotate(-90 80 80)"></circle>`;
+    }).join('');
+    const tracks = geometry.map(({ radius }) =>
+      `<circle class="readiness-track" cx="80" cy="80" r="${radius}" stroke-width="8"></circle>`
+    ).join('');
+    const legend = rings.slice(0, 3).map(ring => `
+      <div class="readiness-item">
+        <span class="readiness-swatch" style="background:${escapeHtml(ring.color || '#0D9488')}"></span>
+        <div>
+          <div class="readiness-item-name">${escapeHtml(ring.name)}</div>
+          <div class="readiness-item-note">${escapeHtml(ring.subtitle || '')}</div>
         </div>
-        <a class="btn btn-sm btn-primary" href="${escapeHtml(action.action_url || '/member/profile.html')}">
-          ${escapeHtml(action.action_label || 'Finish setup')} ${icon('arrowRight', 14)}
-        </a>
+        <span class="readiness-item-score">${Math.round(ring.percentage || 0)}%</span>
+      </div>`).join('');
+    const tasks = readiness.unfinished_tasks || [];
+    const action = readiness.next_action;
+    const footer = readiness.is_complete
+      ? `<a class="readiness-edit" href="/member/profile.html" aria-label="Edit profile" title="Edit profile">${icon('edit', 16)}</a>`
+      : `<span class="readiness-missing">${tasks.length} item${tasks.length === 1 ? '' : 's'} left</span>
+         ${action ? `<a class="btn btn-sm btn-primary" href="${escapeHtml(action.action_url)}">${escapeHtml(action.action_label)} ${icon('arrowRight', 14)}</a>` : ''}`;
+
+    section.hidden = false;
+    el.innerHTML = `
+      <div class="readiness-panel">
+        <div class="readiness-visual">
+          <svg class="readiness-svg" viewBox="0 0 160 160" role="img" aria-label="${readiness.overall_percentage}% readiness">
+            ${tracks}${arcs}
+            <text x="80" y="77" text-anchor="middle" class="readiness-center">${readiness.overall_percentage}%</text>
+            <text x="80" y="94" text-anchor="middle" class="readiness-center-label">${readiness.completed_rings}/3 RINGS</text>
+          </svg>
+        </div>
+        <div class="readiness-copy">
+          <div class="readiness-head">
+            <h2 class="readiness-title">Readiness</h2>
+          </div>
+          <div class="readiness-legend">${legend}</div>
+          <div class="readiness-foot">${footer}</div>
+        </div>
       </div>`;
   }
 
