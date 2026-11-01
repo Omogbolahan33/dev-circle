@@ -486,6 +486,7 @@ const Shell = {
         ${options}
         ${data.can_create ? `
           <div class="circle-menu-divider"></div>
+          <a class="circle-manage" href="/admin/all-members.html">All members across circles</a>
           <a class="circle-manage" href="/admin/circles.html">Manage circles…</a>` : ''}
       </div>`;
 

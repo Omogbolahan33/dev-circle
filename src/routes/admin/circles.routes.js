@@ -55,6 +55,82 @@ router.get('/all', requireGlobalAdmin, async (req, res) => {
   res.json({ circles: await circles.all({ includeArchived: req.query.include_archived === 'true' }) });
 });
 
+// Global directory: unlike /admin/members, this intentionally spans every
+// workspace and retains accounts that currently have no circle membership.
+router.get('/all-members', requireGlobalAdmin, async (req, res) => {
+  const { offset, limit, page } = paginate(req.query.page, req.query.limit);
+  const search = String(req.query.search || '').trim().toLowerCase();
+  const membership = ['assigned', 'unassigned'].includes(req.query.membership)
+    ? req.query.membership : 'all';
+  const status = ['active', 'inactive', 'suspended'].includes(req.query.status)
+    ? req.query.status : '';
+  const where = [];
+  const params = [];
+
+  if (search) {
+    where.push("(lower(COALESCE(u.name, '')) LIKE ? OR lower(u.email) LIKE ? OR lower(COALESCE(u.company, '')) LIKE ?)");
+    const term = `%${search}%`;
+    params.push(term, term, term);
+  }
+  if (membership === 'unassigned') {
+    where.push('NOT EXISTS (SELECT 1 FROM circle_members cm WHERE cm.user_id = u.id)');
+  } else if (membership === 'assigned') {
+    where.push('EXISTS (SELECT 1 FROM circle_members cm WHERE cm.user_id = u.id)');
+  }
+  if (status) {
+    where.push('u.status = ?');
+    params.push(status);
+  }
+  const clause = where.length ? `WHERE ${where.join(' AND ')}` : '';
+  const total = Number((await db.prepare(`SELECT COUNT(*) AS total FROM users u ${clause}`).get(...params))?.total || 0);
+  const members = await db.prepare(`
+    SELECT u.id, u.name, u.email, u.company, u.status, u.created_at
+    FROM users u ${clause}
+    ORDER BY lower(u.email), u.id
+    LIMIT ? OFFSET ?
+  `).all(...params, limit, offset);
+
+  const ids = (members || []).map(member => member.id);
+  const memberships = ids.length ? await db.prepare(`
+    SELECT cm.user_id, cm.added_at, c.id AS circle_id, c.name AS circle_name, c.status AS circle_status
+    FROM circle_members cm
+    JOIN circles c ON c.id = cm.circle_id
+    WHERE cm.user_id IN (${ids.map(() => '?').join(',')})
+    ORDER BY lower(c.name)
+  `).all(...ids) : [];
+  const byUser = new Map(ids.map(id => [id, []]));
+  for (const item of memberships || []) byUser.get(item.user_id)?.push({
+    id: item.circle_id, name: item.circle_name, status: item.circle_status, added_at: item.added_at
+  });
+
+  res.json({
+    members: (members || []).map(member => ({ ...member, circles: byUser.get(member.id) || [] })),
+    pagination: { page, limit, total, pages: Math.ceil(total / limit) }
+  });
+});
+
+// Add an existing account to a live workspace without requiring a member
+// import or changing any of its existing circle memberships.
+router.post('/all-members/assign', requireGlobalAdmin, async (req, res) => {
+  const { user_id, circle_id } = req.body || {};
+  if (!user_id || !circle_id) {
+    return res.status(400).json({ error: 'user_id and circle_id are required' });
+  }
+  const [user, circle] = await Promise.all([
+    db.prepare('SELECT id, status FROM users WHERE id = ?').get(user_id),
+    circles.byId(circle_id)
+  ]);
+  if (!user) return res.status(404).json({ error: 'Member not found' });
+  if (!circle || circle.status !== 'active') {
+    return res.status(400).json({ error: 'Choose an active circle' });
+  }
+  if (await circles.isMember(circle.id, user.id)) {
+    return res.json({ added: false, message: 'This member already belongs to the circle' });
+  }
+  await circles.addMembers(circle.id, [user.id]);
+  res.json({ added: true, member_id: user.id, circle: { id: circle.id, name: circle.name } });
+});
+
 // GET /api/admin/circles/:id
 router.get('/:id', requirePermission('circles.read'), async (req, res) => {
   const circle = await circles.byId(req.params.id);

@@ -293,6 +293,54 @@ test('an admin scoped to one circle may not create another', async () => {
   assert.equal(res.status, 403);
 });
 
+test('global member directory includes unassigned accounts and all circle memberships', async () => {
+  const assigned = h.makeUser({ email: 'assigned@example.ng' });
+  const secondCircle = h.makeCircle('Second circle', 'second-circle');
+  await circles.addMembers(secondCircle, [assigned.id]);
+  const orphan = h.makeUser({ email: 'orphan@example.ng' });
+  h.db.prepare('DELETE FROM circle_members WHERE user_id = ?').run(orphan.id);
+
+  const result = await h.get('/api/admin/circles/all-members?search=example.ng&limit=50', { token });
+  assert.equal(result.status, 200, JSON.stringify(result.body));
+  const listedAssigned = result.body.members.find(member => member.id === assigned.id);
+  const listedOrphan = result.body.members.find(member => member.id === orphan.id);
+  assert.deepEqual(listedAssigned.circles.map(circle => circle.id).sort(), [rootCircle, secondCircle].sort());
+  assert.deepEqual(listedOrphan.circles, []);
+
+  const unassigned = await h.get('/api/admin/circles/all-members?membership=unassigned', { token });
+  assert.ok(unassigned.body.members.some(member => member.id === orphan.id));
+  assert.ok(!unassigned.body.members.some(member => member.id === assigned.id));
+});
+
+test('global admin can assign an existing unassigned account to an active circle', async () => {
+  const target = h.makeUser({ email: 'target@example.ng' });
+  h.db.prepare('DELETE FROM circle_members WHERE user_id = ?').run(target.id);
+  const nextCircle = h.makeCircle('New home', 'new-home');
+
+  const result = await h.post('/api/admin/circles/all-members/assign', {
+    user_id: target.id, circle_id: nextCircle
+  }, { token });
+  assert.equal(result.status, 200, JSON.stringify(result.body));
+  assert.equal(result.body.added, true);
+  assert.equal(await circles.isMember(nextCircle, target.id), true);
+});
+
+test('non-global admin cannot use the cross-circle member directory or assignment action', async () => {
+  const role = h.makeRole('Circle member admin', ['members.read', 'circles.read', 'circles.write']);
+  const scoped = h.makeAdmin({
+    email: 'scoped-members@creditdirect.ng', roleId: role, global: false, circleId: rootCircle
+  });
+  const scopedToken = await h.loginAdmin(scoped.email, scoped.password);
+  const listed = await h.get('/api/admin/circles/all-members', { token: scopedToken });
+  assert.equal(listed.status, 403);
+
+  const target = h.makeUser();
+  const added = await h.post('/api/admin/circles/all-members/assign', {
+    user_id: target.id, circle_id: rootCircle
+  }, { token: scopedToken });
+  assert.equal(added.status, 403);
+});
+
 test('the super admin role spans circles, not just the account that was bootstrapped', async () => {
   // is_global was a column set once, for the very first account, and by nothing
   // afterwards — so a second super admin could do everything except see the
