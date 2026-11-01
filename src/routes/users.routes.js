@@ -19,9 +19,14 @@ const router = express.Router();
 
 // GET /api/users/profile
 router.get('/profile', requireAuth, async (req, res) => {
-  // The session already joined this member. Reloading users (and the inbox)
-  // was four extra round-trips for a screen that only needs counts.
-  const user = await engagement.decayStale(req.user) || req.user;
+  // Profile edits must be visible immediately, even when a later request lands
+  // on another app process with its own cached auth principal. Read the member
+  // row directly rather than treating the session's cached projection as the
+  // source of truth.
+  res.set('Cache-Control', 'no-store');
+  const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
+  if (!user) return res.status(404).json({ error: 'Member not found' });
+  await engagement.decayStale(user);
   const id = user.id;
 
   const [cohorts, consent, memberCircles, stats, participationConsent] = await Promise.all([
@@ -240,6 +245,7 @@ router.get('/sessions', requireAuth, async (req, res) => {
 
 // PUT /api/users/profile
 router.put('/profile', requireAuth, async (req, res) => {
+  res.set('Cache-Control', 'no-store');
   const {
     name, phone, company, work_sector,
     preferred_channels, preferred_days, preferred_time_start, preferred_time_end,

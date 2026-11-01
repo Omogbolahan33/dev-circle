@@ -76,8 +76,19 @@ test('saved profile fields are loaded again from the authenticated profile sessi
   }, { token });
   assert.equal(saved.status, 200, JSON.stringify(saved.body));
 
+  // A different app process can still hold the old five-minute auth projection.
+  // Seed that stale projection to prove the profile endpoint reads the live row.
+  const auth = require('../../src/middleware/auth');
+  const cache = require('../../src/middleware/cache');
+  cache.principals.set(cache.authKey(auth.hashToken(token)), {
+    user: { ...saved.body.user, company: 'Stale Company' },
+    isAdmin: false,
+    permissions: []
+  });
+
   const reopened = await h.get('/api/users/profile', { token });
   assert.equal(reopened.status, 200, JSON.stringify(reopened.body));
+  assert.equal(reopened.headers.get('cache-control'), 'no-store');
   assert.equal(reopened.body.user.company, 'Updated Company');
   assert.equal(reopened.body.user.age_group, '35 - 44');
   assert.deepEqual(reopened.body.user.products, ['Mobile App', 'Yield', 'BNPL']);
