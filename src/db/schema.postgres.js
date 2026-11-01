@@ -530,6 +530,7 @@ const SCHEMA_POSTGRES = `
   CREATE INDEX IF NOT EXISTS idx_circles_status_created ON circles(status, created_at);
   CREATE INDEX IF NOT EXISTS idx_circle_members_user ON circle_members(user_id);
   CREATE INDEX IF NOT EXISTS idx_circle_admins_admin ON circle_admins(admin_id);
+  CREATE INDEX IF NOT EXISTS idx_circle_admins_role ON circle_admins(role_id);
   CREATE INDEX IF NOT EXISTS idx_surveys_trigger ON surveys(trigger_event);
   CREATE INDEX IF NOT EXISTS idx_surveys_public_token ON surveys(public_token) WHERE public_token IS NOT NULL;
   CREATE INDEX IF NOT EXISTS idx_survey_responses_survey ON survey_responses(survey_id);
@@ -545,6 +546,7 @@ const SCHEMA_POSTGRES = `
   CREATE INDEX IF NOT EXISTS idx_engagement_created ON engagement_history(created_at);
   CREATE INDEX IF NOT EXISTS idx_engagement_user_created ON engagement_history(user_id, created_at DESC);
   CREATE INDEX IF NOT EXISTS idx_feedback_user ON feedback(user_id);
+  CREATE INDEX IF NOT EXISTS idx_feedback_survey ON feedback(survey_id);
   CREATE INDEX IF NOT EXISTS idx_feedback_status ON feedback(status);
   CREATE INDEX IF NOT EXISTS idx_feedback_source ON feedback(source);
   CREATE INDEX IF NOT EXISTS idx_feedback_ticket ON feedback(external_ticket_id);
@@ -554,6 +556,8 @@ const SCHEMA_POSTGRES = `
   CREATE INDEX IF NOT EXISTS idx_deliveries_source ON message_deliveries(source_type, source_id);
   CREATE INDEX IF NOT EXISTS idx_deliveries_user ON message_deliveries(user_id);
   CREATE INDEX IF NOT EXISTS idx_sessions_when ON scheduled_sessions(scheduled_for, status);
+  CREATE INDEX IF NOT EXISTS idx_scheduled_sessions_survey ON scheduled_sessions(survey_id);
+  CREATE INDEX IF NOT EXISTS idx_scheduled_sessions_circle ON scheduled_sessions(circle_id);
   CREATE INDEX IF NOT EXISTS idx_sessions_subject ON sessions(subject_id);
   CREATE INDEX IF NOT EXISTS idx_sessions_expiry ON sessions(expires_at);
   CREATE INDEX IF NOT EXISTS idx_login_codes_identifier ON login_codes(identifier, created_at);
@@ -575,11 +579,15 @@ const SCHEMA_POSTGRES = `
   CREATE UNIQUE INDEX IF NOT EXISTS idx_feedback_verbatim ON feedback(user_id, survey_id, question_id) WHERE question_id IS NOT NULL AND survey_id IS NOT NULL AND user_id IS NOT NULL;
   CREATE UNIQUE INDEX IF NOT EXISTS idx_feedback_verbatim_anon ON feedback(response_id, question_id) WHERE response_id IS NOT NULL AND question_id IS NOT NULL;
   CREATE UNIQUE INDEX IF NOT EXISTS idx_feedback_external_response ON feedback(source_system, external_response_id) WHERE external_response_id IS NOT NULL;
-  CREATE UNIQUE INDEX IF NOT EXISTS idx_session_dispatch_once ON session_dispatches(session_id, offset_minutes);
+  DROP INDEX IF EXISTS idx_session_dispatch_once;
   CREATE INDEX IF NOT EXISTS idx_email_templates_circle ON email_templates(circle_id);
+  CREATE INDEX IF NOT EXISTS idx_email_templates_updated_by ON email_templates(updated_by);
+  CREATE INDEX IF NOT EXISTS idx_option_lists_updated_by ON option_lists(updated_by);
   CREATE INDEX IF NOT EXISTS idx_onboarding_forms_circle ON onboarding_forms(circle_id);
   CREATE INDEX IF NOT EXISTS idx_onboarding_forms_token ON onboarding_forms(public_token) WHERE public_token IS NOT NULL;
   CREATE INDEX IF NOT EXISTS idx_onboarding_submissions_form ON onboarding_submissions(form_id, status);
+  CREATE INDEX IF NOT EXISTS idx_onboarding_submissions_decided_by ON onboarding_submissions(decided_by);
+  CREATE INDEX IF NOT EXISTS idx_onboarding_submissions_user ON onboarding_submissions(user_id);
   CREATE INDEX IF NOT EXISTS idx_onboarding_submissions_circle ON onboarding_submissions(circle_id, status);
   CREATE INDEX IF NOT EXISTS idx_onboarding_submissions_email ON onboarding_submissions(email) WHERE email IS NOT NULL;
   CREATE INDEX IF NOT EXISTS idx_onboarding_submissions_key ON onboarding_submissions(session_key_hash) WHERE session_key_hash IS NOT NULL;

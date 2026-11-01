@@ -1731,6 +1731,23 @@ function define(db) {
             WHERE anonymous_key_hash IS NOT NULL;
         `);
       }
+    },
+    {
+      id: 39,
+      name: 'foreign_key_indexes_and_duplicate_cleanup',
+      up() {
+        return db.exec(`
+          CREATE INDEX IF NOT EXISTS idx_circle_admins_role ON circle_admins(role_id);
+          CREATE INDEX IF NOT EXISTS idx_email_templates_updated_by ON email_templates(updated_by);
+          CREATE INDEX IF NOT EXISTS idx_feedback_survey ON feedback(survey_id);
+          CREATE INDEX IF NOT EXISTS idx_onboarding_submissions_decided_by ON onboarding_submissions(decided_by);
+          CREATE INDEX IF NOT EXISTS idx_onboarding_submissions_user ON onboarding_submissions(user_id);
+          CREATE INDEX IF NOT EXISTS idx_option_lists_updated_by ON option_lists(updated_by);
+          CREATE INDEX IF NOT EXISTS idx_scheduled_sessions_survey ON scheduled_sessions(survey_id);
+          CREATE INDEX IF NOT EXISTS idx_scheduled_sessions_circle ON scheduled_sessions(circle_id);
+          DROP INDEX IF EXISTS idx_session_dispatch_once;
+        `);
+      }
     }
   ];
   return migrations;
