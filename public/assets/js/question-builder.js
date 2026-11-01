@@ -50,6 +50,7 @@ const QuestionBuilder = (() => {
     // whole the moment anything in it changes, so the open row has to outlive
     // the redraw — keyed by the question and the option's place in its list.
     const descExpanded = new Set();
+    const subtextExpanded = new Set();
     const descKey = (questionId, list, i) => `${questionId}|${list}|${i}`;
 
     // Which cards have their "More options" fold open. The same redraw
@@ -173,6 +174,7 @@ const QuestionBuilder = (() => {
                 ? escapeHtml(question.text)
                 : '<span class="dim">Untitled — click to write it</span>'}
             </button>
+            ${question.description ? `<div class="q-summary-note">${escapeHtml(question.description)}</div>` : ''}
           </div>`;
       }
 
@@ -186,6 +188,8 @@ const QuestionBuilder = (() => {
             <input type="text" class="input q-text" value="${escapeHtml(question.text || '')}"
                    placeholder="${escapeHtml(placeholderFor(question.type))}">
           </div>
+
+          ${questionSubtextEditor(question)}
 
           ${SurveySchema.isAnswerable(question) ? `
             <label class="row-tight text-sm" style="cursor:pointer;gap:var(--sp-2);margin-bottom:var(--sp-4)">
@@ -260,9 +264,9 @@ const QuestionBuilder = (() => {
                       ${escapeHtml(subtext)}</button>` : ''}
                   </div>
                   ${isCards ? `
-                  <button type="button" class="icon-btn option-desc-toggle${subtext ? ' on' : ''}"
+                  <button type="button" class="btn btn-sm btn-ghost option-desc-toggle${subtext ? ' on' : ''}"
                           data-toggle-desc aria-label="Add or edit the line shown under this option"
-                          title="A line under this option as the member reads it — words, a link, a picture">✎</button>` : ''}
+                          title="A line under this option as the member reads it — words, a link, a picture">${subtext ? 'Edit subtext' : '+ Subtext'}</button>` : ''}
                   ${question.type === 'multi_choice' && list === 'options' ? `
                   <button class="exclusive-flag${(question.exclusive_options || []).includes(word) ? ' on' : ''}"
                           data-exclusive="${i}" title="Cannot be picked with anything else">only</button>` : ''}
@@ -281,6 +285,27 @@ const QuestionBuilder = (() => {
             }).join('')}
           </div>
           <button class="btn btn-sm btn-ghost mt-2" data-add-option="${list}">+ Add option</button>
+        </div>`;
+    }
+
+    // Optional question-level subtext appears beneath the question in the
+    // respondent's view. Keep its editor behind an explicit, visible action so
+    // the card stays light without making the edit control hard to find.
+    function questionSubtextEditor(question) {
+      if (question.type === 'section') return '';
+      const open = subtextExpanded.has(question.id);
+      return `
+        <div class="question-subtext-editor">
+          ${question.description && !open
+            ? `<p class="question-subtext-preview">${escapeHtml(question.description)}</p>` : ''}
+          <button type="button" class="btn btn-sm btn-ghost" data-toggle-subtext>
+            ${open ? 'Close subtext editor' : question.description ? 'Edit subtext' : '+ Add question subtext'}
+          </button>
+          ${open ? `<div class="field question-subtext-field">
+            <label class="label">Question subtext</label>
+            <textarea class="input" data-set="description" maxlength="500"
+              placeholder="Optional context shown under the question.">${escapeHtml(question.description || '')}</textarea>
+          </div>` : ''}
         </div>`;
     }
 
@@ -794,6 +819,15 @@ const QuestionBuilder = (() => {
         const summary = cardEl.querySelector('.q-summary');
         if (summary) summary.textContent = e.target.value;
         touch();
+      });
+
+      cardEl.querySelector('[data-toggle-subtext]')?.addEventListener('click', () => {
+        if (subtextExpanded.has(question.id)) subtextExpanded.delete(question.id);
+        else subtextExpanded.add(question.id);
+        render();
+        if (subtextExpanded.has(question.id)) {
+          el.questions.querySelector(`.q-card[data-index="${index}"] [data-set="description"]`)?.focus();
+        }
       });
 
       cardEl.querySelector('[data-required]')?.addEventListener('click', () => {

@@ -45,6 +45,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.q-summary-note { margin-top: var(--sp-1); color: var(--ash-dim); font-size: var(--fs-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .q-flag {
   font-size: 10px; color: var(--ash-dim);
   border: 1px solid var(--line); border-radius: var(--r-sm); padding: 1px var(--sp-2);
@@ -114,7 +115,11 @@
    will read it: smaller, quieter, one line */
 .option-fields { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 0; }
 .option-row .option-fields input { flex: none; width: 100%; }
-.option-desc-toggle { width: 24px; height: 24px; font-size: var(--fs-sm); }
+.question-subtext-editor { margin: calc(-1 * var(--sp-2)) 0 var(--sp-4); }
+.question-subtext-preview { margin: 0 0 var(--sp-2); color: var(--ash-dim); font-size: var(--fs-sm); line-height: var(--lh-loose); }
+.question-subtext-field { margin-top: var(--sp-2); }
+.question-subtext-field textarea { min-height: 64px; }
+.option-desc-toggle { flex-shrink: 0; white-space: nowrap; }
 .option-desc-toggle.on { color: var(--cd-blue); }
 .option-desc-preview {
   display: block; width: 100%; padding: 0; border: 0; background: none;
