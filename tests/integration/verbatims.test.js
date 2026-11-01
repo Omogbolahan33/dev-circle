@@ -57,13 +57,24 @@ test('a written answer is filed as feedback against the member', async () => {
   assert.equal(filed[0].type, 'survey_response');
   assert.equal(filed[0].survey_id, survey.id);
   assert.equal(filed[0].question_id, 'q3');
+
+  const stored = h.db.prepare('SELECT * FROM survey_responses WHERE survey_id = ? AND user_id = ?')
+    .get(survey.id, user.id);
+  assert.equal(Object.hasOwn(JSON.parse(stored.answers), 'q3'), false,
+    'feedback content is not copied into the response JSON');
+  const responseList = await h.get(`/api/admin/surveys/${survey.id}/responses`, { token: adminToken });
+  assert.equal(responseList.body.responses[0].answers.q3,
+    'The webhook retry intervals are undocumented.', 'the response API reconstructs its original answer shape');
 });
 
 test('feedback items can be independently deleted with confirmation', async () => {
   const user = h.makeUser({ password: 'dev-password' });
   const survey = makeSurvey();
-  await respond(user, survey, { q3: 'Please improve the SDK examples.' });
-  const item = h.db.prepare("SELECT id FROM feedback WHERE user_id = ? AND source = 'survey'").get(user.id);
+  await respond(user, survey, {
+    q3: 'Please improve the SDK examples.', q4: 'The getting-started guide is useful.'
+  });
+  const item = h.db.prepare("SELECT id FROM feedback WHERE user_id = ? AND source = 'survey' AND question_id = 'q3'")
+    .get(user.id);
 
   const first = await h.del(`/api/admin/feedback/${item.id}`, { token: adminToken });
   assert.equal(first.status, 409);
@@ -73,8 +84,13 @@ test('feedback items can be independently deleted with confirmation', async () =
   const removed = await h.del(`/api/admin/feedback/${item.id}?confirm=true`, { token: adminToken });
   assert.equal(removed.status, 200, JSON.stringify(removed.body));
   assert.equal(Number(h.db.prepare('SELECT COUNT(*) AS c FROM feedback WHERE id = ?').get(item.id).c), 0);
-  assert.equal(Number(h.db.prepare('SELECT COUNT(*) AS c FROM survey_responses WHERE survey_id = ? AND user_id = ?')
-    .get(survey.id, user.id).c), 1, 'the feedback action does not also erase the survey response');
+  const response = h.db.prepare('SELECT answers FROM survey_responses WHERE survey_id = ? AND user_id = ?')
+    .get(survey.id, user.id);
+  const preserved = JSON.parse(response.answers);
+  assert.equal(preserved.q3, 'Please improve the SDK examples.',
+    'deleting the Feedback view preserves that survey answer in its original record');
+  assert.equal(Object.hasOwn(preserved, 'q4'), false,
+    'another Feedback item remains canonical in Feedback, not duplicated back into the response');
 });
 
 test('the question is kept with the answer', async () => {
@@ -86,6 +102,23 @@ test('the question is kept with the answer', async () => {
   const filed = h.db.prepare("SELECT prompt FROM feedback WHERE source = 'survey'").get();
   // "About a week." on its own says nothing; the prompt is what makes it mean something
   assert.equal(filed.prompt, 'What could we improve?');
+});
+
+test('Other text has one stored copy while preserving the original multi-choice answer API shape', async () => {
+  const user = h.makeUser({ password: 'dev-password' });
+  const survey = makeSurvey({ questions: [
+    { id: 'q5', type: 'multi_choice', text: 'Which docs did you use?', options: ['API reference', 'Quickstart'], allow_other: true }
+  ] });
+
+  await respond(user, survey, { q5: ['API reference', 'A migration guide'] });
+  const stored = h.db.prepare('SELECT * FROM survey_responses WHERE survey_id = ? AND user_id = ?')
+    .get(survey.id, user.id);
+  assert.deepEqual(JSON.parse(stored.answers).q5, ['API reference']);
+  assert.equal(h.db.prepare("SELECT content FROM feedback WHERE survey_id = ? AND question_id = 'q5'")
+    .get(survey.id).content, 'A migration guide');
+
+  const responseList = await h.get(`/api/admin/surveys/${survey.id}/responses`, { token: adminToken });
+  assert.deepEqual(responseList.body.responses[0].answers.q5, ['API reference', 'A migration guide']);
 });
 
 test('ratings and picked options are not filed as verbatims', async () => {
@@ -239,18 +272,21 @@ test('feedback raised in Dev Circle can still be triaged', async () => {
 
 // ─── The survey's own results are untouched ─────────────────
 
-test('the response keeps its answers, so survey results are unaffected', async () => {
+test('the feedback answer has one stored copy and survey APIs still return it', async () => {
   const user = h.makeUser({ password: 'dev-password' });
   const survey = makeSurvey();
 
   await respond(user, survey, { q1: 4, q3: 'Filed as feedback too.' });
 
   const response = h.db.prepare('SELECT answers FROM survey_responses WHERE user_id = ?').get(user.id);
-  const answers = JSON.parse(response.answers);
+  const storedAnswers = JSON.parse(response.answers);
 
-  // Filing a copy as feedback must not move it out of the survey it belongs to
-  assert.equal(answers.q1, 4);
-  assert.equal(answers.q3, 'Filed as feedback too.');
+  assert.equal(storedAnswers.q1, 4, 'measurement answers remain in the response JSON');
+  assert.equal(Object.hasOwn(storedAnswers, 'q3'), false,
+    'a verbatim is stored only in Feedback, not copied into response JSON');
+  const responseList = await h.get(`/api/admin/surveys/${survey.id}/responses`, { token: adminToken });
+  assert.equal(responseList.body.responses[0].answers.q3, 'Filed as feedback too.',
+    'the survey API reconstructs the same answer object for its results');
 });
 
 test('survey responses still export with their verbatims', async () => {

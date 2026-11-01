@@ -425,8 +425,8 @@ const surveyStmt = db.prepare(`
 
   // ─── Survey Responses ───────────────────────────────────────
   const responseStmt = db.prepare(`
-    INSERT INTO survey_responses (id, survey_id, user_id, answers, completed_at, triggered_by)
-    VALUES (?, ?, ?, ?, datetime('now', ?), ?)
+    INSERT INTO survey_responses (id, survey_id, user_id, answers, questions, completed_at, triggered_by)
+    VALUES (?, ?, ?, ?, ?, datetime('now', ?), ?)
   `);
 
   // Written answers, so the verbatims a survey collects read like things a
@@ -516,14 +516,16 @@ const surveyStmt = db.prepare(`
         }
 
         const completedDaysAgo = Math.floor(Math.random() * 30);
+        const responseId = uuid();
         responseStmt.run(
-          uuid(), survey.id, dev._id, JSON.stringify(answers),
-          `-${completedDaysAgo} days`, 'manual'
+          responseId, survey.id, dev._id,
+          JSON.stringify(verbatims.stripFeedbackAnswers(survey, answers)),
+          JSON.stringify(survey.questions), `-${completedDaysAgo} days`, 'manual'
         );
 
-        // Free-text answers are filed with the rest of the member's feedback,
-        // the same way a live submission does it
-        verbatims.record(dev._id, survey, answers, {
+        // Free-text answers live once, in Feedback, and are rejoined by response id.
+        await verbatims.record(dev._id, survey, answers, {
+          responseId,
           at: new Date(Date.now() - completedDaysAgo * 86400000).toISOString().slice(0, 19).replace('T', ' ')
         });
 
@@ -538,8 +540,8 @@ const surveyStmt = db.prepare(`
   // contains it rather than leaving it to be discovered in production.
   const anonymousResponse = db.prepare(`
     INSERT INTO survey_responses (id, survey_id, user_id, respondent_kind, anonymous_key_hash,
-                                  answers, completed_at, triggered_by)
-    VALUES (?, ?, NULL, 'anonymous', ?, ?, datetime('now', ?), 'link')
+                                  answers, questions, completed_at, triggered_by)
+    VALUES (?, ?, NULL, 'anonymous', ?, ?, ?, datetime('now', ?), 'link')
   `);
 
   let anonymousCount = 0;
@@ -562,11 +564,12 @@ const surveyStmt = db.prepare(`
       anonymousResponse.run(
         id, survey.id,
         crypto.createHash('sha256').update(uuid()).digest('hex'),
-        JSON.stringify(checked.answers), `-${daysAgo} days`
+        JSON.stringify(verbatims.stripFeedbackAnswers(survey, checked.answers)),
+        JSON.stringify(survey.questions), `-${daysAgo} days`
       );
 
       // Filed as evidence the same way a member's words are, minus the member
-      verbatims.record(null, survey, checked.answers, {
+      await verbatims.record(null, survey, checked.answers, {
         responseId: id,
         at: new Date(Date.now() - daysAgo * 86400000).toISOString().slice(0, 19).replace('T', ' ')
       });

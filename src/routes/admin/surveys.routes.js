@@ -631,8 +631,8 @@ router.get('/surveys/:id/responses', requirePermission('surveys.read'), async (r
 
   res.json({
     survey: hydrated,
-    responses: responses.map(r => {
-      const answers = parseJSON(r.answers, {});
+    responses: await Promise.all(responses.map(async r => {
+      const answers = await verbatims.restoreResponseAnswers(r, hydrated.questions);
       return {
         ...r,
         answers,
@@ -641,7 +641,7 @@ router.get('/surveys/:id/responses', requirePermission('surveys.read'), async (r
         // ever asked of them.
         asked: r.completed_at ? surveyForm.visible(hydrated.questions, answers).map(q => q.id) : null
       };
-    })
+    }))
   });
 });
 
@@ -684,7 +684,7 @@ router.post('/surveys/:id/responses/:responseId/submit', requirePermission('resp
       UPDATE survey_responses
       SET answers = ?, questions = ?, completed_at = datetime('now')
       WHERE id = ? AND survey_id = ? AND completed_at IS NULL
-    `).run(JSON.stringify(checked.answers), JSON.stringify(hydrated.questions), response.id, survey.id);
+    `).run(JSON.stringify(verbatims.stripFeedbackAnswers(hydrated, checked.answers)), JSON.stringify(hydrated.questions), response.id, survey.id);
     completed = Number(updated?.changes || 0) > 0;
     if (!completed) return;
 
@@ -1076,13 +1076,13 @@ router.post('/surveys/:id/responses/import', requirePermission('surveys.write'),
   `);
 
   const insertResponse = db.prepare(`
-    INSERT INTO survey_responses (id, survey_id, user_id, answers, completed_at, triggered_by,
+    INSERT INTO survey_responses (id, survey_id, user_id, answers, questions, completed_at, triggered_by,
                                   respondent_kind, source_system, external_response_id)
-    VALUES (?, ?, ?, ?, ?, 'import', ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, 'import', ?, ?, ?)
   `);
   const completeResponse = db.prepare(`
     UPDATE survey_responses
-    SET answers = ?, completed_at = ?, triggered_by = 'import',
+    SET answers = ?, questions = ?, completed_at = ?, triggered_by = 'import',
         source_system = ?, external_response_id = ?
     WHERE id = ?
   `);
@@ -1174,32 +1174,35 @@ router.post('/surveys/:id/responses/import', requirePermission('surveys.write'),
       }
 
       const at = meta.submittedAt || now();
-      const serialized = JSON.stringify(checked.answers);
+      const serialized = JSON.stringify(verbatims.stripFeedbackAnswers({ questions }, checked.answers));
 
       const pending = member ? await findPending.get(survey.id, member.id) : null;
       const responseId = pending ? pending.id : uuid();
 
-      if (pending) {
-        await completeResponse.run(serialized, at, sourceSystem, meta.externalId || null, responseId);
-      } else {
-        await insertResponse.run(
-          responseId, survey.id, member ? member.id : null, serialized, at,
-          // Not 'anonymous': nobody answered this under a promise of
-          // anonymity. It is a response with no account behind it, which is a
-          // different thing and is worth being able to tell apart later.
-          // A response with no account behind it on a link survey is anonymous
-          // in the sense the word promises whoever answered. On a survey put
-          // to named people it is simply one we could not attach, which is a
-          // different thing and worth being able to tell apart later.
-          member ? 'member' : (anonymousExpected ? 'anonymous' : 'external'),
-          sourceSystem, meta.externalId || null
-        );
-      }
+      let filed = 0;
+      await db.atomic(async () => {
+        if (pending) {
+          await completeResponse.run(serialized, JSON.stringify(questions), at, sourceSystem, meta.externalId || null, responseId);
+        } else {
+          await insertResponse.run(
+            responseId, survey.id, member ? member.id : null, serialized, JSON.stringify(questions), at,
+            // Not 'anonymous': nobody answered this under a promise of
+            // anonymity. It is a response with no account behind it, which is a
+            // different thing and is worth being able to tell apart later.
+            // A response with no account behind it on a link survey is anonymous
+            // in the sense the word promises whoever answered. On a survey put
+            // to named people it is simply one we could not attach, which is a
+            // different thing and worth being able to tell apart later.
+            member ? 'member' : (anonymousExpected ? 'anonymous' : 'external'),
+            sourceSystem, meta.externalId || null
+          );
+        }
 
-      // What was written in a sheet is what a developer told us, on the same
-      // terms as anything typed in here
-      const { filed } = await verbatims.record(member ? member.id : null, survey, checked.answers, {
-        at, responseId, sourceSystem, externalResponseId: meta.externalId || null
+        // What was written in a sheet is what a developer told us, on the same
+        // terms as anything typed in here
+        filed = (await verbatims.record(member ? member.id : null, survey, checked.answers, {
+          at, responseId, sourceSystem, externalResponseId: meta.externalId || null
+        })).filed;
       });
       results.verbatims += filed;
 
@@ -1260,8 +1263,8 @@ router.get('/surveys/:id/export', requirePermission('export.read'), async (req, 
     ...questions.map((q, i) => `q${i + 1}. ${q.text || q.type}`)
   ];
 
-  const rows = responses.map(r => {
-    const answers = parseJSON(r.answers, {});
+  const rows = await Promise.all(responses.map(async r => {
+    const answers = await verbatims.restoreResponseAnswers(r, surveyForm.hydrate(survey).questions);
     const asked = new Set(surveyForm.visible(
       surveyForm.hydrate(survey).questions, answers
     ).map(q => q.id));
@@ -1277,7 +1280,7 @@ router.get('/surveys/:id/export', requirePermission('export.read'), async (req, 
       // A grid or a ranking is flattened the same way it reads on screen.
       ...questions.map(q => (asked.has(q.id) ? surveyForm.answerToText(q, answers[q.id]) : ''))
     ];
-  });
+  }));
 
   const csv = toCSV(headers, rows, (row, header) => row[headers.indexOf(header)]);
 

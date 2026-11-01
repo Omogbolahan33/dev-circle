@@ -277,9 +277,11 @@ test('a sheet of collected answers becomes responses the survey can report on', 
   assert.equal(stored[0].triggered_by, 'import');
   assert.equal(stored[0].source_system, 'google_forms');
   assert.equal(stored[0].completed_at, '2026-03-14 09:20:00');
-  assert.deepEqual(JSON.parse(stored[0].answers), {
-    [rating.id]: 4, [text.id]: 'The webhook signing docs'
-  });
+  assert.deepEqual(JSON.parse(stored[0].answers), { [rating.id]: 4 },
+    'free-text feedback is not duplicated in the survey response JSON');
+  const responseList = await h.get(`/api/admin/surveys/${survey.id}/responses`, { token });
+  assert.equal(responseList.body.responses.find(response => response.user_id === member.id).answers[text.id],
+    'The webhook signing docs', 'the survey response API reconstructs its original answer shape');
 
   assert.equal(stored[1].user_id, null);
   assert.equal(stored[1].respondent_kind, 'external',
@@ -695,8 +697,12 @@ test('last round\'s export imports straight into this round\'s copy', async () =
   assert.equal(result.body.imported, 1);
 
   const landed = h.db.prepare('SELECT * FROM survey_responses WHERE survey_id = ?').get(copy.id);
-  const restored = JSON.parse(landed.answers);
+  const storedAnswers = JSON.parse(landed.answers);
+  const listedResponses = await h.get(`/api/admin/surveys/${copy.id}/responses`, { token });
+  const restored = listedResponses.body.responses[0].answers;
   const byText = text => copy.questions.find(q => q.text === text).id;
+  assert.equal(Object.hasOwn(storedAnswers, byText('Anything else?')), false,
+    'free-text feedback is not duplicated in the imported response JSON');
 
   assert.equal(restored[byText('How clear are the docs?')], 4);
   assert.deepEqual(restored[byText('Which products?')], ['Lending', 'Identity']);

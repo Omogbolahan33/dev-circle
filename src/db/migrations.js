@@ -1762,6 +1762,93 @@ function define(db) {
           DROP INDEX IF EXISTS idx_onboarding_forms_token;
         `);
       }
+    },
+    {
+      id: 41,
+      name: 'keep_survey_verbatims_once',
+      up() {
+        // The original survey response remains the API's answer shape, but its
+        // free-text content now lives in Feedback. Remove only answer values
+        // that have a matching feedback record; unrelated/malformed responses
+        // are deliberately left untouched.
+        const responses = db.prepare(`
+          SELECT sr.id, sr.survey_id, sr.user_id, sr.answers, sr.questions,
+                 s.questions AS survey_questions
+          FROM survey_responses sr
+          JOIN surveys s ON s.id = sr.survey_id
+          WHERE sr.completed_at IS NOT NULL
+        `).all();
+        const feedback = db.prepare(`
+          SELECT id, response_id, survey_id, user_id, question_id, content
+          FROM feedback
+          WHERE type = 'survey_response' AND question_id IS NOT NULL
+            AND source IN ('survey', 'external_survey')
+        `).all();
+        const responseCounts = new Map();
+        const responseKey = (surveyId, userId) => JSON.stringify([surveyId, userId || null]);
+        for (const row of db.prepare(`
+          SELECT survey_id, user_id, COUNT(*) AS count
+          FROM survey_responses GROUP BY survey_id, user_id
+        `).all()) {
+          responseCounts.set(responseKey(row.survey_id, row.user_id), Number(row.count || 0));
+        }
+
+        const parse = (value, fallback) => {
+          try { return JSON.parse(value || ''); } catch { return fallback; }
+        };
+        const label = option => option && typeof option === 'object'
+          ? String(option.label ?? option.value ?? '') : String(option ?? '');
+        const fold = value => String(value ?? '').trim().toLowerCase();
+        const update = db.prepare('UPDATE survey_responses SET answers = ? WHERE id = ?');
+        const linkedQuestion = db.prepare('SELECT COUNT(*) AS c FROM feedback WHERE response_id = ? AND question_id = ?');
+        const link = db.prepare('UPDATE feedback SET response_id = ? WHERE id = ? AND response_id IS NULL');
+
+        for (const response of responses) {
+          const key = responseKey(response.survey_id, response.user_id);
+          const linked = feedback.filter(row => row.response_id === response.id || (
+            !row.response_id && row.survey_id === response.survey_id && row.user_id === response.user_id &&
+            responseCounts.get(key) === 1
+          ));
+          if (!linked.length) continue;
+
+          const answers = parse(response.answers, {});
+          if (!answers || typeof answers !== 'object' || Array.isArray(answers)) continue;
+          const responseQuestions = parse(response.questions, []);
+          const questions = Array.isArray(responseQuestions) && responseQuestions.length
+            ? responseQuestions : parse(response.survey_questions, []);
+          const byId = new Map((Array.isArray(questions) ? questions : []).map(question => [question.id, question]));
+          let changed = false;
+
+          for (const row of linked) {
+            const question = byId.get(row.question_id);
+            if (!question || !Object.hasOwn(answers, row.question_id)) continue;
+            const answer = answers[row.question_id];
+            if (question.type === 'text' && !question.format && typeof answer === 'string' &&
+                answer.trim() === String(row.content || '').trim()) {
+              delete answers[row.question_id];
+              changed = true;
+            } else if (question.allow_other && ['choice', 'dropdown'].includes(question.type) &&
+                       typeof answer === 'string' && fold(answer) === fold(row.content)) {
+              delete answers[row.question_id];
+              changed = true;
+            } else if (question.allow_other && question.type === 'multi_choice' && Array.isArray(answer)) {
+              const offered = new Set((question.options || []).map(option => fold(label(option))));
+              const copied = new Set(String(row.content || '').split('; ').map(fold));
+              const kept = answer.filter(value => offered.has(fold(value)) || !copied.has(fold(value)));
+              if (kept.length !== answer.length) {
+                if (kept.length) answers[row.question_id] = kept;
+                else delete answers[row.question_id];
+                changed = true;
+              }
+            }
+
+            if (!row.response_id && !Number(linkedQuestion.get(response.id, row.question_id)?.c || 0)) {
+              link.run(response.id, row.id);
+            }
+          }
+          if (changed) update.run(JSON.stringify(answers), response.id);
+        }
+      }
     }
   ];
   return migrations;

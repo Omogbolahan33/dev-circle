@@ -593,6 +593,108 @@ const SCHEMA_POSTGRES = `
   CREATE INDEX IF NOT EXISTS idx_onboarding_submissions_key ON onboarding_submissions(session_key_hash) WHERE session_key_hash IS NOT NULL;
   CREATE UNIQUE INDEX IF NOT EXISTS idx_onboarding_submissions_external ON onboarding_submissions(form_id, external_ref) WHERE external_ref IS NOT NULL;
 
+  -- A survey verbatim is canonical in Feedback, not copied in the response JSON.
+  -- Existing completed responses were backfilled before the storage model changed;
+  -- on a schema upgrade, remove only values that have a linked Feedback row and
+  -- link legacy member rows when the survey/user pair identifies one response.
+  DO $survey_feedback_once$
+  DECLARE
+    response_row record;
+    feedback_row record;
+    question_row jsonb;
+    question_list jsonb;
+    answer_map jsonb;
+    answer_value jsonb;
+    kept_values jsonb;
+    answer_text text;
+    changed boolean;
+    response_count integer;
+  BEGIN
+    FOR response_row IN
+      SELECT sr.id, sr.survey_id, sr.user_id, sr.answers, sr.questions,
+             s.questions AS live_questions
+      FROM survey_responses sr
+      JOIN surveys s ON s.id = sr.survey_id
+      WHERE sr.completed_at IS NOT NULL
+    LOOP
+      answer_map := COALESCE(NULLIF(response_row.answers, '')::jsonb, '{}'::jsonb);
+      question_list := COALESCE(NULLIF(response_row.questions, '')::jsonb, '[]'::jsonb);
+      IF jsonb_typeof(question_list) IS DISTINCT FROM 'array' THEN
+        question_list := COALESCE(NULLIF(response_row.live_questions, '')::jsonb, '[]'::jsonb);
+      ELSIF jsonb_array_length(question_list) = 0 THEN
+        question_list := COALESCE(NULLIF(response_row.live_questions, '')::jsonb, '[]'::jsonb);
+      END IF;
+      changed := false;
+
+      FOR feedback_row IN
+        SELECT f.id, f.response_id, f.survey_id, f.user_id, f.question_id, f.content
+        FROM feedback f
+        WHERE f.type = 'survey_response' AND f.question_id IS NOT NULL
+          AND f.source IN ('survey', 'external_survey')
+          AND (
+            f.response_id = response_row.id
+            OR (
+              f.response_id IS NULL AND f.survey_id = response_row.survey_id
+              AND f.user_id IS NOT DISTINCT FROM response_row.user_id
+              AND (SELECT COUNT(*) FROM survey_responses sr2
+                   WHERE sr2.survey_id = response_row.survey_id
+                     AND sr2.user_id IS NOT DISTINCT FROM response_row.user_id) = 1
+            )
+          )
+      LOOP
+        SELECT question_item.value INTO question_row
+        FROM jsonb_array_elements(question_list) AS question_item(value)
+        WHERE question_item.value->>'id' = feedback_row.question_id
+        LIMIT 1;
+        IF question_row IS NULL THEN CONTINUE; END IF;
+
+        answer_value := answer_map -> feedback_row.question_id;
+        IF answer_value IS NOT NULL THEN
+          answer_text := answer_value #>> '{}';
+          IF question_row->>'type' = 'text'
+             AND COALESCE(question_row->>'format', '') = ''
+             AND answer_text = BTRIM(feedback_row.content) THEN
+            answer_map := answer_map - feedback_row.question_id;
+            changed := true;
+          ELSIF COALESCE((question_row->>'allow_other')::boolean, false)
+             AND question_row->>'type' IN ('choice', 'dropdown')
+             AND answer_text = feedback_row.content THEN
+            answer_map := answer_map - feedback_row.question_id;
+            changed := true;
+          ELSIF COALESCE((question_row->>'allow_other')::boolean, false)
+             AND question_row->>'type' = 'multi_choice'
+             AND jsonb_typeof(answer_value) = 'array' THEN
+            SELECT COALESCE(jsonb_agg(item.value), '[]'::jsonb) INTO kept_values
+            FROM jsonb_array_elements(answer_value) AS item(value)
+            WHERE NOT ((item.value #>> '{}') = ANY(string_to_array(feedback_row.content, '; ')));
+            IF kept_values <> answer_value THEN
+              IF jsonb_array_length(kept_values) > 0 THEN
+                answer_map := jsonb_set(answer_map, ARRAY[feedback_row.question_id], kept_values, true);
+              ELSE
+                answer_map := answer_map - feedback_row.question_id;
+              END IF;
+              changed := true;
+            END IF;
+          END IF;
+        END IF;
+
+        IF feedback_row.response_id IS NULL THEN
+          SELECT COUNT(*) INTO response_count FROM feedback f2
+          WHERE f2.response_id = response_row.id AND f2.question_id = feedback_row.question_id;
+          IF response_count = 0 THEN
+            UPDATE feedback SET response_id = response_row.id
+            WHERE id = feedback_row.id AND response_id IS NULL;
+          END IF;
+        END IF;
+      END LOOP;
+
+      IF changed THEN
+        UPDATE survey_responses SET answers = answer_map::text WHERE id = response_row.id;
+      END IF;
+    END LOOP;
+  END
+  $survey_feedback_once$;
+
   -- Database tables are accessed through the trusted server, not PostgREST.
   -- Enable RLS without client policies to deny direct anon/authenticated API
   -- access; the table owner/service connection used by the server bypasses it.

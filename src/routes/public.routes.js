@@ -105,7 +105,7 @@ router.post('/surveys/:token/start', writing, async (req, res) => {
     return res.json({
       survey: surveyForm.forPublic(survey),
       response_key: suppliedKey,
-      answers: parseJSON(existing.answers, {})
+      answers: await verbatims.restoreResponseAnswers(existing, surveyForm.hydrate(survey).questions)
     });
   }
 
@@ -192,20 +192,27 @@ router.post('/surveys/:token/respond', writing, async (req, res) => {
 
   // Beside the answers, the questions they were shown — see the note on the
   // member's half of this in users.routes.js.
+  let filed = 0;
   if (response) {
     // Retain compatibility for respondents who started before anonymous drafts
     // moved to the browser; new submissions create their row only now.
-    await db.prepare(`
-      UPDATE survey_responses SET answers = ?, questions = ?, completed_at = datetime('now') WHERE id = ?
-    `).run(JSON.stringify(checked.answers), JSON.stringify(questions), response.id);
+    await db.atomic(async () => {
+      await db.prepare(`
+        UPDATE survey_responses SET answers = ?, questions = ?, completed_at = datetime('now') WHERE id = ?
+      `).run(JSON.stringify(verbatims.stripFeedbackAnswers(survey, checked.answers)), JSON.stringify(questions), response.id);
+      filed = (await verbatims.record(null, survey, checked.answers, { responseId: response.id })).filed;
+    });
   } else {
     response = { id: uuid() };
     try {
-      await db.prepare(`
-        INSERT INTO survey_responses
-          (id, survey_id, user_id, answers, questions, completed_at, triggered_by, respondent_kind, anonymous_key_hash)
-        VALUES (?, ?, NULL, ?, ?, datetime('now'), 'link', 'anonymous', ?)
-      `).run(response.id, survey.id, JSON.stringify(checked.answers), JSON.stringify(questions), surveyForm.hashKey(key));
+      await db.atomic(async () => {
+        await db.prepare(`
+          INSERT INTO survey_responses
+            (id, survey_id, user_id, answers, questions, completed_at, triggered_by, respondent_kind, anonymous_key_hash)
+          VALUES (?, ?, NULL, ?, ?, datetime('now'), 'link', 'anonymous', ?)
+        `).run(response.id, survey.id, JSON.stringify(verbatims.stripFeedbackAnswers(survey, checked.answers)), JSON.stringify(questions), surveyForm.hashKey(key));
+        filed = (await verbatims.record(null, survey, checked.answers, { responseId: response.id })).filed;
+      });
     } catch (err) {
       // A repeated final request is idempotently refused once its first write
       // has completed, including two submissions racing on the same key.
@@ -220,12 +227,6 @@ router.post('/surveys/:token/respond', writing, async (req, res) => {
   // for that is what the end of the link should carry, not a thank-you that
   // assumes the whole survey was walked.
   const ending = surveyForm.ending(questions, checked.answers);
-
-  // Written answers are filed as feedback the same way a member's are. The
-  // alternative — dropping them because there is no account to file them
-  // against — would lose exactly the words this whole feature exists to
-  // collect.
-  const { filed } = await verbatims.record(null, survey, checked.answers, { responseId: response.id });
 
   res.json({
     message: 'Survey completed',

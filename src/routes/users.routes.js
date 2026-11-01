@@ -902,6 +902,7 @@ router.post('/surveys/:id/start', requireAuth, async (req, res) => {
 
   const hydrated = surveyForm.hydrate(survey);
   const circleRow = survey.circle_id ? await circles.byId(survey.circle_id) : null;
+  const restoredAnswers = await verbatims.restoreResponseAnswers(response, hydrated.questions);
 
   res.json({
     survey: {
@@ -911,10 +912,10 @@ router.post('/surveys/:id/start', requireAuth, async (req, res) => {
       // product's, resolved here so the page never has to know the order.
       theme: surveyForm.resolveThemeFor(hydrated.theme, circleRow)
     },
-    response,
+    response: { ...response, answers: JSON.stringify(restoredAnswers) },
     // Answers kept from a previous sitting, so leaving a long survey and
     // coming back is not the same as starting again
-    answers: parseJSON(response.answers, {})
+    answers: restoredAnswers
   });
 });
 
@@ -1009,20 +1010,22 @@ router.post('/surveys/:id/respond', requireAuth, async (req, res) => {
   // the definition here is what lets both be true: the author can fix a typo
   // in question four, and the people who already answered it keep the question
   // they were actually shown.
-  await db.prepare(`
-    UPDATE survey_responses SET answers = ?, questions = ?, completed_at = datetime('now')
-    WHERE id = ?
-  `).run(JSON.stringify(checked.answers), JSON.stringify(questions), response.id);
-
   // The survey may have branched to its end before it was over — a consent
   // question answered "no" ends it there — and the ending the author wrote
   // for that is what the member's screen should carry, not the thank-you of
   // a survey walked to the end.
   const ending = surveyForm.ending(questions, checked.answers);
 
-  // Free-text answers are feedback, so they are filed with the rest of it
-  // rather than left inside this one response's JSON where nobody can find them
-  const { filed } = await verbatims.record(req.user.id, survey, checked.answers, { responseId: response.id });
+  // Keep the canonical feedback row and the response projection in one commit:
+  // if either write fails, neither half of the answer is left behind.
+  let filed = 0;
+  await db.atomic(async () => {
+    await db.prepare(`
+      UPDATE survey_responses SET answers = ?, questions = ?, completed_at = datetime('now')
+      WHERE id = ?
+    `).run(JSON.stringify(verbatims.stripFeedbackAnswers(survey, checked.answers)), JSON.stringify(questions), response.id);
+    filed = (await verbatims.record(req.user.id, survey, checked.answers, { responseId: response.id })).filed;
+  });
 
   const { streak } = await engagement.record(req.user.id, 'survey_completed', {
     referenceId: survey.id,
