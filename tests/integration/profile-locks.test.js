@@ -66,6 +66,27 @@ test('an account with no number can set one exactly once', async () => {
   assert.equal(again.status, 403);
 });
 
+test('participant segment is derived from products and cannot be supplied by the member', async () => {
+  const user = h.makeUser({ email: 'segment@example.ng', products: ['Mobile App'] });
+  const token = await h.loginUser(user.email);
+
+  const twoProducts = await h.put('/api/users/profile', {
+    products: ['Mobile App', 'Yield'], segment: 'Power Tester'
+  }, { token });
+  assert.equal(twoProducts.status, 200, JSON.stringify(twoProducts.body));
+  assert.equal(h.db.prepare('SELECT segment FROM users WHERE id = ?').get(user.id).segment, 'Multi-Product');
+
+  const noProducts = await h.put('/api/users/profile', {
+    products: [], segment: 'Single Product'
+  }, { token });
+  assert.equal(noProducts.status, 200, JSON.stringify(noProducts.body));
+  assert.equal(h.db.prepare('SELECT segment FROM users WHERE id = ?').get(user.id).segment, 'General / App');
+
+  const segmentOnly = await h.put('/api/users/profile', { segment: 'Power Tester' }, { token });
+  assert.equal(segmentOnly.status, 400, 'segment is not a writable profile field');
+  assert.equal(h.db.prepare('SELECT segment FROM users WHERE id = ?').get(user.id).segment, 'General / App');
+});
+
 // ─── API products: the one integration fact a member self-declares ──
 
 test('a member can record the API products they build against', async () => {

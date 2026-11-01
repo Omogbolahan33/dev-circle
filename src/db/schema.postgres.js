@@ -691,6 +691,50 @@ const SCHEMA_POSTGRES = `
   END
   $survey_feedback_once$;
 
+  -- Keep participant segment generated from the distinct participant products,
+  -- even for inserts and writes that do not pass through an application form.
+  CREATE OR REPLACE FUNCTION public.derive_participant_segment()
+  RETURNS trigger
+  LANGUAGE plpgsql
+  AS $participant_segment$
+  DECLARE product_count INTEGER;
+  BEGIN
+    BEGIN
+      SELECT COUNT(DISTINCT product) INTO product_count
+      FROM jsonb_array_elements_text(
+        CASE WHEN COALESCE(NEW.products, '') ~ '^\s*\['
+          THEN NEW.products::jsonb ELSE '[]'::jsonb END
+      ) AS p(product);
+    EXCEPTION WHEN OTHERS THEN
+      product_count := 0;
+    END;
+
+    NEW.segment := CASE
+      WHEN product_count = 0 THEN 'General / App'
+      WHEN product_count = 1 THEN 'Single Product'
+      WHEN product_count = 2 THEN 'Multi-Product'
+      ELSE 'Power Tester'
+    END;
+    RETURN NEW;
+  END;
+  $participant_segment$;
+
+  DO $participant_segment_trigger$
+  BEGIN
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_trigger
+      WHERE tgname = 'users_derive_participant_segment'
+        AND tgrelid = 'public.users'::regclass
+        AND NOT tgisinternal
+    ) THEN
+      CREATE TRIGGER users_derive_participant_segment
+        BEFORE INSERT OR UPDATE OF products, segment ON public.users
+        FOR EACH ROW EXECUTE FUNCTION public.derive_participant_segment();
+    END IF;
+  END;
+  $participant_segment_trigger$;
+  REVOKE ALL ON FUNCTION public.derive_participant_segment() FROM PUBLIC, anon, authenticated;
+
   -- Database tables are accessed through the trusted server, not PostgREST.
   -- Enable RLS without client policies to deny direct anon/authenticated API
   -- access; the table owner/service connection used by the server bypasses it.

@@ -1,5 +1,6 @@
 const db = require('../db');
 const { parseJSON } = require('../utils/helpers');
+const { SEGMENT_RULES, segmentForProducts } = require('../utils/participantSegment');
 
 // The API products a member may record against themselves. The integration
 // track itself (sandbox → KYB → production) is written by the Developer Hub
@@ -16,7 +17,7 @@ const PRODUCT_LABELS = {
 
 const PARTICIPANT_PRODUCTS = ['Mobile App', 'Yield', 'BNPL', 'Salaried Loans', 'CD Business'];
 const AGE_GROUPS = ['18 - 24', '25 - 34', '35 - 44', '45 - 54', '55 - 64'];
-const SEGMENTS = ['Single Product', 'Multi-Product', 'Power Tester', 'General / App'];
+const SEGMENTS = SEGMENT_RULES.map(rule => rule.value);
 const EMPLOYMENT_TYPES = ['Salary Earner', 'Entrepreneur', 'Student'];
 
 // ─── Member Readiness & Staged Task Rings ────────────────────
@@ -121,12 +122,6 @@ const PROPERTIES = [
     description: 'Select the products you use',
     filled: user => toArray(user.products).length > 0,
     value: user => toArray(user.products).join(', ')
-  },
-  {
-    key: 'segment', ring: 'profile', label: 'Participant segment', always: true,
-    description: 'Choose the segment that best describes you',
-    filled: user => Boolean(String(user.segment || '').trim()),
-    value: user => user.segment
   },
   {
     key: 'employment', ring: 'profile', label: 'Employment', always: true,
@@ -369,5 +364,7 @@ module.exports = {
   PARTICIPANT_PRODUCTS,
   AGE_GROUPS,
   SEGMENTS,
+  SEGMENT_RULES,
+  segmentForProducts,
   EMPLOYMENT_TYPES
 };

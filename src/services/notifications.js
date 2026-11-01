@@ -73,14 +73,30 @@ async function grantedChannels(userId) {
   return new Set(rows.map(r => r.channel));
 }
 
+// Batch consent reads for audience previews. Resolving channels one member at
+// a time turns a list of sessions into one database round trip per recipient.
+async function grantedChannelsByUser(userIds = []) {
+  const ids = [...new Set(userIds.filter(Boolean))];
+  const result = new Map(ids.map(id => [id, new Set()]));
+  for (let start = 0; start < ids.length; start += 400) {
+    const chunk = ids.slice(start, start + 400);
+    const rows = await db.prepare(`
+      SELECT user_id, channel FROM consent
+      WHERE status = 'granted' AND user_id IN (${chunk.map(() => '?').join(',')})
+    `).all(...chunk);
+    for (const row of rows || []) result.get(row.user_id)?.add(row.channel);
+  }
+  return result;
+}
+
 // Decide which channels a message may actually use for this member, and why
 // each requested channel was dropped.
-async function resolveChannels(user, requested, category) {
+async function resolveChannels(user, requested, category, { consented: preloadedConsent = null } = {}) {
   const wanted = (requested && requested.length ? requested : ['in_portal'])
     .flatMap(c => (c === 'all' ? CHANNELS : [c]))
     .filter(c => CHANNELS.includes(c));
 
-  const consented = await grantedChannels(user.id);
+  const consented = preloadedConsent || await grantedChannels(user.id);
   const preferred = parseJSON(user.preferred_channels, []) || [];
   const quiet = inQuietHours(user);
 
@@ -497,6 +513,7 @@ module.exports = {
   markRead,
   markAllRead,
   resolveChannels,
+  grantedChannelsByUser,
   inQuietHours,
   drainDeferred,
   startDrain,

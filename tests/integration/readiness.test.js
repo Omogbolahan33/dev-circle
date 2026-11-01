@@ -41,13 +41,13 @@ const readinessFor = async user =>
 const taskKeys = readiness =>
   readiness.rings.flatMap(r => r.tasks.map(t => t.key));
 
-test('a member is asked for the thirteen things every member needs, whatever any form says', async () => {
+test('a member is asked for the twelve things every member needs, whatever any form says', async () => {
   const user = h.makeUser();
   const readiness = await readinessFor(user);
 
   assert.equal(readiness.total_rings, 3);
   for (const key of [
-    'name', 'phone', 'company', 'work_sector', 'age_group', 'products', 'segment',
+    'name', 'phone', 'company', 'work_sector', 'age_group', 'products',
     'employment', 'preferred_research', 'preferred_days', 'preferred_time',
     'preferred_channels', 'consent'
   ]) {

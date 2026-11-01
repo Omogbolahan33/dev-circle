@@ -231,6 +231,45 @@ async function items(query = {}, { limit = 500 } = {}) {
   return verbatims.hydrateFeedbackRows(rows || []);
 }
 
+// Rows for the table's grouped mode. Rank per group in SQL so the browser
+// needs one payload instead of a request for every group, while preserving the
+// same per-group 500-row bound the old fan-out used.
+async function itemsByGroup(axis, query = {}, { limitPerGroup = 500 } = {}) {
+  const { where, params } = conditions(query);
+  let key;
+  let joins = '';
+  let having = '';
+  if (MEMBERSHIP_GROUPINGS[axis]) {
+    key = 'item_cohort.cohort_id';
+    joins = 'JOIN user_cohorts item_cohort ON item_cohort.user_id = f.user_id';
+  } else {
+    const grouping = GROUPINGS[axis];
+    if (!grouping) return null;
+    key = grouping.key;
+    if (grouping.having) having = `AND ${grouping.having}`;
+    having += ` AND ${key} IS NOT NULL`;
+  }
+
+  const ranked = await db.prepare(`
+    SELECT grouped_items.* FROM (
+      SELECT f.id, f.content, f.type, f.response_id, f.question_id, f.survey_id,
+             f.created_at, f.source, f.source_system, f.status, f.category,
+             f.external_ticket_id, f.canonical_question_id,
+             COALESCE(q.text, f.prompt) as question,
+             COALESCE(s.title, REPLACE(COALESCE(f.source_system, f.source), '_', ' ')) as came_from,
+             u.id as user_id, u.name as developer, u.email, u.company,
+             u.work_sector, u.api_status, ${key} as group_key,
+             ROW_NUMBER() OVER (PARTITION BY ${key} ORDER BY f.created_at DESC, f.id) as group_rank
+      ${FROM}
+      ${joins}
+      WHERE ${where} ${having}
+    ) grouped_items
+    WHERE group_rank <= ?
+    ORDER BY created_at DESC
+  `).all(...params, limitPerGroup);
+  return verbatims.hydrateFeedbackRows(ranked || []);
+}
+
 async function summarise(query = {}) {
   const { where, params } = conditions(query);
   return await db.prepare(`
@@ -242,5 +281,5 @@ async function summarise(query = {}) {
 }
 
 module.exports = {
-  axes, group, items, summarise, conditions, GROUPINGS, MEMBERSHIP_GROUPINGS
+  axes, group, items, itemsByGroup, summarise, conditions, GROUPINGS, MEMBERSHIP_GROUPINGS
 };

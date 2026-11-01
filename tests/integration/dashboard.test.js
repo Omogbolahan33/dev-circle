@@ -19,12 +19,12 @@ test('demography returns every breakdown without error', async () => {
   h.makeUser({
     work_sector: 'Fintech', location_state: 'Lagos', gender: 'female',
     age_group: '25 - 34', products: ['Mobile App', 'Mobile App', 'Yield'],
-    segment: 'Multi-Product', employment: 'Entrepreneur', preferred_research: 'User interviews',
+    employment: 'Entrepreneur', preferred_research: 'User interviews',
     date_of_birth: null, api_products: ['lending', 'payments'], kyb_completed: 1
   });
   h.makeUser({
     work_sector: '', location_state: null, gender: null,
-    age_group: null, products: [], segment: null, employment: null, preferred_research: null,
+    age_group: null, products: [], employment: null, preferred_research: null,
     date_of_birth: null, api_products: [], kyb_completed: 0
   });
 
@@ -38,6 +38,7 @@ test('demography returns every breakdown without error', async () => {
   assert.equal(res.body.products.find(r => r.label === 'Mobile App')?.count, 1, 'count each member once per selected product');
   assert.ok(res.body.api_products.some(r => r.label === 'lending'));
   assert.ok(res.body.segment.some(r => r.label === 'Multi-Product'));
+  assert.ok(res.body.segment.some(r => r.label === 'General / App'), 'no selected products generate General / App');
   assert.ok(res.body.employment.some(r => r.label === 'Entrepreneur'));
   assert.ok(res.body.preferred_research.some(r => r.label === 'User interviews'));
   assert.ok(res.body.kyb.some(r => r.label === 'Completed'));
@@ -46,7 +47,7 @@ test('demography returns every breakdown without error', async () => {
   assert.equal(Number(res.body.data_coverage.no_gender), 1);
   assert.equal(Number(res.body.data_coverage.no_products), 1);
   assert.equal(Number(res.body.data_coverage.no_api_products), 1);
-  assert.equal(Number(res.body.data_coverage.no_segment), 1);
+  assert.equal(Number(res.body.data_coverage.no_segment), 0, 'every member has a generated segment');
   assert.equal(Number(res.body.data_coverage.no_employment), 1);
   assert.equal(Number(res.body.data_coverage.no_preferred_research), 1);
 });

@@ -70,6 +70,30 @@ test('a member with no stated availability is treated as available', async () =>
   assert.equal(res.body.preview.available.length, 1);
 });
 
+test('upcoming session previews can be fetched together as compact summaries', async () => {
+  const user = h.makeUser({ preferred_days: ['Wed'], preferred_time_start: '09:00', preferred_time_end: '17:00' });
+  await circles.join(user.id);
+  const body = {
+    scheduled_for: nextWatSlot('Wed', 11), target_type: 'all', channels: ['email']
+  };
+  const first = await h.post('/api/admin/sessions', { ...body, title: 'Batch one' }, { token });
+  const second = await h.post('/api/admin/sessions', { ...body, title: 'Batch two' }, { token });
+
+  const batch = await h.post('/api/admin/sessions/previews', {
+    ids: [first.body.session.id, second.body.session.id]
+  }, { token });
+  assert.equal(batch.status, 200, JSON.stringify(batch.body));
+  assert.equal(batch.body.previews.length, 2);
+  for (const summary of batch.body.previews) {
+    assert.ok(summary.available_count >= 0);
+    assert.ok(summary.unavailable_count >= 0);
+    assert.ok(summary.unreachable_count >= 0);
+    assert.equal(summary.total, 1);
+    assert.equal(Object.hasOwn(summary, 'available'), false,
+      'the list endpoint returns counts rather than repeating full audience records');
+  }
+});
+
 // ─── Dispatch ───────────────────────────────────────────────
 
 test('announcing a session reaches its audience once', async () => {

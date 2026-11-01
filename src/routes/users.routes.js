@@ -112,7 +112,7 @@ router.get('/profile', requireAuth, async (req, res) => {
     // Research profile choices shown on the member's editable profile.
     product_catalog: readiness.PARTICIPANT_PRODUCTS.map(p => ({ key: p, label: p })),
     age_groups: readiness.AGE_GROUPS,
-    segments: readiness.SEGMENTS,
+    segment_rules: readiness.SEGMENT_RULES,
     location_options: await vocabularies.listFor('location_state', req.circleId),
     preferred_research_options: await vocabularies.listFor('preferred_research', req.circleId),
     // A single metadata source for editable member fields and their finite
@@ -243,7 +243,7 @@ router.put('/profile', requireAuth, async (req, res) => {
   const {
     name, phone, company, work_sector,
     preferred_channels, preferred_days, preferred_time_start, preferred_time_end,
-    age_group, products, segment, employment, preferred_research, gender, location_state, api_products
+    age_group, products, employment, preferred_research, gender, location_state, api_products
   } = req.body;
 
   // req.user is the row the session was minted from; read the live record so a
@@ -311,11 +311,7 @@ router.put('/profile', requireAuth, async (req, res) => {
     if (age_group !== undefined && age_group !== null && age_group !== '' && !readiness.AGE_GROUPS.includes(age_group)) {
       throw new TypeError(`Unknown age group: ${age_group}`);
     }
-    if (segment !== undefined && segment !== null && segment !== '' && !readiness.SEGMENTS.includes(segment)) {
-      throw new TypeError(`Unknown segment: ${segment}`);
-    }
     setText('age_group', age_group || null);
-    setText('segment', segment || null);
     if (employment !== undefined && employment !== null && employment !== '' && !readiness.EMPLOYMENT_TYPES.includes(employment)) {
       throw new TypeError(`Unknown employment type: ${employment}`);
     }
@@ -348,7 +344,9 @@ router.put('/profile', requireAuth, async (req, res) => {
       if (!Array.isArray(products)) throw new TypeError('products must be an array');
       const invalid = products.filter(p => !readiness.PARTICIPANT_PRODUCTS.includes(p));
       if (invalid.length) throw new TypeError(`Unknown product(s): ${invalid.join(', ')}`);
-      setJson('products', [...new Set(products)]);
+      const distinctProducts = [...new Set(products.map(product => String(product).trim()).filter(Boolean))];
+      setJson('products', distinctProducts);
+      setText('segment', readiness.segmentForProducts(distinctProducts));
     }
   } catch (err) {
     return res.status(400).json({ error: err.message });

@@ -16,7 +16,6 @@ test('a newly registered user without available time leaves Ring 2 incomplete', 
     work_sector: 'Banking',
     age_group: '25 - 34',
     products: '["Mobile App"]',
-    segment: 'Single Product',
     employment: 'Salary Earner',
     preferred_research: 'Product testing',
     preferred_days: '[]',
@@ -71,7 +70,6 @@ test('updating available time completes Ring 2 and closes all 3 rings', () => {
     work_sector: 'Banking',
     age_group: '25 - 34',
     products: ['Mobile App'],
-    segment: 'Single Product',
     employment: 'Salary Earner',
     preferred_research: 'Product testing',
     preferred_days: ['Mon', 'Wed', 'Fri'],
@@ -107,7 +105,6 @@ test('missing work sector or company leaves Ring 1 incomplete', () => {
     work_sector: null, // missing
     age_group: '25 - 34',
     products: ['Mobile App'],
-    segment: 'Single Product',
     employment: 'Salary Earner',
     preferred_research: 'Product testing',
     preferred_days: ['Tue', 'Thu'],
@@ -121,7 +118,7 @@ test('missing work sector or company leaves Ring 1 incomplete', () => {
   const ring1 = readiness.rings.find(r => r.id === 'profile');
 
   assert.equal(ring1.is_complete, false);
-  assert.equal(ring1.percentage, 78); // 7 of 9 tasks done
+  assert.equal(ring1.percentage, 75); // 6 of 8 tasks done without a user-entered segment field
   assert.equal(readiness.completed_rings, 2);
   assert.equal(readiness.is_complete, false);
 

@@ -141,7 +141,7 @@ const paths = {
           age_band: arrayOf(object({ label: str('Age group'), count: int('Members') }), 'Legacy alias for age_group'),
           products: arrayOf(object({ label: str('Participant product'), count: int('Members') }), 'Member-selected products; members may appear in more than one'),
           api_products: arrayOf(object({ label: str('API product'), count: int('Members') }), 'API products in use; a member counts once per product'),
-          segment: arrayOf(object({ label: str('Segment'), count: int('Members') }), 'Participant segment'),
+          segment: arrayOf(object({ label: str('Generated segment'), count: int('Members') }), 'Calculated from distinct participant products: 0 = General / App, 1 = Single Product, 2 = Multi-Product, 3+ = Power Tester'),
           employment: arrayOf(object({ label: str('Employment'), count: int('Members') }), 'Employment type'),
           preferred_research: arrayOf(object({ label: str('Research type'), count: int('Members') }), 'Preferred research activity'),
           api_status: arrayOf(object({ label: str('Stage'), count: int('Members') }), 'Sandbox against production'),
@@ -153,7 +153,7 @@ const paths = {
             no_location: int('Members with no state'),
             no_products: int('Members with no participant products recorded'),
             no_api_products: int('Members with no API products recorded'),
-            no_segment: int('Members with no participant segment'),
+            no_segment: int('Members with no generated participant segment (expected 0 after backfill)'),
             no_employment: int('Members with no employment type'),
             no_preferred_research: int('Members with no preferred research type')
           }, { description: 'How much of the base is missing from each profile-field breakdown.' })
@@ -174,7 +174,7 @@ const paths = {
           engagement_depth: [{ label: 'Never responded', count: 61 }],
           data_coverage: {
             no_age_group: 88, no_gender: 15, no_location: 21, no_products: 40,
-            no_api_products: 28, no_segment: 49, no_employment: 33, no_preferred_research: 57
+            no_api_products: 28, no_segment: 0, no_employment: 33, no_preferred_research: 57
           }
         })
       }
@@ -472,7 +472,8 @@ const paths = {
       summary: 'Feedback grouped along one axis',
       description: [
         'Groups first, verbatims on drill-in. Filters and grouping compose, so "what the',
-        'lending cohort said, by question" is one call.',
+        'lending cohort said, by question" is one call. Set `include_items=true` for the',
+        'grouped table payload instead of fetching each group separately.',
         '',
         'Counts lead with distinct developers rather than answers: five people saying a',
         'thing once and one person saying it five times are different facts, and a single',
@@ -480,6 +481,7 @@ const paths = {
       ].join('\n'),
       parameters: [
         query('group_by', 'Which axis to group along — see /admin/feedback/axes', { type: 'string', default: 'question' }),
+        query('include_items', 'Set true to include per-group table rows in one response', { type: 'string', enum: ['true', 'false'] }),
         query('prompted', 'true for answers to questions, false for what was raised unprompted', { type: 'string', enum: ['true', 'false'] }),
         query('search', 'Match against the question or the answer'),
         query('question_id', 'Narrow to one question'),
@@ -2209,6 +2211,31 @@ const paths = {
           preview: { recipients: 57, available: 41, reachable: 53, unavailable: [{ id: MEMBER_ID, name: 'Chidi Nwosu', reason: 'Outside their 10:00–14:00 window' }] }
         }),
         400: json('A missing or invalid field.', ref('Error'), { error: 'scheduled_for must be an ISO date-time' })
+      }
+    })
+  },
+
+  '/admin/sessions/previews': {
+    post: op({
+      tag: 'Admin · Sessions',
+      permission: 'sessions.read',
+      operationId: 'previewSessionList',
+      summary: 'Load compact availability for upcoming sessions',
+      description: 'Batches availability summaries for the sessions page. Request up to 40 ids; response includes counts and at most four unavailable names per session.',
+      requestBody: jsonBody(object({
+        ids: arrayOf({ type: 'string' }, 'Session ids to preview (maximum 40)')
+      }, { required: ['ids'] }), { ids: ['ss1', 'ss2'] }),
+      responses: {
+        200: json('Compact previews, one per session found in the current circle.', object({
+          previews: arrayOf(object({
+            session_id: str('Session id'), scheduled_for: str('ISO date-time'), weekday: str('WAT weekday'),
+            total: int('Audience size'), available_count: int('Available members'),
+            unavailable_count: int('Unavailable members'),
+            unavailable_preview: arrayOf(object({ name: str('Member name'), email: str('Member email') }), 'At most four unavailable members'),
+            unreachable_count: int('Members with no allowed channel')
+          }), 'Session summaries')
+        }), { previews: [] }),
+        400: json('More than 40 ids or an invalid session date.', ref('Error'), { error: 'Request at most 40 session previews' })
       }
     })
   },

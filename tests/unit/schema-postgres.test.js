@@ -44,6 +44,9 @@ test('Postgres SQL splitter ignores semicolons inside comments and dollar-quoted
   assert.ok(schemaStatements.some(s => /ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON TABLES FROM anon, authenticated/i.test(s)));
   assert.ok(schemaStatements.some(s => /ALTER DEFAULT PRIVILEGES REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC/i.test(s)));
   assert.ok(schemaStatements.some(s => /CREATE TABLE IF NOT EXISTS developer_circle_consent/i.test(s)));
+  assert.ok(schemaStatements.some(s => /CREATE OR REPLACE FUNCTION public\.derive_participant_segment/i.test(s)));
+  assert.ok(schemaStatements.some(s => /CREATE TRIGGER users_derive_participant_segment/i.test(s)));
+  assert.ok(schemaStatements.some(s => /REVOKE ALL ON FUNCTION public\.derive_participant_segment\(\) FROM PUBLIC, anon, authenticated/i.test(s)));
   assert.ok(!schemaStatements.some(s => /^withdrawal\b/i.test(s)));
 });
 

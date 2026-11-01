@@ -350,7 +350,7 @@ test('every value the catalogue offers actually selects members', async () => {
 
 test('member profile attributes share one catalogue with cohort and export criteria', async () => {
   h.makeUser({
-    age_group: '25 - 34', products: ['Mobile App'], segment: 'Power Tester',
+    age_group: '25 - 34', products: ['Mobile App', 'Yield', 'BNPL'],
     employment: 'Student', preferred_research: 'Surveys'
   });
 

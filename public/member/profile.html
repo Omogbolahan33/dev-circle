@@ -167,6 +167,11 @@
         <label class="label">Products you use</label>
         <p class="hint" style="margin-top:0;margin-bottom:var(--sp-2)">Select all that apply so we can match you with relevant research.</p>
         <div class="choice-grid" id="productGroup"></div>
+        <div class="mt-4">
+          <label class="label">Participant segment</label>
+          <div class="text-sm" id="participantSegmentValue" aria-live="polite">—</div>
+          <p class="hint">Calculated automatically from the number of distinct products selected.</p>
+        </div>
       </div>
 
       <div class="locked-note mt-6">
@@ -233,11 +238,6 @@
           <label class="label">Gender</label>
           <select class="input" id="fGender"><option value="">Prefer not to say</option></select>
           <p class="hint asked-hint hide" data-asked="gender"></p>
-        </div>
-        <div class="field">
-          <label class="label">Participant segment</label>
-          <select class="input" id="fSegment"><option value="">Select segment</option></select>
-          <p class="hint">Choose the group that best describes your product use.</p>
         </div>
       </div>
       <div class="field-row">
@@ -313,6 +313,7 @@
 
   const CHANNELS = { email: 'Email', whatsapp: 'WhatsApp', sms: 'SMS', calls: 'Phone calls', in_portal: 'In-portal' };
   const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  let participantSegmentRules = [];
 
   function renderChoices(groupId, options, selected) {
     document.getElementById(groupId).innerHTML = Object.entries(options).map(([value, label]) => `
@@ -321,12 +322,22 @@
       </button>`).join('');
 
     document.querySelectorAll(`#${groupId} .choice`).forEach(el => {
-      el.addEventListener('click', () => el.classList.toggle('selected'));
+      el.addEventListener('click', () => {
+        el.classList.toggle('selected');
+        if (groupId === 'productGroup') updateParticipantSegment();
+      });
     });
   }
 
   function getChoices(groupId) {
     return Array.from(document.querySelectorAll(`#${groupId} .choice.selected`)).map(el => el.dataset.value);
+  }
+
+  function updateParticipantSegment() {
+    const count = new Set(getChoices('productGroup').map(value => value.trim()).filter(Boolean)).size;
+    const rule = participantSegmentRules.find(item => count >= item.min_products
+      && (item.max_products === null || count <= item.max_products));
+    document.getElementById('participantSegmentValue').textContent = rule?.value || '—';
   }
 
   function renderStanding(user, circles, cohorts) {
@@ -351,6 +362,7 @@
     try {
       const profile = await api.get('/users/profile');
       const { user, stats, consent, circles, cohorts, readiness } = profile;
+      participantSegmentRules = profile.segment_rules || [];
       renderStanding(user, circles, cohorts);
       const fieldCatalog = Object.fromEntries((profile.profile_field_catalog || []).map(field => [field.key, field]));
       const fillSelect = (id, fieldKey, fallbackOptions, placeholder) => {
@@ -367,7 +379,6 @@
       fillSelect('fLocation', 'location_state', profile.location_options || [], 'Select state');
       fillSelect('fAgeGroup', 'age_group', [], 'Select age group');
       fillSelect('fGender', 'gender', [], 'Prefer not to say');
-      fillSelect('fSegment', 'segment', [], 'Select segment');
       fillSelect('fEmployment', 'employment', [], 'Select employment type');
       fillSelect('fPreferredResearch', 'preferred_research', profile.preferred_research_options || [], 'Select preferred research');
       const setSelectValue = (id, value) => {
@@ -387,6 +398,7 @@
         ? Object.fromEntries(participantChoices.map(option => [option.value, option.label]))
         : Object.fromEntries((profile.product_catalog || []).map(product => [product.key, product.label]));
       renderChoices('productGroup', catalog, user.products || []);
+      updateParticipantSegment();
       showWhoIsAsking(profile.readiness);
 
       // Phone is a sign-in credential: once a number is on the account it is
@@ -438,7 +450,6 @@
       setSelectValue('fLocation', user.location_state);
       setSelectValue('fAgeGroup', user.age_group);
       setSelectValue('fGender', user.gender);
-      setSelectValue('fSegment', user.segment);
       setSelectValue('fEmployment', user.employment);
       setSelectValue('fPreferredResearch', user.preferred_research);
       document.getElementById('fTimeStart').value = user.preferred_time_start || '10:00';
@@ -550,7 +561,6 @@
         work_sector: document.getElementById('fSector').value,
         location_state: document.getElementById('fLocation').value.trim(),
         age_group: document.getElementById('fAgeGroup').value || null,
-        segment: document.getElementById('fSegment').value || null,
         employment: document.getElementById('fEmployment').value || null,
         preferred_research: document.getElementById('fPreferredResearch').value.trim() || null,
         gender: document.getElementById('fGender').value,

@@ -261,30 +261,36 @@
         ? past.map(s => sessionRow(s, true)).join('')
         : emptyState({ title: 'No past sessions yet' });
 
-      // Availability is fetched per session so the list itself stays fast
-      for (const s of upcoming) loadAvailability(s.id);
+      // One compact batch avoids a request per session; the session rows stay
+      // visible while their secondary availability summary resolves.
+      if (upcoming.length) loadAvailability(upcoming.map(session => session.id));
     } catch (err) {
       document.getElementById('panel-upcoming').innerHTML =
         emptyState({ title: 'Could not load sessions', text: err.message });
     }
   }
 
-  async function loadAvailability(id) {
+  async function loadAvailability(ids) {
     try {
-      const a = await api.get(`/admin/sessions/${id}/preview`);
-      const box = document.getElementById('avail-' + id);
-      if (!box) return;
-
-      const clashNames = a.unavailable.slice(0, 4).map(u => personName(u.name, u.email)).join(', ');
-
-      box.innerHTML = `
-        <div class="avail">
-          <div class="avail-line"><strong>${a.available.length}</strong> of ${a.total} are free on ${a.weekday}</div>
-          ${a.unavailable.length ? `
-            <div class="avail-line avail-warn"><strong>${a.unavailable.length}</strong> have this outside the availability they set</div>
-            <div class="avail-names">${escapeHtml(clashNames)}${a.unavailable.length > 4 ? ` +${a.unavailable.length - 4} more` : ''}</div>` : ''}
-          ${a.unreachable.length ? `<div class="avail-line avail-warn"><strong>${a.unreachable.length}</strong> can't be reached on the chosen channels</div>` : ''}
-        </div>`;
+      const chunks = [];
+      for (let start = 0; start < ids.length; start += 40) chunks.push(ids.slice(start, start + 40));
+      const batches = await Promise.all(chunks.map(chunk =>
+        api.post('/admin/sessions/previews', { ids: chunk })
+      ));
+      for (const preview of batches.flatMap(batch => batch.previews || [])) {
+        const box = document.getElementById('avail-' + preview.session_id);
+        if (!box) continue;
+        const clashNames = preview.unavailable_preview
+          .map(user => personName(user.name, user.email)).join(', ');
+        box.innerHTML = `
+          <div class="avail">
+            <div class="avail-line"><strong>${preview.available_count}</strong> of ${preview.total} are free on ${preview.weekday}</div>
+            ${preview.unavailable_count ? `
+              <div class="avail-line avail-warn"><strong>${preview.unavailable_count}</strong> have this outside the availability they set</div>
+              <div class="avail-names">${escapeHtml(clashNames)}${preview.unavailable_count > 4 ? ` +${preview.unavailable_count - 4} more` : ''}</div>` : ''}
+            ${preview.unreachable_count ? `<div class="avail-line avail-warn"><strong>${preview.unreachable_count}</strong> can't be reached on the chosen channels</div>` : ''}
+          </div>`;
+      }
     } catch { /* availability is supplementary — a failure must not blank the row */ }
   }
 

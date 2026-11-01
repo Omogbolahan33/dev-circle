@@ -24,8 +24,8 @@ const PROFILE_FIELDS = [
     input: 'multi-select', values: readiness.PARTICIPANT_PRODUCTS, options: readiness.PARTICIPANT_PRODUCTS
   },
   {
-    key: 'segment', label: 'Segment', type: 'text', storage: { column: 'segment' },
-    input: 'select', values: readiness.SEGMENTS, options: readiness.SEGMENTS
+    key: 'segment', label: 'Participant segment', type: 'text', storage: { column: 'segment' },
+    values: readiness.SEGMENTS, derived: true
   },
   {
     key: 'employment', label: 'Employment type', type: 'text', storage: { column: 'employment' },
@@ -62,7 +62,7 @@ const PROFILE_FIELD_BY_KEY = Object.freeze(Object.fromEntries(
 ));
 
 async function profileCatalogue(database, circleId) {
-  return Promise.all(PROFILE_FIELDS.map(async field => {
+  return Promise.all(PROFILE_FIELDS.filter(field => !field.derived).map(async field => {
     let raw = field.options || field.values;
     if (field.vocabulary) raw = await vocabularies.listFor(field.vocabulary, circleId);
     else if (typeof raw === 'function') raw = await raw(database);

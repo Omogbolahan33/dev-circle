@@ -99,6 +99,24 @@ test('a column alias in an uploaded sheet still lands', () => {
   assert.equal(normalised.email, 'ada@zilla.ng', 'email is the identity key and is lowercased');
 });
 
+test('imported segment values are ignored and recalculated from distinct products', () => {
+  const normalized = templates.normaliseRow('members', {
+    email: 'a@b.ng', name: 'Ada Obi', products: 'Mobile App; Yield; BNPL', segment: 'Single Product'
+  });
+  assert.equal(normalized.segment, 'Power Tester');
+
+  const arrayInput = templates.normaliseRow('members', {
+    email: 'c@b.ng', name: 'Chika Doe', products: ['Mobile App', 'Yield', 'Yield']
+  });
+  assert.deepEqual(arrayInput.products, ['Mobile App', 'Yield']);
+  assert.equal(arrayInput.segment, 'Multi-Product');
+
+  const empty = templates.normaliseRow('members', {
+    email: 'b@b.ng', name: 'Bola Ade', products: '', segment: 'Power Tester'
+  });
+  assert.equal(empty.segment, 'General / App');
+});
+
 test('a formatted member CSV with email/name headers maps its rows', () => {
   const rows = parseCSV('email,name,products,status,sessions\na@b.ng,Ada Obi,Mobile App,active,0');
   const normalized = templates.normaliseRow('members', rows[0]);

@@ -85,12 +85,12 @@ router.get('/feedback/grouped', requirePermission('feedback.read'), async (req, 
   const axis = req.query.group_by || 'question';
   const query = scoped(req);
   const preloaded = await takePreload(req, () => null);
-  const [groups, totals] = preloaded
-    ? [preloaded.groups, preloaded.totals]
-    : await Promise.all([
-      views.group(axis, query),
-      views.summarise(query)
-    ]);
+  const includeItems = req.query.include_items === 'true';
+  const [groups, totals, itemsByGroup] = await Promise.all([
+    preloaded ? preloaded.groups : views.group(axis, query),
+    preloaded ? preloaded.totals : views.summarise(query),
+    includeItems ? views.itemsByGroup(axis, query, { limitPerGroup: 500 }) : undefined
+  ]);
 
   if (!groups) {
     return res.status(400).json({
@@ -103,7 +103,8 @@ router.get('/feedback/grouped', requirePermission('feedback.read'), async (req, 
     group_by: axis,
     axis: views.axes().find(a => a.key === axis),
     groups,
-    totals
+    totals,
+    ...(itemsByGroup ? { items_by_group: itemsByGroup } : {})
   });
 });
 

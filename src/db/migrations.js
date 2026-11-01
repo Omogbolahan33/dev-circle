@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const { segmentForProducts } = require('../utils/participantSegment');
 
 // ─── Migrations ─────────────────────────────────────────────
 // The base schema in db.js is created once on an empty database. Everything
@@ -1899,6 +1900,59 @@ function define(db) {
           }
           if (changed) updateResponse.run(JSON.stringify(answers), response.id);
         }
+      }
+    },
+    {
+      id: 43,
+      name: 'derive_participant_segment_from_products',
+      up() {
+        const rows = db.prepare('SELECT id, products FROM users').all();
+        const update = db.prepare('UPDATE users SET segment = ? WHERE id = ?');
+        for (const row of rows || []) update.run(segmentForProducts(row.products), row.id);
+
+        return db.exec(`
+          CREATE TRIGGER IF NOT EXISTS users_segment_from_products_insert
+          AFTER INSERT ON users
+          BEGIN
+            UPDATE users SET segment = CASE
+              WHEN (SELECT COUNT(DISTINCT value) FROM json_each(CASE WHEN json_valid(NEW.products) THEN NEW.products ELSE '[]' END)) = 0 THEN 'General / App'
+              WHEN (SELECT COUNT(DISTINCT value) FROM json_each(CASE WHEN json_valid(NEW.products) THEN NEW.products ELSE '[]' END)) = 1 THEN 'Single Product'
+              WHEN (SELECT COUNT(DISTINCT value) FROM json_each(CASE WHEN json_valid(NEW.products) THEN NEW.products ELSE '[]' END)) = 2 THEN 'Multi-Product'
+              ELSE 'Power Tester'
+            END
+            WHERE id = NEW.id;
+          END;
+
+          CREATE TRIGGER IF NOT EXISTS users_segment_from_products_update
+          AFTER UPDATE OF products ON users
+          BEGIN
+            UPDATE users SET segment = CASE
+              WHEN (SELECT COUNT(DISTINCT value) FROM json_each(CASE WHEN json_valid(NEW.products) THEN NEW.products ELSE '[]' END)) = 0 THEN 'General / App'
+              WHEN (SELECT COUNT(DISTINCT value) FROM json_each(CASE WHEN json_valid(NEW.products) THEN NEW.products ELSE '[]' END)) = 1 THEN 'Single Product'
+              WHEN (SELECT COUNT(DISTINCT value) FROM json_each(CASE WHEN json_valid(NEW.products) THEN NEW.products ELSE '[]' END)) = 2 THEN 'Multi-Product'
+              ELSE 'Power Tester'
+            END
+            WHERE id = NEW.id;
+          END;
+
+          CREATE TRIGGER IF NOT EXISTS users_segment_is_derived
+          AFTER UPDATE OF segment ON users
+          WHEN NEW.segment IS NOT CASE
+            WHEN (SELECT COUNT(DISTINCT value) FROM json_each(CASE WHEN json_valid(NEW.products) THEN NEW.products ELSE '[]' END)) = 0 THEN 'General / App'
+            WHEN (SELECT COUNT(DISTINCT value) FROM json_each(CASE WHEN json_valid(NEW.products) THEN NEW.products ELSE '[]' END)) = 1 THEN 'Single Product'
+            WHEN (SELECT COUNT(DISTINCT value) FROM json_each(CASE WHEN json_valid(NEW.products) THEN NEW.products ELSE '[]' END)) = 2 THEN 'Multi-Product'
+            ELSE 'Power Tester'
+          END
+          BEGIN
+            UPDATE users SET segment = CASE
+              WHEN (SELECT COUNT(DISTINCT value) FROM json_each(CASE WHEN json_valid(NEW.products) THEN NEW.products ELSE '[]' END)) = 0 THEN 'General / App'
+              WHEN (SELECT COUNT(DISTINCT value) FROM json_each(CASE WHEN json_valid(NEW.products) THEN NEW.products ELSE '[]' END)) = 1 THEN 'Single Product'
+              WHEN (SELECT COUNT(DISTINCT value) FROM json_each(CASE WHEN json_valid(NEW.products) THEN NEW.products ELSE '[]' END)) = 2 THEN 'Multi-Product'
+              ELSE 'Power Tester'
+            END
+            WHERE id = NEW.id;
+          END;
+        `);
       }
     }
   ];

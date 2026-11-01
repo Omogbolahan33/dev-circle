@@ -443,9 +443,14 @@ const paths = {
             values: arrayOf(object({ value: str('Stored value'), label: str('Display label') }), 'Available choices')
           }), 'Shared profile field metadata and choices'),
           product_catalog: arrayOf(object({
-            key: str('Product family key'),
+            key: str('Participant product key'),
             label: str('Display label')
-          }), 'API products a member may record themselves')
+          }), 'Participant products a member may select'),
+          segment_rules: arrayOf(object({
+            min_products: int('Minimum distinct participant products'),
+            max_products: int('Maximum distinct participant products; null means no upper limit', { nullable: true }),
+            value: str('Generated participant segment')
+          }), 'Rules for calculating the read-only participant segment')
         }), {
           user: MEMBER_EXAMPLE,
           cohorts: [{ id: 'c1', name: 'All Members', type: 'system', color: '#107EBC' }],
@@ -480,6 +485,11 @@ const paths = {
         'API stage (sandbox/production), KYB status and circle/cohort memberships are not editable',
         'by the member at all — they are written by the Developer Hub webhooks or an administrator.',
         '',
+        '**products** are the participant products they use. The participant segment is',
+        'generated from the number of distinct selected products: none = General / App, one =',
+        'Single Product, two = Multi-Product, and three or more = Power Tester. A submitted',
+        '`segment` value is not writable.',
+        '',
         '**api_products** is the one integration fact a member self-declares: which product',
         'families they build against. Only the known families (payments, lending, identity,',
         'credit_scoring) are accepted; unknown values are rejected with 400. A number we cannot',
@@ -497,6 +507,7 @@ const paths = {
         date_of_birth: str('YYYY-MM-DD'),
         gender: str('Self-reported'),
         location_state: str('Nigerian state'),
+        products: arrayOf({ type: 'string' }, 'Participant products they use; the segment is calculated from this list'),
         api_products: arrayOf({ type: 'string', enum: ['payments', 'lending', 'identity', 'credit_scoring'] }, 'Product families they build against')
       }), {
         name: 'Chidi Nwosu',

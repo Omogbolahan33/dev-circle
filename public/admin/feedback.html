@@ -432,24 +432,31 @@
       `<tr><td colspan="${TABLE_COLUMNS.length}"><div class="skeleton" style="height:14px"></div></td></tr>`;
 
     try {
-      const data = await api.get(`/admin/feedback/items?${query({ limit: 500 })}`);
-      rows = data.items;
-
-      const t = data.totals;
-      document.getElementById('fbCount').textContent =
-        `${t.developers} developer${t.developers === 1 ? '' : 's'} · ${t.answers} answer${t.answers === 1 ? '' : 's'}`;
-
-      // Grouping is not a different screen, it is a way of reading this one.
-      // The table gets section headers, the way a pivot does.
       tableGroups = null;
       if (filters.group_by) {
-        const grouped = await api.get(`/admin/feedback/grouped?${query()}`);
-        const axis = axes.find(a => a.key === filters.group_by);
-
-        tableGroups = await Promise.all(grouped.groups.map(async g => {
-          const inner = await api.get(`/admin/feedback/items?${query({ [axis.filter]: g.key, limit: 500 })}`);
-          return { label: g.label, developer_count: g.developer_count, rows: inner.items };
+        // One grouped response carries group labels and ranked rows, replacing
+        // the old per-group request fan-out when switching to table view.
+        const grouped = await api.get(`/admin/feedback/grouped?${query({ include_items: 'true' })}`);
+        const rowsByGroup = new Map();
+        for (const row of grouped.items_by_group || []) {
+          const key = String(row.group_key);
+          if (!rowsByGroup.has(key)) rowsByGroup.set(key, []);
+          rowsByGroup.get(key).push(row);
+        }
+        tableGroups = grouped.groups.map(group => ({
+          label: group.label,
+          developer_count: group.developer_count,
+          rows: rowsByGroup.get(String(group.key)) || []
         }));
+        const t = grouped.totals;
+        document.getElementById('fbCount').textContent =
+          `${t.developers} developer${t.developers === 1 ? '' : 's'} · ${t.answers} answer${t.answers === 1 ? '' : 's'}`;
+      } else {
+        const data = await api.get(`/admin/feedback/items?${query({ limit: 500 })}`);
+        rows = data.items;
+        const t = data.totals;
+        document.getElementById('fbCount').textContent =
+          `${t.developers} developer${t.developers === 1 ? '' : 's'} · ${t.answers} answer${t.answers === 1 ? '' : 's'}`;
       }
 
       renderTable();

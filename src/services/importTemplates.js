@@ -1,5 +1,6 @@
 const { toCSV } = require('../utils/helpers');
 const { buildXLSX } = require('../utils/xlsx');
+const { segmentForProducts } = require('../utils/participantSegment');
 
 // ─── Import templates ───────────────────────────────────────
 // Every bulk import declares its columns once, here. The importer reads rows
@@ -21,6 +22,7 @@ const TEMPLATES = {
     guidance: [
       'Fill in one row per person. Delete the example rows before importing.',
       'Only email and name are required; leave anything else blank if you do not have it.',
+      'Participant segment is calculated from distinct products: none = General / App, 1 = Single Product, 2 = Multi-Product, 3+ = Power Tester. Any segment column in an older file is ignored.',
       'Members sign in with a one-time code sent to their email or phone, so there is no password column.',
       'Credit Direct staff are not imported here — add them under Roles, where they get a password.',
       'Re-importing someone who already exists skips them rather than creating a duplicate.'
@@ -98,15 +100,9 @@ const TEMPLATES = {
         notes: 'Products the participant uses. Separate several with a semicolon; checkbox columns such as Mobile App and Yield are also recognised.',
         suggested: ['Mobile App', 'Yield', 'BNPL', 'Salaried Loans', 'CD Business'],
         examples: ['Mobile App; Yield', 'BNPL'],
-        parse: value => String(value).split(/[;|]/).map(s => s.trim()).filter(Boolean),
+        parse: value => [...new Set((Array.isArray(value) ? value : String(value).split(/[;|]/))
+          .map(item => String(item).trim()).filter(Boolean))],
         empty: () => []
-      },
-      {
-        key: 'segment',
-        label: 'Segment',
-        notes: 'Participant segment.',
-        suggested: ['Single Product', 'Multi-Product', 'Power Tester', 'General / App'],
-        examples: ['Multi-Product', 'Power Tester']
       },
       {
         key: 'status',
@@ -185,10 +181,10 @@ function normaliseRow(key, row) {
   if (key === 'members') {
     if (!out.phone) out.phone = lookup('Phone') || null;
     if (!out.location_state) out.location_state = lookup('State') || null;
-    if (!out.segment) out.segment = null;
     const products = ['Mobile App', 'Yield', 'BNPL', 'Salaried Loans', 'CD Business']
       .filter(name => ['✓', 'yes', 'true', '1', 'x'].includes(String(lookup(name) || '').trim().toLowerCase()));
     if (products.length) out.products = [...new Set([...(out.products || []), ...products])];
+    out.segment = segmentForProducts(out.products);
   }
 
   if (out.email) out.email = String(out.email).toLowerCase();

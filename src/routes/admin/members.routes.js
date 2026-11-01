@@ -9,6 +9,7 @@ const { memberFilters } = require('../../services/audience');
 const engagement = require('../../services/engagement');
 const cohortRules = require('../../services/cohortRules');
 const memberFieldCatalog = require('../../services/memberFieldCatalog');
+const readiness = require('../../services/readiness');
 const circles = require('../../services/circles');
 const verbatims = require('../../services/verbatims');
 
@@ -289,7 +290,7 @@ router.get('/members/:id/timeline', requirePermission('members.read'), async (re
 // PUT /api/admin/members/:id
 router.put('/members/:id', requirePermission('members.write'), async (req, res) => {
   const {
-    status, api_status, kyb_completed, work_sector, api_products, products, age_group, segment,
+    status, api_status, kyb_completed, work_sector, api_products, products, age_group,
     employment, last_contacted, sessions, preferred_research, location_state, gender, phone
   } = req.body;
   const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
@@ -338,10 +339,11 @@ router.put('/members/:id', requirePermission('members.write'), async (req, res) 
   if (location_state !== undefined) { updates.push('location_state = ?'); params.push(location_state); }
   if (gender !== undefined) { updates.push('gender = ?'); params.push(gender); }
   if (age_group !== undefined) { updates.push('age_group = ?'); params.push(age_group); }
-  if (segment !== undefined) { updates.push('segment = ?'); params.push(segment); }
   if (products !== undefined) {
     if (!Array.isArray(products)) return res.status(400).json({ error: 'products must be an array' });
-    updates.push('products = ?'); params.push(JSON.stringify(products));
+    const distinctProducts = [...new Set(products.map(product => String(product).trim()).filter(Boolean))];
+    updates.push('products = ?'); params.push(JSON.stringify(distinctProducts));
+    updates.push('segment = ?'); params.push(readiness.segmentForProducts(distinctProducts));
   }
   if (api_products !== undefined) {
     if (!Array.isArray(api_products)) return res.status(400).json({ error: 'api_products must be an array' });
