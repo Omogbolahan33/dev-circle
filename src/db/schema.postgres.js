@@ -592,6 +592,22 @@ const SCHEMA_POSTGRES = `
   CREATE INDEX IF NOT EXISTS idx_onboarding_submissions_email ON onboarding_submissions(email) WHERE email IS NOT NULL;
   CREATE INDEX IF NOT EXISTS idx_onboarding_submissions_key ON onboarding_submissions(session_key_hash) WHERE session_key_hash IS NOT NULL;
   CREATE UNIQUE INDEX IF NOT EXISTS idx_onboarding_submissions_external ON onboarding_submissions(form_id, external_ref) WHERE external_ref IS NOT NULL;
+
+  -- Database tables are accessed through the trusted server, not PostgREST.
+  -- Enable RLS without client policies to deny direct anon/authenticated API
+  -- access; the table owner/service connection used by the server bypasses it.
+  DO $rls$
+  DECLARE target record;
+  BEGIN
+    FOR target IN
+      SELECT schemaname, tablename
+      FROM pg_tables
+      WHERE schemaname = 'public'
+    LOOP
+      EXECUTE format('ALTER TABLE %I.%I ENABLE ROW LEVEL SECURITY', target.schemaname, target.tablename);
+    END LOOP;
+  END
+  $rls$;
 `;
 
 module.exports = { SCHEMA_POSTGRES };
