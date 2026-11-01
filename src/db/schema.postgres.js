@@ -608,6 +608,30 @@ const SCHEMA_POSTGRES = `
     END LOOP;
   END
   $rls$;
+
+  -- Table access is server-only; RLS is defense in depth, while revoking
+  -- client grants also removes operations such as TRUNCATE that bypass RLS.
+  REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM anon, authenticated;
+  REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM anon, authenticated;
+  REVOKE CREATE ON SCHEMA public FROM anon, authenticated;
+  DO $revoke_columns$
+  DECLARE grant_row record;
+  BEGIN
+    FOR grant_row IN
+      SELECT DISTINCT table_schema, table_name, column_name, grantee
+      FROM information_schema.column_privileges
+      WHERE table_schema = 'public'
+        AND grantee IN ('anon', 'authenticated')
+    LOOP
+      EXECUTE format(
+        'REVOKE SELECT (%1$I), INSERT (%1$I), UPDATE (%1$I), REFERENCES (%1$I) ON TABLE %2$I.%3$I FROM %4$I',
+        grant_row.column_name, grant_row.table_schema, grant_row.table_name, grant_row.grantee
+      );
+    END LOOP;
+  END
+  $revoke_columns$;
+  ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON TABLES FROM anon, authenticated;
+  ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON SEQUENCES FROM anon, authenticated;
 `;
 
 module.exports = { SCHEMA_POSTGRES };
