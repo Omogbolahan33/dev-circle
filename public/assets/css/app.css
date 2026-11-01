@@ -348,6 +348,7 @@
     top: 0;
     z-index: var(--z-sticky);
   }
+  .mobile-bar .brand-mark .brand-logo-img { height:18px; max-width:104px; }
 
   .sidebar {
     position: fixed;
