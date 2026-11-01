@@ -58,8 +58,28 @@
     .grid-table td { padding: var(--sp-2); text-align: center; border-top: 1px solid var(--line-faint); }
     .grid-cell { display: block; border-radius: var(--r-sm); padding: var(--sp-1) 0; font-family: var(--font-mono); font-size: var(--fs-xs); }
 
-    .rank-row { display: grid; grid-template-columns: 28px 1fr auto; gap: var(--sp-3); align-items: center; margin-bottom: var(--sp-2); font-size: var(--fs-sm); }
+    .rank-row { display: grid; grid-template-columns: 28px minmax(100px, 180px) minmax(100px, 1fr) auto; gap: var(--sp-3); align-items: center; margin-bottom: var(--sp-2); font-size: var(--fs-sm); }
     .rank-pos { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--blue-ink); }
+    .chart-bars { display: flex; flex-direction: column; gap: var(--sp-2); margin-top: var(--sp-3); }
+    .chart-bar-row { display: grid; grid-template-columns: minmax(90px, 180px) minmax(80px, 1fr) auto; gap: var(--sp-3); align-items: center; font-size: var(--fs-sm); }
+    .chart-track { display: block; height: 9px; border-radius: var(--r-full); background: var(--tint-2); overflow: hidden; }
+    .chart-fill { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--cd-blue), var(--violet)); }
+    .pie-chart-layout { display: grid; grid-template-columns: minmax(140px, 210px) minmax(220px, 1fr); gap: var(--sp-6); align-items: center; }
+    .pie-chart { width: min(100%, 200px); aspect-ratio: 1; border-radius: 50%; border: 1px solid var(--line-faint); }
+    .pie-legend { display: flex; flex-direction: column; gap: var(--sp-2); }
+    .pie-legend-row { display: grid; grid-template-columns: 12px minmax(70px, 1fr) auto; gap: var(--sp-2); align-items: center; font-size: var(--fs-sm); }
+    .pie-swatch { width: 10px; height: 10px; border-radius: 3px; }
+    .word-cloud { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: var(--sp-2) var(--sp-4); min-height: 150px; padding: var(--sp-5); border: 1px solid var(--line-faint); border-radius: var(--r-md); background: var(--surface-1); }
+    .word-cloud-word { font-weight: var(--fw-semibold); line-height: 1.15; }
+    .word-cloud-note { margin-top: var(--sp-2); font-size: var(--fs-xs); color: var(--ash-dim); }
+    .verbatim-details { margin-top: var(--sp-4); }
+    .verbatim-details > summary { color: var(--ash-dim); font-size: var(--fs-sm); cursor: pointer; }
+    @media (max-width: 600px) {
+      .pie-chart-layout { grid-template-columns: 1fr; justify-items: center; }
+      .pie-legend { width: 100%; }
+      .rank-row { grid-template-columns: 24px minmax(75px, 1fr) minmax(60px, 1fr); }
+      .rank-row .rank-meta { grid-column: 2 / -1; }
+    }
 
     .asked-note { font-size: var(--fs-xs); color: var(--gold-ink); margin-bottom: var(--sp-3); }
 
@@ -393,37 +413,15 @@
             <div class="kv-row"><span class="kv-key">Mean</span><span class="kv-val mono">${round(mean)}</span></div>
             <div class="kv-row"><span class="kv-key">Lowest</span><span class="kv-val mono">${round(values[0])}</span></div>
             <div class="kv-row"><span class="kv-key">Highest</span><span class="kv-val mono">${round(values[values.length - 1])}</span></div>
-          </div>`;
+          </div>
+          ${numericHistogram(values, q.unit)}`;
       }
 
       case 'choice':
       case 'dropdown':
       case 'boolean':
-      case 'multi_choice': {
-        const counts = {};
-        for (const answer of answers) {
-          for (const value of (Array.isArray(answer) ? answer : [answer])) {
-            const label = q.type === 'boolean'
-              ? (value ? (q.true_label || 'Yes') : (q.false_label || 'No'))
-              : String(value);
-            counts[label] = (counts[label] || 0) + 1;
-          }
-        }
-        const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
-        const max = sorted[0][1];
-
-        return sorted.map(([label, count]) => `
-          <div class="choice-row">
-            <span class="truncate" title="${escapeHtml(label)}">${escapeHtml(label)}</span>
-            <span class="choice-track"><span class="choice-fill" style="width:${(count / max) * 100}%"></span></span>
-            <span class="mono text-xs">${count} · ${Math.round((count / answers.length) * 100)}%</span>
-          </div>`).join('') +
-          // Where several may be picked, the percentages are of people and so
-          // do not add to a hundred. Saying so costs one line and saves the
-          // reader assuming the numbers are wrong.
-          (q.type === 'multi_choice'
-            ? '<p class="hint">Percentages are of respondents, so they add to more than 100.</p>' : '');
-      }
+      case 'multi_choice':
+        return categoricalChart(q, answers);
 
       case 'ranking': {
         // Average position, because "picked first by 12" and "second by
@@ -437,15 +435,20 @@
             if (i === 0) totals[option].first++;
           });
         }
-        return Object.entries(totals)
+        const ranked = Object.entries(totals)
           .map(([option, t]) => ({ option, avg: t.sum / t.n, first: t.first }))
-          .sort((a, b) => a.avg - b.avg)
-          .map((row, i) => `
+          .sort((a, b) => a.avg - b.avg);
+        const worst = Math.max(...ranked.map(row => row.avg), 1);
+        return ranked.map((row, i) => {
+          const preference = worst <= 1 ? 100 : Math.max(2, ((worst - row.avg) / (worst - 1)) * 100);
+          return `
             <div class="rank-row">
               <span class="rank-pos">#${i + 1}</span>
-              <span class="truncate">${escapeHtml(row.option)}</span>
-              <span class="mono text-xs dim">avg ${row.avg.toFixed(1)} · first by ${row.first}</span>
-            </div>`).join('');
+              <span class="truncate" title="${escapeHtml(row.option)}">${escapeHtml(row.option)}</span>
+              <span class="chart-track" title="Higher bar means a better average position"><span class="chart-fill" style="width:${preference}%"></span></span>
+              <span class="rank-meta mono text-xs dim">avg ${row.avg.toFixed(1)} · first by ${row.first}</span>
+            </div>`;
+        }).join('');
       }
 
       case 'matrix': {
@@ -491,18 +494,142 @@
           <div class="kv">
             <div class="kv-row"><span class="kv-key">Earliest</span><span class="kv-val mono">${escapeHtml(sorted[0])}</span></div>
             <div class="kv-row"><span class="kv-key">Latest</span><span class="kv-val mono">${escapeHtml(sorted[sorted.length - 1])}</span></div>
-          </div>`;
+          </div>
+          ${dateHistogram(sorted)}`;
       }
 
-      default:
-        // Open answers are quoted, not counted — the words are the finding.
-        return answered.slice(0, 12).map(r => `
+      default: {
+        // Keep the raw words available, but lead with their shared vocabulary.
+        const quotes = answered.slice(0, 12).map(r => `
           <blockquote class="verbatim">
             ${escapeHtml(String(r.answers[q.id]))}
             <span class="who">${r.user_id ? escapeHtml(personName(r.user_name, r.user_email)) : 'Anonymous'}</span>
-          </blockquote>`).join('') +
-          (answered.length > 12 ? `<p class="dim text-xs">+${answered.length - 12} more</p>` : '');
+          </blockquote>`).join('');
+        return `${wordCloud(answers)}
+          <details class="verbatim-details">
+            <summary>Read responses (${answered.length})</summary>
+            ${quotes}${answered.length > 12 ? `<p class="dim text-xs">+${answered.length - 12} more</p>` : ''}
+          </details>`;
+      }
     }
+  }
+
+  const CHART_COLORS = ['var(--cd-blue)', 'var(--emerald)', 'var(--violet)', 'var(--gold-ink)', 'var(--cd-clay)', 'var(--rose-ink)', 'var(--blue-ink)', 'var(--ash)'];
+
+  function categoricalChart(q, answers) {
+    const counts = new Map();
+    for (const answer of answers) {
+      for (const value of (Array.isArray(answer) ? answer : [answer])) {
+        const label = q.type === 'boolean'
+          ? (value ? (q.true_label || 'Yes') : (q.false_label || 'No'))
+          : String(value);
+        counts.set(label, (counts.get(label) || 0) + 1);
+      }
+    }
+    const sorted = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+    if (!sorted.length) return '<p class="dim text-sm">No countable options.</p>';
+
+    if (q.type !== 'multi_choice' && sorted.length <= 6) {
+      let cursor = 0;
+      const slices = sorted.map(([, count], i) => {
+        const start = cursor;
+        cursor += count / answers.length * 100;
+        return `${CHART_COLORS[i % CHART_COLORS.length]} ${start}% ${cursor}%`;
+      }).join(', ');
+      return `
+        <div class="pie-chart-layout">
+          <div class="pie-chart" role="img" aria-label="Pie chart of ${answers.length} responses" style="background:conic-gradient(${slices})"></div>
+          <div class="pie-legend">
+            ${sorted.map(([label, count], i) => `
+              <div class="pie-legend-row">
+                <span class="pie-swatch" style="background:${CHART_COLORS[i % CHART_COLORS.length]}"></span>
+                <span class="truncate" title="${escapeHtml(label)}">${escapeHtml(label)}</span>
+                <span class="mono text-xs">${count} · ${Math.round(count / answers.length * 100)}%</span>
+              </div>`).join('')}
+          </div>
+        </div>`;
+    }
+
+    const max = Math.max(...sorted.map(([, count]) => count));
+    return `<div class="chart-bars" role="list">${sorted.map(([label, count]) => `
+      <div class="chart-bar-row" role="listitem">
+        <span class="truncate" title="${escapeHtml(label)}">${escapeHtml(label)}</span>
+        <span class="chart-track"><span class="chart-fill" style="width:${count / max * 100}%"></span></span>
+        <span class="mono text-xs">${count} · ${Math.round(count / answers.length * 100)}%</span>
+      </div>`).join('')}</div>${q.type === 'multi_choice'
+        ? '<p class="hint">Percentages are of respondents, so they may total more than 100%.</p>' : ''}`;
+  }
+
+  function numericHistogram(values, unit) {
+    if (!values.length) return '';
+    const min = values[0];
+    const maxValue = values[values.length - 1];
+    const binCount = min === maxValue ? 1 : Math.min(8, Math.max(3, Math.ceil(Math.sqrt(values.length))));
+    const step = binCount === 1 ? 1 : (maxValue - min) / binCount;
+    const bins = Array.from({ length: binCount }, (_, i) => ({
+      label: binCount === 1 ? String(round(min)) : `${round(min + i * step)}–${round(i === binCount - 1 ? maxValue : min + (i + 1) * step)}${unit ? ` ${unit}` : ''}`,
+      count: 0
+    }));
+    values.forEach(value => {
+      const index = binCount === 1 ? 0 : Math.min(binCount - 1, Math.floor((value - min) / step));
+      bins[index].count++;
+    });
+    return barSeries(bins, 'Answer range');
+  }
+
+  function dateHistogram(values) {
+    const months = {};
+    values.forEach(value => {
+      const month = String(value).slice(0, 7);
+      months[month] = (months[month] || 0) + 1;
+    });
+    const keys = Object.keys(months).sort();
+    const yearly = keys.length > 18;
+    const groups = {};
+    keys.forEach(key => {
+      const group = yearly ? key.slice(0, 4) : key;
+      groups[group] = (groups[group] || 0) + months[key];
+    });
+    const series = Object.entries(groups).map(([key, count]) => ({
+      label: yearly ? key : new Date(`${key}-01T00:00:00Z`).toLocaleDateString('en', { month: 'short', year: '2-digit', timeZone: 'UTC' }),
+      count
+    }));
+    return barSeries(series, yearly ? 'Responses by year' : 'Responses by month');
+  }
+
+  function barSeries(series, label) {
+    const max = Math.max(...series.map(item => item.count), 1);
+    return `<div class="chart-bars" role="list" aria-label="${escapeHtml(label)}">${series.map(item => `
+      <div class="chart-bar-row" role="listitem">
+        <span class="truncate" title="${escapeHtml(item.label)}">${escapeHtml(item.label)}</span>
+        <span class="chart-track"><span class="chart-fill" style="width:${item.count / max * 100}%"></span></span>
+        <span class="mono text-xs">${item.count}</span>
+      </div>`).join('')}</div>`;
+  }
+
+  function wordCloud(answers) {
+    const stop = new Set(('about after again all also and any are because been before being between both but can could did does doing down during each few for from further had has have having here how into its itself just more most other our out over own same should some such than that the their them then there these they this those through too under until very was were what when where which while who whom why will with would your youre you').split(' '));
+    const frequencies = new Map();
+    for (const answer of answers) {
+      const words = String(answer).toLocaleLowerCase().match(/[\p{L}\p{N}']+/gu) || [];
+      for (const word of words) if (word.length > 2 && !stop.has(word)) frequencies.set(word, (frequencies.get(word) || 0) + 1);
+    }
+    let terms = [...frequencies.entries()].sort((a, b) => b[1] - a[1]).slice(0, 36);
+    if (!terms.length) {
+      for (const answer of answers) {
+        for (const word of String(answer).toLocaleLowerCase().match(/[\p{L}\p{N}']+/gu) || []) {
+          if (word.length > 1) frequencies.set(word, (frequencies.get(word) || 0) + 1);
+        }
+      }
+      terms = [...frequencies.entries()].sort((a, b) => b[1] - a[1]).slice(0, 36);
+    }
+    if (!terms.length) return '<p class="dim text-sm">No repeated terms to chart.</p>';
+    const max = Math.max(...terms.map(([, count]) => count));
+    const min = Math.min(...terms.map(([, count]) => count));
+    return `<div class="word-cloud" role="list" aria-label="Frequently used words">${terms.map(([word, count], i) => {
+      const size = 15 + ((count - min) / Math.max(1, max - min)) * 23;
+      return `<span class="word-cloud-word" role="listitem" title="${count} mention${count === 1 ? '' : 's'}" style="font-size:${size.toFixed(1)}px;color:${CHART_COLORS[i % CHART_COLORS.length]}">${escapeHtml(word)}</span>`;
+    }).join('')}</div><p class="word-cloud-note">Bigger terms appeared more often · ${answers.length} written answers</p>`;
   }
 
   // The spread, not just the middle: a flat distribution and a hard split have
