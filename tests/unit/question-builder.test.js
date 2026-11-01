@@ -149,6 +149,7 @@ test('the type settings sit under one “More options” fold, and the fold says
   html = e2.questions.innerHTML;
   assert.ok(html.indexOf('data-add-option="options"') < html.indexOf('data-toggle-more'), 'the options stay in the open');
   assert.ok(html.indexOf('class="options"') < html.indexOf('data-set-check="allow_other"'), 'Other sits just below the option list');
+  assert.ok(html.includes('class="option-actions"'), 'the two option controls are placed in a dedicated vertical stack');
   assert.ok(html.indexOf('data-set-check="allow_other"') < html.indexOf('data-add-option="options"'), 'Other appears before adding another ordinary option');
   assert.ok(html.includes('q-add-other on'), 'Other is visibly enabled beneath the options');
   assert.ok(html.includes('Other option added'), 'the enabled control can be recognized and toggled off');

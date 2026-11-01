@@ -304,13 +304,15 @@ const QuestionBuilder = (() => {
               </div>`;
             }).join('')}
           </div>
-          ${question.type === 'choice' && list === 'options' ? `
-            <button type="button" class="q-add-other${question.allow_other ? ' on' : ''}"
-                    data-set-check="allow_other" aria-pressed="${!!question.allow_other}">
-              <span class="check${question.allow_other ? ' on' : ''}">✓</span>
-              ${question.allow_other ? 'Other option added' : '+ Add “Other” option'}
-            </button>` : ''}
-          <button class="btn btn-sm btn-ghost mt-2" data-add-option="${list}">+ Add option</button>
+          <div class="option-actions">
+            ${question.type === 'choice' && list === 'options' ? `
+              <button type="button" class="q-add-other${question.allow_other ? ' on' : ''}"
+                      data-set-check="allow_other" aria-pressed="${!!question.allow_other}">
+                <span class="check${question.allow_other ? ' on' : ''}">✓</span>
+                ${question.allow_other ? 'Other option added' : '+ Add “Other” option'}
+              </button>` : ''}
+            <button class="btn btn-sm btn-ghost" data-add-option="${list}">+ Add option</button>
+          </div>
         </div>`;
     }
 
