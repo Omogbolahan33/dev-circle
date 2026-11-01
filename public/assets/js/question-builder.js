@@ -52,6 +52,8 @@ const QuestionBuilder = (() => {
     const descExpanded = new Set();
     const subtextExpanded = new Set();
     const descKey = (questionId, list, i) => `${questionId}|${list}|${i}`;
+    let activeQuestionDrag = null;
+    let activeOptionDrag = null;
 
     // Which cards have their "More options" fold open. The same redraw
     // problem: the choice is the author's, so it is kept across the redraws
@@ -160,6 +162,8 @@ const QuestionBuilder = (() => {
 
       const head = `
         <div class="q-head" data-open-toggle>
+          <button type="button" class="icon-btn drag-handle" data-drag-question draggable="true"
+                  aria-label="Drag to reorder question ${index + 1}" title="Drag to reorder">⠿</button>
           <span class="q-num">Q${index + 1}</span>
           <span class="q-kind">${escapeHtml(type.label)}</span>
           ${question.required ? '<span class="q-flag">required</span>' : ''}
@@ -168,8 +172,6 @@ const QuestionBuilder = (() => {
           ${question.branch_to ? '<span class="q-branches">branches on its answer</span>' : ''}
           ${opts.cardFlags ? opts.cardFlags(question, index) : ''}
           <span class="spacer"></span>
-          <button class="icon-btn" data-move="up" ${index === 0 ? 'disabled' : ''} aria-label="Move up">↑</button>
-          <button class="icon-btn" data-move="down" ${index === state.questions.length - 1 ? 'disabled' : ''} aria-label="Move down">↓</button>
           <button class="icon-btn" data-duplicate aria-label="Duplicate">⧉</button>
           <button class="icon-btn" data-remove aria-label="Remove question">×</button>
         </div>`;
@@ -261,7 +263,7 @@ const QuestionBuilder = (() => {
                 <span class="check${question.dropdown ? ' on' : ''}">✓</span> Dropdown
               </button>` : ''}
           </div>
-          <div class="options">
+          <div class="options" data-sort-list="${list}">
             ${(question[list] || []).map((option, i) => {
               const word = isCards
                 ? (option && typeof option === 'object' ? option.label : option)
@@ -272,7 +274,8 @@ const QuestionBuilder = (() => {
               return `
               <div class="option-item" data-list="${list}" data-option="${i}">
                 <div class="option-row">
-                  <span class="handle">${i + 1}</span>
+                  <button type="button" class="handle" data-drag-option draggable="true"
+                          aria-label="Drag to reorder option ${i + 1}" title="Drag to reorder">⠿</button>
                   <div class="option-fields">
                     <input type="text" class="input option-word" value="${escapeHtml(word)}" placeholder="Option ${i + 1}">
                     ${supportsSubtext && subtext ? `
@@ -819,6 +822,45 @@ const QuestionBuilder = (() => {
       const redraw = () => { render(); changed(); };
       const touch = () => changed();
 
+      const questionHandle = cardEl.querySelector('[data-drag-question]');
+      questionHandle?.addEventListener('dragstart', event => {
+        activeQuestionDrag = index;
+        activeOptionDrag = null;
+        cardEl.classList.add('is-dragging');
+        if (event.dataTransfer) {
+          event.dataTransfer.effectAllowed = 'move';
+          event.dataTransfer.setData('text/plain', `question:${index}`);
+        }
+      });
+      questionHandle?.addEventListener('dragend', clearDragIndicators);
+      questionHandle?.addEventListener('keydown', event => {
+        if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+        event.preventDefault();
+        const target = index + (event.key === 'ArrowUp' ? -1 : 1);
+        if (moveQuestionTo(index, target)) {
+          el.questions.querySelector(`.q-card[data-index="${target}"] [data-drag-question]`)?.focus();
+        }
+      });
+      cardEl.addEventListener('dragover', event => {
+        if (activeQuestionDrag === null) return;
+        event.preventDefault();
+        if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+        cardEl.classList.add('drop-target');
+      });
+      cardEl.addEventListener('dragleave', event => {
+        if (!cardEl.contains(event.relatedTarget)) cardEl.classList.remove('drop-target');
+      });
+      cardEl.addEventListener('drop', event => {
+        if (activeQuestionDrag === null) return;
+        event.preventDefault();
+        const from = activeQuestionDrag;
+        const rect = cardEl.getBoundingClientRect();
+        let target = index + (event.clientY > rect.top + rect.height / 2 ? 1 : 0);
+        if (from < target) target--;
+        clearDragIndicators();
+        moveQuestionTo(from, target);
+      });
+
       // Clicking the card opens it; clicking a control inside the header does
       // what that control says instead of collapsing the thing being used
       cardEl.querySelectorAll('[data-open-toggle]').forEach(target => {
@@ -855,9 +897,6 @@ const QuestionBuilder = (() => {
         redraw();
       });
 
-      cardEl.querySelectorAll('[data-move]').forEach(button => {
-        button.addEventListener('click', () => move(index, button.dataset.move === 'up' ? -1 : 1));
-      });
       cardEl.querySelector('[data-remove]')?.addEventListener('click', () => remove(index));
       cardEl.querySelector('[data-duplicate]')?.addEventListener('click', () => duplicate(index));
 
@@ -904,6 +943,46 @@ const QuestionBuilder = (() => {
         const list = item.dataset.list;
         const i = Number(item.dataset.option);
         const row = item.querySelector('.option-row');
+        const optionHandle = item.querySelector('[data-drag-option]');
+        optionHandle?.addEventListener('dragstart', event => {
+          activeOptionDrag = { questionId: question.id, list, index: i };
+          activeQuestionDrag = null;
+          item.classList.add('is-dragging');
+          if (event.dataTransfer) {
+            event.dataTransfer.effectAllowed = 'move';
+            event.dataTransfer.setData('text/plain', `option:${question.id}:${list}:${i}`);
+          }
+        });
+        optionHandle?.addEventListener('dragend', clearDragIndicators);
+        optionHandle?.addEventListener('keydown', event => {
+          if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+          event.preventDefault();
+          const target = i + (event.key === 'ArrowUp' ? -1 : 1);
+          if (moveOption(question, list, i, target)) {
+            el.questions.querySelector(`.q-card[data-index="${index}"] .option-item[data-list="${list}"][data-option="${target}"] [data-drag-option]`)?.focus();
+          }
+        });
+        item.addEventListener('dragover', event => {
+          if (!activeOptionDrag || activeOptionDrag.questionId !== question.id || activeOptionDrag.list !== list) return;
+          event.preventDefault();
+          event.stopPropagation();
+          if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+          item.classList.add('drop-target');
+        });
+        item.addEventListener('dragleave', event => {
+          if (!item.contains(event.relatedTarget)) item.classList.remove('drop-target');
+        });
+        item.addEventListener('drop', event => {
+          if (!activeOptionDrag || activeOptionDrag.questionId !== question.id || activeOptionDrag.list !== list) return;
+          event.preventDefault();
+          event.stopPropagation();
+          const { index: from } = activeOptionDrag;
+          const rect = item.getBoundingClientRect();
+          let target = i + (event.clientY > rect.top + rect.height / 2 ? 1 : 0);
+          if (from < target) target--;
+          clearDragIndicators();
+          moveOption(question, list, from, target);
+        });
 
         const wordOf = () => isCards
           ? (question[list][i] && typeof question[list][i] === 'object'
@@ -1199,14 +1278,39 @@ const QuestionBuilder = (() => {
     // Moving or removing a question can strand a rule that pointed at it, so
     // every rule is checked against what is still in front of it afterwards.
 
-    function move(index, by) {
-      const to = index + by;
-      if (to < 0 || to >= state.questions.length) return;
-      const [question] = state.questions.splice(index, 1);
+    function clearDragIndicators() {
+      activeQuestionDrag = null;
+      activeOptionDrag = null;
+      el.questions.querySelectorAll('.is-dragging, .drop-target').forEach(node => {
+        node.classList.remove('is-dragging', 'drop-target');
+      });
+    }
+
+    function moveQuestionTo(from, to) {
+      if (from < 0 || from >= state.questions.length || to < 0 || to >= state.questions.length || from === to) return false;
+      const [question] = state.questions.splice(from, 1);
       state.questions.splice(to, 0, question);
+      if (Number.isInteger(state.openQuestion)) {
+        if (state.openQuestion === from) state.openQuestion = to;
+        else if (from < state.openQuestion && to >= state.openQuestion) state.openQuestion--;
+        else if (from > state.openQuestion && to <= state.openQuestion) state.openQuestion++;
+      }
       pruneLogic();
       render();
       changed();
+      return true;
+    }
+
+    function moveOption(question, list, from, to) {
+      const options = question[list];
+      if (!Array.isArray(options) || from < 0 || from >= options.length || to < 0 || to >= options.length || from === to) return false;
+      const [option] = options.splice(from, 1);
+      options.splice(to, 0, option);
+      const prefix = `${question.id}|${list}|`;
+      for (const key of [...descExpanded]) if (key.startsWith(prefix)) descExpanded.delete(key);
+      render();
+      changed();
+      return true;
     }
 
     async function remove(index) {

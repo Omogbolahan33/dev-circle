@@ -102,6 +102,17 @@ test('a card carries the settings its question type needs', () => {
   }
 });
 
+test('questions and option rows have drag handles instead of repeated arrow buttons', () => {
+  const { builder, el } = build([{
+    id: 'q1', type: 'choice', text: 'Environment?', options: ['Sandbox', 'Production']
+  }]);
+  builder.render();
+  const html = el.questions.innerHTML;
+  assert.match(html, /data-drag-question draggable="true"/);
+  assert.match(html, /data-drag-option draggable="true"/);
+  assert.ok(!html.includes('data-move='), 'no repeated up/down controls remain');
+});
+
 test('dropdown is a display setting on choice questions, not a type in the picker', () => {
   const { builder, el } = build([{ id: 'q1', type: 'multi_choice', text: 'Tools?', options: ['CLI', 'SDK'] }]);
   builder.renderTypeMenu();

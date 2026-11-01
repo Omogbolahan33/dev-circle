@@ -50,6 +50,11 @@
   font-size: 10px; color: var(--ash-dim);
   border: 1px solid var(--line); border-radius: var(--r-sm); padding: 1px var(--sp-2);
 }
+.drag-handle { cursor: grab; touch-action: none; user-select: none; }
+.drag-handle:active, .option-row .handle:active { cursor: grabbing; }
+.q-card.is-dragging, .option-item.is-dragging { opacity: .45; }
+.q-card.drop-target { border-color: var(--cd-blue); }
+.option-item.drop-target .option-row { outline: 2px solid var(--cd-blue); outline-offset: 2px; border-radius: var(--r-sm); }
 
 .q-head { display: flex; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-4); flex-wrap: wrap; }
 .q-num { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--cd-blue); }
@@ -133,7 +138,13 @@
 .option-item { margin-bottom: var(--sp-2); }
 .option-row { display: flex; align-items: center; gap: var(--sp-2); }
 .option-row input { flex: 1; }
-.option-row .handle { color: var(--ash-dim); font-family: var(--font-mono); font-size: var(--fs-xs); width: 18px; }
+.option-row .handle {
+  display: inline-flex; align-items: center; justify-content: center; flex: 0 0 18px;
+  padding: 0; border: 0; background: transparent; color: var(--ash-dim);
+  font-family: var(--font-mono); font-size: 16px; line-height: 1; cursor: grab;
+  touch-action: none; user-select: none;
+}
+.option-row .handle:hover { color: var(--white); }
 /* An option is its word. The line under it is not a field in every row —
    it is opened with the pen, and once written it reads the way the member
    will read it: smaller, quieter, one line */
