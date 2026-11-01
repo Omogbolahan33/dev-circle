@@ -66,6 +66,26 @@ test('an account with no number can set one exactly once', async () => {
   assert.equal(again.status, 403);
 });
 
+test('saved profile fields are loaded again from the authenticated profile session', async () => {
+  const user = h.makeUser({ email: 'reopen-profile@example.ng' });
+  const token = await h.loginUser(user.email);
+  const saved = await h.put('/api/users/profile', {
+    company: 'Updated Company', age_group: '35 - 44',
+    products: ['Mobile App', 'Yield', 'BNPL'], employment: 'Student',
+    preferred_research: 'User interviews'
+  }, { token });
+  assert.equal(saved.status, 200, JSON.stringify(saved.body));
+
+  const reopened = await h.get('/api/users/profile', { token });
+  assert.equal(reopened.status, 200, JSON.stringify(reopened.body));
+  assert.equal(reopened.body.user.company, 'Updated Company');
+  assert.equal(reopened.body.user.age_group, '35 - 44');
+  assert.deepEqual(reopened.body.user.products, ['Mobile App', 'Yield', 'BNPL']);
+  assert.equal(reopened.body.user.segment, 'Power Tester');
+  assert.equal(reopened.body.user.employment, 'Student');
+  assert.equal(reopened.body.user.preferred_research, 'User interviews');
+});
+
 test('participant segment is derived from products and cannot be supplied by the member', async () => {
   const user = h.makeUser({ email: 'segment@example.ng', products: ['Mobile App'] });
   const token = await h.loginUser(user.email);
