@@ -3,6 +3,7 @@ const db = require('../db');
 const { uuid, paginate, pageMeta } = require('../utils/helpers');
 const { requireAuth } = require('../middleware/auth');
 const engagement = require('../services/engagement');
+const verbatims = require('../services/verbatims');
 
 const router = express.Router();
 
@@ -79,7 +80,7 @@ router.get('/', requireAuth, async (req, res) => {
   ]);
 
   res.json({
-    feedback: feedback || [],
+    feedback: await verbatims.hydrateFeedbackRows(feedback || []),
     categories: CATEGORIES,
     pagination: pageMeta({ page, limit, total: Number(totalRow?.c || 0) })
   });
@@ -90,7 +91,7 @@ router.get('/:id', requireAuth, async (req, res) => {
   const feedback = await db.prepare('SELECT * FROM feedback WHERE id = ? AND user_id = ?')
     .get(req.params.id, req.user.id);
   if (!feedback) return res.status(404).json({ error: 'Feedback not found' });
-  res.json({ feedback });
+  res.json({ feedback: (await verbatims.hydrateFeedbackRows([feedback]))[0] });
 });
 
 module.exports = router;

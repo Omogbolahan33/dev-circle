@@ -1,4 +1,5 @@
 const db = require('../db');
+const verbatims = require('./verbatims');
 
 // ─── Ways of looking at feedback ────────────────────────────
 // The same body of verbatims, cut along whichever axis answers the question
@@ -158,9 +159,12 @@ function conditions(query = {}) {
   if (query.prompted === 'true') where.push('f.canonical_question_id IS NOT NULL');
 
   if (query.search) {
-    where.push('(f.content LIKE ? OR f.prompt LIKE ? OR q.text LIKE ?)');
+    where.push(`(f.content LIKE ? OR f.prompt LIKE ? OR q.text LIKE ? OR EXISTS (
+      SELECT 1 FROM survey_responses sr
+      WHERE sr.id = f.response_id AND sr.answers LIKE ?
+    ))`);
     const like = `%${query.search}%`;
-    params.push(like, like, like);
+    params.push(like, like, like, like);
   }
   if (query.cohort_id) {
     where.push('EXISTS (SELECT 1 FROM user_cohorts uc WHERE uc.user_id = f.user_id AND uc.cohort_id = ?)');
@@ -212,8 +216,8 @@ async function group(axis, query = {}) {
 async function items(query = {}, { limit = 500 } = {}) {
   const { where, params } = conditions(query);
 
-  return await db.prepare(`
-    SELECT f.id, f.content, f.created_at, f.source, f.source_system, f.status,
+  const rows = await db.prepare(`
+    SELECT f.id, f.content, f.response_id, f.question_id, f.created_at, f.source, f.source_system, f.status,
            f.category, f.external_ticket_id, f.canonical_question_id,
            COALESCE(q.text, f.prompt) as question,
            COALESCE(s.title, REPLACE(COALESCE(f.source_system, f.source), '_', ' ')) as came_from,
@@ -224,6 +228,7 @@ async function items(query = {}, { limit = 500 } = {}) {
     ORDER BY f.created_at DESC
     LIMIT ?
   `).all(...params, limit);
+  return verbatims.hydrateFeedbackRows(rows || []);
 }
 
 async function summarise(query = {}) {

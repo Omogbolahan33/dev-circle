@@ -199,7 +199,7 @@ router.post('/surveys/:token/respond', writing, async (req, res) => {
     await db.atomic(async () => {
       await db.prepare(`
         UPDATE survey_responses SET answers = ?, questions = ?, completed_at = datetime('now') WHERE id = ?
-      `).run(JSON.stringify(verbatims.stripFeedbackAnswers(survey, checked.answers)), JSON.stringify(questions), response.id);
+      `).run(JSON.stringify(checked.answers), JSON.stringify(questions), response.id);
       filed = (await verbatims.record(null, survey, checked.answers, { responseId: response.id })).filed;
     });
   } else {
@@ -210,7 +210,7 @@ router.post('/surveys/:token/respond', writing, async (req, res) => {
           INSERT INTO survey_responses
             (id, survey_id, user_id, answers, questions, completed_at, triggered_by, respondent_kind, anonymous_key_hash)
           VALUES (?, ?, NULL, ?, ?, datetime('now'), 'link', 'anonymous', ?)
-        `).run(response.id, survey.id, JSON.stringify(verbatims.stripFeedbackAnswers(survey, checked.answers)), JSON.stringify(questions), surveyForm.hashKey(key));
+        `).run(response.id, survey.id, JSON.stringify(checked.answers), JSON.stringify(questions), surveyForm.hashKey(key));
         filed = (await verbatims.record(null, survey, checked.answers, { responseId: response.id })).filed;
       });
     } catch (err) {

@@ -211,7 +211,7 @@ router.get('/members/:id/timeline', requirePermission('members.read'), async (re
       LIMIT ?
     `).all(user.id, limit),
     db.prepare(`
-      SELECT f.id, f.content, f.prompt, f.source, f.source_system, f.category,
+      SELECT f.id, f.content, f.response_id, f.question_id, f.prompt, f.source, f.source_system, f.category,
              f.created_at, f.external_ticket_id, f.canonical_question_id,
              s.title as survey_title
       FROM feedback f
@@ -242,7 +242,8 @@ router.get('/members/:id/timeline', requirePermission('members.read'), async (re
   }));
 
   // What they said — every verbatim, whichever door it came through
-  const said = (saidRows || []).map(f => ({
+  const hydratedSaid = await verbatims.hydrateFeedbackRows(saidRows || []);
+  const said = hydratedSaid.map(f => ({
     kind: 'said',
     at: f.created_at,
     id: f.id,

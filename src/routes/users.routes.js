@@ -1023,7 +1023,7 @@ router.post('/surveys/:id/respond', requireAuth, async (req, res) => {
     await db.prepare(`
       UPDATE survey_responses SET answers = ?, questions = ?, completed_at = datetime('now')
       WHERE id = ?
-    `).run(JSON.stringify(verbatims.stripFeedbackAnswers(survey, checked.answers)), JSON.stringify(questions), response.id);
+    `).run(JSON.stringify(checked.answers), JSON.stringify(questions), response.id);
     filed = (await verbatims.record(req.user.id, survey, checked.answers, { responseId: response.id })).filed;
   });
 

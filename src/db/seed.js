@@ -519,11 +519,11 @@ const surveyStmt = db.prepare(`
         const responseId = uuid();
         responseStmt.run(
           responseId, survey.id, dev._id,
-          JSON.stringify(verbatims.stripFeedbackAnswers(survey, answers)),
+          JSON.stringify(answers),
           JSON.stringify(survey.questions), `-${completedDaysAgo} days`, 'manual'
         );
 
-        // Free-text answers live once, in Feedback, and are rejoined by response id.
+        // The complete answer stays on the response; Feedback stores only its link.
         await verbatims.record(dev._id, survey, answers, {
           responseId,
           at: new Date(Date.now() - completedDaysAgo * 86400000).toISOString().slice(0, 19).replace('T', ' ')
@@ -564,7 +564,7 @@ const surveyStmt = db.prepare(`
       anonymousResponse.run(
         id, survey.id,
         crypto.createHash('sha256').update(uuid()).digest('hex'),
-        JSON.stringify(verbatims.stripFeedbackAnswers(survey, checked.answers)),
+        JSON.stringify(checked.answers),
         JSON.stringify(survey.questions), `-${daysAgo} days`
       );
 

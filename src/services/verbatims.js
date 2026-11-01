@@ -89,73 +89,41 @@ function extract(survey, answers) {
   return found;
 }
 
-// Remove feedback-bound answer text from the response JSON before persistence.
-// The feedback row is the canonical copy; the response API can rehydrate it
-// from the response/question references when callers need the full answer map.
-function stripFeedbackAnswers(survey, answers, selectedQuestionIds = null) {
-  const questions = typeof survey.questions === 'string'
-    ? parseJSON(survey.questions, [])
-    : survey.questions;
-  if (!Array.isArray(questions)) return { ...(answers || {}) };
+// The response owns the answer; Feedback rows point back to it. The metadata
+// rows are hydrated only at read time so every feedback surface reuses the
+// same canonical survey answer instead of persisting a second copy.
+async function hydrateFeedbackRows(rows = []) {
+  if (!rows.length) return rows;
+  const responseIds = [...new Set(rows.map(row => row.response_id).filter(Boolean))];
+  const responses = new Map();
 
-  const cleaned = { ...(answers || {}) };
-  for (const question of questions) {
-    if (selectedQuestionIds && !selectedQuestionIds.has(question.id)) continue;
-    const answer = cleaned[question.id];
-    if (answer === undefined || answer === null) continue;
-
-    if (VERBATIM_TYPES.has(question.type) && !question.format) {
-      if (typeof answer === 'string' && answer.trim()) delete cleaned[question.id];
-      continue;
-    }
-    if (!OTHER_TYPES.has(question.type) || !question.allow_other) continue;
-
-    const offered = new Set((question.options || []).map(option => fold(schema.optionLabel(option))));
-    if (Array.isArray(answer)) {
-      const picked = answer.filter(value => offered.has(fold(value)));
-      if (picked.length) cleaned[question.id] = picked;
-      else delete cleaned[question.id];
-    } else if (!offered.has(fold(answer))) {
-      delete cleaned[question.id];
-    }
+  for (let start = 0; start < responseIds.length; start += 400) {
+    const ids = responseIds.slice(start, start + 400);
+    const found = await db.prepare(`
+      SELECT sr.id, sr.answers, sr.questions, s.questions AS survey_questions
+      FROM survey_responses sr
+      LEFT JOIN surveys s ON s.id = sr.survey_id
+      WHERE sr.id IN (${ids.map(() => '?').join(',')})
+    `).all(...ids);
+    for (const response of found || []) responses.set(response.id, response);
   }
-  return cleaned;
+
+  return rows.map(row => {
+    const response = responses.get(row.response_id);
+    if (!response) return row;
+    const answers = parseJSON(response.answers, {});
+    const snapshot = parseJSON(response.questions, []);
+    const questions = Array.isArray(snapshot) && snapshot.length
+      ? snapshot : parseJSON(response.survey_questions, []);
+    const answer = extract({ questions }, answers).find(item => item.question_id === row.question_id);
+    return { ...row, content: answer?.content ?? row.content ?? '' };
+  });
 }
 
-// Rehydrate the response shape without storing a second copy of feedback text.
-// Legacy rows already have the value in `answers`, so only absent answer slots
-// are restored from feedback. The question snapshot preserves the original
-// field type even if the live survey has since changed.
-async function restoreResponseAnswers(response, fallbackQuestions = []) {
-  const answers = parseJSON(response?.answers, {});
-  if (!response?.id) return answers;
-
-  const rows = await db.prepare(`
-    SELECT question_id, content FROM feedback
-    WHERE response_id = ? AND question_id IS NOT NULL
-      AND source IN ('survey', 'external_survey')
-  `).all(response.id);
-  if (!rows?.length) return answers;
-
-  const snapshot = parseJSON(response.questions, fallbackQuestions);
-  const questions = Array.isArray(snapshot) && snapshot.length ? snapshot : fallbackQuestions;
-  const byId = new Map((questions || []).map(question => [question.id, question]));
-  for (const row of rows) {
-    const question = byId.get(row.question_id);
-    if (!question) continue;
-    if (question.type === 'multi_choice') {
-      const current = Array.isArray(answers[row.question_id]) ? answers[row.question_id] : [];
-      const offered = new Set((question.options || []).map(option => fold(schema.optionLabel(option))));
-      const already = new Set(current.map(fold));
-      const other = String(row.content || '').split('; ').filter(value =>
-        value && !offered.has(fold(value)) && !already.has(fold(value))
-      );
-      if (other.length) answers[row.question_id] = [...current, ...other];
-      continue;
-    }
-    if (!Object.hasOwn(answers, row.question_id)) answers[row.question_id] = row.content;
-  }
-  return answers;
+// The response already carries the complete answer map. Keep this helper as a
+// single read boundary for clients that start/resume a survey.
+async function restoreResponseAnswers(response) {
+  return parseJSON(response?.answers, {});
 }
 
 // File a response's verbatims. Idempotent: the unique index on
@@ -190,7 +158,7 @@ async function record(userId, survey, answers, {
       // The survey title is the closest thing to a category the member gave
       // us, and it is what makes a list of verbatims readable at a glance.
       const result = await insert().run(
-        uuid(), userId || null, row.content, survey.title || null,
+        uuid(), userId || null, responseId ? '' : row.content, survey.title || null,
         // 'survey' has always meant "a survey run in Dev Circle". Answers
         // collected elsewhere are the same kind of thing arriving another way,
         // so they share the type and are told apart by the system they came
@@ -214,19 +182,20 @@ async function record(userId, survey, answers, {
 // Everything a member has told us, from every source, newest first. This is
 // the query the whole change exists to make possible.
 async function forUser(userId, { limit = 100 } = {}) {
-  return await db.prepare(`
-    SELECT f.id, f.content, f.prompt, f.source, f.category, f.status,
+  const rows = await db.prepare(`
+    SELECT f.id, f.content, f.prompt, f.source, f.source_system, f.category, f.status,
            f.created_at, f.external_ticket_id, f.canonical_question_id,
-           s.title as survey_title
+           f.response_id, f.question_id, s.title as survey_title
     FROM feedback f
     LEFT JOIN surveys s ON s.id = f.survey_id
     WHERE f.user_id = ?
     ORDER BY f.created_at DESC
     LIMIT ?
   `).all(userId, limit);
+  return hydrateFeedbackRows(rows || []);
 }
 
 module.exports = {
-  record, extract, stripFeedbackAnswers, restoreResponseAnswers, forUser,
+  record, extract, hydrateFeedbackRows, restoreResponseAnswers, forUser,
   VERBATIM_TYPES, OTHER_TYPES
 };

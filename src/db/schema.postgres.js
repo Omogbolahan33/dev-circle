@@ -593,10 +593,10 @@ const SCHEMA_POSTGRES = `
   CREATE INDEX IF NOT EXISTS idx_onboarding_submissions_key ON onboarding_submissions(session_key_hash) WHERE session_key_hash IS NOT NULL;
   CREATE UNIQUE INDEX IF NOT EXISTS idx_onboarding_submissions_external ON onboarding_submissions(form_id, external_ref) WHERE external_ref IS NOT NULL;
 
-  -- A survey verbatim is canonical in Feedback, not copied in the response JSON.
-  -- Existing completed responses were backfilled before the storage model changed;
-  -- on a schema upgrade, remove only values that have a linked Feedback row and
-  -- link legacy member rows when the survey/user pair identifies one response.
+  -- survey_responses is the canonical store for complete answers; Feedback rows
+  -- are reference-only projections. Restore old feedback-owned values when a
+  -- prior deployment stripped them, clear duplicate content, and link legacy
+  -- member rows when the survey/user pair identifies one response.
   DO $survey_feedback_once$
   DECLARE
     response_row record;
@@ -649,33 +649,29 @@ const SCHEMA_POSTGRES = `
         IF question_row IS NULL THEN CONTINUE; END IF;
 
         answer_value := answer_map -> feedback_row.question_id;
-        IF answer_value IS NOT NULL THEN
-          answer_text := answer_value #>> '{}';
-          IF question_row->>'type' = 'text'
-             AND COALESCE(question_row->>'format', '') = ''
-             AND answer_text = BTRIM(feedback_row.content) THEN
-            answer_map := answer_map - feedback_row.question_id;
+        IF NULLIF(feedback_row.content, '') IS NOT NULL THEN
+          IF answer_value IS NULL AND question_row->>'type' = 'text'
+             AND COALESCE(question_row->>'format', '') = '' THEN
+            answer_map := jsonb_set(answer_map, ARRAY[feedback_row.question_id], to_jsonb(feedback_row.content), true);
             changed := true;
-          ELSIF COALESCE((question_row->>'allow_other')::boolean, false)
-             AND question_row->>'type' IN ('choice', 'dropdown')
-             AND answer_text = feedback_row.content THEN
-            answer_map := answer_map - feedback_row.question_id;
+          ELSIF answer_value IS NULL AND question_row->>'type' IN ('choice', 'dropdown')
+             AND COALESCE((question_row->>'allow_other')::boolean, false) THEN
+            answer_map := jsonb_set(answer_map, ARRAY[feedback_row.question_id], to_jsonb(feedback_row.content), true);
             changed := true;
-          ELSIF COALESCE((question_row->>'allow_other')::boolean, false)
-             AND question_row->>'type' = 'multi_choice'
-             AND jsonb_typeof(answer_value) = 'array' THEN
-            SELECT COALESCE(jsonb_agg(item.value), '[]'::jsonb) INTO kept_values
-            FROM jsonb_array_elements(answer_value) AS item(value)
-            WHERE NOT ((item.value #>> '{}') = ANY(string_to_array(feedback_row.content, '; ')));
-            IF kept_values <> answer_value THEN
-              IF jsonb_array_length(kept_values) > 0 THEN
-                answer_map := jsonb_set(answer_map, ARRAY[feedback_row.question_id], kept_values, true);
-              ELSE
-                answer_map := answer_map - feedback_row.question_id;
-              END IF;
-              changed := true;
+          ELSIF question_row->>'type' = 'multi_choice'
+             AND COALESCE((question_row->>'allow_other')::boolean, false) THEN
+            SELECT COALESCE(jsonb_agg(to_jsonb(value)), '[]'::jsonb) INTO kept_values
+            FROM unnest(string_to_array(feedback_row.content, '; ')) AS items(value);
+            IF jsonb_typeof(answer_value) = 'array' THEN
+              SELECT COALESCE(jsonb_agg(DISTINCT item.value), '[]'::jsonb) INTO kept_values
+              FROM jsonb_array_elements(answer_value || kept_values) AS item(value);
             END IF;
+            answer_map := jsonb_set(answer_map, ARRAY[feedback_row.question_id], kept_values, true);
+            changed := true;
           END IF;
+        END IF;
+        IF answer_map ? feedback_row.question_id THEN
+          UPDATE feedback SET content = '' WHERE id = feedback_row.id;
         END IF;
 
         IF feedback_row.response_id IS NULL THEN

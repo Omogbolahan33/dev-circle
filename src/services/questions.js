@@ -1,5 +1,6 @@
 const db = require('../db');
 const { uuid } = require('../utils/helpers');
+const verbatims = require('./verbatims');
 
 // ─── Questions ──────────────────────────────────────────────
 // A question is a thing in its own right rather than an entry inside one
@@ -214,8 +215,8 @@ async function catalogue({ search = null, circleId = null } = {}) {
 // from the one page built to read them — the evidence would be in the table
 // and nowhere on screen.
 async function answers(questionId, { limit = 200 } = {}) {
-  return await db.prepare(`
-    SELECT f.id, f.content, f.created_at, f.survey_id, f.source, f.source_system,
+  const rows = await db.prepare(`
+    SELECT f.id, f.content, f.response_id, f.question_id, f.created_at, f.survey_id, f.source, f.source_system,
            u.id as user_id, u.name as user_name, u.company as user_company,
            u.api_status, s.title as survey_title
     FROM feedback f
@@ -225,6 +226,7 @@ async function answers(questionId, { limit = 200 } = {}) {
     ORDER BY f.created_at DESC
     LIMIT ?
   `).all(questionId, limit);
+  return verbatims.hydrateFeedbackRows(rows || []);
 }
 
 // Which surveys have carried this question, and when

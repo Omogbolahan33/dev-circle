@@ -52,7 +52,7 @@ function apply(db, migration) {
   }
 }
 
-test('survey verbatim storage is normalized once while keeping linked response answers recoverable', () => {
+test('survey responses remain canonical and linked Feedback content is deduplicated', () => {
   const { db } = databaseAt(40);
   const userId = crypto.randomUUID();
   const surveyId = crypto.randomUUID();
@@ -81,12 +81,17 @@ test('survey verbatim storage is normalized once while keeping linked response a
     `).run(crypto.randomUUID(), userId, content, surveyId, questionId);
   }
 
-  apply(db, migrations.define(db).find(m => m.id === 41));
+  const definitions = migrations.define(db);
+  apply(db, definitions.find(m => m.id === 41));
+  apply(db, definitions.find(m => m.id === 42));
 
   const response = db.prepare('SELECT answers FROM survey_responses WHERE id = ?').get(responseId);
-  assert.deepEqual(JSON.parse(response.answers), { q_multi: ['Quickstart'] });
-  assert.deepEqual(db.prepare('SELECT response_id FROM feedback ORDER BY question_id').all().map(row => row.response_id),
-    [responseId, responseId]);
+  assert.deepEqual(JSON.parse(response.answers), {
+    q_text: 'The code samples are outdated.', q_multi: ['Quickstart', 'Migration guide']
+  });
+  assert.deepEqual(db.prepare('SELECT response_id, content FROM feedback ORDER BY question_id').all(), [
+    { response_id: responseId, content: '' }, { response_id: responseId, content: '' }
+  ]);
 });
 
 test('the anonymous-respondent rebuild carries every row and column across', () => {

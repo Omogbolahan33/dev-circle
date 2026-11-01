@@ -1849,6 +1849,57 @@ function define(db) {
           if (changed) update.run(JSON.stringify(answers), response.id);
         }
       }
+    },
+    {
+      id: 42,
+      name: 'survey_responses_are_verbatim_source',
+      up() {
+        const responses = db.prepare(`
+          SELECT sr.id, sr.answers, sr.questions, s.questions AS survey_questions
+          FROM survey_responses sr
+          LEFT JOIN surveys s ON s.id = sr.survey_id
+        `).all();
+        const feedbackForResponse = db.prepare(`
+          SELECT id, question_id, content FROM feedback
+          WHERE response_id = ? AND question_id IS NOT NULL
+            AND source IN ('survey', 'external_survey')
+        `);
+        const updateResponse = db.prepare('UPDATE survey_responses SET answers = ? WHERE id = ?');
+        const parse = (value, fallback) => {
+          try { return JSON.parse(value || ''); } catch { return fallback; }
+        };
+        for (const response of responses) {
+          const answers = parse(response.answers, {});
+          if (!answers || typeof answers !== 'object' || Array.isArray(answers)) continue;
+          const savedQuestions = parse(response.questions, []);
+          const questions = Array.isArray(savedQuestions) && savedQuestions.length
+            ? savedQuestions : parse(response.survey_questions, []);
+          const byId = new Map((Array.isArray(questions) ? questions : []).map(question => [question.id, question]));
+          let changed = false;
+          const clearFeedback = db.prepare("UPDATE feedback SET content = '' WHERE id = ?");
+          for (const row of feedbackForResponse.all(response.id)) {
+            const question = byId.get(row.question_id);
+            if (!question) continue;
+            if (row.content) {
+              if (question.type === 'multi_choice') {
+                const current = Array.isArray(answers[row.question_id]) ? answers[row.question_id] : [];
+                const seen = new Set(current.map(value => String(value).trim().toLowerCase()));
+                const other = String(row.content).split('; ').filter(Boolean)
+                  .filter(value => !seen.has(value.trim().toLowerCase()));
+                if (other.length) {
+                  answers[row.question_id] = [...current, ...other];
+                  changed = true;
+                }
+              } else if (!Object.hasOwn(answers, row.question_id) && ['text', 'choice', 'dropdown'].includes(question.type)) {
+                answers[row.question_id] = row.content;
+                changed = true;
+              }
+            }
+            if (Object.hasOwn(answers, row.question_id)) clearFeedback.run(row.id);
+          }
+          if (changed) updateResponse.run(JSON.stringify(answers), response.id);
+        }
+      }
     }
   ];
   return migrations;

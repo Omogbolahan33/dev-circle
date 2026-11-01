@@ -6,6 +6,7 @@ const notifications = require('../../services/notifications');
 const { toCSV, paginate, pageMeta } = require('../../utils/helpers');
 const { buildXLSX } = require('../../utils/xlsx');
 const views = require('../../services/feedbackViews');
+const verbatims = require('../../services/verbatims');
 
 // Every read is bounded by the circle being worked in
 const scoped = req => ({ ...req.query, circle_id: req.circleId });
@@ -38,7 +39,8 @@ router.get('/feedback', requirePermission('feedback.read'), async (req, res) => 
 
   const [feedback, bySource, totalRow] = await Promise.all([
     db.prepare(`
-      SELECT f.id, f.user_id, f.type, f.content, f.category, f.status, f.source,
+      SELECT f.id, f.user_id, f.type, f.content, f.response_id, f.question_id,
+             f.category, f.status, f.source, f.source_system,
              f.survey_id, f.canonical_question_id, f.prompt, f.created_at,
              f.external_ticket_id, f.circle_id,
              u.name as user_name, u.email as user_email, u.company as user_company,
@@ -59,9 +61,10 @@ router.get('/feedback', requirePermission('feedback.read'), async (req, res) => 
     `).all(req.circleId),
     db.prepare(`SELECT COUNT(*) as c FROM feedback f WHERE ${where.join(' AND ')}`).get(...params)
   ]);
+  const hydratedFeedback = await verbatims.hydrateFeedbackRows(feedback || []);
 
   res.json({
-    feedback: feedback || [],
+    feedback: hydratedFeedback,
     sources: bySource || [],
     pagination: pageMeta({ page, limit: pageSize, total: Number(totalRow?.c || 0) })
   });
@@ -220,9 +223,8 @@ router.get('/feedback/export/count', requirePermission('export.read'), async (re
   });
 });
 
-// DELETE /api/admin/feedback/:id — removes one feedback row. A survey verbatim
-// is the canonical answer text, so deleting it removes that answer from survey
-// results too; no copy is kept behind in survey_responses.answers.
+// DELETE /api/admin/feedback/:id — removes the Feedback projection only.
+// Survey responses remain the canonical record and are never altered here.
 router.delete('/feedback/:id', requirePermission('feedback.delete'), async (req, res) => {
   const fb = await db.prepare(`
     SELECT id, type, source, content, survey_id, response_id, user_id, question_id
@@ -235,44 +237,14 @@ router.delete('/feedback/:id', requirePermission('feedback.delete'), async (req,
     const linkedResponse = fb.type === 'survey_response' && Boolean(fb.survey_id || fb.response_id);
     return res.status(409).json({
       error: linkedResponse
-        ? 'Delete this feedback item and its answer from the survey results?'
+        ? 'Delete this Feedback entry? The original survey answer will remain in survey results.'
         : 'Delete this feedback item permanently?',
       confirm_required: true,
       linked_response: linkedResponse
     });
   }
 
-  let removed;
-  await db.atomic(async () => {
-    // Legacy feedback rows may still have their verbatim in the response JSON.
-    // Remove it there as part of deletion, leaving no second copy behind.
-    let response = fb.response_id
-      ? await db.prepare('SELECT id, answers FROM survey_responses WHERE id = ?').get(fb.response_id)
-      : null;
-    if (!response && fb.survey_id) {
-      const candidateUserClause = fb.user_id == null ? 'user_id IS NULL' : 'user_id = ?';
-      const candidateParams = [fb.survey_id];
-      if (fb.user_id != null) candidateParams.push(fb.user_id);
-      const candidates = await db.prepare(`
-        SELECT id, answers FROM survey_responses
-        WHERE survey_id = ? AND ${candidateUserClause}
-        ORDER BY completed_at DESC LIMIT 2
-      `).all(...candidateParams);
-      if (candidates?.length === 1) response = candidates[0];
-    }
-
-    if (response && fb.question_id) {
-      let answers;
-      try { answers = JSON.parse(response.answers || '{}'); } catch { answers = null; }
-      if (answers && typeof answers === 'object' && !Array.isArray(answers) && Object.hasOwn(answers, fb.question_id)) {
-        delete answers[fb.question_id];
-        await db.prepare('UPDATE survey_responses SET answers = ? WHERE id = ?')
-          .run(JSON.stringify(answers), response.id);
-      }
-    }
-
-    removed = await db.prepare('DELETE FROM feedback WHERE id = ?').run(fb.id);
-  });
+  const removed = await db.prepare('DELETE FROM feedback WHERE id = ?').run(fb.id);
 
   if (!removed?.changes) return res.status(404).json({ error: 'Feedback not found' });
   res.json({ message: 'Feedback item deleted' });

@@ -1,6 +1,7 @@
 const express = require('express');
 const db = require('../../db');
 const { requirePermission } = require('../../middleware/auth');
+const verbatims = require('../../services/verbatims');
 
 const router = express.Router();
 
@@ -10,7 +11,7 @@ async function loadDashboard(circleId) {
   // One statement, one RTT. Each arm filters circle_id directly — a CTE of
   // `SELECT ? AS id` hid the predicate and Postgres scanned engagement_history
   // and survey_responses end to end (~900ms) to return twenty rows.
-  return db.prepare(`
+  const rows = await db.prepare(`
     SELECT 'status' AS part, api_status AS id, CAST(NULL AS TEXT) AS label, CAST(COUNT(*) AS INTEGER) AS n,
            CAST(NULL AS TEXT) AS name, CAST(NULL AS TEXT) AS email, CAST(NULL AS TEXT) AS ts,
            CAST(NULL AS TEXT) AS extra, CAST(NULL AS TEXT) AS extra2
@@ -74,6 +75,18 @@ async function loadDashboard(circleId) {
       LIMIT 4
     ) feedback
   `).all(circleId, circleId, circleId, circleId, circleId, circleId, circleId);
+
+  const feedbackIds = (rows || []).filter(row => row.part === 'feedback').map(row => row.id);
+  if (!feedbackIds.length) return rows;
+  const feedbackRows = await db.prepare(`
+    SELECT id, content, response_id, question_id
+    FROM feedback WHERE id IN (${feedbackIds.map(() => '?').join(',')})
+  `).all(...feedbackIds);
+  const hydrated = await verbatims.hydrateFeedbackRows(feedbackRows || []);
+  const contentById = new Map(hydrated.map(row => [row.id, row.content]));
+  return (rows || []).map(row => row.part === 'feedback'
+    ? { ...row, extra2: contentById.get(row.id) ?? row.extra2 }
+    : row);
 }
 
 function presentDashboard(rows) {

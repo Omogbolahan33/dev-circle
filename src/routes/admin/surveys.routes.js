@@ -684,7 +684,7 @@ router.post('/surveys/:id/responses/:responseId/submit', requirePermission('resp
       UPDATE survey_responses
       SET answers = ?, questions = ?, completed_at = datetime('now')
       WHERE id = ? AND survey_id = ? AND completed_at IS NULL
-    `).run(JSON.stringify(verbatims.stripFeedbackAnswers(hydrated, checked.answers)), JSON.stringify(hydrated.questions), response.id, survey.id);
+    `).run(JSON.stringify(checked.answers), JSON.stringify(hydrated.questions), response.id, survey.id);
     completed = Number(updated?.changes || 0) > 0;
     if (!completed) return;
 
@@ -1174,7 +1174,7 @@ router.post('/surveys/:id/responses/import', requirePermission('surveys.write'),
       }
 
       const at = meta.submittedAt || now();
-      const serialized = JSON.stringify(verbatims.stripFeedbackAnswers({ questions }, checked.answers));
+      const serialized = JSON.stringify(checked.answers);
 
       const pending = member ? await findPending.get(survey.id, member.id) : null;
       const responseId = pending ? pending.id : uuid();

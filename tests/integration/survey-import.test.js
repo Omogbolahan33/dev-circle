@@ -701,8 +701,11 @@ test('last round\'s export imports straight into this round\'s copy', async () =
   const listedResponses = await h.get(`/api/admin/surveys/${copy.id}/responses`, { token });
   const restored = listedResponses.body.responses[0].answers;
   const byText = text => copy.questions.find(q => q.text === text).id;
-  assert.equal(Object.hasOwn(storedAnswers, byText('Anything else?')), false,
-    'free-text feedback is not duplicated in the imported response JSON');
+  assert.equal(storedAnswers[byText('Anything else?')], 'The sandbox keys worked first time.',
+    'the imported response remains the canonical complete answer');
+  assert.equal(h.db.prepare("SELECT content FROM feedback WHERE response_id = ? AND question_id = ?")
+    .get(landed.id, byText('Anything else?')).content, '',
+    'the Feedback projection stores a reference, not a duplicate answer');
 
   assert.equal(restored[byText('How clear are the docs?')], 4);
   assert.deepEqual(restored[byText('Which products?')], ['Lending', 'Identity']);
