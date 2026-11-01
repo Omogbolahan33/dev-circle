@@ -697,7 +697,7 @@ function chosenColumns(requested) {
 // so the filter builder never has to hold its own copy of a value list.
 router.get('/export/fields', requirePermission('export.read'), async (req, res) => {
   res.json({
-    criteria: await cohortRules.catalogue(),
+    criteria: await cohortRules.catalogue(req.circleId),
     columns: EXPORT_COLUMNS
   });
 });

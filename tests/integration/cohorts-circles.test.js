@@ -71,6 +71,29 @@ test('JSON array fields match whole values, not substrings', async () => {
   assert.equal(res.body.total, 1, '"lending" must not match "lending_beta"');
 });
 
+test('cohort preview, sync, and manual adds stay within the active circle', async () => {
+  const local = h.makeUser({ work_sector: 'Fintech' });
+  const otherCircle = h.makeCircle('Other circle', 'other-circle');
+  const foreign = h.makeUser({ circleId: otherCircle, work_sector: 'Fintech' });
+  const filter_rules = [{ field: 'work_sector', op: 'eq', value: 'Fintech' }];
+
+  const preview = await h.post('/api/admin/cohorts/preview', { filter_rules }, { token });
+  assert.equal(preview.status, 200, JSON.stringify(preview.body));
+  assert.equal(preview.body.total, 1);
+  assert.equal(preview.body.members[0].id, local.id);
+
+  const created = await h.post('/api/admin/cohorts', { name: 'Local fintech', filter_rules }, { token });
+  assert.equal(created.status, 201, JSON.stringify(created.body));
+  assert.equal(created.body.sync.total, 1);
+
+  const add = await h.post(`/api/admin/cohorts/${created.body.cohort.id}/members`, {
+    user_ids: [foreign.id]
+  }, { token });
+  assert.equal(add.status, 200, JSON.stringify(add.body));
+  assert.equal(add.body.added, 0);
+  assert.deepEqual(add.body.unknown, [foreign.id]);
+});
+
 test('one criterion can match any of several selected property values', async () => {
   h.makeUser({ work_sector: 'Fintech', api_products: ['lending'] });
   h.makeUser({ work_sector: 'Banking', api_products: ['payments'] });

@@ -9,6 +9,10 @@ const router = express.Router();
 
 // ─── Cohorts ────────────────────────────────────────────────
 
+async function cohortInCircle(cohortId, circleId) {
+  return db.prepare('SELECT * FROM cohorts WHERE id = ? AND circle_id = ?').get(cohortId, circleId);
+}
+
 async function loadCohortList(circleId) {
   // Cohorts belong to the circle they were made in. Counts come from one
   // GROUP BY of user_cohorts — a correlated COUNT per cohort is the plan
@@ -47,7 +51,7 @@ router.get('/cohorts/rule-fields', requirePermission('cohorts.read'), async (req
 // POST /api/admin/cohorts/preview — how many members a rule set matches
 router.post('/cohorts/preview', requirePermission('cohorts.read'), async (req, res) => {
   try {
-    const result = await cohortRules.evaluate(req.body.filter_rules, { limit: 10 });
+    const result = await cohortRules.evaluate(req.body.filter_rules, { limit: 10, circleId: req.circleId });
     res.json(result);
   } catch (err) {
     if (err instanceof cohortRules.RuleError) return res.status(400).json({ error: err.message });
@@ -67,7 +71,7 @@ router.post('/cohorts', requirePermission('cohorts.write'), async (req, res) => 
   // with a definition the engine cannot evaluate.
   if (filter_rules) {
     try {
-      await cohortRules.evaluate(filter_rules, { limit: 1 });
+      await cohortRules.evaluate(filter_rules, { limit: 1, circleId: circle.id });
     } catch (err) {
       if (err instanceof cohortRules.RuleError) return res.status(400).json({ error: err.message });
       throw err;
@@ -100,7 +104,7 @@ router.post('/cohorts', requirePermission('cohorts.write'), async (req, res) => 
 // PUT /api/admin/cohorts/:id
 router.put('/cohorts/:id', requirePermission('cohorts.write'), async (req, res) => {
   const { name, description, color, filter_rules, auto_sync } = req.body;
-  const cohort = await db.prepare('SELECT * FROM cohorts WHERE id = ?').get(req.params.id);
+  const cohort = await cohortInCircle(req.params.id, req.circleId);
   if (!cohort) return res.status(404).json({ error: 'Cohort not found' });
 
   const updates = [];
@@ -113,7 +117,7 @@ router.put('/cohorts/:id', requirePermission('cohorts.write'), async (req, res) 
   if (filter_rules !== undefined) {
     if (filter_rules) {
       try {
-        await cohortRules.evaluate(filter_rules, { limit: 1 });
+        await cohortRules.evaluate(filter_rules, { limit: 1, circleId: cohort.circle_id });
       } catch (err) {
         if (err instanceof cohortRules.RuleError) return res.status(400).json({ error: err.message });
         throw err;
@@ -138,6 +142,9 @@ router.put('/cohorts/:id', requirePermission('cohorts.write'), async (req, res) 
 
 // POST /api/admin/cohorts/:id/sync — re-run the rules on demand
 router.post('/cohorts/:id/sync', requirePermission('cohorts.write'), async (req, res) => {
+  if (!await cohortInCircle(req.params.id, req.circleId)) {
+    return res.status(404).json({ error: 'Cohort not found' });
+  }
   try {
     res.json(await cohortRules.sync(req.params.id));
   } catch (err) {
@@ -148,7 +155,7 @@ router.post('/cohorts/:id/sync', requirePermission('cohorts.write'), async (req,
 
 // DELETE /api/admin/cohorts/:id
 router.delete('/cohorts/:id', requirePermission('cohorts.write'), async (req, res) => {
-  const cohort = await db.prepare('SELECT * FROM cohorts WHERE id = ?').get(req.params.id);
+  const cohort = await cohortInCircle(req.params.id, req.circleId);
   if (!cohort) return res.status(404).json({ error: 'Cohort not found' });
   if (cohort.type === 'system') return res.status(400).json({ error: 'Cannot delete system cohorts' });
 
@@ -163,11 +170,16 @@ router.post('/cohorts/:id/members', requirePermission('cohorts.write'), async (r
   const { user_ids } = req.body;
   if (!Array.isArray(user_ids)) return res.status(400).json({ error: 'user_ids array required' });
 
-  const cohort = await db.prepare('SELECT * FROM cohorts WHERE id = ?').get(req.params.id);
+  const cohort = await cohortInCircle(req.params.id, req.circleId);
   if (!cohort) return res.status(404).json({ error: 'Cohort not found' });
 
   const stmt = db.prepare('INSERT OR IGNORE INTO user_cohorts (user_id, cohort_id) VALUES (?, ?)');
-  const exists = db.prepare('SELECT 1 FROM users WHERE id = ?');
+  const exists = db.prepare(`
+    SELECT 1 FROM users u
+    WHERE u.id = ? AND EXISTS (
+      SELECT 1 FROM circle_members cm WHERE cm.user_id = u.id AND cm.circle_id = ?
+    )
+  `);
 
   let added = 0;
   const unknown = [];
@@ -177,7 +189,7 @@ router.post('/cohorts/:id/members', requirePermission('cohorts.write'), async (r
   // they ran outside the transaction that was opened for them.
   await db.atomic(async () => {
     for (const uid of user_ids) {
-      if (!await exists.get(uid)) { unknown.push(uid); continue; }
+      if (!await exists.get(uid, cohort.circle_id)) { unknown.push(uid); continue; }
       added += Number((await stmt.run(uid, cohort.id)).changes || 0);
     }
   });
@@ -188,8 +200,10 @@ router.post('/cohorts/:id/members', requirePermission('cohorts.write'), async (r
 
 // DELETE /api/admin/cohorts/:id/members/:userId
 router.delete('/cohorts/:id/members/:userId', requirePermission('cohorts.write'), async (req, res) => {
+  const cohort = await cohortInCircle(req.params.id, req.circleId);
+  if (!cohort) return res.status(404).json({ error: 'Cohort not found' });
   await db.prepare('DELETE FROM user_cohorts WHERE user_id = ? AND cohort_id = ?')
-    .run(req.params.userId, req.params.id);
+    .run(req.params.userId, cohort.id);
   res.json({ message: 'Member removed from cohort' });
 });
 

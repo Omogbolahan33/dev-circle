@@ -95,8 +95,8 @@ const Criteria = (() => {
       }
 
       const input = slot.querySelector('.criterion-input');
-      input.addEventListener('input', onChange);
-      input.addEventListener('change', onChange);
+      input?.addEventListener('input', onChange);
+      input?.addEventListener('change', onChange);
     }
 
     function renderOperators(row) {

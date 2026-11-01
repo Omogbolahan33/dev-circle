@@ -96,7 +96,9 @@ const FIELDS = {
   cohort_id: {
     type: 'membership', label: 'Member of cohort',
     exists: 'SELECT 1 FROM user_cohorts WHERE cohort_id = ? AND user_id = u.id',
-    values: async db => await db.prepare('SELECT id AS value, name AS label FROM cohorts ORDER BY name').all()
+    values: async (database, circleId) => circleId
+      ? await database.prepare('SELECT id AS value, name AS label FROM cohorts WHERE circle_id = ? ORDER BY name').all(circleId)
+      : await database.prepare('SELECT id AS value, name AS label FROM cohorts ORDER BY name').all()
   },
   circle_id: {
     type: 'membership', label: 'Member of circle',
