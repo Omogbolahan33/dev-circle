@@ -632,6 +632,10 @@ const SCHEMA_POSTGRES = `
   $revoke_columns$;
   ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON TABLES FROM anon, authenticated;
   ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON SEQUENCES FROM anon, authenticated;
+  -- Function EXECUTE defaults to PUBLIC globally; a schema-only REVOKE cannot
+  -- cancel that global default, so revoke it globally for this creator role.
+  ALTER DEFAULT PRIVILEGES REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;
+  ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE EXECUTE ON FUNCTIONS FROM anon, authenticated;
 `;
 
 module.exports = { SCHEMA_POSTGRES };
