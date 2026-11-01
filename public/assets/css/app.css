@@ -602,6 +602,16 @@
 .stat-foot .up { color: var(--green-ink); }
 .stat-foot .down { color: var(--rose-ink); }
 
+@media (max-width: 600px) {
+  /* Keep the four overview metrics in a compact 2×2 block instead of letting
+     the 180px auto-fit minimum turn them into four full-width phone cards. */
+  .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-2); }
+  .stat { padding: 12px; border-radius: var(--r-md); }
+  .stat-label { font-size: 10px; letter-spacing: .06em; margin-bottom: 5px; }
+  .stat-value { font-size: 22px; }
+  .stat-value .unit { font-size: var(--fs-sm); }
+}
+
 /* Figures — numbers stated typographically, separated by hairlines rather
    than boxed into tiles. Used where a few standing counts genuinely help
    read a page; anything that needs comparing belongs on Analytics. */
