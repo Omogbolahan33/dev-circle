@@ -11,11 +11,6 @@ const distinct = column => async database => ((await database.prepare(
    WHERE COALESCE(${column}, '') != '' ORDER BY value`
 ).all()) || []).map(row => row.value);
 
-const distinctInArray = column => async database => ((await database.prepare(
-  `SELECT DISTINCT json_each.value AS value FROM users, json_each(users.${column})
-   WHERE COALESCE(json_each.value, '') != '' ORDER BY value`
-).all()) || []).map(row => row.value);
-
 // `storage` is deliberately constrained to known users-table columns. The
 // criteria engine turns these descriptors into SQL; request data never supplies
 // a column or expression.
@@ -58,7 +53,7 @@ const PROFILE_FIELDS = [
   },
   {
     key: 'api_products', label: 'API product', type: 'array', storage: { json: 'api_products' },
-    input: 'multi-select', values: distinctInArray('api_products')
+    input: 'multi-select', vocabulary: 'api_products'
   }
 ];
 
