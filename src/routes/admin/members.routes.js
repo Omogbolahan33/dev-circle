@@ -605,7 +605,48 @@ const EXPORT_COLUMNS = [
 async function selectMembers(query) {
   const { from, where, params } = memberFilters(query);
 
+  // Restrict every rollup to the matching users. Grouping all responses,
+  // feedback, gifts, consent and memberships before applying a selective
+  // circle/cohort filter grows with the whole database, not this export.
   const rows = await db.prepare(`
+    WITH matched AS (
+      SELECT u.id FROM ${from} WHERE ${where}
+    ),
+    sr_x AS (
+      SELECT sr.user_id, SUM(CASE WHEN sr.completed_at IS NOT NULL THEN 1 ELSE 0 END) as n
+      FROM survey_responses sr JOIN matched m ON m.id = sr.user_id
+      GROUP BY sr.user_id
+    ),
+    ug_x AS (
+      SELECT ug.user_id, COUNT(*) as n
+      FROM user_gifts ug JOIN matched m ON m.id = ug.user_id
+      GROUP BY ug.user_id
+    ),
+    fb_x AS (
+      SELECT f.user_id, COUNT(*) as n
+      FROM feedback f JOIN matched m ON m.id = f.user_id
+      GROUP BY f.user_id
+    ),
+    coh_x AS (
+      SELECT uc.user_id, GROUP_CONCAT(c.name, '; ') as names
+      FROM user_cohorts uc
+      JOIN matched m ON m.id = uc.user_id
+      JOIN cohorts c ON c.id = uc.cohort_id
+      GROUP BY uc.user_id
+    ),
+    cir_x AS (
+      SELECT cmx.user_id, GROUP_CONCAT(ci.name, '; ') as names
+      FROM circle_members cmx
+      JOIN matched m ON m.id = cmx.user_id
+      JOIN circles ci ON ci.id = cmx.circle_id
+      GROUP BY cmx.user_id
+    ),
+    con_x AS (
+      SELECT con.user_id, GROUP_CONCAT(con.channel, '; ') as names
+      FROM consent con JOIN matched m ON m.id = con.user_id
+      WHERE con.status = 'granted'
+      GROUP BY con.user_id
+    )
     SELECT u.id, u.email, u.name, u.phone, u.company, u.work_sector,
            u.gender, u.location_state, u.age_group, u.products, u.segment,
            u.employment, u.last_contacted, u.sessions, u.preferred_research,
@@ -617,33 +658,14 @@ async function selectMembers(query) {
            coh_x.names as cohorts,
            cir_x.names as circles,
            con_x.names as consented_channels
-    FROM ${from}
-    LEFT JOIN (
-      SELECT user_id, SUM(CASE WHEN completed_at IS NOT NULL THEN 1 ELSE 0 END) as n
-      FROM survey_responses GROUP BY user_id
-    ) sr_x ON sr_x.user_id = u.id
-    LEFT JOIN (
-      SELECT user_id, COUNT(*) as n FROM user_gifts GROUP BY user_id
-    ) ug_x ON ug_x.user_id = u.id
-    LEFT JOIN (
-      SELECT user_id, COUNT(*) as n FROM feedback GROUP BY user_id
-    ) fb_x ON fb_x.user_id = u.id
-    LEFT JOIN (
-      SELECT uc.user_id, GROUP_CONCAT(c.name, '; ') as names
-      FROM user_cohorts uc JOIN cohorts c ON c.id = uc.cohort_id
-      GROUP BY uc.user_id
-    ) coh_x ON coh_x.user_id = u.id
-    LEFT JOIN (
-      SELECT cmx.user_id, GROUP_CONCAT(ci.name, '; ') as names
-      FROM circle_members cmx JOIN circles ci ON ci.id = cmx.circle_id
-      GROUP BY cmx.user_id
-    ) cir_x ON cir_x.user_id = u.id
-    LEFT JOIN (
-      SELECT user_id, GROUP_CONCAT(channel, '; ') as names
-      FROM consent WHERE status = 'granted'
-      GROUP BY user_id
-    ) con_x ON con_x.user_id = u.id
-    WHERE ${where}
+    FROM matched m
+    JOIN users u ON u.id = m.id
+    LEFT JOIN sr_x ON sr_x.user_id = u.id
+    LEFT JOIN ug_x ON ug_x.user_id = u.id
+    LEFT JOIN fb_x ON fb_x.user_id = u.id
+    LEFT JOIN coh_x ON coh_x.user_id = u.id
+    LEFT JOIN cir_x ON cir_x.user_id = u.id
+    LEFT JOIN con_x ON con_x.user_id = u.id
     ORDER BY u.created_at DESC
   `).all(...params);
 
