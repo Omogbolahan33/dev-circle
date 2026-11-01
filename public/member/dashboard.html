@@ -75,11 +75,33 @@
       color: var(--text-2);
     }
 
-    /* Setup appears briefly only when a member still has an actionable gap. */
+    /* Setup status stays compact; details are available on demand. */
     #readinessSection { margin-top: var(--sp-5); }
     #nextAction:empty + #readinessSection { margin-top: var(--sp-2); }
     #readinessSection:not([hidden]) + .home { margin-top: var(--sp-5); }
 
+    .profile-setup-card.is-ready { padding:0; border:0; background:transparent; }
+    .setup-ready { margin:0; }
+    .setup-ready summary {
+      display:flex; align-items:center; gap:var(--sp-2); padding:8px 12px;
+      border:1px solid var(--line-faint); border-radius:var(--r-lg);
+      background:var(--surface-1); color:var(--text-2); cursor:pointer; list-style:none;
+    }
+    .setup-ready summary::-webkit-details-marker { display:none; }
+    .setup-ready summary:focus-visible { outline:2px solid var(--cd-blue); outline-offset:2px; }
+    .setup-ready-mark { color:var(--teal); font-weight:var(--fw-bold); }
+    .setup-ready-title { color:var(--text-1); font-size:var(--fs-xs); font-weight:var(--fw-semibold); }
+    .setup-ready-benefit { flex:1; color:var(--text-3); font-size:var(--fs-xs); }
+    .setup-ready-toggle { color:var(--cd-blue); font-size:var(--fs-xs); white-space:nowrap; }
+    .setup-ready-details { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:var(--sp-2); padding:var(--sp-3) 0; }
+    .setup-ring { padding:var(--sp-2) var(--sp-3); border:1px solid var(--line-faint); border-radius:var(--r-md); background:var(--surface-1); }
+    .setup-ring-head { display:flex; justify-content:space-between; gap:var(--sp-2); font-size:var(--fs-xs); }
+    .setup-ring-head strong { color:var(--text-1); font-weight:var(--fw-semibold); }
+    .setup-ring-head span { color:var(--teal); }
+    .setup-ring-track { height:4px; margin-top:7px; border-radius:var(--r-full); background:var(--surface-3); overflow:hidden; }
+    .setup-ring-fill { height:100%; border-radius:inherit; background:var(--teal); }
+    .setup-ring-note { margin-top:5px; color:var(--text-3); font-size:10px; }
+    .setup-detail-footer { display:flex; justify-content:flex-end; }
     .setup-nudge {
       display:flex; align-items:center; justify-content:space-between; gap:var(--sp-4);
       padding:var(--sp-4); border-radius:var(--r-lg);
@@ -89,7 +111,10 @@
     .setup-nudge-label { color:var(--text-3); font-size:10px; font-weight:var(--fw-semibold); text-transform:uppercase; letter-spacing:.08em; }
     .setup-nudge-copy strong { color:var(--text-1); font-size:var(--fs-sm); }
     .setup-nudge-detail { color:var(--text-3); font-size:var(--fs-xs); }
-    @media(max-width:600px) {
+    @media(max-width:700px) {
+      .setup-ready summary { flex-wrap:wrap; }
+      .setup-ready-benefit { flex-basis:calc(100% - 24px); order:3; }
+      .setup-ready-details { grid-template-columns:1fr; }
       .setup-nudge { align-items:flex-start; flex-direction:column; }
     }
 
@@ -285,15 +310,34 @@
     const el = document.getElementById('readinessContent');
     if (!section || !el || !readiness) return;
 
-    // A completed setup is not a dashboard destination. Once members are
-    // ready, give the space back to the things they can act on.
+    section.hidden = false;
     if (readiness.is_complete) {
-      section.hidden = true;
-      el.replaceChildren();
+      section.classList.add('is-ready');
+      const rings = readiness.rings || [];
+      const ringDetails = rings.map(ring => `
+        <div class="setup-ring">
+          <div class="setup-ring-head">
+            <strong>${escapeHtml(ring.name)}</strong>
+            <span>${Math.round(ring.percentage || 0)}% complete</span>
+          </div>
+          <div class="setup-ring-track"><div class="setup-ring-fill" style="width:${Math.max(0, Math.min(100, ring.percentage || 0))}%"></div></div>
+          <div class="setup-ring-note">${escapeHtml(ring.subtitle || '')}</div>
+        </div>`).join('');
+      el.innerHTML = `
+        <details class="setup-ready">
+          <summary>
+            <span class="setup-ready-mark" aria-hidden="true">✓</span>
+            <strong class="setup-ready-title">Profile ready</strong>
+            <span class="setup-ready-benefit">Ready for survey and session matching.</span>
+            <span class="setup-ready-toggle">View setup details⌄</span>
+          </summary>
+          <div class="setup-ready-details">${ringDetails}</div>
+          <div class="setup-detail-footer"><a class="section-link" href="/member/profile.html">Edit profile →</a></div>
+        </details>`;
       return;
     }
 
-    section.hidden = false;
+    section.classList.remove('is-ready');
     const tasks = readiness.unfinished_tasks || [];
     const action = readiness.next_action || {
       action_url: '/member/profile.html',
