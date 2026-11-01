@@ -268,7 +268,9 @@
 
       state.questions = survey.questions || [];
       state.theme = survey.theme || {};
-      state.locked = data.questions_locked;
+      state.locked = false;
+      // This flag is informational: completed responses retain the question
+      // snapshot they saw, so the live survey definition remains editable.
       if (data.circle_theme) state.circleTheme = data.circle_theme;
 
       document.getElementById('sTitle').value = survey.title || '';
@@ -295,7 +297,7 @@
       state.completed = data.completed_count || 0;
       renderStatus();
 
-      if (state.locked) {
+      if (data.questions_locked) {
         // Not a lock, so not a notice. One line saying the survey is being
         // answered — worth knowing before rewording question four, and not
         // worth a paragraph. The tooltip carries the why for anyone who wants it.
