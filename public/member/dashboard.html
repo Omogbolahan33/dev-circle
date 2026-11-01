@@ -91,8 +91,23 @@
     .setup-ready summary:focus-visible { outline:2px solid var(--cd-blue); outline-offset:2px; }
     .setup-ready-mark { color:var(--teal); font-weight:var(--fw-bold); }
     .setup-ready-title { color:var(--text-1); font-size:var(--fs-xs); font-weight:var(--fw-semibold); }
-    .setup-ready-benefit { flex:1; color:var(--text-3); font-size:var(--fs-xs); }
+    .setup-ready-meta { flex:1; color:var(--text-3); font-size:var(--fs-xs); }
+    .impact-heading { grid-column:1/-1; color:var(--text-3); font-size:10px; font-weight:var(--fw-semibold); text-transform:uppercase; letter-spacing:.1em; }
     .setup-ready-toggle { color:var(--cd-blue); font-size:var(--fs-xs); white-space:nowrap; }
+    .impact-strip { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:var(--sp-3); margin:var(--sp-4) 0; }
+    .impact-tile { display:flex; align-items:center; gap:var(--sp-3); min-width:0; padding:var(--sp-3) var(--sp-4); border:1px solid var(--line-faint); border-radius:var(--r-lg); background:var(--surface-1); }
+    .impact-number { color:var(--cd-blue); font-family:var(--font-display); font-size:var(--fs-xl); font-weight:var(--fw-bold); line-height:1; }
+    .impact-label { color:var(--text-2); font-size:var(--fs-xs); line-height:1.25; }
+    .next-action.quiet { background:linear-gradient(115deg,var(--surface-2),var(--surface-1)); border:1px solid var(--line-faint); border-radius:var(--r-xl); padding:var(--sp-5); }
+    .next-action.quiet .eyebrow { color:var(--text-3); }
+    .next-action.quiet .headline { margin-bottom:var(--sp-1); }
+    .next-action.quiet .detail { margin-bottom:var(--sp-3); }
+    @media(max-width:600px) {
+      .impact-strip { grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px; }
+      .impact-tile { align-items:flex-start; flex-direction:column; gap:var(--sp-1); padding:var(--sp-2); }
+      .impact-number { font-size:var(--fs-lg); }
+      .impact-label { font-size:10px; }
+    }
     .setup-ready-details { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:var(--sp-2); padding:var(--sp-3) 0; }
     .setup-ring { padding:var(--sp-2) var(--sp-3); border:1px solid var(--line-faint); border-radius:var(--r-md); background:var(--surface-1); }
     .setup-ring-head { display:flex; justify-content:space-between; gap:var(--sp-2); font-size:var(--fs-xs); }
@@ -113,7 +128,7 @@
     .setup-nudge-detail { color:var(--text-3); font-size:var(--fs-xs); }
     @media(max-width:700px) {
       .setup-ready summary { flex-wrap:wrap; }
-      .setup-ready-benefit { flex-basis:calc(100% - 24px); order:3; }
+      .setup-ready-meta { flex-basis:calc(100% - 24px); order:3; }
       .setup-ready-details { grid-template-columns:1fr; }
       .setup-nudge { align-items:flex-start; flex-direction:column; }
     }
@@ -149,10 +164,12 @@
     <!-- Who we think you are, before anything is asked of you. -->
     <header class="masthead" id="masthead"></header>
 
-    <!-- The one thing worth doing next, if there is one. -->
+    <section class="impact-strip" id="impactStrip" aria-label="Your contributions" hidden></section>
+
+    <!-- Lead with the next real opportunity, not account status. -->
     <div id="nextAction"></div>
 
-    <!-- A compact setup nudge appears only while something still needs attention. -->
+    <!-- Setup is secondary: actionable when incomplete, expandable when done. -->
     <section class="panel-card profile-setup-card" id="readinessSection" hidden aria-label="Profile setup">
       <div id="readinessContent"></div>
     </section>
@@ -213,11 +230,6 @@
               <div class="big-figure" id="streakValue">—</div>
               <div class="text-xs dim mt-1" id="streakLabel">day streak</div>
             </div>
-            <div class="spacer"></div>
-            <div class="text-right">
-              <div class="big-figure" style="font-size:var(--fs-xl)" id="answeredValue">—</div>
-              <div class="text-xs dim mt-1">answered</div>
-            </div>
           </div>
           <div class="heat" id="heat"></div>
           <div class="heat-legend">
@@ -265,7 +277,6 @@
 
     document.getElementById('streakValue').textContent = '';
     document.getElementById('streakLabel').textContent = 'loading…';
-    document.getElementById('answeredValue').textContent = '';
     document.getElementById('heat').innerHTML =
       Array(84).fill('<span class="heat-cell"></span>').join('');
 
@@ -291,6 +302,7 @@
       ]);
 
       renderMasthead(profile);
+      renderImpact(profile.stats);
       renderNextAction(profile, surveys.surveys, sessions.sessions);
       renderReadiness(profile.readiness);
       renderHeat(engagement.history, profile.stats);
@@ -327,9 +339,9 @@
         <details class="setup-ready">
           <summary>
             <span class="setup-ready-mark" aria-hidden="true">✓</span>
-            <strong class="setup-ready-title">Profile ready</strong>
-            <span class="setup-ready-benefit">Ready for survey and session matching.</span>
-            <span class="setup-ready-toggle">View setup details⌄</span>
+            <strong class="setup-ready-title">Setup</strong>
+            <span class="setup-ready-meta">Profile · availability · contact · 3/3 complete</span>
+            <span class="setup-ready-toggle">View progress</span>
           </summary>
           <div class="setup-ready-details">${ringDetails}</div>
           <div class="setup-detail-footer"><a class="section-link" href="/member/profile.html">Edit profile →</a></div>
@@ -345,13 +357,13 @@
       headline: 'Finish your profile setup'
     };
     const taskSummary = tasks.length
-      ? `${tasks.length} detail${tasks.length === 1 ? '' : 's'} left to improve matching and availability.`
-      : 'A few profile details are still needed.';
+      ? tasks.slice(0, 3).map(task => task.label).join(' · ') + (tasks.length > 3 ? ` · +${tasks.length - 3} more` : '')
+      : 'Finish the remaining setup details.';
 
     el.innerHTML = `
       <div class="setup-nudge">
         <div class="setup-nudge-copy">
-          <span class="setup-nudge-label">One quick setup step</span>
+          <span class="setup-nudge-label">${tasks.length} item${tasks.length === 1 ? '' : 's'} to complete</span>
           <strong>${escapeHtml(action.headline || 'Finish your profile setup')}</strong>
           <span class="setup-nudge-detail">${escapeHtml(taskSummary)}</span>
         </div>
@@ -442,7 +454,21 @@
       stats.streak && stats.streak === stats.best_streak
         ? 'day streak — your best yet'
         : `day streak · best ${stats.best_streak}`;
-    document.getElementById('answeredValue').textContent = stats.surveys_completed;
+  }
+
+  function renderImpact(stats = {}) {
+    const section = document.getElementById('impactStrip');
+    const contributions = [
+      ['surveys_completed', 'Surveys answered'],
+      ['feedback_submitted', 'Feedback shared'],
+      ['gifts_claimed', 'Rewards claimed']
+    ];
+    section.innerHTML = `<div class="impact-heading">Your footprint</div>` + contributions.map(([key, label]) => `
+      <div class="impact-tile">
+        <strong class="impact-number">${Number(stats[key] || 0).toLocaleString()}</strong>
+        <span class="impact-label">${label}</span>
+      </div>`).join('');
+    section.hidden = false;
   }
 
   // Exactly one call to action, chosen by what actually matters most:
@@ -481,7 +507,13 @@
       return;
     }
 
-    el.innerHTML = '';
+    el.innerHTML = `
+      <div class="next-action quiet">
+        <div class="eyebrow">No open requests</div>
+        <div class="headline">The queue is clear.</div>
+        <p class="detail">No surveys or sessions are waiting for you right now.</p>
+        <a class="btn btn-secondary" href="/member/feedback.html">Share a thought with the team ${icon('arrowRight', 14)}</a>
+      </div>`;
   }
 
   async function grantConsent() {
