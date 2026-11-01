@@ -228,17 +228,14 @@
   }
 
   async function load() {
-    try {
-      const [sessions, me] = await Promise.all([
-        api.get('/admin/sessions'),
-        Shell.adminMe()
-      ]);
-
+    const circlesTask = Shell.adminMe().then(me => {
       // Auth already joined active workspaces. Do not recount members here.
       const circles = (me.circles || []).filter(c => !c.status || c.status === 'active');
       document.getElementById('sCircle').innerHTML = circles
         .map(c => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('');
+    }).catch(err => showToast('Could not load workspaces: ' + err.message, 'error'));
 
+    const sessionsTask = api.get('/admin/sessions').then(sessions => {
       const now = Date.now();
       // A session with a date nobody can read is shown as upcoming rather than
       // dropped into the past, where it would be out of sight and unfixable.
@@ -264,10 +261,11 @@
       // One compact batch avoids a request per session; the session rows stay
       // visible while their secondary availability summary resolves.
       if (upcoming.length) loadAvailability(upcoming.map(session => session.id));
-    } catch (err) {
+    }).catch(err => {
       document.getElementById('panel-upcoming').innerHTML =
         emptyState({ title: 'Could not load sessions', text: err.message });
-    }
+    });
+    await Promise.all([circlesTask, sessionsTask]);
   }
 
   async function loadAvailability(ids) {

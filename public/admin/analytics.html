@@ -155,24 +155,23 @@
   Shell.admin('analytics');
 
   async function load() {
-    try {
-      // Demography is computed server-side across the whole member table.
-      // These charts used to be derived from one page of members, which
-      // silently under-counted once the base grew past a single page.
-      const [dashboard, demo] = await Promise.all([
-        api.get('/admin/dashboard'),
-        api.get('/admin/demography')
-      ]);
-
+    // The KPI strip and demographic charts have separate data dependencies.
+    // Paint each as its own response arrives instead of making the strip wait
+    // for the full-table demographic aggregation.
+    const dashboardTask = api.get('/admin/dashboard').then(dashboard => {
       const s = dashboard.stats;
-
       document.getElementById('figures').innerHTML = `
         <div><div class="figure-value">${s.total_members.toLocaleString()}</div><div class="figure-label">Members</div></div>
         <div><div class="figure-value">${s.active_cohorts}</div><div class="figure-label">Cohorts</div></div>
         <div><div class="figure-value">${s.engagement_rate}<span class="unit">%</span></div><div class="figure-label">Engagement rate</div></div>
         <div><div class="figure-value">${s.surveys_completed.toLocaleString()}</div><div class="figure-label">Surveys done</div></div>
         <div><div class="figure-value">${s.new_this_week}</div><div class="figure-label">New this week</div></div>`;
+      const cohortRows = dashboard.cohort_breakdown || [];
+      bars('cohortChart', Object.fromEntries(cohortRows.map(c => [c.name, c.member_count])),
+           label => (cohortRows.find(c => c.name === label) || {}).color || 'var(--cd-blue)');
+    }).catch(err => showToast('Could not load dashboard totals: ' + err.message, 'error'));
 
+    const demoTask = api.get('/admin/demography').then(demo => {
       const counts = rows => Object.fromEntries(rows.map(r => [r.label, r.count]));
 
       bars('statusChart',          counts(demo.api_status),        v => v === 'production' ? 'var(--teal)' : 'var(--cd-gold)');
@@ -195,10 +194,6 @@
       bars('channelChart', counts(demo.preferred_channels), 'var(--cd-gold)');
       bars('streakChart',  counts(demo.streak_band),        'var(--violet)');
 
-      const cohortRows = dashboard.cohort_breakdown || [];
-      bars('cohortChart', Object.fromEntries(cohortRows.map(c => [c.name, c.member_count])),
-           label => (cohortRows.find(c => c.name === label) || {}).color || 'var(--cd-blue)');
-
       // Keep the optional-field completeness summary available without
       // adding a note to every chart card.
       const coverageLabels = [
@@ -218,9 +213,8 @@
         ? 'No member data to assess.'
         : gaps.length ? `${gaps.join(' · ')}.`
         : 'Every member has these fields recorded.';
-    } catch (err) {
-      showToast('Failed to load analytics: ' + err.message, 'error');
-    }
+    }).catch(err => showToast('Could not load demographic charts: ' + err.message, 'error'));
+    await Promise.all([dashboardTask, demoTask]);
   }
 
   // colour may be a constant or a function of the label, so a chart can carry
