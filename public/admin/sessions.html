@@ -231,7 +231,7 @@
     try {
       const [sessions, me] = await Promise.all([
         api.get('/admin/sessions'),
-        api.get('/auth/me')
+        Shell.adminMe()
       ]);
 
       // Auth already joined active workspaces. Do not recount members here.

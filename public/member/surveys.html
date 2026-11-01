@@ -104,7 +104,7 @@
     try {
       const [{ surveys }, { stats }] = await Promise.all([
         api.get('/users/surveys'),
-        api.get('/users/profile')
+        Shell.memberProfile()
       ]);
 
       const open = surveys.filter(s => !s.completed);

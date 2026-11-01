@@ -98,16 +98,16 @@
   }
 
   async function load() {
-    try {
-      const [profile] = await Promise.all([
-        api.get('/users/profile'),
-        loadPage(1)
-      ]);
-      renderFigures(profile.stats);
-    } catch (err) {
-      document.getElementById('timeline').innerHTML =
-        emptyState({ title: 'Could not load your history', text: err.message });
-    }
+    await Promise.all([
+      Shell.memberProfile().then(profile => renderFigures(profile.stats)).catch(err => {
+        document.getElementById('figures').innerHTML =
+          emptyState({ title: 'Could not load your totals', text: err.message });
+      }),
+      loadPage(1).catch(err => {
+        document.getElementById('timeline').innerHTML =
+          emptyState({ title: 'Could not load your history', text: err.message });
+      })
+    ]);
   }
 
   function renderFigures(s) {

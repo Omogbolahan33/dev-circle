@@ -219,7 +219,7 @@
 
   async function load() {
     try {
-      const profile = await api.get('/users/profile');
+      const profile = await Shell.memberProfile();
       const { user, stats, consent, circles, cohorts, readiness } = profile;
       participantSegmentRules = profile.segment_rules || [];
       renderStanding(user, circles, cohorts);

@@ -122,6 +122,28 @@ const PORTAL_NAV = [
 
 const Shell = {
   activeId: null,
+  _memberProfilePromise: null,
+  _adminMePromise: null,
+
+  memberProfile({ refresh = false } = {}) {
+    if (refresh || !this._memberProfilePromise) {
+      this._memberProfilePromise = api.get('/users/profile').catch(err => {
+        this._memberProfilePromise = null;
+        throw err;
+      });
+    }
+    return this._memberProfilePromise;
+  },
+
+  adminMe({ refresh = false } = {}) {
+    if (refresh || !this._adminMePromise) {
+      this._adminMePromise = api.get('/auth/me').catch(err => {
+        this._adminMePromise = null;
+        throw err;
+      });
+    }
+    return this._adminMePromise;
+  },
 
   // Admin console: fixed sidebar, command palette, user menu.
   admin(activeId) {
@@ -172,10 +194,10 @@ const Shell = {
       let list = null;
 
       if (Auth.isAdmin()) {
-        const me = await api.get('/auth/me');
+        const me = await this.adminMe();
         list = me.circles;
       } else {
-        const profile = profileData || await api.get('/users/profile');
+        const profile = profileData || await this.memberProfile();
         list = profile.circles;
       }
 
@@ -407,7 +429,7 @@ const Shell = {
     try {
       // The session already joined the reachable circles. /auth/me returns
       // them without recounting members — enough to name and switch.
-      const me = await api.get('/auth/me');
+      const me = await this.adminMe();
       if (Array.isArray(me.circles) && me.circles.length) {
         const stored = Auth.getCircle();
         const current = me.circles.find(c => c.id === stored) || me.circles[0];
