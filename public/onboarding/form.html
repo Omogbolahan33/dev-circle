@@ -90,7 +90,6 @@
     .question-wrap .sv-note { font-size: calc(var(--fs-base) * var(--survey-scale, 1)); }
     .question-wrap .input { font-size: calc(var(--fs-sm) * var(--survey-scale, 1)); }
 
-    .legend { font-size: var(--fs-xs); color: var(--ash-dim); margin-bottom: var(--sp-6); }
     .stack-q { padding-bottom: var(--sp-10); border-bottom: 1px solid var(--line-faint); margin-bottom: var(--sp-10); }
     .stack-q:last-of-type { border-bottom: none; }
 
@@ -413,8 +412,6 @@
       <div class="question-wrap">
         <h1 class="sv-ask" style="font-size:var(--fs-2xl)">${escapeHtml(form.name)}</h1>
         ${form.description ? `<p class="sv-note">${escapeHtml(form.description)}</p>` : ''}
-        ${list.some(q => q.required)
-          ? '<p class="legend"><span class="sv-required">*</span> Answering is required</p>' : ''}
         ${list.map(question => {
           const isAnswerable = SurveySchema.isAnswerable(question);
           if (isAnswerable) number++;
@@ -474,8 +471,6 @@
       <div class="question-wrap">
         <h1 class="sv-ask" style="font-size:var(--fs-2xl)">${escapeHtml(form.name)}</h1>
         ${form.description ? `<p class="sv-note">${escapeHtml(form.description)}</p>` : ''}
-        ${page.some(q => q.required)
-          ? '<p class="legend"><span class="sv-required">*</span> Answering is required</p>' : ''}
         ${page.map(question => {
           const answerable = SurveySchema.isAnswerable(question);
           return `

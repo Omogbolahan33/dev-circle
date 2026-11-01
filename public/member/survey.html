@@ -96,8 +96,6 @@
     .question-wrap .sv-note { font-size: calc(var(--fs-base) * var(--survey-scale, 1)); }
     .question-wrap .input { font-size: calc(var(--fs-sm) * var(--survey-scale, 1)); }
 
-    .legend { font-size: var(--fs-xs); color: var(--ash-dim); margin-bottom: var(--sp-6); }
-
     /* All-at-once: every question on one page, separated enough to be read
        one at a time anyway. */
     .stack-q { padding-bottom: var(--sp-10); border-bottom: 1px solid var(--line-faint); margin-bottom: var(--sp-10); }
@@ -492,8 +490,6 @@
       <div class="question-wrap">
         <h1 class="sv-ask" style="font-size:var(--fs-2xl)">${escapeHtml(survey.title)}</h1>
         ${survey.description ? `<p class="sv-note">${escapeHtml(survey.description)}</p>` : ''}
-        ${list.some(q => q.required)
-          ? '<p class="legend"><span class="sv-required">*</span> Answering is required</p>' : ''}
         ${list.map(question => {
           const answerable = SurveySchema.isAnswerable(question);
           if (answerable) number++;
@@ -554,8 +550,6 @@
       <div class="question-wrap">
         <h1 class="sv-ask" style="font-size:var(--fs-2xl)">${escapeHtml(survey.title)}</h1>
         ${survey.description ? `<p class="sv-note">${escapeHtml(survey.description)}</p>` : ''}
-        ${page.some(q => q.required)
-          ? '<p class="legend"><span class="sv-required">*</span> Answering is required</p>' : ''}
         ${page.map(question => {
           const answerable = SurveySchema.isAnswerable(question);
           return `

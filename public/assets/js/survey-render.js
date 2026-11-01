@@ -520,7 +520,7 @@ const SurveyRender = (() => {
     return `
       ${number ? `<div class="sv-number-kicker">Question ${number}</div>` : ''}
       <h2 class="sv-ask">${SurveySchema.linkify(question.text)}${
-        question.required ? '<span class="sv-required" aria-label="required">*</span>' : ''
+        question.required ? '<span class="sv-required" aria-label="required" title="Required">*</span>' : ''
       }</h2>
       ${question.description ? `<p class="sv-note">${SurveySchema.linkify(question.description)}</p>` : ''}`;
   }

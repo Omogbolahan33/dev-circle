@@ -2057,8 +2057,8 @@ textarea.input { min-height: 90px; line-height: var(--lh-normal); }
 .sv-ask + .sv-control, .sv-note + .sv-control { margin-top: var(--sp-6); }
 .sv-number-kicker { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--cd-blue); margin-bottom: var(--sp-3); }
 
-/* An asterisk alone has never told anyone anything, so it is always paired
-   with a legend where the questions start. */
+/* Required status sits beside the question, not in a separate line that
+   pushes the form down. */
 .sv-required { color: var(--rose-ink); margin-left: 4px; font-weight: var(--fw-regular); }
 
 .sv-options { display: flex; flex-direction: column; gap: var(--sp-2); }
