@@ -57,6 +57,15 @@
   font-size: var(--fs-xs); color: var(--ash-dim);
   text-transform: uppercase; letter-spacing: 0.08em;
 }
+.q-label-row { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); }
+.q-label-row .label { margin-bottom: var(--sp-2); }
+.q-required-toggle {
+  display: inline-flex; align-items: center; gap: var(--sp-1);
+  padding: 0; margin: 0 0 var(--sp-2); background: transparent;
+  color: var(--ash-dim); font-size: var(--fs-xs); cursor: pointer; white-space: nowrap;
+}
+.q-required-toggle:hover { color: var(--white); }
+.q-required-toggle .check { width: 14px; height: 14px; }
 .q-branching {
   font-size: var(--fs-xs);
   color: var(--gold-ink);

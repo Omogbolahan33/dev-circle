@@ -182,18 +182,19 @@ const QuestionBuilder = (() => {
           ${head}
 
           <div class="field">
-            <label class="label">${question.type === 'section' ? 'Heading' : 'Question'}
-              <span class="tip" data-tip="A word can be a link: [Terms &amp; Conditions](https://example.com/terms)">?</span></label>
+            <div class="q-label-row">
+              <label class="label">${question.type === 'section' ? 'Heading' : 'Question'}
+                <span class="tip" data-tip="A word can be a link: [Terms &amp; Conditions](https://example.com/terms)">?</span></label>
+              ${SurveySchema.isAnswerable(question) ? `
+                <button type="button" class="q-required-toggle" data-required aria-pressed="${question.required}" title="${question.required ? 'Make this question optional' : 'Require an answer'}">
+                  <span class="check${question.required ? ' on' : ''}">✓</span> Required
+                </button>` : ''}
+            </div>
             <input type="text" class="input q-text" value="${escapeHtml(question.text || '')}"
                    placeholder="${escapeHtml(placeholderFor(question.type))}">
           </div>
 
           ${questionSubtextEditor(question)}
-
-          ${SurveySchema.isAnswerable(question) ? `
-            <label class="row-tight text-sm" style="cursor:pointer;gap:var(--sp-2);margin-bottom:var(--sp-4)">
-              <span class="check${question.required ? ' on' : ''}" data-required>✓</span> An answer is required
-            </label>` : ''}
 
           ${coreEditor(question)}
           ${moreOptions(question, index)}
