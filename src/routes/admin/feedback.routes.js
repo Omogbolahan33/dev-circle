@@ -3,10 +3,9 @@ const db = require('../../db');
 const { requirePermission } = require('../../middleware/auth');
 const engagement = require('../../services/engagement');
 const notifications = require('../../services/notifications');
-const { toCSV, paginate, pageMeta, parseJSON } = require('../../utils/helpers');
+const { toCSV, paginate, pageMeta } = require('../../utils/helpers');
 const { buildXLSX } = require('../../utils/xlsx');
 const views = require('../../services/feedbackViews');
-const verbatims = require('../../services/verbatims');
 
 // Every read is bounded by the circle being worked in
 const scoped = req => ({ ...req.query, circle_id: req.circleId });
@@ -221,12 +220,12 @@ router.get('/feedback/export/count', requirePermission('export.read'), async (re
   });
 });
 
-// DELETE /api/admin/feedback/:id — removes one feedback row. If it came from a
-// survey, the corresponding response remains in Surveys; deleting the response
-// there also removes any other linked verbatims.
+// DELETE /api/admin/feedback/:id — removes one feedback row. A survey verbatim
+// is the canonical answer text, so deleting it removes that answer from survey
+// results too; no copy is kept behind in survey_responses.answers.
 router.delete('/feedback/:id', requirePermission('feedback.delete'), async (req, res) => {
   const fb = await db.prepare(`
-    SELECT id, type, source, content, survey_id, response_id, user_id
+    SELECT id, type, source, content, survey_id, response_id, user_id, question_id
     FROM feedback
     WHERE id = ? AND (circle_id = ? OR circle_id IS NULL)
   `).get(req.params.id, req.circleId);
@@ -236,7 +235,7 @@ router.delete('/feedback/:id', requirePermission('feedback.delete'), async (req,
     const linkedResponse = fb.type === 'survey_response' && Boolean(fb.survey_id || fb.response_id);
     return res.status(409).json({
       error: linkedResponse
-        ? 'Delete this feedback item? Its survey response will remain in Surveys.'
+        ? 'Delete this feedback item and its answer from the survey results?'
         : 'Delete this feedback item permanently?',
       confirm_required: true,
       linked_response: linkedResponse
@@ -244,53 +243,37 @@ router.delete('/feedback/:id', requirePermission('feedback.delete'), async (req,
   }
 
   let removed;
-  if (fb.type === 'survey_response' && fb.survey_id) {
-    await db.atomic(async () => {
-      // If this quote is removed from Feedback, keep the survey response intact:
-      // its text moves back into the response projection, while other linked
-      // quotes remain canonical in Feedback and stay out of the JSON column.
-      let response = fb.response_id
-        ? await db.prepare('SELECT id, answers, questions FROM survey_responses WHERE id = ?').get(fb.response_id)
-        : null;
-      if (!response) {
-        const candidateUserClause = fb.user_id == null ? 'user_id IS NULL' : 'user_id = ?';
-        const candidateParams = [fb.survey_id];
-        if (fb.user_id != null) candidateParams.push(fb.user_id);
-        const candidates = await db.prepare(`
-          SELECT id, answers, questions FROM survey_responses
-          WHERE survey_id = ? AND ${candidateUserClause}
-          ORDER BY completed_at DESC LIMIT 2
-        `).all(...candidateParams);
-        if (candidates?.length === 1) response = candidates[0];
-      }
+  await db.atomic(async () => {
+    // Legacy feedback rows may still have their verbatim in the response JSON.
+    // Remove it there as part of deletion, leaving no second copy behind.
+    let response = fb.response_id
+      ? await db.prepare('SELECT id, answers FROM survey_responses WHERE id = ?').get(fb.response_id)
+      : null;
+    if (!response && fb.survey_id) {
+      const candidateUserClause = fb.user_id == null ? 'user_id IS NULL' : 'user_id = ?';
+      const candidateParams = [fb.survey_id];
+      if (fb.user_id != null) candidateParams.push(fb.user_id);
+      const candidates = await db.prepare(`
+        SELECT id, answers FROM survey_responses
+        WHERE survey_id = ? AND ${candidateUserClause}
+        ORDER BY completed_at DESC LIMIT 2
+      `).all(...candidateParams);
+      if (candidates?.length === 1) response = candidates[0];
+    }
 
-      if (response) {
-        const responseQuestions = parseJSON(response.questions, []);
-        const fallback = Array.isArray(responseQuestions) && responseQuestions.length
-          ? []
-          : parseJSON((await db.prepare('SELECT questions FROM surveys WHERE id = ?').get(fb.survey_id))?.questions, []);
-        const questions = Array.isArray(responseQuestions) && responseQuestions.length
-          ? responseQuestions : fallback;
-        const fullAnswers = await verbatims.restoreResponseAnswers(response, fallback);
-        const legacyUserClause = fb.user_id == null ? 'user_id IS NULL' : 'user_id = ?';
-        const remainingParams = [fb.id, response.id, fb.survey_id];
-        if (fb.user_id != null) remainingParams.push(fb.user_id);
-        const remaining = await db.prepare(`
-          SELECT question_id FROM feedback
-          WHERE id != ? AND question_id IS NOT NULL
-            AND (response_id = ? OR (response_id IS NULL AND survey_id = ? AND ${legacyUserClause}))
-        `).all(...remainingParams);
-        const stillCanonical = new Set((remaining || []).map(row => row.question_id));
-        const storedAnswers = verbatims.stripFeedbackAnswers({ questions }, fullAnswers, stillCanonical);
+    if (response && fb.question_id) {
+      let answers;
+      try { answers = JSON.parse(response.answers || '{}'); } catch { answers = null; }
+      if (answers && typeof answers === 'object' && !Array.isArray(answers) && Object.hasOwn(answers, fb.question_id)) {
+        delete answers[fb.question_id];
         await db.prepare('UPDATE survey_responses SET answers = ? WHERE id = ?')
-          .run(JSON.stringify(storedAnswers), response.id);
+          .run(JSON.stringify(answers), response.id);
       }
+    }
 
-      removed = await db.prepare('DELETE FROM feedback WHERE id = ?').run(fb.id);
-    });
-  } else {
     removed = await db.prepare('DELETE FROM feedback WHERE id = ?').run(fb.id);
-  }
+  });
+
   if (!removed?.changes) return res.status(404).json({ error: 'Feedback not found' });
   res.json({ message: 'Feedback item deleted' });
 });

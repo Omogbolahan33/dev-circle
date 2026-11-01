@@ -86,11 +86,17 @@ test('feedback items can be independently deleted with confirmation', async () =
   assert.equal(Number(h.db.prepare('SELECT COUNT(*) AS c FROM feedback WHERE id = ?').get(item.id).c), 0);
   const response = h.db.prepare('SELECT answers FROM survey_responses WHERE survey_id = ? AND user_id = ?')
     .get(survey.id, user.id);
-  const preserved = JSON.parse(response.answers);
-  assert.equal(preserved.q3, 'Please improve the SDK examples.',
-    'deleting the Feedback view preserves that survey answer in its original record');
-  assert.equal(Object.hasOwn(preserved, 'q4'), false,
-    'another Feedback item remains canonical in Feedback, not duplicated back into the response');
+  const storedAnswers = JSON.parse(response.answers);
+  assert.equal(Object.hasOwn(storedAnswers, 'q3'), false,
+    'deleting Feedback removes the canonical answer rather than leaving a hidden copy');
+  assert.equal(Object.hasOwn(storedAnswers, 'q4'), false,
+    'the other quote remains in Feedback only');
+  const responseList = await h.get(`/api/admin/surveys/${survey.id}/responses`, { token: adminToken });
+  const listedAnswers = responseList.body.responses[0].answers;
+  assert.equal(Object.hasOwn(listedAnswers, 'q3'), false,
+    'the deleted answer is absent from survey results too');
+  assert.equal(listedAnswers.q4, 'The getting-started guide is useful.',
+    'the remaining Feedback answer still appears in survey results');
 });
 
 test('the question is kept with the answer', async () => {
