@@ -359,7 +359,7 @@
     box-shadow: var(--shadow-xl);
   }
   .sidebar.open { transform: translateX(0); }
-  .sidebar.open + .sidebar-scrim { display: block; }
+  .sidebar.open ~ .sidebar-scrim { display: block; }
 
   .app-body { padding: var(--sp-5) var(--sp-4) var(--sp-12); }
 }
