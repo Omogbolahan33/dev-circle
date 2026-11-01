@@ -20,7 +20,9 @@
     .bar-fill { height: 100%; border-radius: var(--r-full); transition: width var(--duration-normal) var(--ease-out); }
     .bar-count { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--ash); min-width: 32px; text-align: right; }
 
-    .coverage { font-size: var(--fs-xs); color: var(--cd-clay); margin-top: var(--sp-3); line-height: var(--lh-loose); }
+    .coverage-details { margin-bottom: var(--sp-4); color: var(--ash); font-size: var(--fs-sm); }
+    .coverage-details summary { width: fit-content; cursor: pointer; }
+    .coverage { color: var(--cd-clay); font-size: var(--fs-xs); line-height: var(--lh-loose); margin: var(--sp-2) 0 0; }
   </style>
 </head>
 <body>
@@ -54,6 +56,11 @@
         <div><div class="figure-value"><div class="skeleton" style="width:52px;height:28px;margin:0 auto"></div></div><div class="figure-label">New this week</div></div>
       </div>
 
+      <details class="coverage-details">
+        <summary>Data coverage</summary>
+        <p class="coverage" id="coverageSummary"></p>
+      </details>
+
       <div class="chart-grid" id="charts">
         <section class="card">
           <div class="card-title mb-4">Integration stage</div>
@@ -73,20 +80,17 @@
         <section class="card">
           <div class="card-title mb-4">Gender</div>
           <div id="genderChart"><div class="skeleton" style="width:100%;height:150px"></div></div>
-          <div class="coverage" id="coverageGender"></div>
         </section>
 
         <section class="card">
           <div class="card-title mb-4">Products members use</div>
           <div id="participantProductChart"><div class="skeleton" style="width:100%;height:150px"></div></div>
-          <div class="coverage" id="coverageProducts"></div>
           <p class="hint">Members may select more than one product.</p>
         </section>
 
         <section class="card">
           <div class="card-title mb-4">API products in use</div>
           <div id="productChart"><div class="skeleton" style="width:100%;height:150px"></div></div>
-          <div class="coverage" id="coverageApiProducts"></div>
         </section>
 
         <section class="card">
@@ -102,31 +106,26 @@
         <section class="card">
           <div class="card-title mb-4">Age group</div>
           <div id="ageChart"><div class="skeleton" style="width:100%;height:150px"></div></div>
-          <div class="coverage" id="coverageAgeGroup"></div>
         </section>
 
         <section class="card">
           <div class="card-title mb-4">Participant segment</div>
           <div id="segmentChart"><div class="skeleton" style="width:100%;height:150px"></div></div>
-          <div class="coverage" id="coverageSegment"></div>
         </section>
 
         <section class="card">
           <div class="card-title mb-4">Employment</div>
           <div id="employmentChart"><div class="skeleton" style="width:100%;height:150px"></div></div>
-          <div class="coverage" id="coverageEmployment"></div>
         </section>
 
         <section class="card">
           <div class="card-title mb-4">Preferred research</div>
           <div id="researchChart"><div class="skeleton" style="width:100%;height:150px"></div></div>
-          <div class="coverage" id="coveragePreferredResearch"></div>
         </section>
 
         <section class="card">
           <div class="card-title mb-4">Location</div>
           <div id="stateChart"><div class="skeleton" style="width:100%;height:150px"></div></div>
-          <div class="coverage" id="coverageLocation"></div>
         </section>
 
         <section class="card">
@@ -200,23 +199,25 @@
       bars('cohortChart', Object.fromEntries(cohortRows.map(c => [c.name, c.member_count])),
            label => (cohortRows.find(c => c.name === label) || {}).color || 'var(--cd-blue)');
 
-      // Keep each missing-data note beside the profile chart it describes.
-      const coverageIndicators = [
-        ['no_age_group', 'coverageAgeGroup', 'age group'],
-        ['no_gender', 'coverageGender', 'gender'],
-        ['no_products', 'coverageProducts', 'products used'],
-        ['no_api_products', 'coverageApiProducts', 'API products'],
-        ['no_segment', 'coverageSegment', 'participant segment'],
-        ['no_employment', 'coverageEmployment', 'employment'],
-        ['no_preferred_research', 'coveragePreferredResearch', 'preferred research'],
-        ['no_location', 'coverageLocation', 'state']
+      // Keep the optional-field completeness summary available without
+      // adding a note to every chart card.
+      const coverageLabels = [
+        ['no_age_group', 'age group'],
+        ['no_gender', 'gender'],
+        ['no_products', 'products used'],
+        ['no_api_products', 'API products'],
+        ['no_segment', 'participant segment'],
+        ['no_employment', 'employment'],
+        ['no_preferred_research', 'preferred research'],
+        ['no_location', 'state']
       ];
-      coverageIndicators.forEach(([field, elementId, label]) => {
-        const missing = Number(demo.data_coverage[field] || 0);
-        document.getElementById(elementId).textContent = missing
-          ? `${missing} of ${demo.total} members missing ${label}.`
-          : '';
-      });
+      const gaps = coverageLabels
+        .filter(([field]) => Number(demo.data_coverage[field] || 0) > 0)
+        .map(([field, label]) => `${demo.data_coverage[field]} of ${demo.total} missing ${label}`);
+      document.getElementById('coverageSummary').textContent = !demo.total
+        ? 'No member data to assess.'
+        : gaps.length ? `${gaps.join(' · ')}.`
+        : 'Every member has these fields recorded.';
     } catch (err) {
       showToast('Failed to load analytics: ' + err.message, 'error');
     }
