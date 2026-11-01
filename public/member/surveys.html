@@ -81,6 +81,7 @@
         <div class="skeleton" style="height:52px;width:100%;border-radius:var(--r-lg)"></div>
         <div class="skeleton" style="height:52px;width:100%;border-radius:var(--r-lg);margin-top:var(--sp-2)"></div>
       </div>
+      <div class="load-more" id="answeredMore"></div>
     </section>
 
   </div>
@@ -100,6 +101,31 @@
     '1-on-1': 'A 1-on-1 conversation'
   };
 
+  let answeredResponses = [];
+  let answeredPagination = null;
+  const ANSWERED_PAGE = 25;
+
+  async function loadAnswered(page = 1) {
+    const data = await api.get(`/users/surveys/answered?limit=${ANSWERED_PAGE}&page=${page}`);
+    answeredResponses = page === 1 ? data.responses : answeredResponses.concat(data.responses);
+    answeredPagination = data.pagination;
+    renderAnswered();
+  }
+
+  function renderAnswered() {
+    document.getElementById('done').innerHTML = answeredResponses.length
+      ? answeredResponses.map(response => `
+          <a class="row-item" href="/member/survey-response.html?id=${encodeURIComponent(response.id)}">
+            <div style="flex:1;min-width:0">
+              <div class="row-item-title">${escapeHtml(response.title)}</div>
+              <div class="row-item-meta">${response.question_count} question${response.question_count === 1 ? '' : 's'} · Completed ${formatDate(response.completed_at)}</div>
+            </div>
+            <span class="btn btn-sm btn-secondary">View answers ${icon('arrowRight', 14)}</span>
+          </a>`).join('')
+      : '<p class="dim text-sm">Nothing answered yet.</p>';
+    renderLoadMore(document.getElementById('answeredMore'), answeredPagination, loadAnswered, 'Load older answers');
+  }
+
   async function load() {
     try {
       const [{ surveys }, { stats }] = await Promise.all([
@@ -108,7 +134,6 @@
       ]);
 
       const open = surveys.filter(s => !s.completed);
-      const done = surveys.filter(s => s.completed);
 
       document.getElementById('figures').innerHTML = `
         <div><div class="figure-value">${stats.surveys_completed}</div><div class="figure-label">Answered</div></div>
@@ -139,18 +164,7 @@
               : 'When the team has a question for you, it will appear here first.'
           });
 
-      // A completed survey stays listed: it is part of the record the member
-      // is entitled to see, not something that disappears once submitted.
-      document.getElementById('done').innerHTML = done.length
-        ? done.map(s => `
-          <div class="row-item">
-            <div style="flex:1;min-width:0">
-              <div class="row-item-title">${escapeHtml(s.title)}</div>
-              <div class="row-item-meta">${s.question_count} question${s.question_count === 1 ? '' : 's'} · ${escapeHtml(MODES[s.engagement_mode] || s.engagement_mode)}</div>
-            </div>
-            ${badge('answered', 'active')}
-          </div>`).join('')
-        : '<p class="dim text-sm">Nothing answered yet.</p>';
+      await loadAnswered(1);
     } catch (err) {
       showToast('Failed to load surveys: ' + err.message, 'error');
     }

@@ -934,6 +934,73 @@ router.get('/surveys', requireAuth, async (req, res) => {
   res.json({ surveys: result });
 });
 
+// Completed responses belong to the member, not to the survey's current state:
+// include them even if a survey has since closed or is no longer targeted.
+router.get('/surveys/answered', requireAuth, async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const { offset, limit, page } = paginate(req.query.page, req.query.limit || 20, { max: 50 });
+  const [rows, totalRow] = await Promise.all([
+    db.prepare(`
+      SELECT sr.id, sr.survey_id, sr.answers, sr.questions AS response_questions,
+             sr.completed_at, s.title, s.engagement_mode, s.questions AS live_questions
+      FROM survey_responses sr
+      LEFT JOIN surveys s ON s.id = sr.survey_id
+      WHERE sr.user_id = ? AND sr.completed_at IS NOT NULL
+      ORDER BY sr.completed_at DESC, sr.id
+      LIMIT ? OFFSET ?
+    `).all(req.user.id, limit, offset),
+    db.prepare(`
+      SELECT COUNT(*) AS c FROM survey_responses
+      WHERE user_id = ? AND completed_at IS NOT NULL
+    `).get(req.user.id)
+  ]);
+
+  const responses = (rows || []).map(row => {
+    const answers = parseJSON(row.answers, {});
+    const questions = parseJSON(row.response_questions, parseJSON(row.live_questions, []));
+    const asked = surveyForm.visible(Array.isArray(questions) ? questions : [], answers);
+    return {
+      id: row.id,
+      survey_id: row.survey_id,
+      title: row.title || 'Completed survey',
+      engagement_mode: row.engagement_mode,
+      completed_at: row.completed_at,
+      question_count: asked.filter(surveyForm.isAnswerable).length
+    };
+  });
+  res.json({ responses, pagination: pageMeta({ page, limit, total: Number(totalRow?.c || 0) }) });
+});
+
+// Only the owner can read their stored answers. The question snapshot is the
+// exact definition shown at completion; old rows fall back to the live survey.
+router.get('/surveys/answered/:responseId', requireAuth, async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const row = await db.prepare(`
+    SELECT sr.id, sr.survey_id, sr.answers, sr.questions AS response_questions,
+           sr.completed_at, s.title, s.description, s.engagement_mode,
+           s.questions AS live_questions
+    FROM survey_responses sr
+    LEFT JOIN surveys s ON s.id = sr.survey_id
+    WHERE sr.id = ? AND sr.user_id = ? AND sr.completed_at IS NOT NULL
+  `).get(req.params.responseId, req.user.id);
+  if (!row) return res.status(404).json({ error: 'Survey response not found' });
+
+  const answers = parseJSON(row.answers, {});
+  const questions = parseJSON(row.response_questions, parseJSON(row.live_questions, []));
+  res.json({
+    response: {
+      id: row.id,
+      survey_id: row.survey_id,
+      title: row.title || 'Completed survey',
+      description: row.description,
+      engagement_mode: row.engagement_mode,
+      completed_at: row.completed_at,
+      answers,
+      questions: surveyForm.visible(Array.isArray(questions) ? questions : [], answers)
+    }
+  });
+});
+
 // POST /api/users/surveys/:id/start
 router.post('/surveys/:id/start', requireAuth, async (req, res) => {
   const survey = await db.prepare('SELECT * FROM surveys WHERE id = ? AND status = ?').get(req.params.id, 'active');

@@ -29,6 +29,37 @@ async function answering(survey) {
 const respond = (survey, token, answers) =>
   h.post(`/api/users/surveys/${survey.id}/respond`, { answers }, { token });
 
+test('members can list and read only their own completed survey answers', async () => {
+  const made = await create({
+    status: 'active',
+    questions: [{ type: 'text', text: 'What should we improve?' }]
+  });
+  const { user, token, survey } = await answering(made.body.survey);
+  const question = survey.questions[0];
+  const response = await respond(survey, token, { [question.id]: 'Add clearer examples' });
+  assert.equal(response.status, 200, JSON.stringify(response.body));
+  h.db.prepare("UPDATE surveys SET status = 'closed', questions = ? WHERE id = ?")
+    .run(JSON.stringify([{ type: 'text', text: 'Reworded after close' }]), survey.id);
+
+  const listed = await h.get('/api/users/surveys/answered?limit=10', { token });
+  assert.equal(listed.status, 200, JSON.stringify(listed.body));
+  assert.equal(listed.body.pagination.total, 1);
+  const row = listed.body.responses[0];
+  assert.equal(row.title, 'Discovery');
+  assert.equal(row.question_count, 1);
+
+  const detail = await h.get(`/api/users/surveys/answered/${row.id}`, { token });
+  assert.equal(detail.status, 200, JSON.stringify(detail.body));
+  assert.equal(detail.body.response.answers[question.id], 'Add clearer examples');
+  assert.equal(detail.body.response.questions[0].text, 'What should we improve?');
+
+  const other = h.makeUser();
+  const otherToken = await h.loginUser(other.email);
+  const denied = await h.get(`/api/users/surveys/answered/${row.id}`, { token: otherToken });
+  assert.equal(denied.status, 404);
+  assert.equal(user.id, h.db.prepare('SELECT user_id FROM survey_responses WHERE id = ?').get(row.id).user_id);
+});
+
 // ─── Closing time ───────────────────────────────────────────
 // An expiry that is not enforced is worse than no expiry: the survey says it
 // has closed and still takes answers. This is the end-to-end statement of it;

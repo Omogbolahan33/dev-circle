@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" type="image/svg+xml" href="/assets/brand/favicon.svg">
+  <title>Dev Circle — Survey answers</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700;9..40,800&family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/css/tokens.css">
+  <link rel="stylesheet" href="/assets/css/app.css">
+  <style>
+    .response-wrap { max-width:760px; margin:0 auto; }
+    .response-head { margin:var(--sp-4) 0 var(--sp-6); }
+    .response-title { font:700 var(--fs-2xl) var(--font-display); letter-spacing:-.03em; overflow-wrap:anywhere; }
+    .response-meta { display:flex; gap:var(--sp-3); flex-wrap:wrap; margin-top:var(--sp-2); color:var(--text-3); font-size:var(--fs-sm); }
+    .response-list { display:grid; gap:var(--sp-3); }
+    .response-question { padding:var(--sp-5); border:1px solid var(--line-faint); border-radius:var(--r-lg); background:var(--surface-2); }
+    .response-question .sv-ask { font-size:var(--fs-md); }
+    .response-question .sv-options,
+    .response-question .sv-rating,
+    .response-question .sv-nps-row { pointer-events:none; }
+    .response-question button:disabled,
+    .response-question input:disabled,
+    .response-question select:disabled,
+    .response-question textarea:disabled { opacity:1; }
+    .response-question .sv-input:disabled,
+    .response-question .sv-select:disabled,
+    .response-question textarea:disabled { color:var(--text-1); -webkit-text-fill-color:var(--text-1); }
+    .response-section { padding:var(--sp-4) 0 var(--sp-1); }
+    .response-section h2 { font:700 var(--fs-lg) var(--font-display); }
+    .response-skipped { margin-top:var(--sp-3); color:var(--text-3); font-size:var(--fs-sm); font-style:italic; }
+    .response-loading { padding:var(--sp-8); text-align:center; color:var(--text-3); }
+    @media(max-width:600px) {
+      .response-head { margin:var(--sp-2) 0 var(--sp-4); }
+      .response-title { font-size:var(--fs-xl); }
+      .response-question { padding:var(--sp-3); }
+    }
+  </style>
+</head>
+<body>
+<div class="portal">
+  <div class="portal-body response-wrap">
+    <nav class="breadcrumb mb-3">
+      <a href="/member/dashboard.html">Home</a><span class="sep">/</span>
+      <a href="/member/surveys.html">Surveys</a><span class="sep">/</span>
+      <span class="current">Your answers</span>
+    </nav>
+    <a class="btn btn-ghost btn-sm" href="/member/surveys.html" data-icon="arrowLeft" data-icon-size="14">Back to surveys</a>
+    <header class="response-head">
+      <h1 class="response-title" id="responseTitle">Survey answers</h1>
+      <div class="response-meta" id="responseMeta"></div>
+    </header>
+    <div class="response-list" id="responseQuestions">
+      <div class="response-loading"><span class="spinner"></span> Loading your answers…</div>
+    </div>
+  </div>
+</div>
+<script src="/assets/js/api.js"></script>
+<script src="/assets/js/shell.js"></script>
+<script src="/assets/js/survey-theme.js"></script>
+<script src="/assets/js/brand.js"></script>
+<script src="/assets/js/survey-schema.js"></script>
+<script src="/assets/js/survey-render.js"></script>
+<script>
+  Shell.portal('surveys');
+
+  async function load() {
+    const responseId = new URLSearchParams(window.location.search).get('id');
+    const target = document.getElementById('responseQuestions');
+    if (!responseId) {
+      target.innerHTML = emptyState({ title: 'Survey response not found', text: 'Return to Surveys to choose a completed survey.' });
+      return;
+    }
+
+    try {
+      const { response } = await api.get(`/users/surveys/answered/${encodeURIComponent(responseId)}`);
+      document.getElementById('responseTitle').textContent = response.title;
+      document.getElementById('responseMeta').innerHTML = `
+        <span>Completed ${escapeHtml(formatDate(response.completed_at))}</span>
+        <span>${response.questions.filter(SurveySchema.isAnswerable).length} questions</span>`;
+
+      const answers = response.answers || {};
+      let number = 0;
+      const pieces = response.questions.map(question => {
+        if (!SurveySchema.isAnswerable(question)) {
+          return `<section class="response-section">
+            <h2>${SurveySchema.linkify(question.text || '')}</h2>
+            ${question.description ? `<p class="muted">${SurveySchema.linkify(question.description)}</p>` : ''}
+          </section>`;
+        }
+        number++;
+        const answer = answers[question.id];
+        const body = SurveySchema.isAnswered(question, answer)
+          ? `<div class="response-control" id="answer-${number}"></div>`
+          : '<p class="response-skipped">No response recorded</p>';
+        return `<section class="response-question">
+          ${SurveyRender.heading(question, { number })}
+          ${body}
+        </section>`;
+      });
+      target.innerHTML = pieces.length ? pieces.join('') : emptyState({
+        title: 'No question details available',
+        text: 'This response does not have a saved question snapshot.'
+      });
+
+      number = 0;
+      response.questions.forEach(question => {
+        if (!SurveySchema.isAnswerable(question)) return;
+        number++;
+        if (!SurveySchema.isAnswered(question, answers[question.id])) return;
+        const mount = document.getElementById(`answer-${number}`);
+        if (mount) SurveyRender.mount(mount, question, {
+          value: answers[question.id], seed: response.id, disabled: true
+        });
+      });
+    } catch (err) {
+      target.innerHTML = emptyState({
+        title: err.status === 404 ? 'Survey response not found' : 'Could not load your answers',
+        text: err.status === 404 ? 'It may have been removed.' : err.message
+      });
+    }
+  }
+
+  load();
+</script>
+</body>
+</html>
