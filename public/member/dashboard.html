@@ -132,9 +132,28 @@
       .action-visual { width:40px; height:40px; }
     }
     @media(max-width:420px) {
-      .readiness-panel { grid-template-columns:1fr; }
-      .readiness-svg { width:132px; height:132px; }
-      .readiness-visual { margin-bottom:calc(var(--sp-2) * -1); }
+      /* Keep the ring graphic beside its legend on phones. Stacking the 132px
+         graphic above the labels made this one card consume most of the first
+         screen; the compact layout keeps all three rings and the CTA visible. */
+      #readinessSection { padding:14px; }
+      .readiness-panel { grid-template-columns:88px minmax(0,1fr); gap:4px 12px; align-items:center; }
+      .readiness-copy { display:contents; }
+      .readiness-visual { grid-column:1; grid-row:1 / span 2; margin:0; }
+      .readiness-svg { width:88px; height:88px; }
+      .readiness-head { grid-column:2; grid-row:1; margin:0; }
+      .readiness-legend { grid-column:2; grid-row:2; }
+      .readiness-item { grid-template-columns:8px minmax(0,1fr) auto; gap:6px; padding:4px 0; }
+      .readiness-item-name { font-size:11px; line-height:1.2; }
+      .readiness-item-note { display:none; }
+      .readiness-foot { grid-column:1 / -1; grid-row:3; flex-direction:row; align-items:center; flex-wrap:wrap; justify-content:space-between; gap:8px; margin-top:6px; }
+      .readiness-missing { font-size:11px; }
+      .readiness-foot .btn { white-space:nowrap; }
+    }
+    @media(max-width:360px) {
+      .readiness-panel { grid-template-columns:76px minmax(0,1fr); gap:4px 9px; }
+      .readiness-svg { width:76px; height:76px; }
+      .readiness-item-score { font-size:10px; }
+      .readiness-foot { justify-content:flex-start; }
     }
 
     .mobile-breadcrumb {
