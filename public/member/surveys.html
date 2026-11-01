@@ -107,8 +107,9 @@
 
   async function loadAnswered(page = 1) {
     const data = await api.get(`/users/surveys/answered?limit=${ANSWERED_PAGE}&page=${page}`);
-    answeredResponses = page === 1 ? data.responses : answeredResponses.concat(data.responses);
-    answeredPagination = data.pagination;
+    const responses = Array.isArray(data.responses) ? data.responses : [];
+    answeredResponses = page === 1 ? responses : answeredResponses.concat(responses);
+    answeredPagination = data.pagination || { page, limit: ANSWERED_PAGE, total: answeredResponses.length, has_more: false };
     renderAnswered();
   }
 
@@ -166,6 +167,15 @@
 
       await loadAnswered(1);
     } catch (err) {
+      document.getElementById('done').innerHTML = emptyState({
+        title: 'Could not load your completed surveys', text: err.message
+      });
+      document.getElementById('answeredMore').innerHTML = '';
+      if (document.getElementById('open').querySelector('.skeleton')) {
+        document.getElementById('open').innerHTML = emptyState({
+          title: 'Could not load your surveys', text: err.message
+        });
+      }
       showToast('Failed to load surveys: ' + err.message, 'error');
     }
   }
