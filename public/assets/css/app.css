@@ -1716,6 +1716,12 @@ textarea.input { min-height: 90px; line-height: var(--lh-normal); }
 .criterion-op { flex: 0 0 auto; width: 118px; }
 .criterion-value { flex: 1 1 40%; min-width: 0; display: flex; }
 .criterion-value .input { width: 100%; }
+.criterion-choices { display:flex; flex-wrap:wrap; align-content:flex-start; gap:6px; width:100%; max-height:132px; overflow:auto; }
+.criterion-option { border:1px solid var(--line); border-radius:var(--r-full); background:var(--surface-1); color:var(--text-2); padding:5px 9px; font:inherit; font-size:var(--fs-xs); cursor:pointer; }
+.criterion-option:hover { border-color:var(--line-strong); color:var(--text-1); }
+.criterion-option.selected { border-color:var(--cd-blue); background:var(--cd-blue-dim); color:var(--cd-blue); }
+.criterion-option:focus-visible { outline:2px solid var(--cd-blue); outline-offset:2px; }
+.criterion-choice-hint { flex-basis:100%; color:var(--text-3); font-size:10px; padding-top:2px; }
 
 .criterion-empty {
   font-size: var(--fs-xs);

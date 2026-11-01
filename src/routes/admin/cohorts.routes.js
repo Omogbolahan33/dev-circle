@@ -41,7 +41,7 @@ router.get('/cohorts', requirePermission('cohorts.read'), async (req, res) => {
 
 // GET /api/admin/cohorts/rule-fields — catalogue for the cohort builder
 router.get('/cohorts/rule-fields', requirePermission('cohorts.read'), async (req, res) => {
-  res.json({ fields: await cohortRules.catalogue() });
+  res.json({ fields: await cohortRules.catalogue(req.circleId) });
 });
 
 // POST /api/admin/cohorts/preview — how many members a rule set matches

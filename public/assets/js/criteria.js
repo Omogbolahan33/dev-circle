@@ -59,8 +59,10 @@ const Criteria = (() => {
     function renderValue(row) {
       const spec = byKey.get(row.querySelector('.criterion-field').value);
       const slot = row.querySelector('.criterion-value');
-      const previous = row.dataset.pendingValue ?? slot.querySelector('.criterion-input')?.value ?? '';
-      delete row.dataset.pendingValue;
+      const existingChoices = Array.from(slot.querySelectorAll('.criterion-option.selected')).map(option => option.dataset.value);
+      const previous = row.pendingValue ??
+        (existingChoices.length ? existingChoices : slot.querySelector('.criterion-input')?.value ?? '');
+      delete row.pendingValue;
 
       if (spec.values) {
         if (!spec.values.length) {
@@ -70,10 +72,18 @@ const Criteria = (() => {
             `<span class="criterion-empty">No ${escape(spec.label.toLowerCase())} recorded yet</span>` +
             '<input type="hidden" class="criterion-input" value="">';
         } else {
+          const selected = new Set((Array.isArray(previous) ? previous : previous ? [previous] : []).map(String));
           const options = spec.values.map(v =>
-            `<option value="${escape(v.value)}"${String(v.value) === String(previous) ? ' selected' : ''}>${escape(v.label)}</option>`
+            `<button type="button" class="criterion-option${selected.has(String(v.value)) ? ' selected' : ''}" ` +
+            `data-value="${escape(v.value)}" aria-pressed="${selected.has(String(v.value))}">${escape(v.label)}</button>`
           ).join('');
-          slot.innerHTML = `<select class="input criterion-input">${options}</select>`;
+          slot.innerHTML = `<div class="criterion-choices" role="group" aria-label="${escape(spec.label)} choices">${options}` +
+            '<small class="criterion-choice-hint">Choose one or more; any selected value matches.</small></div>';
+          slot.querySelectorAll('.criterion-option').forEach(option => option.addEventListener('click', () => {
+            const active = option.classList.toggle('selected');
+            option.setAttribute('aria-pressed', String(active));
+            onChange();
+          }));
         }
       } else if (spec.type === 'number') {
         slot.innerHTML =
@@ -102,7 +112,7 @@ const Criteria = (() => {
 
       const row = document.createElement('div');
       row.className = 'criterion';
-      if (value !== undefined && value !== null) row.dataset.pendingValue = value;
+      if (value !== undefined && value !== null) row.pendingValue = value;
 
       row.innerHTML = `
         <select class="input criterion-field">${fieldOptions(key)}</select>
@@ -135,11 +145,14 @@ const Criteria = (() => {
     }
 
     function rules() {
-      const collected = Array.from(container.querySelectorAll('.criterion')).map(row => ({
-        field: row.querySelector('.criterion-field').value,
-        op: row.querySelector('.criterion-op').value,
-        value: row.querySelector('.criterion-input')?.value ?? ''
-      })).filter(rule => rule.value !== '');
+      const collected = Array.from(container.querySelectorAll('.criterion')).map(row => {
+        const selected = Array.from(row.querySelectorAll('.criterion-option.selected')).map(option => option.dataset.value);
+        return {
+          field: row.querySelector('.criterion-field').value,
+          op: row.querySelector('.criterion-op').value,
+          value: selected.length ? selected : row.querySelector('.criterion-input')?.value ?? ''
+        };
+      }).filter(rule => Array.isArray(rule.value) ? rule.value.length > 0 : rule.value !== '');
 
       if (!collected.length) return null;
 

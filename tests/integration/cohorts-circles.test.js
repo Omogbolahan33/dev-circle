@@ -71,6 +71,26 @@ test('JSON array fields match whole values, not substrings', async () => {
   assert.equal(res.body.total, 1, '"lending" must not match "lending_beta"');
 });
 
+test('one criterion can match any of several selected property values', async () => {
+  h.makeUser({ work_sector: 'Fintech', api_products: ['lending'] });
+  h.makeUser({ work_sector: 'Banking', api_products: ['payments'] });
+  h.makeUser({ work_sector: 'Banking', api_products: ['lending'] });
+  h.makeUser({ work_sector: 'Fintech', api_products: ['identity'] });
+
+  const res = await h.post('/api/admin/cohorts/preview', {
+    filter_rules: {
+      match: 'all',
+      rules: [
+        { field: 'work_sector', op: 'eq', value: ['Fintech', 'Banking'] },
+        { field: 'api_products', op: 'eq', value: ['lending', 'payments'] }
+      ]
+    }
+  }, { token });
+
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.equal(res.body.total, 3);
+});
+
 test('derived fields work: surveys completed', async () => {
   const active = h.makeUser();
   const quiet = h.makeUser();
