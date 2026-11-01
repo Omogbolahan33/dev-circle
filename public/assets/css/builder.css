@@ -66,6 +66,14 @@
 }
 .q-required-toggle:hover { color: var(--white); }
 .q-required-toggle .check { width: 14px; height: 14px; }
+.options-heading { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); }
+.options-heading .label { margin-bottom: var(--sp-2); }
+.q-display-toggle {
+  display: inline-flex; align-items: center; gap: var(--sp-1); padding: 0; margin: 0 0 var(--sp-2);
+  background: transparent; color: var(--ash-dim); font-size: var(--fs-xs); cursor: pointer; white-space: nowrap;
+}
+.q-display-toggle:hover { color: var(--white); }
+.q-display-toggle .check { width: 14px; height: 14px; }
 .q-branching {
   font-size: var(--fs-xs);
   color: var(--gold-ink);

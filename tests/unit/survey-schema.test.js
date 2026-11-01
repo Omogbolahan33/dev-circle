@@ -119,12 +119,19 @@ test('a picture uploaded from the device may sit under an option, and nowhere el
   assert.ok(messages(asLink).some(m => /Option "B"/.test(m) && /a link may only go to an http:\/\/ or https:\/\//.test(m)));
 });
 
-test('a dropdown keeps its options as words — no room under them for subtext', () => {
-  const result = normalize([{
-    type: 'dropdown', text: 'Which?',
-    options: [{ label: 'A', subtext: 'a note' }, 'B']
+test('legacy dropdown data remains readable, while dropdown presentation is stored on choice questions', () => {
+  const legacy = normalize([{
+    type: 'dropdown', text: 'Which?', options: ['A', 'B']
   }]);
-  assert.deepEqual(result.questions[0].options, ['A', 'B']);
+  assert.equal(legacy.questions[0].type, 'choice');
+  assert.equal(legacy.questions[0].dropdown, true);
+  assert.deepEqual(legacy.questions[0].options, [{ label: 'A' }, { label: 'B' }]);
+
+  const modern = normalize([{
+    type: 'multi_choice', dropdown: true, text: 'Which?', options: ['A', 'B']
+  }]);
+  assert.equal(modern.questions[0].type, 'multi_choice');
+  assert.equal(modern.questions[0].dropdown, true);
 });
 
 test('an answer to a choice is stored as the word, whatever the option looks like', () => {

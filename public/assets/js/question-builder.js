@@ -69,7 +69,7 @@ const QuestionBuilder = (() => {
     // ─── The question list ────────────────────────────────────
 
     function renderTypeMenu() {
-      el.typeMenu.innerHTML = schema.types.map(type => `
+      el.typeMenu.innerHTML = schema.types.filter(type => !type.legacy && type.type !== 'dropdown').map(type => `
         <button class="type-option" data-type="${type.type}">
           <span class="type-option-name">${escapeHtml(type.label)}</span>
           <span class="type-option-hint">${escapeHtml(type.hint)}</span>
@@ -130,6 +130,14 @@ const QuestionBuilder = (() => {
     }
 
     function render() {
+      // Forms loaded after this shared builder was initialized get the same
+      // legacy conversion as questions present at startup.
+      state.questions.forEach(question => {
+        if (question.type === 'dropdown') {
+          question.type = 'choice';
+          question.dropdown = true;
+        }
+      });
       const holder = el.questions;
       holder.innerHTML = state.questions.map((q, i) => card(q, i)).join('');
       state.questions.forEach((q, i) => bindCard(holder.children[i], q, i));
@@ -155,6 +163,7 @@ const QuestionBuilder = (() => {
           <span class="q-num">Q${index + 1}</span>
           <span class="q-kind">${escapeHtml(type.label)}</span>
           ${question.required ? '<span class="q-flag">required</span>' : ''}
+          ${question.dropdown ? '<span class="q-flag">dropdown</span>' : ''}
           ${question.visible_if ? '<span class="q-branching">conditional</span>' : ''}
           ${question.branch_to ? '<span class="q-branches">branches on its answer</span>' : ''}
           ${opts.cardFlags ? opts.cardFlags(question, index) : ''}
@@ -234,7 +243,8 @@ const QuestionBuilder = (() => {
 
     function optionsList(question, list) {
       const isCards = question.type === 'choice' || question.type === 'multi_choice';
-      const optionTip = isCards
+      const supportsSubtext = isCards && !question.dropdown;
+      const optionTip = supportsSubtext
         ? `The pen beside an option adds the line the member reads under it — a sentence, a link, or a picture.`
           + (question.type === 'multi_choice'
             ? ` Mark an option “only” when it cannot be true alongside the others — “None of these”.`
@@ -242,8 +252,15 @@ const QuestionBuilder = (() => {
         : '';
       return `
         <div class="field" style="margin-bottom:0">
-          <label class="label">Options${optionTip ? `
-            <span class="tip" data-tip="${escapeHtml(optionTip)}">?</span>` : ''}</label>
+          <div class="options-heading">
+            <label class="label">Options${optionTip ? `
+              <span class="tip" data-tip="${escapeHtml(optionTip)}">?</span>` : ''}</label>
+            ${isCards && list === 'options' ? `
+              <button type="button" class="q-display-toggle" data-set-check="dropdown"
+                      aria-pressed="${!!question.dropdown}" title="Show choices in a dropdown">
+                <span class="check${question.dropdown ? ' on' : ''}">✓</span> Dropdown
+              </button>` : ''}
+          </div>
           <div class="options">
             ${(question[list] || []).map((option, i) => {
               const word = isCards
@@ -251,19 +268,19 @@ const QuestionBuilder = (() => {
                 : option;
               const subtext = isCards && option && typeof option === 'object'
                 ? (option.subtext || '') : '';
-              const descOpen = isCards && descExpanded.has(descKey(question.id, list, i));
+              const descOpen = supportsSubtext && descExpanded.has(descKey(question.id, list, i));
               return `
               <div class="option-item" data-list="${list}" data-option="${i}">
                 <div class="option-row">
                   <span class="handle">${i + 1}</span>
                   <div class="option-fields">
                     <input type="text" class="input option-word" value="${escapeHtml(word)}" placeholder="Option ${i + 1}">
-                    ${isCards && subtext ? `
+                    ${supportsSubtext && subtext ? `
                     <button type="button" class="option-desc-preview" data-toggle-desc
                             title="The line the member reads under this option — click to edit">
                       ${escapeHtml(subtext)}</button>` : ''}
                   </div>
-                  ${isCards ? `
+                  ${supportsSubtext ? `
                   <button type="button" class="icon-btn option-desc-toggle${subtext ? ' on' : ''}"
                           data-toggle-desc aria-label="Add or edit option subtext"
                           title="Add or edit option subtext">✎</button>` : ''}
@@ -272,7 +289,7 @@ const QuestionBuilder = (() => {
                           data-exclusive="${i}" title="Cannot be picked with anything else">only</button>` : ''}
                   <button class="icon-btn" data-drop-option="${i}" aria-label="Remove option">×</button>
                 </div>
-                ${isCards ? `
+                ${supportsSubtext ? `
                 <div class="option-desc-wrap${descOpen ? ' open' : ''}">
                   <div class="option-desc-edit">
                     <input type="text" class="input option-subtext" maxlength="300" value="${escapeHtml(subtext)}"

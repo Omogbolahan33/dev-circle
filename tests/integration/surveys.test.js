@@ -102,10 +102,11 @@ test('every question type survives the round trip with its settings', async () =
   assert.equal(res.status, 201);
   const stored = res.body.survey.questions;
   assert.deepEqual(stored.map(q => q.type), [
-    'nps', 'matrix', 'ranking', 'number', 'date', 'boolean', 'dropdown', 'section', 'text'
+    'nps', 'matrix', 'ranking', 'number', 'date', 'boolean', 'choice', 'section', 'text'
   ]);
   assert.equal(stored[0].scale, 10);
   assert.equal(stored[3].unit, 'calls');
+  assert.equal(stored[6].dropdown, true, 'legacy dropdown input is stored as a single-choice display setting');
   assert.equal(stored[8].format, 'email');
   assert.ok(stored.every(q => q.id), 'every question gets a stable id');
 });

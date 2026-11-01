@@ -102,6 +102,16 @@ test('a card carries the settings its question type needs', () => {
   }
 });
 
+test('dropdown is a display setting on choice questions, not a type in the picker', () => {
+  const { builder, el } = build([{ id: 'q1', type: 'multi_choice', text: 'Tools?', options: ['CLI', 'SDK'] }]);
+  builder.renderTypeMenu();
+  builder.render();
+  assert.ok(el.questions.innerHTML.includes('data-set-check="dropdown"'));
+  assert.match(el.typeMenu.innerHTML, /data-type="choice"/);
+  assert.match(el.typeMenu.innerHTML, /data-type="multi_choice"/);
+  assert.ok(!el.typeMenu.innerHTML.includes('data-type="dropdown"'));
+});
+
 test('the type settings sit under one “More options” fold, and the fold says what is set', () => {
   // A text question: every settings row goes under the fold, and the fold's
   // label carries what has already been decided — so closed is not hidden
@@ -297,10 +307,14 @@ test('a choice option offers its line with a pen, and a written one reads as a q
   assert.ok(html.includes('data-attach-subtext'), 'the editor offers a picture from the device');
   assert.ok(!/option-desc-wrap open/.test(html), 'no editor is open until it is asked for');
 
-  // A dropdown option is a word and stays one: no pen, no line
-  const { builder: b2, el: plain } = build([{ id: 'q1', type: 'dropdown', text: 'Where?', options: ['NG', 'KE'] }]);
+  // Older dropdown questions open as single-choice questions with the display
+  // preference enabled; dropdown is no longer a separate authoring type.
+  const { builder: b2, state: s2, el: legacy } = build([{ id: 'q1', type: 'dropdown', text: 'Where?', options: ['NG', 'KE'] }]);
   b2.render();
-  assert.ok(!plain.questions.innerHTML.includes('option-desc-toggle'), 'a dropdown keeps its options plain');
+  assert.equal(s2.questions[0].type, 'choice');
+  assert.equal(s2.questions[0].dropdown, true);
+  assert.ok(legacy.questions.innerHTML.includes('data-set-check="dropdown"'));
+  assert.ok(!legacy.typeMenu.innerHTML.includes('data-type="dropdown"'));
 });
 
 test('branching on an answer is drawn where it is allowed, and nowhere else', () => {

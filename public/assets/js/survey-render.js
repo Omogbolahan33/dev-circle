@@ -127,6 +127,37 @@ const SurveyRender = (() => {
         const limits = multi && (question.min_select || question.max_select)
           ? `<p class="hint">${esc(limitText(question))}</p>` : '';
 
+        if (question.dropdown && !multi) {
+          return `
+            <select class="input sv-select">
+              <option value="">Choose one…</option>
+              ${options.map((option, i) => `
+                <option value="${i}"${isPicked(value, option) ? ' selected' : ''}>${esc(SurveySchema.optionLabel(option))}</option>`).join('')}
+              ${question.allow_other
+                ? `<option value="${OTHER}"${other ? ' selected' : ''}>${esc(question.other_label || 'Something else')}</option>`
+                : ''}
+            </select>
+            ${question.allow_other
+              ? `<input type="text" class="input sv-other-input mt-2${other ? '' : ' hide'}"
+                   maxlength="200" placeholder="Tell us" value="${esc(other)}">`
+              : ''}`;
+        }
+
+        if (question.dropdown && multi) {
+          const selected = Array.isArray(value) ? value.filter(Boolean) : [];
+          const summary = selected.length ? selected.join(', ') : 'Choose any…';
+          return `
+            <div class="sv-dropdown-multi">
+              <button type="button" class="input sv-dropdown-trigger" data-dropdown-toggle
+                      aria-haspopup="true" aria-expanded="false">
+                <span data-dropdown-value>${esc(summary)}</span><span aria-hidden="true">▾</span>
+              </button>
+              <div class="sv-dropdown-menu" data-dropdown-menu hidden>
+                <div class="sv-options" role="group">${rows}${otherRow}</div>
+              </div>
+            </div>${limits}`;
+        }
+
         return `<div class="sv-options" role="${multi ? 'group' : 'radiogroup'}">${rows}${otherRow}</div>${limits}`;
       }
 
@@ -323,6 +354,21 @@ const SurveyRender = (() => {
       case 'choice':
       case 'multi_choice': {
         const multi = question.type === 'multi_choice';
+        if (question.dropdown && !multi) {
+          const select = $('.sv-select');
+          const other = $('.sv-other-input');
+          const collect = () => {
+            if (select.value === OTHER) return other ? other.value.trim() : '';
+            return select.value === '' ? '' : SurveySchema.optionLabel(options[Number(select.value)]);
+          };
+          select.addEventListener('change', () => {
+            if (other) other.classList.toggle('hide', select.value !== OTHER);
+            if (select.value === OTHER && other) other.focus();
+            emit(collect());
+          });
+          if (other) other.addEventListener('input', () => emit(collect()));
+          break;
+        }
         const otherInput = $('.sv-other-input');
 
         // Read the whole control rather than patching the previous answer:
@@ -337,6 +383,25 @@ const SurveyRender = (() => {
           if (other) picked.push(other);
           return multi ? picked : (picked[0] ?? '');
         };
+        const syncDropdownValue = () => {
+          const value = collect();
+          const summary = Array.isArray(value) && value.length ? value.join(', ') : 'Choose any…';
+          const label = $('[data-dropdown-value]');
+          if (label) label.textContent = summary;
+        };
+        const dropdownTrigger = $('[data-dropdown-toggle]');
+        const dropdownMenu = $('[data-dropdown-menu]');
+        dropdownTrigger?.addEventListener('click', () => {
+          const opening = dropdownMenu.hidden;
+          dropdownMenu.hidden = !opening;
+          dropdownTrigger.setAttribute('aria-expanded', String(opening));
+        });
+        dropdownTrigger?.addEventListener('keydown', event => {
+          if (event.key === 'Escape' && dropdownMenu && !dropdownMenu.hidden) {
+            dropdownMenu.hidden = true;
+            dropdownTrigger.setAttribute('aria-expanded', 'false');
+          }
+        });
 
         $$('.sv-option[data-option]').forEach(button => {
           button.addEventListener('click', () => {
@@ -367,6 +432,7 @@ const SurveyRender = (() => {
               button.setAttribute('aria-checked', String(turningOn));
             }
             emit(collect());
+            if (multi && question.dropdown) syncDropdownValue();
           });
         });
 
@@ -380,6 +446,7 @@ const SurveyRender = (() => {
             }
             row.classList.toggle('picked', otherInput.value.trim().length > 0);
             emit(collect());
+            if (multi && question.dropdown) syncDropdownValue();
           };
           otherInput.addEventListener('input', activate);
           otherInput.addEventListener('focus', activate);
