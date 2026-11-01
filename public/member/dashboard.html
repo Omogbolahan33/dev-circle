@@ -355,8 +355,8 @@
     const action = readiness.next_action;
     const footer = readiness.is_complete
       ? `<a class="readiness-edit" href="/member/profile.html" aria-label="Edit profile" title="Edit profile">${icon('edit', 16)}</a>`
-      : `<span class="readiness-missing">${tasks.length} item${tasks.length === 1 ? '' : 's'} left</span>
-         ${action ? `<a class="btn btn-sm btn-primary" href="${escapeHtml(action.action_url)}">${escapeHtml(action.action_label)} ${icon('arrowRight', 14)}</a>` : ''}`;
+      : `<span class="readiness-missing">${tasks.length} task${tasks.length === 1 ? '' : 's'} left · Next: ${escapeHtml(action?.action_label || 'finish setup')}</span>
+         <a class="btn btn-sm btn-primary" href="${escapeHtml(action?.action_url || '/member/profile.html')}">Continue setup ${icon('arrowRight', 14)}</a>`;
 
     section.hidden = false;
     el.innerHTML = `
