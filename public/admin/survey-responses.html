@@ -63,6 +63,15 @@
 
     .asked-note { font-size: var(--fs-xs); color: var(--gold-ink); margin-bottom: var(--sp-3); }
 
+    .survey-tabs-row { display: flex; align-items: center; gap: var(--sp-3); }
+    .survey-tabs-row .tabs { flex: 1; min-width: 0; }
+    .survey-tabs-actions { display: flex; align-items: center; gap: var(--sp-2); flex-shrink: 0; margin-top: var(--sp-5); }
+    @media (max-width: 640px) {
+      .survey-tabs-row { flex-wrap: wrap; }
+      .survey-tabs-row .tabs { width: 100%; flex: none; }
+      .survey-tabs-actions { margin-top: 0; }
+    }
+
     .actions-menu { position: relative; display: inline-block; }
     .actions-menu > summary { list-style: none; cursor: pointer; display: inline-flex; align-items: center; gap: var(--sp-2); }
     .actions-menu > summary::-webkit-details-marker { display: none; }
@@ -94,10 +103,13 @@
         <div class="page-actions" id="actions"></div>
       </div>
 
-      <nav class="tabs">
-        <button class="tab active" data-panel="summary">Summary</button>
-        <button class="tab" data-panel="individual">Individual responses</button>
-      </nav>
+      <div class="survey-tabs-row">
+        <nav class="tabs">
+          <button class="tab active" data-panel="summary">Summary</button>
+          <button class="tab" data-panel="individual">Individual responses</button>
+        </nav>
+        <div class="survey-tabs-actions" id="tabActions"></div>
+      </div>
     </header>
 
     <div class="app-body">
@@ -245,14 +257,15 @@
         [survey.description, survey.engagement_mode, `~${survey.time_estimate_min} min`].filter(Boolean).join(' · ');
 
       const canDeleteResponses = Auth.can('responses.delete');
-      document.getElementById('actions').innerHTML = `
-        ${badge(survey.status, survey.status === 'active' ? 'active' : survey.status === 'draft' ? 'warn' : 'inactive')}
+      document.getElementById('actions').innerHTML =
+        badge(survey.status, survey.status === 'active' ? 'active' : survey.status === 'draft' ? 'warn' : 'inactive');
+      document.getElementById('tabActions').innerHTML = `
+        <a class="btn btn-sm btn-ghost" href="/admin/survey-new.html?id=${survey.id}">Edit</a>
+        ${survey.public_path
+          ? '<button class="btn btn-sm btn-secondary" onclick="copyLink(this)">Copy link</button>' : ''}
         <details class="actions-menu" id="surveyActionsMenu">
           <summary class="btn btn-sm btn-secondary" aria-label="More survey actions">More actions <span aria-hidden="true">⌄</span></summary>
           <div class="actions-menu-pop" aria-label="Survey actions">
-            ${survey.public_path
-              ? '<button class="actions-menu-item" onclick="copyLink(this); closeActionsMenu(this)">Copy link</button>' : ''}
-            <a class="actions-menu-item" href="/admin/survey-new.html?id=${survey.id}">Edit survey</a>
             <button class="actions-menu-item" onclick="openImport(); closeActionsMenu(this)">Import responses</button>
             <button class="actions-menu-item" onclick="exportResponses(this); closeActionsMenu(this)">Export CSV</button>
             ${canDeleteResponses ? `<div class="actions-menu-divider" role="separator"></div>
