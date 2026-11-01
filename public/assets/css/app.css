@@ -2057,9 +2057,15 @@ textarea.input { min-height: 90px; line-height: var(--lh-normal); }
 .sv-ask + .sv-control, .sv-note + .sv-control { margin-top: var(--sp-6); }
 .sv-number-kicker { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--cd-blue); margin-bottom: var(--sp-3); }
 
-/* Required status sits beside the question, not in a separate line that
-   pushes the form down. */
+/* Required status stays beside each question; this compact key explains
+   the asterisk alongside the form title without taking a row of its own. */
 .sv-required { color: var(--rose-ink); margin-left: 4px; font-weight: var(--fw-regular); }
+.sv-required-key {
+  display: inline-block; margin-left: var(--sp-2); color: var(--ash-dim);
+  font-size: var(--fs-xs); font-weight: var(--fw-medium); letter-spacing: 0;
+  vertical-align: middle; white-space: nowrap;
+}
+.sv-required-key > span { color: var(--rose-ink); }
 
 .sv-options { display: flex; flex-direction: column; gap: var(--sp-2); }
 

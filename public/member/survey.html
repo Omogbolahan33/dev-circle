@@ -488,7 +488,7 @@
     let number = 0;
     stage.innerHTML = `
       <div class="question-wrap">
-        <h1 class="sv-ask" style="font-size:var(--fs-2xl)">${escapeHtml(survey.title)}</h1>
+        <h1 class="sv-ask" style="font-size:var(--fs-2xl)">${escapeHtml(survey.title)}${list.some(q => q.required) ? '<span class="sv-required-key"><span aria-hidden="true">*</span> Required</span>' : ''}</h1>
         ${survey.description ? `<p class="sv-note">${escapeHtml(survey.description)}</p>` : ''}
         ${list.map(question => {
           const answerable = SurveySchema.isAnswerable(question);
@@ -548,7 +548,7 @@
 
     stage.innerHTML = `
       <div class="question-wrap">
-        <h1 class="sv-ask" style="font-size:var(--fs-2xl)">${escapeHtml(survey.title)}</h1>
+        <h1 class="sv-ask" style="font-size:var(--fs-2xl)">${escapeHtml(survey.title)}${list.some(q => q.required) ? '<span class="sv-required-key"><span aria-hidden="true">*</span> Required</span>' : ''}</h1>
         ${survey.description ? `<p class="sv-note">${escapeHtml(survey.description)}</p>` : ''}
         ${page.map(question => {
           const answerable = SurveySchema.isAnswerable(question);
