@@ -41,6 +41,8 @@
       border-radius: var(--r-xl);
       padding: var(--sp-5);
     }
+    .section-title { display:flex; align-items:center; gap:var(--sp-2); }
+    .section-title-icon { display:inline-flex; align-items:center; color:var(--cd-blue); }
     .panel-title {
       font-size: var(--fs-xs);
       text-transform: uppercase;
@@ -96,15 +98,25 @@
     .setup-ready-toggle { color:var(--cd-blue); font-size:var(--fs-xs); white-space:nowrap; }
     .impact-strip { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:var(--sp-3); margin:var(--sp-4) 0; }
     .impact-tile { display:flex; align-items:center; gap:var(--sp-3); min-width:0; padding:var(--sp-3) var(--sp-4); border:1px solid var(--line-faint); border-radius:var(--r-lg); background:var(--surface-1); }
-    .impact-number { color:var(--cd-blue); font-family:var(--font-display); font-size:var(--fs-xl); font-weight:var(--fw-bold); line-height:1; }
+    .impact-number { color:var(--cd-blue); font-family:var(--font-display); font-size:var(--fs-xl); font-weight:var(--fw-bold); line-height:1; font-variant-numeric:tabular-nums; }
     .impact-label { color:var(--text-2); font-size:var(--fs-xs); line-height:1.25; }
+    .impact-info { display:flex; align-items:baseline; gap:var(--sp-2); min-width:0; }
+    .impact-icon { display:grid; place-items:center; width:34px; height:34px; flex:0 0 auto; border-radius:11px; background:var(--cd-blue-dim); color:var(--cd-blue); }
+    .dashboard-action { display:grid; grid-template-columns:56px minmax(0,1fr); align-items:start; gap:var(--sp-4); }
+    .action-visual { display:grid; place-items:center; width:52px; height:52px; border:1px solid var(--cd-blue-40); border-radius:17px; background:var(--surface-1); color:var(--cd-blue); box-shadow:inset 0 0 20px var(--cd-blue-dim); }
+    .action-copy { min-width:0; }
     .next-action.quiet { background:linear-gradient(115deg,var(--surface-2),var(--surface-1)); border:1px solid var(--line-faint); border-radius:var(--r-xl); padding:var(--sp-5); }
+    .next-action.quiet .action-visual { color:var(--text-3); border-color:var(--line-faint); box-shadow:none; }
     .next-action.quiet .eyebrow { color:var(--text-3); }
     .next-action.quiet .headline { margin-bottom:var(--sp-1); }
     .next-action.quiet .detail { margin-bottom:var(--sp-3); }
     @media(max-width:600px) {
       .impact-strip { grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px; }
+      .dashboard-action { grid-template-columns:40px minmax(0,1fr); gap:var(--sp-3); padding:var(--sp-4); }
+      .action-visual { width:40px; height:40px; border-radius:13px; }
       .impact-tile { align-items:flex-start; flex-direction:column; gap:var(--sp-1); padding:var(--sp-2); }
+      .impact-info { align-items:flex-start; flex-direction:column; gap:2px; }
+      .impact-icon { width:28px; height:28px; border-radius:9px; }
       .impact-number { font-size:var(--fs-lg); }
       .impact-label { font-size:10px; }
     }
@@ -182,7 +194,7 @@
       <div class="stack">
         <section id="activitySection">
           <div class="section-head">
-            <h2 class="section-title">Recent activity</h2>
+            <h2 class="section-title"><span class="section-title-icon" data-icon="activity" data-icon-size="16"></span>Recent activity</h2>
             <a href="/member/engagement.html" class="section-link">Full history →</a>
           </div>
           <div class="timeline" id="timeline"></div>
@@ -193,7 +205,7 @@
       <div class="stack">
         <section id="invitesSection" hidden>
           <div class="section-head">
-            <h2 class="section-title">Waiting for you</h2>
+            <h2 class="section-title"><span class="section-title-icon" data-icon="surveys" data-icon-size="16"></span>Waiting for you</h2>
             <a href="/member/surveys.html" class="section-link">All surveys →</a>
           </div>
           <div id="invites"></div>
@@ -201,7 +213,7 @@
 
         <section id="sessionsSection" hidden>
           <div class="section-head">
-            <h2 class="section-title">Coming up</h2>
+            <h2 class="section-title"><span class="section-title-icon" data-icon="sessions" data-icon-size="16"></span>Coming up</h2>
             <a href="/member/sessions.html" class="section-link">All sessions →</a>
           </div>
           <div id="sessions"></div>
@@ -214,9 +226,8 @@
              decides matching and is never something a member acts on — it
              belongs in the console. -->
         <section class="panel-card say-card">
-          <div class="panel-title">Say something</div>
-          <p class="text-sm muted mb-4">Not only when we ask.</p>
-          <a class="btn btn-primary btn-block" href="/member/feedback.html" data-icon="send" data-icon-size="16">Give feedback</a>
+          <div class="panel-title">Feedback</div>
+          <a class="btn btn-primary btn-block" href="/member/feedback.html" data-icon="send" data-icon-size="16">Share a thought</a>
         </section>
 
         <!-- Twelve weeks of taking part, as a record rather than a score.
@@ -459,60 +470,69 @@
   function renderImpact(stats = {}) {
     const section = document.getElementById('impactStrip');
     const contributions = [
-      ['surveys_completed', 'Surveys answered'],
-      ['feedback_submitted', 'Feedback shared'],
-      ['gifts_claimed', 'Rewards claimed']
+      ['surveys_completed', 'Surveys answered', 'surveys'],
+      ['feedback_submitted', 'Feedback shared', 'feedback'],
+      ['gifts_claimed', 'Rewards claimed', 'gifts']
     ];
-    section.innerHTML = `<div class="impact-heading">Your footprint</div>` + contributions.map(([key, label]) => `
+    section.innerHTML = `<div class="impact-heading">Your footprint</div>` + contributions.map(([key, label, glyph]) => `
       <div class="impact-tile">
-        <strong class="impact-number">${Number(stats[key] || 0).toLocaleString()}</strong>
-        <span class="impact-label">${label}</span>
+        <span class="impact-icon">${icon(glyph, 17)}</span>
+        <div class="impact-info">
+          <strong class="impact-number">${Number(stats[key] || 0).toLocaleString()}</strong>
+          <span class="impact-label">${label}</span>
+        </div>
       </div>`).join('');
     section.hidden = false;
   }
 
-  // Exactly one call to action, chosen by what actually matters most:
-  // a session today, then a waiting survey.
+  // Feature one real next action; its icon carries the kind of activity at a glance.
   function renderNextAction(profile, surveys, sessions) {
     const el = document.getElementById('nextAction');
     const waiting = (surveys || []).filter(s => !s.completed);
-
     const soon = (sessions || [])[0];
+
     if (soon) {
       el.innerHTML = `
-        <div class="next-action">
-          <div class="eyebrow">Coming up</div>
-          <div class="headline">${escapeHtml(soon.title)}</div>
-          <p class="detail">
-            ${watLabel(soon.scheduled_for)} · ${soon.duration_min} min${soon.location ? ' · ' + escapeHtml(soon.location) : ''}
-            ${soon.clashes_with_availability ? `<br><span class="clash">${escapeHtml(soon.clash_reason)}</span>` : ''}
-          </p>
-          <div class="row-tight wrap">
-            ${soon.survey_id ? `<a class="btn btn-primary" href="/member/survey.html?id=${soon.survey_id}">${icon('surveys', 15)} Open the survey</a>` : ''}
-            <a class="btn btn-ghost" href="/member/sessions.html">${icon('sessions', 15)} All sessions</a>
+        <div class="next-action dashboard-action">
+          <div class="action-visual">${icon('sessions', 25)}</div>
+          <div class="action-copy">
+            <div class="eyebrow">Coming up</div>
+            <div class="headline">${escapeHtml(soon.title)}</div>
+            <p class="detail">
+              ${watLabel(soon.scheduled_for)} · ${soon.duration_min} min${soon.location ? ' · ' + escapeHtml(soon.location) : ''}
+              ${soon.clashes_with_availability ? `<br><span class="clash">${escapeHtml(soon.clash_reason)}</span>` : ''}
+            </p>
+            <div class="row-tight wrap">
+              ${soon.survey_id ? `<a class="btn btn-primary" href="/member/survey.html?id=${soon.survey_id}">${icon('surveys', 15)} Open survey</a>` : ''}
+              <a class="btn btn-ghost" href="/member/sessions.html">All sessions ${icon('arrowRight', 14)}</a>
+            </div>
           </div>
         </div>`;
       return;
     }
 
     if (waiting.length) {
-      const s = waiting[0];
+      const survey = waiting[0];
       el.innerHTML = `
-        <div class="next-action">
-          <div class="eyebrow">${waiting.length} survey${waiting.length === 1 ? '' : 's'} waiting</div>
-          <div class="headline">${escapeHtml(s.title)}</div>
-          <p class="detail">${escapeHtml(s.description || 'Your answers shape what gets built next.')} About ${s.time_estimate_min} minutes, ${s.question_count} question${s.question_count === 1 ? '' : 's'}.</p>
-          <a class="btn btn-primary" href="/member/survey.html?id=${s.id}">Start survey ${icon('arrowRight', 15)}</a>
+        <div class="next-action dashboard-action">
+          <div class="action-visual">${icon('surveys', 25)}</div>
+          <div class="action-copy">
+            <div class="eyebrow">${waiting.length} open survey${waiting.length === 1 ? '' : 's'}</div>
+            <div class="headline">${escapeHtml(survey.title)}</div>
+            <p class="detail">${survey.time_estimate_min} min · ${survey.question_count} question${survey.question_count === 1 ? '' : 's'}</p>
+            <a class="btn btn-primary" href="/member/survey.html?id=${survey.id}">Take part ${icon('arrowRight', 15)}</a>
+          </div>
         </div>`;
       return;
     }
 
     el.innerHTML = `
-      <div class="next-action quiet">
-        <div class="eyebrow">No open requests</div>
-        <div class="headline">The queue is clear.</div>
-        <p class="detail">No surveys or sessions are waiting for you right now.</p>
-        <a class="btn btn-secondary" href="/member/feedback.html">Share a thought with the team ${icon('arrowRight', 14)}</a>
+      <div class="next-action dashboard-action quiet">
+        <div class="action-visual">${icon('activity', 25)}</div>
+        <div class="action-copy">
+          <div class="headline">Nothing waiting.</div>
+          <a class="btn btn-secondary" href="/member/feedback.html">Share a thought ${icon('arrowRight', 14)}</a>
+        </div>
       </div>`;
   }
 
