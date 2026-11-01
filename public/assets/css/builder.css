@@ -74,6 +74,13 @@
 }
 .q-display-toggle:hover { color: var(--white); }
 .q-display-toggle .check { width: 14px; height: 14px; }
+.q-add-other {
+  display: inline-flex; align-items: center; gap: var(--sp-2); padding: var(--sp-1) 0;
+  margin-top: var(--sp-2); background: transparent; color: var(--ash-dim);
+  font-size: var(--fs-xs); cursor: pointer;
+}
+.q-add-other:hover, .q-add-other.on { color: var(--white); }
+.q-add-other .check { width: 14px; height: 14px; }
 .q-branching {
   font-size: var(--fs-xs);
   color: var(--gold-ink);

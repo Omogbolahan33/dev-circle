@@ -137,8 +137,10 @@ test('the type settings sit under one “More options” fold, and the fold says
   b2.render();
   html = e2.questions.innerHTML;
   assert.ok(html.indexOf('data-add-option="options"') < html.indexOf('data-toggle-more'), 'the options stay in the open');
-  assert.ok(html.indexOf('data-toggle-more') < html.indexOf('data-set-check="allow_other"'), 'the tuning is inside the fold');
-  assert.ok(/data-toggle-more[\s\S]{0,300}?an “other” option/.test(html), 'the fold says the “other” is on');
+  assert.ok(html.indexOf('class="options"') < html.indexOf('data-set-check="allow_other"'), 'Other sits just below the option list');
+  assert.ok(html.indexOf('data-set-check="allow_other"') < html.indexOf('data-add-option="options"'), 'Other appears before adding another ordinary option');
+  assert.ok(html.includes('q-add-other on'), 'Other is visibly enabled beneath the options');
+  assert.ok(html.includes('Other option added'), 'the enabled control can be recognized and toggled off');
 
   // A rating's scale is tuning too, so it folds the same way
   const { builder: b3, el: e3 } = build([{ id: 'q1', type: 'rating', text: 'How clear?', scale: 5, style: 'stars' }]);

@@ -301,6 +301,12 @@ const QuestionBuilder = (() => {
               </div>`;
             }).join('')}
           </div>
+          ${question.type === 'choice' && list === 'options' ? `
+            <button type="button" class="q-add-other${question.allow_other ? ' on' : ''}"
+                    data-set-check="allow_other" aria-pressed="${!!question.allow_other}">
+              <span class="check${question.allow_other ? ' on' : ''}">✓</span>
+              ${question.allow_other ? 'Other option added' : '+ Add “Other” option'}
+            </button>` : ''}
           <button class="btn btn-sm btn-ghost mt-2" data-add-option="${list}">+ Add option</button>
         </div>`;
     }
@@ -378,16 +384,10 @@ const QuestionBuilder = (() => {
         case 'choice':
         case 'dropdown':
           return `
-            <div class="row wrap" style="gap:var(--sp-4)">
-              <label class="row-tight text-sm" style="cursor:pointer">
-                <span class="check${question.allow_other ? ' on' : ''}" data-set-check="allow_other">✓</span>
-                Offer "something else"
-              </label>
-              <label class="row-tight text-sm" style="cursor:pointer">
-                <span class="check${question.randomize ? ' on' : ''}" data-set-check="randomize">✓</span>
-                Shuffle the order
-              </label>
-            </div>`;
+            <label class="row-tight text-sm" style="cursor:pointer">
+              <span class="check${question.randomize ? ' on' : ''}" data-set-check="randomize">✓</span>
+              Shuffle the order
+            </label>`;
 
         case 'multi_choice':
           return `
@@ -570,7 +570,6 @@ const QuestionBuilder = (() => {
         }
         case 'choice':
         case 'dropdown':
-          if (question.allow_other) parts.push('an “other” option');
           if (question.randomize) parts.push('shuffled');
           break;
         case 'multi_choice':
