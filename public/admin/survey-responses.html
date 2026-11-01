@@ -71,9 +71,15 @@
     .pie-swatch { width: 10px; height: 10px; border-radius: 3px; }
     .word-cloud { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: var(--sp-2) var(--sp-4); min-height: 150px; padding: var(--sp-5); border: 1px solid var(--line-faint); border-radius: var(--r-md); background: var(--surface-1); }
     .word-cloud-word { font-weight: var(--fw-semibold); line-height: 1.15; }
-    .word-cloud-note { margin-top: var(--sp-2); font-size: var(--fs-xs); color: var(--ash-dim); }
-    .verbatim-details { margin-top: var(--sp-4); }
-    .verbatim-details > summary { color: var(--ash-dim); font-size: var(--fs-sm); cursor: pointer; }
+    [data-drill-kind] { cursor: pointer; }
+    [data-drill-kind]:focus-visible { outline: 2px solid var(--cd-blue); outline-offset: 2px; }
+    .chart-bar-row[data-drill-kind]:hover, .pie-legend-row[data-drill-kind]:hover { color: var(--white); }
+    .word-cloud-word[data-drill-kind]:hover { text-decoration: underline; text-underline-offset: 3px; }
+    .dist-col[data-drill-kind]:hover .dist-bar { background: var(--violet); }
+    .grid-cell[data-drill-kind]:hover { outline: 2px solid var(--cd-blue); }
+    .drill-results:not([hidden]) { margin-top: var(--sp-4); padding: var(--sp-4); border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface-1); }
+    .drill-results-head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); margin-bottom: var(--sp-2); font-size: var(--fs-sm); }
+    .drill-answer { padding: var(--sp-3) 0 var(--sp-3) var(--sp-4); border-left: 2px solid var(--cd-blue); margin: 0; font-size: var(--fs-sm); line-height: var(--lh-loose); color: var(--ash); }
     @media (max-width: 600px) {
       .pie-chart-layout { grid-template-columns: 1fr; justify-items: center; }
       .pie-legend { width: 100%; }
@@ -259,6 +265,7 @@
   let allResponses = [];
   let responseQuestions = [];
   let responseStatusFilter = 'all';
+  let analysisDrillData = new Map();
   if (!surveyId) window.location.href = '/admin/surveys.html';
 
   async function load() {
@@ -338,6 +345,7 @@
 
   function renderAnalysis(questions, completed) {
     const el = document.getElementById('analysis');
+    analysisDrillData = new Map();
 
     if (!completed.length) {
       el.innerHTML = emptyState({
@@ -364,16 +372,17 @@
       const shown = completed.filter(r => !r.asked || r.asked.includes(q.id));
       const answered = shown.filter(r => SurveySchema.isAnswered(q, r.answers[q.id]));
       const answers = answered.map(r => r.answers[q.id]);
+      analysisDrillData.set(q.id, { question: q, records: answered });
 
       return `
-        <section class="q-block">
+        <section class="q-block" data-summary-question="${escapeHtml(q.id)}">
           <div class="q-kicker">Q${number} · ${escapeHtml(q.type)} · ${answers.length} answered${
             q.required ? ' · required' : ''}</div>
           <h3 class="q-ask">${escapeHtml(q.text)}</h3>
           ${shown.length < completed.length
             ? `<p class="asked-note">Asked of ${shown.length} of ${completed.length} — the rest were branched past it.</p>`
             : ''}
-          ${answers.length ? summary(q, answers, answered) : '<p class="dim text-sm">No answers to this question.</p>'}
+          ${answers.length ? `<div class="summary-visual">${summary(q, answers, answered)}<div class="drill-results" data-drill-results hidden aria-live="polite"></div></div>` : '<p class="dim text-sm">No answers to this question.</p>'}
         </section>`;
     }).join('');
   }
@@ -391,9 +400,9 @@
         return `
           <div class="avg">${nps.score > 0 ? '+' : ''}${nps.score}<span class="of"> NPS</span></div>
           <div class="nps-split">
-            ${nps.detractors ? `<span class="nps-part detractors" style="width:${pct(nps.detractors)}%">${nps.detractors}</span>` : ''}
-            ${nps.passives ? `<span class="nps-part passives" style="width:${pct(nps.passives)}%">${nps.passives}</span>` : ''}
-            ${nps.promoters ? `<span class="nps-part promoters" style="width:${pct(nps.promoters)}%">${nps.promoters}</span>` : ''}
+            ${nps.detractors ? `<span class="nps-part detractors" role="button" tabindex="0" data-drill-kind="nps" data-value="detractors" style="width:${pct(nps.detractors)}%">${nps.detractors}</span>` : ''}
+            ${nps.passives ? `<span class="nps-part passives" role="button" tabindex="0" data-drill-kind="nps" data-value="passives" style="width:${pct(nps.passives)}%">${nps.passives}</span>` : ''}
+            ${nps.promoters ? `<span class="nps-part promoters" role="button" tabindex="0" data-drill-kind="nps" data-value="promoters" style="width:${pct(nps.promoters)}%">${nps.promoters}</span>` : ''}
           </div>
           <div class="nps-legend">
             <span>Detractors 0–6: ${nps.detractors}</span>
@@ -442,7 +451,7 @@
         return ranked.map((row, i) => {
           const preference = worst <= 1 ? 100 : Math.max(2, ((worst - row.avg) / (worst - 1)) * 100);
           return `
-            <div class="rank-row">
+            <div class="rank-row" role="button" tabindex="0" data-drill-kind="ranking" data-value="${escapeHtml(row.option)}">
               <span class="rank-pos">#${i + 1}</span>
               <span class="truncate" title="${escapeHtml(row.option)}">${escapeHtml(row.option)}</span>
               <span class="chart-track" title="Higher bar means a better average position"><span class="chart-fill" style="width:${preference}%"></span></span>
@@ -477,7 +486,7 @@
                       ${columns.map(column => {
                         const n = counts[column] || 0;
                         const share = n / total;
-                        return `<td><span class="grid-cell" style="background:${
+                        return `<td><span class="grid-cell"${n ? ` role="button" tabindex="0" data-drill-kind="matrix" data-row="${escapeHtml(row)}" data-value="${escapeHtml(column)}"` : ''} style="background:${
                           n ? `rgba(16,126,188,${0.12 + share * 0.6})` : 'transparent'}">${
                           n ? Math.round(share * 100) + '%' : '—'}</span></td>`;
                       }).join('')}
@@ -500,16 +509,7 @@
 
       default: {
         // Keep the raw words available, but lead with their shared vocabulary.
-        const quotes = answered.slice(0, 12).map(r => `
-          <blockquote class="verbatim">
-            ${escapeHtml(String(r.answers[q.id]))}
-            <span class="who">${r.user_id ? escapeHtml(personName(r.user_name, r.user_email)) : 'Anonymous'}</span>
-          </blockquote>`).join('');
-        return `${wordCloud(answers)}
-          <details class="verbatim-details">
-            <summary>Read responses (${answered.length})</summary>
-            ${quotes}${answered.length > 12 ? `<p class="dim text-xs">+${answered.length - 12} more</p>` : ''}
-          </details>`;
+        return wordCloud(answers);
       }
     }
   }
@@ -538,10 +538,12 @@
       }).join(', ');
       return `
         <div class="pie-chart-layout">
-          <div class="pie-chart" role="img" aria-label="Pie chart of ${answers.length} responses" style="background:conic-gradient(${slices})"></div>
+          <div class="pie-chart" role="button" tabindex="0" data-drill-kind="pie"
+               data-slices="${encodeURIComponent(JSON.stringify(sorted))}"
+               aria-label="Pie chart. Activate to inspect a slice." style="background:conic-gradient(${slices})"></div>
           <div class="pie-legend">
             ${sorted.map(([label, count], i) => `
-              <div class="pie-legend-row">
+              <div class="pie-legend-row" role="button" tabindex="0" data-drill-kind="choice" data-value="${escapeHtml(label)}">
                 <span class="pie-swatch" style="background:${CHART_COLORS[i % CHART_COLORS.length]}"></span>
                 <span class="truncate" title="${escapeHtml(label)}">${escapeHtml(label)}</span>
                 <span class="mono text-xs">${count} · ${Math.round(count / answers.length * 100)}%</span>
@@ -551,13 +553,12 @@
     }
 
     const max = Math.max(...sorted.map(([, count]) => count));
-    return `<div class="chart-bars" role="list">${sorted.map(([label, count]) => `
-      <div class="chart-bar-row" role="listitem">
+    return `<div class="chart-bars">${sorted.map(([label, count]) => `
+      <div class="chart-bar-row" role="button" tabindex="0" data-drill-kind="choice" data-value="${escapeHtml(label)}">
         <span class="truncate" title="${escapeHtml(label)}">${escapeHtml(label)}</span>
         <span class="chart-track"><span class="chart-fill" style="width:${count / max * 100}%"></span></span>
         <span class="mono text-xs">${count} · ${Math.round(count / answers.length * 100)}%</span>
-      </div>`).join('')}</div>${q.type === 'multi_choice'
-        ? '<p class="hint">Percentages are of respondents, so they may total more than 100%.</p>' : ''}`;
+      </div>`).join('')}</div>`;
   }
 
   function numericHistogram(values, unit) {
@@ -568,7 +569,13 @@
     const step = binCount === 1 ? 1 : (maxValue - min) / binCount;
     const bins = Array.from({ length: binCount }, (_, i) => ({
       label: binCount === 1 ? String(round(min)) : `${round(min + i * step)}–${round(i === binCount - 1 ? maxValue : min + (i + 1) * step)}${unit ? ` ${unit}` : ''}`,
-      count: 0
+      count: 0,
+      drill: {
+        kind: 'number',
+        min: binCount === 1 ? min : min + i * step,
+        max: binCount === 1 ? maxValue : (i === binCount - 1 ? maxValue : min + (i + 1) * step),
+        last: i === binCount - 1
+      }
     }));
     values.forEach(value => {
       const index = binCount === 1 ? 0 : Math.min(binCount - 1, Math.floor((value - min) / step));
@@ -592,15 +599,23 @@
     });
     const series = Object.entries(groups).map(([key, count]) => ({
       label: yearly ? key : new Date(`${key}-01T00:00:00Z`).toLocaleDateString('en', { month: 'short', year: '2-digit', timeZone: 'UTC' }),
-      count
+      count,
+      drill: { kind: 'date', bucket: key, yearly }
     }));
     return barSeries(series, yearly ? 'Responses by year' : 'Responses by month');
   }
 
+  function drillAttrs(drill = {}) {
+    return Object.entries(drill).map(([key, value]) => {
+      const attr = key === 'kind' ? 'drill-kind' : key === 'last' ? 'last-bin' : key;
+      return `data-${attr}="${escapeHtml(String(value))}"`;
+    }).join(' ');
+  }
+
   function barSeries(series, label) {
     const max = Math.max(...series.map(item => item.count), 1);
-    return `<div class="chart-bars" role="list" aria-label="${escapeHtml(label)}">${series.map(item => `
-      <div class="chart-bar-row" role="listitem">
+    return `<div class="chart-bars" aria-label="${escapeHtml(label)}">${series.map(item => `
+      <div class="chart-bar-row"${item.count ? ` role="button" tabindex="0" ${drillAttrs(item.drill)}` : ''}>
         <span class="truncate" title="${escapeHtml(item.label)}">${escapeHtml(item.label)}</span>
         <span class="chart-track"><span class="chart-fill" style="width:${item.count / max * 100}%"></span></span>
         <span class="mono text-xs">${item.count}</span>
@@ -626,10 +641,104 @@
     if (!terms.length) return '<p class="dim text-sm">No repeated terms to chart.</p>';
     const max = Math.max(...terms.map(([, count]) => count));
     const min = Math.min(...terms.map(([, count]) => count));
-    return `<div class="word-cloud" role="list" aria-label="Frequently used words">${terms.map(([word, count], i) => {
+    return `<div class="word-cloud" aria-label="Frequently used words">${terms.map(([word, count], i) => {
       const size = 15 + ((count - min) / Math.max(1, max - min)) * 23;
-      return `<span class="word-cloud-word" role="listitem" title="${count} mention${count === 1 ? '' : 's'}" style="font-size:${size.toFixed(1)}px;color:${CHART_COLORS[i % CHART_COLORS.length]}">${escapeHtml(word)}</span>`;
-    }).join('')}</div><p class="word-cloud-note">Bigger terms appeared more often · ${answers.length} written answers</p>`;
+      return `<span class="word-cloud-word" role="button" tabindex="0" data-drill-kind="word" data-value="${escapeHtml(word)}" title="${count} mention${count === 1 ? '' : 's'}" style="font-size:${size.toFixed(1)}px;color:${CHART_COLORS[i % CHART_COLORS.length]}">${escapeHtml(word)}</span>`;
+    }).join('')}</div>`;
+  }
+
+  function matchesDrill(question, record, target) {
+    const answer = record.answers[question.id];
+    const kind = target.dataset.drillKind;
+    const value = target.dataset.value;
+    switch (kind) {
+      case 'choice':
+        if (question.type === 'boolean') return (answer ? (question.true_label || 'Yes') : (question.false_label || 'No')) === value;
+        return (Array.isArray(answer) ? answer : [answer]).some(item => String(item) === value);
+      case 'word':
+        return (String(answer).toLocaleLowerCase().match(/[\p{L}\p{N}']+/gu) || []).includes(value.toLocaleLowerCase());
+      case 'rating':
+        return Math.round(Number(answer)) === Number(value);
+      case 'nps': {
+        const score = Number(answer);
+        return value === 'detractors' ? score <= 6 : value === 'passives' ? score >= 7 && score <= 8 : score >= 9;
+      }
+      case 'number': {
+        const score = Number(answer);
+        const min = Number(target.dataset.min);
+        const max = Number(target.dataset.max);
+        return score >= min && (target.dataset.lastBin === 'true' ? score <= max : score < max);
+      }
+      case 'date':
+        return String(answer).startsWith(target.dataset.bucket);
+      case 'ranking':
+        return Array.isArray(answer) && answer.some(item => String(item) === value);
+      case 'matrix': {
+        const picked = answer && answer[target.dataset.row];
+        return (Array.isArray(picked) ? picked : [picked]).some(item => String(item) === value);
+      }
+      default:
+        return false;
+    }
+  }
+
+  function responseAnswer(question, record) {
+    const answer = record.answers[question.id];
+    if (question.type === 'boolean') return answer ? (question.true_label || 'Yes') : (question.false_label || 'No');
+    if (question.type === 'ranking' && Array.isArray(answer)) return answer.map((item, i) => `${i + 1}. ${item}`).join(' · ');
+    if (Array.isArray(answer)) return answer.join(' · ');
+    if (answer && typeof answer === 'object') return Object.entries(answer)
+      .map(([row, picked]) => `${row}: ${Array.isArray(picked) ? picked.join(', ') : picked}`).join(' · ');
+    return String(answer ?? '');
+  }
+
+  function openDrill(target, event) {
+    const section = target.closest('[data-summary-question]');
+    const results = section?.querySelector('[data-drill-results]');
+    const entry = section && analysisDrillData.get(section.dataset.summaryQuestion);
+    if (!entry || !results) return;
+    const kind = target.dataset.drillKind;
+    let selectedTarget = target;
+    let label = target.dataset.value || target.querySelector('.truncate')?.textContent.trim() || target.textContent.trim();
+
+    if (kind === 'pie') {
+      let slices;
+      try { slices = JSON.parse(decodeURIComponent(target.dataset.slices)); } catch { return; }
+      let portion = 0;
+      if (Number.isFinite(event.clientX) && Number.isFinite(event.clientY) && (event.clientX || event.clientY)) {
+        const rect = target.getBoundingClientRect();
+        const angle = (Math.atan2(event.clientY - rect.top - rect.height / 2, event.clientX - rect.left - rect.width / 2) * 180 / Math.PI + 450) % 360;
+        portion = angle / 360;
+      }
+      const total = slices.reduce((sum, slice) => sum + slice[1], 0);
+      let passed = 0;
+      const slice = slices.find(item => {
+        passed += item[1];
+        return portion <= passed / total;
+      }) || slices[0];
+      if (!slice) return;
+      label = slice[0];
+      selectedTarget = { dataset: { drillKind: 'choice', value: label } };
+    }
+
+    const drillKey = `${selectedTarget.dataset.drillKind}:${selectedTarget.dataset.value || selectedTarget.dataset.bucket || ''}`;
+    if (!results.hidden && results.dataset.activeDrill === drillKey) {
+      results.hidden = true;
+      return;
+    }
+    const matches = entry.records.filter(record => matchesDrill(entry.question, record, selectedTarget));
+    results.dataset.activeDrill = drillKey;
+    results.innerHTML = `
+      <div class="drill-results-head">
+        <strong>${escapeHtml(label)} · ${matches.length}</strong>
+        <button type="button" class="icon-btn" data-close-drill aria-label="Close responses">×</button>
+      </div>
+      ${matches.length ? matches.map(record => `
+        <blockquote class="drill-answer">
+          ${escapeHtml(responseAnswer(entry.question, record))}
+          <span class="who">${record.user_id ? escapeHtml(personName(record.user_name, record.user_email)) : 'Anonymous'}</span>
+        </blockquote>`).join('') : '<p class="dim text-sm">No responses in this group.</p>'}`;
+    results.hidden = false;
   }
 
   // The spread, not just the middle: a flat distribution and a hard split have
@@ -646,7 +755,7 @@
       ${from === 1 ? `<div class="avg">${avg.toFixed(1)}<span class="of"> / ${to} average</span></div>` : ''}
       <div class="dist">
         ${Object.keys(counts).map(v => `
-          <div class="dist-col">
+          <div class="dist-col"${counts[v] ? ` role="button" tabindex="0" data-drill-kind="rating" data-value="${v}"` : ''}>
             <span class="dist-n">${counts[v]}</span>
             <span class="dist-bar" style="height:${(counts[v] / max) * 100}%"></span>
             <span class="dist-x">${v}</span>
@@ -968,6 +1077,24 @@
   }, true);
   document.addEventListener('keydown', event => {
     if (event.key === 'Escape') document.querySelectorAll('.actions-menu[open]').forEach(menu => { menu.open = false; });
+  });
+
+  const analysisRoot = document.getElementById('analysis');
+  analysisRoot.addEventListener('click', event => {
+    if (event.target.closest('[data-close-drill]')) {
+      const results = event.target.closest('[data-drill-results]');
+      if (results) results.hidden = true;
+      return;
+    }
+    const graphic = event.target.closest('[data-drill-kind]');
+    if (graphic) openDrill(graphic, event);
+  });
+  analysisRoot.addEventListener('keydown', event => {
+    if (!['Enter', ' '].includes(event.key)) return;
+    const graphic = event.target.closest('[data-drill-kind]');
+    if (!graphic) return;
+    event.preventDefault();
+    openDrill(graphic, event);
   });
 
   document.querySelectorAll('.tab[data-panel]').forEach(tab => {
