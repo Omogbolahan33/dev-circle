@@ -156,7 +156,7 @@ const Shell = {
 
     app.insertAdjacentHTML('afterbegin', this._sidebar(activeId));
     app.insertAdjacentHTML('beforeend', '<div class="sidebar-scrim" onclick="Shell.closeNav()"></div>');
-    main.insertAdjacentHTML('afterbegin', this._mobileBar(activeId));
+    main.insertAdjacentHTML('afterbegin', this._mobileBar());
 
     this._mountOverlays();
     this._bindKeys(true);
@@ -266,15 +266,12 @@ const Shell = {
       </aside>`;
   },
 
-  _mobileBar(activeId) {
-    const all = visibleNav().flatMap(g => g.items);
-    const current = all.find(i => i.id === activeId);
+  _mobileBar() {
     return `
       <div class="mobile-bar">
         <button class="icon-btn" onclick="Shell.openNav()" aria-label="Open navigation">${icon('menu', 18)}</button>
         <span class="brand-mark" data-brand-logo><img src="/assets/brand/creditdirect.svg" alt="Credit Direct Dev Circle" class="brand-logo-img brand-logo-on-light"><img src="/assets/brand/creditdirect-white.svg" alt="" aria-hidden="true" class="brand-logo-img brand-logo-on-dark"></span>
         <span class="spacer"></span>
-        <span class="badge badge-info">${current ? current.label : 'Admin'}</span>
       </div>`;
   },
 
