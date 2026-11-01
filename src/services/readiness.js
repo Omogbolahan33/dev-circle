@@ -294,21 +294,28 @@ function computeReadiness(user, consentList = [], { wanted } = {}) {
     summary = `${completedRings} of 3 rings complete · ${incompleteRingCount} rings keep you back from full participation.`;
   }
 
-  // Next prioritized unfinished action
+  // Availability is the highest-priority action because it unlocks scheduling.
+  // Make the CTA name the actual missing field instead of sending every
+  // availability gap to a vague "Update available time" prompt.
   const priorityRing = rings.find(r => r.id === 'availability' && !r.is_complete)
     || rings.find(r => !r.is_complete);
+  const nextTask = priorityRing?.tasks.find(task => !task.done);
+  const actionCopy = {
+    preferred_days: { headline: 'Choose the days that work for you', label: 'Choose days' },
+    preferred_time: { headline: 'Set the hours you are available', label: 'Set hours' },
+    preferred_channels: { headline: 'Choose how you would like to be contacted', label: 'Choose channels' },
+    consent: { headline: 'Set permission for a contact channel', label: 'Set consent' }
+  }[nextTask?.key];
 
   const nextAction = priorityRing ? {
     ring_id: priorityRing.id,
     ring_name: priorityRing.name,
-    headline: priorityRing.id === 'availability'
-      ? 'Set your available time to unlock session invites'
-      : priorityRing.id === 'channels'
-        ? 'Choose your channels and grant messaging consent'
-        : 'Complete your profile details',
-    detail: priorityRing.impact,
+    headline: actionCopy?.headline || (priorityRing.id === 'profile'
+      ? `Add ${nextTask?.label?.toLowerCase() || 'your profile details'}`
+      : 'Complete the remaining setup'),
+    detail: nextTask?.description || priorityRing.impact,
     action_url: priorityRing.action_url,
-    action_label: priorityRing.action_label
+    action_label: actionCopy?.label || priorityRing.action_label
   } : null;
 
   return {
