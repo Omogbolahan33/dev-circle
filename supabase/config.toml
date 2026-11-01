@@ -4,7 +4,9 @@
 [api]
 enabled = true
 port = 54321
-schemas = ["public", "storage", "graphql_public"]
+# Application tables are accessed only through the server-side PostgreSQL connection.
+# Keep public out of PostgREST exposure; Storage remains available separately.
+schemas = ["storage", "graphql_public"]
 extra_search_path = ["public", "extensions"]
 max_rows = 1000
 
