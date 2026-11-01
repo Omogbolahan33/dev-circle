@@ -217,7 +217,7 @@ async function items(query = {}, { limit = 500 } = {}) {
   const { where, params } = conditions(query);
 
   const rows = await db.prepare(`
-    SELECT f.id, f.content, f.response_id, f.question_id, f.created_at, f.source, f.source_system, f.status,
+    SELECT f.id, f.content, f.type, f.response_id, f.question_id, f.created_at, f.source, f.source_system, f.status,
            f.category, f.external_ticket_id, f.canonical_question_id,
            COALESCE(q.text, f.prompt) as question,
            COALESCE(s.title, REPLACE(COALESCE(f.source_system, f.source), '_', ' ')) as came_from,

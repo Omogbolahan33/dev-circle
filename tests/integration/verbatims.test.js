@@ -67,7 +67,7 @@ test('a written answer is filed as feedback against the member', async () => {
     'The webhook retry intervals are undocumented.', 'the response API reconstructs its original answer shape');
 });
 
-test('feedback items can be independently deleted with confirmation', async () => {
+test('survey responses cannot be deleted from Feedback', async () => {
   const user = h.makeUser({ password: 'dev-password' });
   const survey = makeSurvey();
   await respond(user, survey, {
@@ -76,25 +76,31 @@ test('feedback items can be independently deleted with confirmation', async () =
   const item = h.db.prepare("SELECT id FROM feedback WHERE user_id = ? AND source = 'survey' AND question_id = 'q3'")
     .get(user.id);
 
-  const first = await h.del(`/api/admin/feedback/${item.id}`, { token: adminToken });
-  assert.equal(first.status, 409);
-  assert.equal(first.body.confirm_required, true);
-  assert.equal(first.body.linked_response, true);
-
-  const removed = await h.del(`/api/admin/feedback/${item.id}?confirm=true`, { token: adminToken });
-  assert.equal(removed.status, 200, JSON.stringify(removed.body));
-  assert.equal(Number(h.db.prepare('SELECT COUNT(*) AS c FROM feedback WHERE id = ?').get(item.id).c), 0);
+  const refused = await h.del(`/api/admin/feedback/${item.id}?confirm=true`, { token: adminToken });
+  assert.equal(refused.status, 409);
+  assert.equal(refused.body.delete_from, 'survey_responses');
+  assert.equal(Number(h.db.prepare('SELECT COUNT(*) AS c FROM feedback WHERE id = ?').get(item.id).c), 1,
+    'the survey answer projection remains in Feedback');
   const response = h.db.prepare('SELECT answers FROM survey_responses WHERE survey_id = ? AND user_id = ?')
     .get(survey.id, user.id);
   const storedAnswers = JSON.parse(response.answers);
   assert.equal(storedAnswers.q3, 'Please improve the SDK examples.',
-    'deleting the Feedback projection leaves the canonical survey answer intact');
+    'the answer remains in the canonical survey response');
   assert.equal(storedAnswers.q4, 'The getting-started guide is useful.');
   const responseList = await h.get(`/api/admin/surveys/${survey.id}/responses`, { token: adminToken });
   const listedAnswers = responseList.body.responses[0].answers;
   assert.equal(listedAnswers.q3, 'Please improve the SDK examples.',
     'the original answer remains visible in survey results');
   assert.equal(listedAnswers.q4, 'The getting-started guide is useful.');
+
+  const memberToken = await h.loginUser(user.email);
+  const direct = await h.post('/api/feedback', { content: 'A separate direct feedback item.' }, { token: memberToken });
+  const directId = direct.body.feedback.id;
+  const confirmation = await h.del(`/api/admin/feedback/${directId}`, { token: adminToken });
+  assert.equal(confirmation.status, 409);
+  assert.equal(confirmation.body.confirm_required, true);
+  const removed = await h.del(`/api/admin/feedback/${directId}?confirm=true`, { token: adminToken });
+  assert.equal(removed.status, 200, 'non-survey Feedback sources remain deletable here');
 });
 
 test('the question is kept with the answer', async () => {

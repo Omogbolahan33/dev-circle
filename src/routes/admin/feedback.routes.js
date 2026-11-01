@@ -233,14 +233,20 @@ router.delete('/feedback/:id', requirePermission('feedback.delete'), async (req,
   `).get(req.params.id, req.circleId);
   if (!fb) return res.status(404).json({ error: 'Feedback not found' });
 
-  if (req.query.confirm !== 'true' && req.body?.confirm !== true) {
-    const linkedResponse = fb.type === 'survey_response' && Boolean(fb.survey_id || fb.response_id);
+  const isSurveyAnswer = fb.type === 'survey_response' ||
+    (['survey', 'external_survey'].includes(fb.source) && Boolean(fb.survey_id || fb.response_id));
+  if (isSurveyAnswer) {
     return res.status(409).json({
-      error: linkedResponse
-        ? 'Delete this Feedback entry? The original survey answer will remain in survey results.'
-        : 'Delete this feedback item permanently?',
+      error: 'Survey answers cannot be deleted from Feedback. Delete the response from its survey results instead.',
+      delete_from: 'survey_responses'
+    });
+  }
+
+  if (req.query.confirm !== 'true' && req.body?.confirm !== true) {
+    return res.status(409).json({
+      error: 'Delete this feedback item permanently?',
       confirm_required: true,
-      linked_response: linkedResponse
+      linked_response: false
     });
   }
 

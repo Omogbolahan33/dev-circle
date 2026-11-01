@@ -146,6 +146,8 @@
 <script>
   Shell.admin('feedback');
   const canDeleteFeedback = Auth.can('feedback.delete');
+  const canDeleteItem = item => canDeleteFeedback && item?.type !== 'survey_response' &&
+    !['survey', 'external_survey'].includes(item?.source);
 
   const SOURCE_LABELS = {
     dev_circle: 'Dev Circle', survey: 'Survey answer', external_survey: 'Form run elsewhere',
@@ -181,7 +183,7 @@
     document.getElementById('dFeexNote').classList.toggle('hide', !isFeex);
     document.getElementById('dSurveyNote').classList.toggle('hide', open.source !== 'survey');
     document.getElementById('dSave').classList.toggle('hide', readOnly);
-    document.getElementById('dDelete').classList.toggle('hide', !canDeleteFeedback);
+    document.getElementById('dDelete').classList.toggle('hide', !canDeleteItem(open));
 
     document.querySelectorAll('#dStatus button').forEach(b =>
       b.classList.toggle('active', b.dataset.status === open.status));
@@ -365,7 +367,7 @@
               <span>${formatDate(i.created_at)}</span>
             </div>
           </div>
-          ${canDeleteFeedback ? `<button class="btn btn-sm btn-ghost" onclick="deleteFeedback('${i.id}', event)">Delete</button>` : ''}
+          ${canDeleteItem(i) ? `<button class="btn btn-sm btn-ghost" onclick="deleteFeedback('${i.id}', event)">Delete</button>` : ''}
         </div>`).join('');
     } catch (err) {
       box.innerHTML = `<div class="q-answer"><div class="q-body">${escapeHtml(err.message)}</div></div>`;
@@ -467,7 +469,7 @@
         <td class="text-xs muted">${escapeHtml(r.came_from || '—')}</td>
         <td class="text-xs muted">${escapeHtml((r.source || '').replace(/_/g, ' '))}</td>
         <td class="text-xs muted">${formatDate(r.created_at)}</td>
-        ${canDeleteFeedback ? `<td><button class="btn btn-sm btn-ghost" onclick="deleteFeedback('${r.id}', event)">Delete</button></td>` : ''}
+        ${canDeleteItem(r) ? `<td><button class="btn btn-sm btn-ghost" onclick="deleteFeedback('${r.id}', event)">Delete</button></td>` : ''}
       </tr>`;
   }
 
