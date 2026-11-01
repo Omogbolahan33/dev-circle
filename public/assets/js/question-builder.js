@@ -174,7 +174,6 @@ const QuestionBuilder = (() => {
                 ? escapeHtml(question.text)
                 : '<span class="dim">Untitled — click to write it</span>'}
             </button>
-            ${question.description ? `<div class="q-summary-note">${escapeHtml(question.description)}</div>` : ''}
           </div>`;
       }
 
@@ -264,9 +263,9 @@ const QuestionBuilder = (() => {
                       ${escapeHtml(subtext)}</button>` : ''}
                   </div>
                   ${isCards ? `
-                  <button type="button" class="btn btn-sm btn-ghost option-desc-toggle${subtext ? ' on' : ''}"
-                          data-toggle-desc aria-label="Add or edit the line shown under this option"
-                          title="A line under this option as the member reads it — words, a link, a picture">${subtext ? 'Edit subtext' : '+ Subtext'}</button>` : ''}
+                  <button type="button" class="icon-btn option-desc-toggle${subtext ? ' on' : ''}"
+                          data-toggle-desc aria-label="Add or edit option subtext"
+                          title="Add or edit option subtext">✎</button>` : ''}
                   ${question.type === 'multi_choice' && list === 'options' ? `
                   <button class="exclusive-flag${(question.exclusive_options || []).includes(word) ? ' on' : ''}"
                           data-exclusive="${i}" title="Cannot be picked with anything else">only</button>` : ''}
@@ -288,25 +287,29 @@ const QuestionBuilder = (() => {
         </div>`;
     }
 
-    // Optional question-level subtext appears beneath the question in the
-    // respondent's view. Keep its editor behind an explicit, visible action so
-    // the card stays light without making the edit control hard to find.
+    // Optional helper text appears under a question for the respondent. Keep
+    // the control compact: a small add link when empty, or the text with a pen
+    // beside it when written; open the textarea only while editing.
     function questionSubtextEditor(question) {
       if (question.type === 'section') return '';
       const open = subtextExpanded.has(question.id);
-      return `
-        <div class="question-subtext-editor">
-          ${question.description && !open
-            ? `<p class="question-subtext-preview">${escapeHtml(question.description)}</p>` : ''}
-          <button type="button" class="btn btn-sm btn-ghost" data-toggle-subtext>
-            ${open ? 'Close subtext editor' : question.description ? 'Edit subtext' : '+ Add question subtext'}
-          </button>
-          ${open ? `<div class="field question-subtext-field">
-            <label class="label">Question subtext</label>
-            <textarea class="input" data-set="description" maxlength="500"
-              placeholder="Optional context shown under the question.">${escapeHtml(question.description || '')}</textarea>
-          </div>` : ''}
-        </div>`;
+      if (open) {
+        return `
+          <div class="question-subtext-editor is-open">
+            <textarea class="input" data-set="description" maxlength="500" aria-label="Question subtext"
+              placeholder="Optional helper text shown under the question.">${escapeHtml(question.description || '')}</textarea>
+            <button type="button" class="question-subtext-link" data-toggle-subtext>Done</button>
+          </div>`;
+      }
+      if (question.description) {
+        return `
+          <div class="question-subtext-preview">
+            <span>${escapeHtml(question.description)}</span>
+            <button type="button" class="icon-btn question-subtext-edit" data-toggle-subtext
+                    aria-label="Edit question subtext" title="Edit question subtext">✎</button>
+          </div>`;
+      }
+      return `<button type="button" class="question-subtext-link question-subtext-add" data-toggle-subtext>+ Subtext</button>`;
     }
 
     // What the question is made of: out in the open, under the wording.

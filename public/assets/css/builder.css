@@ -45,7 +45,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.q-summary-note { margin-top: var(--sp-1); color: var(--ash-dim); font-size: var(--fs-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 .q-flag {
   font-size: 10px; color: var(--ash-dim);
   border: 1px solid var(--line); border-radius: var(--r-sm); padding: 1px var(--sp-2);
@@ -115,12 +115,16 @@
    will read it: smaller, quieter, one line */
 .option-fields { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 0; }
 .option-row .option-fields input { flex: none; width: 100%; }
-.question-subtext-editor { margin: calc(-1 * var(--sp-2)) 0 var(--sp-4); }
-.question-subtext-preview { margin: 0 0 var(--sp-2); color: var(--ash-dim); font-size: var(--fs-sm); line-height: var(--lh-loose); }
-.question-subtext-field { margin-top: var(--sp-2); }
-.question-subtext-field textarea { min-height: 64px; }
-.option-desc-toggle { flex-shrink: 0; white-space: nowrap; }
-.option-desc-toggle.on { color: var(--cd-blue); }
+.question-subtext-editor { display: flex; align-items: flex-start; gap: var(--sp-2); margin: calc(-1 * var(--sp-2)) 0 var(--sp-3); }
+.question-subtext-editor textarea { min-height: 58px; flex: 1; }
+.question-subtext-preview { display: flex; align-items: flex-start; gap: var(--sp-1); margin: calc(-1 * var(--sp-2)) 0 var(--sp-3); color: var(--ash-dim); font-size: var(--fs-sm); line-height: var(--lh-loose); }
+.question-subtext-preview > span { flex: 1; min-width: 0; }
+.question-subtext-edit { width: 26px; height: 26px; color: var(--ash-dim); }
+.question-subtext-link { align-self: flex-start; padding: 4px 0; background: transparent; color: var(--ash-dim); font-size: var(--fs-xs); cursor: pointer; white-space: nowrap; }
+.question-subtext-link:hover { color: var(--white); }
+.question-subtext-add { margin: calc(-1 * var(--sp-3)) 0 var(--sp-3); }
+.option-desc-toggle { width: 28px; height: 28px; color: var(--ash); flex-shrink: 0; border: 1px solid var(--line-faint); }
+.option-desc-toggle.on { color: var(--blue-ink); background: var(--cd-blue-dim); border-color: var(--cd-blue-dim); }
 .option-desc-preview {
   display: block; width: 100%; padding: 0; border: 0; background: none;
   text-align: left; color: var(--ash-dim); font-size: var(--fs-sm); line-height: 1.4;
