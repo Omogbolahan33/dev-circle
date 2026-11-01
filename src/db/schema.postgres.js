@@ -517,7 +517,7 @@ const SCHEMA_POSTGRES = `
   );
 
   -- Indexes
-  CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+  DROP INDEX IF EXISTS idx_users_email;
   CREATE INDEX IF NOT EXISTS idx_users_status ON users(status);
   CREATE INDEX IF NOT EXISTS idx_users_api_status ON users(api_status);
   CREATE INDEX IF NOT EXISTS idx_users_phone_normalized ON users(phone_normalized);
@@ -526,22 +526,22 @@ const SCHEMA_POSTGRES = `
   CREATE INDEX IF NOT EXISTS idx_user_cohorts_user ON user_cohorts(user_id);
   CREATE INDEX IF NOT EXISTS idx_user_cohorts_cohort ON user_cohorts(cohort_id);
   CREATE INDEX IF NOT EXISTS idx_consent_user ON consent(user_id);
-  CREATE INDEX IF NOT EXISTS idx_circles_slug ON circles(slug);
+  DROP INDEX IF EXISTS idx_circles_slug;
   CREATE INDEX IF NOT EXISTS idx_circles_status_created ON circles(status, created_at);
   CREATE INDEX IF NOT EXISTS idx_circle_members_user ON circle_members(user_id);
   CREATE INDEX IF NOT EXISTS idx_circle_admins_admin ON circle_admins(admin_id);
   CREATE INDEX IF NOT EXISTS idx_circle_admins_role ON circle_admins(role_id);
   CREATE INDEX IF NOT EXISTS idx_surveys_trigger ON surveys(trigger_event);
-  CREATE INDEX IF NOT EXISTS idx_surveys_public_token ON surveys(public_token) WHERE public_token IS NOT NULL;
-  CREATE INDEX IF NOT EXISTS idx_survey_responses_survey ON survey_responses(survey_id);
+  DROP INDEX IF EXISTS idx_surveys_public_token;
+  DROP INDEX IF EXISTS idx_survey_responses_survey;
   CREATE INDEX IF NOT EXISTS idx_survey_responses_user ON survey_responses(user_id);
-  CREATE INDEX IF NOT EXISTS idx_survey_responses_anon ON survey_responses(anonymous_key_hash) WHERE anonymous_key_hash IS NOT NULL;
+  DROP INDEX IF EXISTS idx_survey_responses_anon;
   CREATE UNIQUE INDEX IF NOT EXISTS idx_survey_responses_anon_key_unique ON survey_responses(survey_id, anonymous_key_hash) WHERE anonymous_key_hash IS NOT NULL;
   CREATE INDEX IF NOT EXISTS idx_survey_responses_external ON survey_responses(survey_id, external_response_id) WHERE external_response_id IS NOT NULL;
   CREATE INDEX IF NOT EXISTS idx_questions_normalized ON questions(normalized, type);
   CREATE INDEX IF NOT EXISTS idx_questions_external ON questions(external_source, external_ref);
   CREATE INDEX IF NOT EXISTS idx_questions_circle ON questions(circle_id);
-  CREATE INDEX IF NOT EXISTS idx_engagement_user ON engagement_history(user_id);
+  DROP INDEX IF EXISTS idx_engagement_user;
   CREATE INDEX IF NOT EXISTS idx_engagement_type ON engagement_history(type);
   CREATE INDEX IF NOT EXISTS idx_engagement_created ON engagement_history(created_at);
   CREATE INDEX IF NOT EXISTS idx_engagement_user_created ON engagement_history(user_id, created_at DESC);
@@ -563,7 +563,7 @@ const SCHEMA_POSTGRES = `
   CREATE INDEX IF NOT EXISTS idx_login_codes_identifier ON login_codes(identifier, created_at);
   CREATE INDEX IF NOT EXISTS idx_login_codes_user ON login_codes(user_id);
   CREATE INDEX IF NOT EXISTS idx_integration_events_processed ON integration_events(processed);
-  CREATE INDEX IF NOT EXISTS idx_user_gifts_user ON user_gifts(user_id);
+  DROP INDEX IF EXISTS idx_user_gifts_user;
   CREATE UNIQUE INDEX IF NOT EXISTS idx_user_gifts_unique ON user_gifts(user_id, gift_id);
   CREATE INDEX IF NOT EXISTS idx_user_gifts_gift ON user_gifts(gift_id);
   CREATE INDEX IF NOT EXISTS idx_users_created_at ON users(created_at DESC);
@@ -580,11 +580,11 @@ const SCHEMA_POSTGRES = `
   CREATE UNIQUE INDEX IF NOT EXISTS idx_feedback_verbatim_anon ON feedback(response_id, question_id) WHERE response_id IS NOT NULL AND question_id IS NOT NULL;
   CREATE UNIQUE INDEX IF NOT EXISTS idx_feedback_external_response ON feedback(source_system, external_response_id) WHERE external_response_id IS NOT NULL;
   DROP INDEX IF EXISTS idx_session_dispatch_once;
-  CREATE INDEX IF NOT EXISTS idx_email_templates_circle ON email_templates(circle_id);
+  DROP INDEX IF EXISTS idx_email_templates_circle;
   CREATE INDEX IF NOT EXISTS idx_email_templates_updated_by ON email_templates(updated_by);
   CREATE INDEX IF NOT EXISTS idx_option_lists_updated_by ON option_lists(updated_by);
   CREATE INDEX IF NOT EXISTS idx_onboarding_forms_circle ON onboarding_forms(circle_id);
-  CREATE INDEX IF NOT EXISTS idx_onboarding_forms_token ON onboarding_forms(public_token) WHERE public_token IS NOT NULL;
+  DROP INDEX IF EXISTS idx_onboarding_forms_token;
   CREATE INDEX IF NOT EXISTS idx_onboarding_submissions_form ON onboarding_submissions(form_id, status);
   CREATE INDEX IF NOT EXISTS idx_onboarding_submissions_decided_by ON onboarding_submissions(decided_by);
   CREATE INDEX IF NOT EXISTS idx_onboarding_submissions_user ON onboarding_submissions(user_id);

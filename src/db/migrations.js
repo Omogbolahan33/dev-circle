@@ -1748,6 +1748,20 @@ function define(db) {
           DROP INDEX IF EXISTS idx_session_dispatch_once;
         `);
       }
+    },
+    {
+      id: 40,
+      name: 'remove_redundant_indexes',
+      up() {
+        return db.exec(`
+          DROP INDEX IF EXISTS idx_users_email;
+          DROP INDEX IF EXISTS idx_circles_slug;
+          DROP INDEX IF EXISTS idx_survey_responses_anon;
+          DROP INDEX IF EXISTS idx_user_gifts_user;
+          DROP INDEX IF EXISTS idx_email_templates_circle;
+          DROP INDEX IF EXISTS idx_onboarding_forms_token;
+        `);
+      }
     }
   ];
   return migrations;

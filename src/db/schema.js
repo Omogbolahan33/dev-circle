@@ -209,15 +209,12 @@ const SCHEMA = `
   );
 
   -- Indexes
-  CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
   CREATE INDEX IF NOT EXISTS idx_users_status ON users(status);
   CREATE INDEX IF NOT EXISTS idx_users_api_status ON users(api_status);
   CREATE INDEX IF NOT EXISTS idx_user_cohorts_user ON user_cohorts(user_id);
   CREATE INDEX IF NOT EXISTS idx_user_cohorts_cohort ON user_cohorts(cohort_id);
   CREATE INDEX IF NOT EXISTS idx_consent_user ON consent(user_id);
-  CREATE INDEX IF NOT EXISTS idx_survey_responses_survey ON survey_responses(survey_id);
   CREATE INDEX IF NOT EXISTS idx_survey_responses_user ON survey_responses(user_id);
-  CREATE INDEX IF NOT EXISTS idx_engagement_user ON engagement_history(user_id);
   CREATE INDEX IF NOT EXISTS idx_engagement_type ON engagement_history(type);
   CREATE INDEX IF NOT EXISTS idx_feedback_user ON feedback(user_id);
   CREATE INDEX IF NOT EXISTS idx_feedback_status ON feedback(status);
