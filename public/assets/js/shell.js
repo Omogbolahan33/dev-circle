@@ -277,8 +277,6 @@ const Shell = {
 
   _portalBar(activeId) {
     const user = Auth.getUser() || {};
-    const current = PORTAL_NAV.find(i => i.id === activeId);
-    const currentLabel = current ? current.label : 'Home';
 
     // Primary destinations get a tab on the phone bottom bar; the rest
     // (History, Notifications) stay reachable from the avatar menu and bell.
@@ -291,11 +289,6 @@ const Shell = {
           <a href="/member/dashboard.html" class="sidebar-brand" style="padding:0;height:auto">
             <span class="brand-mark" data-brand-logo><img src="/assets/brand/creditdirect.svg" alt="Credit Direct Dev Circle" class="brand-logo-img brand-logo-on-light"><img src="/assets/brand/creditdirect-white.svg" alt="" aria-hidden="true" class="brand-logo-img brand-logo-on-dark"></span>
           </a>
-
-          <!-- Current page, shown in the bar on a phone where the link row
-               collapses to a bottom tab bar — the member-side equivalent of
-               the admin mobile breadcrumb. -->
-          <span class="portal-current mobile-only">${escapeHtml(currentLabel)}</span>
 
           <nav class="portal-links">
             ${PORTAL_NAV.map(i => `

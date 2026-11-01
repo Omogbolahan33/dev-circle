@@ -130,6 +130,11 @@
       .impact-label { font-size:10px; white-space:normal; }
       .dashboard-action { grid-template-columns:40px minmax(0,1fr); gap:var(--sp-3); padding:var(--sp-4); }
       .action-visual { width:40px; height:40px; }
+      .next-action.quiet { grid-template-columns:32px minmax(0,1fr); gap:10px; padding:12px; }
+      .next-action.quiet .action-visual { width:32px; height:32px; }
+      .next-action.quiet .action-copy { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+      .next-action.quiet .headline { margin:0; font-size:var(--fs-base); white-space:nowrap; }
+      .next-action.quiet .btn { flex-shrink:0; padding:6px 8px; font-size:12px; white-space:nowrap; }
     }
     @media(max-width:420px) {
       /* Keep the ring graphic beside its legend on phones. Stacking the 132px
@@ -150,6 +155,8 @@
       .readiness-foot .btn { white-space:nowrap; }
     }
     @media(max-width:360px) {
+      .next-action.quiet { grid-template-columns:1fr; }
+      .next-action.quiet .action-visual { display:none; }
       .readiness-panel { grid-template-columns:76px minmax(0,1fr); gap:4px 9px; }
       .readiness-svg { width:76px; height:76px; }
       .readiness-item-score { font-size:10px; }
