@@ -69,6 +69,7 @@
     .pie-legend { display: flex; flex-direction: column; gap: var(--sp-2); }
     .pie-legend-row { display: grid; grid-template-columns: 12px minmax(70px, 1fr) auto; gap: var(--sp-2); align-items: center; font-size: var(--fs-sm); }
     .pie-swatch { width: 10px; height: 10px; border-radius: 3px; }
+    .analysis-filter { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); margin-bottom: var(--sp-4); padding: var(--sp-2) var(--sp-3); border: 1px solid var(--cd-blue-40); border-radius: var(--r-md); color: var(--ash); font-size: var(--fs-sm); }
     .summary-visual { cursor: pointer; }
     .summary-visual:focus-visible { outline: 2px solid var(--cd-blue); outline-offset: 4px; border-radius: var(--r-sm); }
     .word-cloud { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: var(--sp-2) var(--sp-4); min-height: 150px; padding: var(--sp-5); border: 1px solid var(--line-faint); border-radius: var(--r-md); background: var(--surface-1); }
@@ -266,8 +267,10 @@
   const surveyId = param('id');
   let allResponses = [];
   let responseQuestions = [];
+  let completedResponses = [];
   let responseStatusFilter = 'all';
   let analysisDrillData = new Map();
+  let analysisFilter = null;
   if (!surveyId) window.location.href = '/admin/surveys.html';
 
   async function load() {
@@ -277,7 +280,9 @@
       const responses = data.responses;
       allResponses = responses;
       responseQuestions = survey.questions;
-      const completed = responses.filter(r => r.completed_at);
+      completedResponses = responses.filter(r => r.completed_at);
+      analysisFilter = null;
+      const completed = completedResponses;
 
       document.getElementById('crumbName').textContent = survey.title;
       document.title = `Dev Circle — ${survey.title}`;
@@ -348,6 +353,8 @@
   function renderAnalysis(questions, completed) {
     const el = document.getElementById('analysis');
     analysisDrillData = new Map();
+    const activeCriteria = analysisFilter?.criteria || [];
+    const cohort = completed.filter(record => activeCriteria.every(criterion => criterion.ids.has(record)));
 
     if (!completed.length) {
       el.innerHTML = emptyState({
@@ -358,9 +365,19 @@
       return;
     }
 
+    if (analysisFilter && !cohort.length) {
+      el.innerHTML = `<div class="analysis-filter"><span>Filter: ${escapeHtml(analysisFilter.label)}</span><button class="btn btn-sm btn-ghost" data-clear-analysis-filter>Clear</button></div><p class="dim text-sm">No responses match this filter.</p>`;
+      return;
+    }
+
+    const filterNotice = analysisFilter ? `
+      <div class="analysis-filter">
+        <span>Filter: ${escapeHtml(analysisFilter.label)} · ${cohort.length}</span>
+        <button class="btn btn-sm btn-ghost" data-clear-analysis-filter>Clear</button>
+      </div>` : '';
     let number = 0;
 
-    el.innerHTML = questions.map(q => {
+    el.innerHTML = filterNotice + questions.map(q => {
       // A section is where the survey said something, not where it asked
       if (!SurveySchema.isAnswerable(q)) {
         return `<section class="q-block"><div class="q-kicker">Section</div>
@@ -371,7 +388,8 @@
       // Only the members this question was actually put to. With branching,
       // a percentage over everyone who finished the survey is a different
       // number about a different population.
-      const shown = completed.filter(r => !r.asked || r.asked.includes(q.id));
+      const questionCohort = cohort;
+      const shown = questionCohort.filter(r => !r.asked || r.asked.includes(q.id));
       const answered = shown.filter(r => SurveySchema.isAnswered(q, r.answers[q.id]));
       const answers = answered.map(r => r.answers[q.id]);
       analysisDrillData.set(q.id, { question: q, records: answered });
@@ -381,8 +399,8 @@
           <div class="q-kicker">Q${number} · ${escapeHtml(q.type)} · ${answers.length} answered${
             q.required ? ' · required' : ''}</div>
           <h3 class="q-ask">${escapeHtml(q.text)}</h3>
-          ${shown.length < completed.length
-            ? `<p class="asked-note">Asked of ${shown.length} of ${completed.length} — the rest were branched past it.</p>`
+          ${shown.length < questionCohort.length
+            ? `<p class="asked-note">Asked of ${shown.length} of ${questionCohort.length} — the rest were branched past it.</p>`
             : ''}
           ${answers.length ? `<div class="summary-visual" tabindex="0" role="group" aria-label="Question response chart; activate for all responses">${summary(q, answers, answered)}<div class="drill-results" data-drill-results hidden aria-live="polite"></div></div>` : '<p class="dim text-sm">No answers to this question.</p>'}
         </section>`;
@@ -727,7 +745,18 @@
     const label = target.dataset.value || target.querySelector('.truncate')?.textContent.trim() || target.textContent.trim();
     const drillKey = [target.dataset.drillKind, target.dataset.row || '', target.dataset.value || '', target.dataset.bucket || '', target.dataset.min || '', target.dataset.max || ''].join(':');
     const matches = entry.records.filter(record => matchesDrill(entry.question, record, target));
-    showDrillResults(section, label, matches, drillKey);
+    const questionId = entry.question.id;
+    const questionNumber = responseQuestions.filter(SurveySchema.isAnswerable).findIndex(question => question.id === questionId) + 1;
+    const criterion = { questionId, label: `Q${questionNumber}: ${label}`, ids: new Set(matches) };
+    const criteria = [...(analysisFilter?.criteria || []).filter(item => item.questionId !== questionId), criterion];
+    const order = new Map(responseQuestions.filter(SurveySchema.isAnswerable).map((question, index) => [question.id, index]));
+    criteria.sort((a, b) => order.get(a.questionId) - order.get(b.questionId));
+    analysisFilter = { criteria, label: criteria.map(item => item.label).join(' · ') };
+
+    renderAnalysis(responseQuestions, completedResponses);
+    const updatedSection = [...analysisRoot.querySelectorAll('[data-summary-question]')]
+      .find(node => node.dataset.summaryQuestion === questionId);
+    showDrillResults(updatedSection, label, matches, drillKey);
   }
 
   // The spread, not just the middle: a flat distribution and a hard split have
@@ -1070,6 +1099,11 @@
 
   const analysisRoot = document.getElementById('analysis');
   analysisRoot.addEventListener('click', event => {
+    if (event.target.closest('[data-clear-analysis-filter]')) {
+      analysisFilter = null;
+      renderAnalysis(responseQuestions, completedResponses);
+      return;
+    }
     if (event.target.closest('[data-close-drill]')) {
       const results = event.target.closest('[data-drill-results]');
       if (results) results.hidden = true;
