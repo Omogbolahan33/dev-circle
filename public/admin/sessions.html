@@ -135,7 +135,7 @@
     </div>
     <div class="field">
       <label class="label">Reminders before</label>
-      <input type="text" class="input" id="sReminders" value="1 day, 1 hour" placeholder="e.g. 2 days, 1 hour, 30">
+      <input type="text" class="input" id="sReminders" value="1 day, 1 hour" placeholder="e.g. 2 days, 1 hour, 30 minutes">
       <p class="hint">Comma-separated lead times. Reminders go out on the same channels.</p>
     </div>
 
@@ -171,17 +171,20 @@
     return `${minutes} min`;
   }
 
-  // Accepts "2 days, 1 hour, 30" and returns minutes
+  // Accepts comma-separated lead times and returns minutes.
   function parseLeads(text) {
-    return text.split(',').map(part => {
-      const m = /(\d+)\s*(day|hour|hr|min)?/i.exec(part.trim());
-      if (!m) return null;
+    if (!text.trim()) return [];
+    const parts = text.split(',');
+    const offsets = parts.map(part => {
+      const m = /^(\d+)\s*(days?|hours?|hrs?|minutes?|mins?)?$/i.exec(part.trim());
+      if (!m || Number(m[1]) <= 0) return null;
       const n = Number(m[1]);
       const unit = (m[2] || 'min').toLowerCase();
       if (unit.startsWith('day')) return n * 1440;
       if (unit.startsWith('h')) return n * 60;
       return n;
-    }).filter(n => n && n > 0);
+    });
+    return offsets.some(offset => offset === null) ? null : [...new Set(offsets)];
   }
 
   function sessionRow(s, isPast) {
@@ -225,17 +228,14 @@
   }
 
   async function load() {
-    try {
-      const [sessions, me] = await Promise.all([
-        api.get('/admin/sessions'),
-        api.get('/auth/me')
-      ]);
-
+    const circlesTask = Shell.adminMe().then(me => {
       // Auth already joined active workspaces. Do not recount members here.
       const circles = (me.circles || []).filter(c => !c.status || c.status === 'active');
       document.getElementById('sCircle').innerHTML = circles
         .map(c => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('');
+    }).catch(err => showToast('Could not load workspaces: ' + err.message, 'error'));
 
+    const sessionsTask = api.get('/admin/sessions').then(sessions => {
       const now = Date.now();
       // A session with a date nobody can read is shown as upcoming rather than
       // dropped into the past, where it would be out of sight and unfixable.
@@ -258,30 +258,37 @@
         ? past.map(s => sessionRow(s, true)).join('')
         : emptyState({ title: 'No past sessions yet' });
 
-      // Availability is fetched per session so the list itself stays fast
-      for (const s of upcoming) loadAvailability(s.id);
-    } catch (err) {
+      // One compact batch avoids a request per session; the session rows stay
+      // visible while their secondary availability summary resolves.
+      if (upcoming.length) loadAvailability(upcoming.map(session => session.id));
+    }).catch(err => {
       document.getElementById('panel-upcoming').innerHTML =
         emptyState({ title: 'Could not load sessions', text: err.message });
-    }
+    });
+    await Promise.all([circlesTask, sessionsTask]);
   }
 
-  async function loadAvailability(id) {
+  async function loadAvailability(ids) {
     try {
-      const a = await api.get(`/admin/sessions/${id}/preview`);
-      const box = document.getElementById('avail-' + id);
-      if (!box) return;
-
-      const clashNames = a.unavailable.slice(0, 4).map(u => personName(u.name, u.email)).join(', ');
-
-      box.innerHTML = `
-        <div class="avail">
-          <div class="avail-line"><strong>${a.available.length}</strong> of ${a.total} are free on ${a.weekday}</div>
-          ${a.unavailable.length ? `
-            <div class="avail-line avail-warn"><strong>${a.unavailable.length}</strong> have this outside the availability they set</div>
-            <div class="avail-names">${escapeHtml(clashNames)}${a.unavailable.length > 4 ? ` +${a.unavailable.length - 4} more` : ''}</div>` : ''}
-          ${a.unreachable.length ? `<div class="avail-line avail-warn"><strong>${a.unreachable.length}</strong> can't be reached on the chosen channels</div>` : ''}
-        </div>`;
+      const chunks = [];
+      for (let start = 0; start < ids.length; start += 40) chunks.push(ids.slice(start, start + 40));
+      const batches = await Promise.all(chunks.map(chunk =>
+        api.post('/admin/sessions/previews', { ids: chunk })
+      ));
+      for (const preview of batches.flatMap(batch => batch.previews || [])) {
+        const box = document.getElementById('avail-' + preview.session_id);
+        if (!box) continue;
+        const clashNames = preview.unavailable_preview
+          .map(user => personName(user.name, user.email)).join(', ');
+        box.innerHTML = `
+          <div class="avail">
+            <div class="avail-line"><strong>${preview.available_count}</strong> of ${preview.total} are free on ${preview.weekday}</div>
+            ${preview.unavailable_count ? `
+              <div class="avail-line avail-warn"><strong>${preview.unavailable_count}</strong> have this outside the availability they set</div>
+              <div class="avail-names">${escapeHtml(clashNames)}${preview.unavailable_count > 4 ? ` +${preview.unavailable_count - 4} more` : ''}</div>` : ''}
+            ${preview.unreachable_count ? `<div class="avail-line avail-warn"><strong>${preview.unreachable_count}</strong> can't be reached on the chosen channels</div>` : ''}
+          </div>`;
+      }
     } catch { /* availability is supplementary — a failure must not blank the row */ }
   }
 
@@ -342,6 +349,11 @@
 
     const channels = selectedChannels();
     if (!channels.length) { showToast('Pick at least one channel', 'warning'); return; }
+    const reminderOffsets = parseLeads(document.getElementById('sReminders').value);
+    if (reminderOffsets === null) {
+      showToast('Enter reminders as positive lead times, e.g. 2 days, 1 hour, 30 minutes', 'warning');
+      return;
+    }
 
     await busy(btn, 'Scheduling…', async () => {
       try {
@@ -355,7 +367,7 @@
           location: document.getElementById('sLocation').value.trim() || null,
           target_type: 'all',
           channels,
-          reminder_offsets: parseLeads(document.getElementById('sReminders').value)
+          reminder_offsets: reminderOffsets
         });
 
         Shell.closeDrawer('createDrawer');

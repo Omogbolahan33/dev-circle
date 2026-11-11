@@ -96,20 +96,23 @@ describe('SQLite → Postgres SQL', () => {
     assert.doesNotMatch(sql, /json_each\s*\(/);
   });
 
-  test('demography age bands and json_each survive the dialect shim', () => {
+  test('demography uses profile age groups and counts selected products per member', () => {
     const sql = pgSql(`
-      SELECT 'age_band', CASE
-        WHEN (julianday('now') - julianday(date_of_birth)) / 365.25 < 35 THEN '25–34'
-        ELSE '45+'
-      END, COUNT(*) FROM users GROUP BY 2
+      SELECT 'age_group', COALESCE(NULLIF(age_group, ''), 'Unspecified'), COUNT(*)
+      FROM users GROUP BY 2
       UNION ALL
-      SELECT 'api_products', json_each.value, COUNT(*)
+      SELECT 'products', json_each.value, COUNT(DISTINCT users.id)
+      FROM users, json_each(users.products)
+      GROUP BY 2
+      UNION ALL
+      SELECT 'api_products', json_each.value, COUNT(DISTINCT users.id)
       FROM users, json_each(users.api_products)
       GROUP BY 2
     `);
-    assert.match(sql, /EXTRACT\(EPOCH FROM NOW\(\)\)/);
     assert.match(sql, /jsonb_array_elements_text/);
-    assert.doesNotMatch(sql, /julianday/i);
+    assert.match(sql, /COUNT\(DISTINCT users\.id\)/);
+    assert.match(sql, /age_group/);
+    assert.doesNotMatch(sql, /julianday|date_of_birth/i);
     assert.doesNotMatch(sql, /json_each\s*\(/);
   });
 

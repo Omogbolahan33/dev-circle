@@ -122,6 +122,28 @@ const PORTAL_NAV = [
 
 const Shell = {
   activeId: null,
+  _memberProfilePromise: null,
+  _adminMePromise: null,
+
+  memberProfile({ refresh = false } = {}) {
+    if (refresh || !this._memberProfilePromise) {
+      this._memberProfilePromise = api.get('/users/profile').catch(err => {
+        this._memberProfilePromise = null;
+        throw err;
+      });
+    }
+    return this._memberProfilePromise;
+  },
+
+  adminMe({ refresh = false } = {}) {
+    if (refresh || !this._adminMePromise) {
+      this._adminMePromise = api.get('/auth/me').catch(err => {
+        this._adminMePromise = null;
+        throw err;
+      });
+    }
+    return this._adminMePromise;
+  },
 
   // Admin console: fixed sidebar, command palette, user menu.
   admin(activeId) {
@@ -134,7 +156,7 @@ const Shell = {
 
     app.insertAdjacentHTML('afterbegin', this._sidebar(activeId));
     app.insertAdjacentHTML('beforeend', '<div class="sidebar-scrim" onclick="Shell.closeNav()"></div>');
-    main.insertAdjacentHTML('afterbegin', this._mobileBar(activeId));
+    main.insertAdjacentHTML('afterbegin', this._mobileBar());
 
     this._mountOverlays();
     this._bindKeys(true);
@@ -145,7 +167,7 @@ const Shell = {
   },
 
   // Member portal: top bar, no palette — four destinations do not need one.
-  portal(activeId) {
+  portal(activeId, { deferBrand = false } = {}) {
     if (!Auth.requireAuth(false)) throw new Error('Redirecting');
     this.activeId = activeId;
 
@@ -157,7 +179,7 @@ const Shell = {
     this._bindKeys(false);
     this._loadUnread();
     this.injectIcons();
-    this.applyBrand();
+    if (!deferBrand) this.applyBrand();
   },
 
   // Paint the shell with the active workspace's brand, and name it. Admins get
@@ -165,17 +187,17 @@ const Shell = {
   // /users/profile. A circle with no brand falls back to the product look, and
   // one with no logo is named rather than left blank — signed in, the chrome
   // should say whose circle you are in, not whose software it is.
-  async applyBrand() {
+  async applyBrand(profileData = null) {
     if (!window.Brand) return;
     try {
       const activeId = Auth.getCircle();
       let list = null;
 
       if (Auth.isAdmin()) {
-        const me = await api.get('/auth/me');
+        const me = await this.adminMe();
         list = me.circles;
       } else {
-        const profile = await api.get('/users/profile');
+        const profile = profileData || await this.memberProfile();
         list = profile.circles;
       }
 
@@ -244,22 +266,17 @@ const Shell = {
       </aside>`;
   },
 
-  _mobileBar(activeId) {
-    const all = visibleNav().flatMap(g => g.items);
-    const current = all.find(i => i.id === activeId);
+  _mobileBar() {
     return `
       <div class="mobile-bar">
         <button class="icon-btn" onclick="Shell.openNav()" aria-label="Open navigation">${icon('menu', 18)}</button>
         <span class="brand-mark" data-brand-logo><img src="/assets/brand/creditdirect.svg" alt="Credit Direct Dev Circle" class="brand-logo-img brand-logo-on-light"><img src="/assets/brand/creditdirect-white.svg" alt="" aria-hidden="true" class="brand-logo-img brand-logo-on-dark"></span>
         <span class="spacer"></span>
-        <span class="badge badge-info">${current ? current.label : 'Admin'}</span>
       </div>`;
   },
 
   _portalBar(activeId) {
     const user = Auth.getUser() || {};
-    const current = PORTAL_NAV.find(i => i.id === activeId);
-    const currentLabel = current ? current.label : 'Home';
 
     // Primary destinations get a tab on the phone bottom bar; the rest
     // (History, Notifications) stay reachable from the avatar menu and bell.
@@ -272,11 +289,6 @@ const Shell = {
           <a href="/member/dashboard.html" class="sidebar-brand" style="padding:0;height:auto">
             <span class="brand-mark" data-brand-logo><img src="/assets/brand/creditdirect.svg" alt="Credit Direct Dev Circle" class="brand-logo-img brand-logo-on-light"><img src="/assets/brand/creditdirect-white.svg" alt="" aria-hidden="true" class="brand-logo-img brand-logo-on-dark"></span>
           </a>
-
-          <!-- Current page, shown in the bar on a phone where the link row
-               collapses to a bottom tab bar — the member-side equivalent of
-               the admin mobile breadcrumb. -->
-          <span class="portal-current mobile-only">${escapeHtml(currentLabel)}</span>
 
           <nav class="portal-links">
             ${PORTAL_NAV.map(i => `
@@ -407,7 +419,7 @@ const Shell = {
     try {
       // The session already joined the reachable circles. /auth/me returns
       // them without recounting members — enough to name and switch.
-      const me = await api.get('/auth/me');
+      const me = await this.adminMe();
       if (Array.isArray(me.circles) && me.circles.length) {
         const stored = Auth.getCircle();
         const current = me.circles.find(c => c.id === stored) || me.circles[0];
@@ -464,6 +476,7 @@ const Shell = {
         ${options}
         ${data.can_create ? `
           <div class="circle-menu-divider"></div>
+          <a class="circle-manage" href="/admin/all-members.html">All members across circles</a>
           <a class="circle-manage" href="/admin/circles.html">Manage circles…</a>` : ''}
       </div>`;
 

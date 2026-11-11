@@ -66,6 +66,72 @@ test('an account with no number can set one exactly once', async () => {
   assert.equal(again.status, 403);
 });
 
+test('member dashboard endpoint returns a lean view model without profile form catalogues', async () => {
+  const user = h.makeUser({ email: 'dashboard-summary@example.ng', company: 'Example Co', work_sector: 'Fintech' });
+  const token = await h.loginUser(user.email);
+
+  const response = await h.get('/api/users/dashboard', { token });
+  assert.equal(response.status, 200, JSON.stringify(response.body));
+  assert.equal(response.body.user.company, 'Example Co');
+  assert.ok(Array.isArray(response.body.circles));
+  assert.ok(Array.isArray(response.body.readiness.rings));
+  assert.equal(response.body.profile_field_catalog, undefined);
+  assert.equal(response.body.location_options, undefined);
+  assert.equal(response.headers.get('cache-control'), 'no-store');
+});
+
+test('saved profile fields are loaded again from the authenticated profile session', async () => {
+  const user = h.makeUser({ email: 'reopen-profile@example.ng' });
+  const token = await h.loginUser(user.email);
+  const saved = await h.put('/api/users/profile', {
+    company: 'Updated Company', age_group: '35 - 44',
+    products: ['Mobile App', 'Yield', 'BNPL'], employment: 'Student',
+    preferred_research: 'User interviews'
+  }, { token });
+  assert.equal(saved.status, 200, JSON.stringify(saved.body));
+
+  // A different app process can still hold the old five-minute auth projection.
+  // Seed that stale projection to prove the profile endpoint reads the live row.
+  const auth = require('../../src/middleware/auth');
+  const cache = require('../../src/middleware/cache');
+  cache.principals.set(cache.authKey(auth.hashToken(token)), {
+    user: { ...saved.body.user, company: 'Stale Company' },
+    isAdmin: false,
+    permissions: []
+  });
+
+  const reopened = await h.get('/api/users/profile', { token });
+  assert.equal(reopened.status, 200, JSON.stringify(reopened.body));
+  assert.equal(reopened.headers.get('cache-control'), 'no-store');
+  assert.equal(reopened.body.user.company, 'Updated Company');
+  assert.equal(reopened.body.user.age_group, '35 - 44');
+  assert.deepEqual(reopened.body.user.products, ['Mobile App', 'Yield', 'BNPL']);
+  assert.equal(reopened.body.user.segment, 'Power Tester');
+  assert.equal(reopened.body.user.employment, 'Student');
+  assert.equal(reopened.body.user.preferred_research, 'User interviews');
+});
+
+test('participant segment is derived from products and cannot be supplied by the member', async () => {
+  const user = h.makeUser({ email: 'segment@example.ng', products: ['Mobile App'] });
+  const token = await h.loginUser(user.email);
+
+  const twoProducts = await h.put('/api/users/profile', {
+    products: ['Mobile App', 'Yield'], segment: 'Power Tester'
+  }, { token });
+  assert.equal(twoProducts.status, 200, JSON.stringify(twoProducts.body));
+  assert.equal(h.db.prepare('SELECT segment FROM users WHERE id = ?').get(user.id).segment, 'Multi-Product');
+
+  const noProducts = await h.put('/api/users/profile', {
+    products: [], segment: 'Single Product'
+  }, { token });
+  assert.equal(noProducts.status, 200, JSON.stringify(noProducts.body));
+  assert.equal(h.db.prepare('SELECT segment FROM users WHERE id = ?').get(user.id).segment, 'General / App');
+
+  const segmentOnly = await h.put('/api/users/profile', { segment: 'Power Tester' }, { token });
+  assert.equal(segmentOnly.status, 400, 'segment is not a writable profile field');
+  assert.equal(h.db.prepare('SELECT segment FROM users WHERE id = ?').get(user.id).segment, 'General / App');
+});
+
 // ─── API products: the one integration fact a member self-declares ──
 
 test('a member can record the API products they build against', async () => {
@@ -89,6 +155,11 @@ test('location and preferred research are dropdown vocabularies, not free text',
   assert.ok(profile.body.location_options.includes('Lagos'));
   assert.ok(profile.body.preferred_research_options.includes('Product testing'));
   assert.ok(profile.body.preferred_research_options.includes('User interviews'));
+  const fieldOptions = Object.fromEntries(profile.body.profile_field_catalog.map(field => [field.key, field.values]));
+  assert.deepEqual(fieldOptions.age_group.map(option => option.value),
+    ['18 - 24', '25 - 34', '35 - 44', '45 - 54', '55 - 64']);
+  assert.ok(fieldOptions.work_sector.some(option => option.value === 'Fintech'));
+  assert.ok(fieldOptions.gender.some(option => option.value === 'female'));
 
   const badLocation = await h.put('/api/users/profile', { location_state: 'Somewhere' }, { token });
   assert.equal(badLocation.status, 400);

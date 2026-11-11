@@ -29,10 +29,58 @@ async function answering(survey) {
 const respond = (survey, token, answers) =>
   h.post(`/api/users/surveys/${survey.id}/respond`, { answers }, { token });
 
+test('members can list and read only their own completed survey answers', async () => {
+  const made = await create({
+    status: 'active',
+    questions: [{ type: 'text', text: 'What should we improve?' }]
+  });
+  const { user, token, survey } = await answering(made.body.survey);
+  const question = survey.questions[0];
+  const response = await respond(survey, token, { [question.id]: 'Add clearer examples' });
+  assert.equal(response.status, 200, JSON.stringify(response.body));
+  h.db.prepare("UPDATE surveys SET status = 'closed', questions = ? WHERE id = ?")
+    .run(JSON.stringify([{ type: 'text', text: 'Reworded after close' }]), survey.id);
+
+  const listed = await h.get('/api/users/surveys/answered?limit=10', { token });
+  assert.equal(listed.status, 200, JSON.stringify(listed.body));
+  assert.equal(listed.body.pagination.total, 1);
+  const row = listed.body.responses[0];
+  assert.equal(row.title, 'Discovery');
+  assert.equal(row.question_count, 1);
+
+  const detail = await h.get(`/api/users/surveys/answered/${row.id}`, { token });
+  assert.equal(detail.status, 200, JSON.stringify(detail.body));
+  assert.equal(detail.body.response.answers[question.id], 'Add clearer examples');
+  assert.equal(detail.body.response.questions[0].text, 'What should we improve?');
+
+  const other = h.makeUser();
+  const otherToken = await h.loginUser(other.email);
+  const denied = await h.get(`/api/users/surveys/answered/${row.id}`, { token: otherToken });
+  assert.equal(denied.status, 404);
+  assert.equal(user.id, h.db.prepare('SELECT user_id FROM survey_responses WHERE id = ?').get(row.id).user_id);
+});
+
 // ─── Closing time ───────────────────────────────────────────
 // An expiry that is not enforced is worse than no expiry: the survey says it
 // has closed and still takes answers. This is the end-to-end statement of it;
 // the shapes an expiry can arrive in are covered in unit/stored-timestamps.
+
+test('completed responses with an empty legacy question snapshot fall back to the survey definition', async () => {
+  const made = await create({
+    status: 'active',
+    questions: [{ type: 'text', text: 'What was your experience?' }]
+  });
+  const { token, survey } = await answering(made.body.survey);
+  const question = survey.questions[0];
+  await respond(survey, token, { [question.id]: 'Very positive' });
+  const responseId = h.db.prepare('SELECT id FROM survey_responses WHERE survey_id = ?').get(survey.id).id;
+  h.db.prepare("UPDATE survey_responses SET questions = '[]' WHERE id = ?").run(responseId);
+
+  const detail = await h.get(`/api/users/surveys/answered/${responseId}`, { token });
+  assert.equal(detail.status, 200, JSON.stringify(detail.body));
+  assert.equal(detail.body.response.questions[0].text, 'What was your experience?');
+  assert.equal(detail.body.response.answers[question.id], 'Very positive');
+});
 
 test('a survey past its expiry cannot be started', async () => {
   const made = await create({
@@ -102,10 +150,11 @@ test('every question type survives the round trip with its settings', async () =
   assert.equal(res.status, 201);
   const stored = res.body.survey.questions;
   assert.deepEqual(stored.map(q => q.type), [
-    'nps', 'matrix', 'ranking', 'number', 'date', 'boolean', 'dropdown', 'section', 'text'
+    'nps', 'matrix', 'ranking', 'number', 'date', 'boolean', 'choice', 'section', 'text'
   ]);
   assert.equal(stored[0].scale, 10);
   assert.equal(stored[3].unit, 'calls');
+  assert.equal(stored[6].dropdown, true, 'legacy dropdown input is stored as a single-choice display setting');
   assert.equal(stored[8].format, 'email');
   assert.ok(stored.every(q => q.id), 'every question gets a stable id');
 });
@@ -634,6 +683,77 @@ test('a survey can be deleted, and one with answers takes a second press', async
     .get(survey.id).n), 0, 'and linked survey verbatims do not remain in Feedback');
 });
 
+test('an admin can mark a valid saved response as submitted', async () => {
+  const survey = await published([{ id: 'q1', type: 'text', text: 'What changed?', required: true }]);
+  const { user, token } = await answering(survey);
+  await h.call('PATCH', `/api/users/surveys/${survey.id}/progress`, {
+    token, body: { answers: { q1: 'The flow is clearer now.' } }
+  });
+  const response = h.db.prepare(
+    'SELECT id FROM survey_responses WHERE survey_id = ? AND user_id = ?'
+  ).get(survey.id, user.id);
+
+  const marked = await h.post(
+    `/api/admin/surveys/${survey.id}/responses/${response.id}/submit`, {}, { token: adminToken }
+  );
+  assert.equal(marked.status, 200, JSON.stringify(marked.body));
+  assert.equal(marked.body.message, 'Response marked submitted');
+  const saved = h.db.prepare('SELECT completed_at, questions FROM survey_responses WHERE id = ?').get(response.id);
+  assert.ok(saved.completed_at);
+  assert.ok(JSON.parse(saved.questions).some(q => q.id === 'q1'));
+  assert.equal(Number(h.db.prepare('SELECT COUNT(*) AS c FROM feedback WHERE response_id = ?').get(response.id).c), 1);
+  assert.equal(Number(h.db.prepare("SELECT COUNT(*) AS c FROM engagement_history WHERE user_id = ? AND type = 'survey_completed'").get(user.id).c), 0,
+    'admin reclassification does not fabricate member engagement');
+});
+
+test('an in-progress response with missing required answers cannot be marked submitted', async () => {
+  const survey = await published([{ id: 'q1', type: 'text', text: 'Required answer', required: true }]);
+  const { user, token } = await answering(survey);
+  const response = h.db.prepare(
+    'SELECT id FROM survey_responses WHERE survey_id = ? AND user_id = ?'
+  ).get(survey.id, user.id);
+
+  const marked = await h.post(
+    `/api/admin/surveys/${survey.id}/responses/${response.id}/submit`, {}, { token: adminToken }
+  );
+  assert.equal(marked.status, 400);
+  assert.deepEqual(marked.body.missing, ['q1']);
+  assert.equal(h.db.prepare('SELECT completed_at FROM survey_responses WHERE id = ?').get(response.id).completed_at, null);
+});
+
+test('unfinished responses can be filtered and bulk-deleted with their saved progress', async () => {
+  const survey = await published([{ type: 'text', text: 'Anything to add?' }]);
+  const { user, token } = await answering(survey);
+  const response = h.db.prepare(
+    'SELECT id FROM survey_responses WHERE survey_id = ? AND user_id = ?'
+  ).get(survey.id, user.id);
+  await h.call('PATCH', `/api/users/surveys/${survey.id}/progress`, {
+    token, body: { answers: { [survey.questions[0].id]: 'Draft answer' } }
+  });
+
+  // An old linked item should be removed too, even though this response is not completed.
+  h.db.prepare(`
+    INSERT INTO feedback (id, user_id, type, content, source, survey_id, response_id, circle_id)
+    VALUES (?, ?, 'survey_response', 'Old stray draft', 'survey', ?, ?, ?)
+  `).run(h.uuid(), user.id, survey.id, response.id,
+    h.db.prepare('SELECT circle_id FROM surveys WHERE id = ?').get(survey.id).circle_id);
+
+  const first = await h.del(`/api/admin/surveys/${survey.id}/responses?status=in_progress`, { token: adminToken });
+  assert.equal(first.status, 409);
+  assert.equal(first.body.responses, 1);
+  assert.equal(first.body.feedback, 1);
+
+  const removed = await h.del(`/api/admin/surveys/${survey.id}/responses?status=in_progress&confirm=true`, { token: adminToken });
+  assert.equal(removed.status, 200, JSON.stringify(removed.body));
+  assert.equal(removed.body.deleted_responses, 1);
+  assert.equal(removed.body.deleted_feedback, 1);
+  assert.equal(Number(h.db.prepare('SELECT COUNT(*) AS c FROM survey_responses WHERE id = ?').get(response.id).c), 0);
+  assert.equal(Number(h.db.prepare('SELECT COUNT(*) AS c FROM feedback WHERE response_id = ?').get(response.id).c), 0);
+
+  const restarted = await h.post(`/api/users/surveys/${survey.id}/start`, {}, { token });
+  assert.equal(restarted.status, 200, 'the member can restart but the deleted draft cannot be resumed');
+});
+
 test('a response can be deleted separately, with its feedback verbatims', async () => {
   const survey = await published([{ type: 'text', text: 'What should improve?' }]);
   const { user, token } = await answering(survey);
@@ -921,26 +1041,32 @@ test('one key holds one submission, and cannot be used twice', async () => {
   assert.equal(reopened.status, 409, 'and reopening it says so rather than starting a second');
 });
 
-test('a key resumes its own submission and reaches no other', async () => {
+test('anonymous progress stays in the browser flow and never creates a draft row', async () => {
   const survey = await openToAnyone([{ id: 'q1', type: 'text', text: 'Thoughts?' }]);
   const first = (await link(survey, '/start', {})).body.response_key;
   const second = (await link(survey, '/start', {})).body.response_key;
-  assert.notEqual(first, second, 'two people are two submissions');
+  assert.notEqual(first, second, 'two tabs receive separate submission keys');
+  assert.equal(Number(h.db.prepare('SELECT COUNT(*) c FROM survey_responses WHERE survey_id = ?').get(survey.id).c), 0);
 
-  await h.call('PATCH', `/api/public/surveys/${survey.public_token}/progress`,
+  const saved = await h.call('PATCH', `/api/public/surveys/${survey.public_token}/progress`,
     { body: { response_key: first, answers: { q1: 'Half a thought' } } });
+  assert.equal(saved.status, 200);
+  assert.equal(saved.body.browser_only, true);
+  assert.equal(Number(h.db.prepare('SELECT COUNT(*) c FROM survey_responses WHERE survey_id = ?').get(survey.id).c), 0);
 
   const resumed = await link(survey, '/start', { response_key: first });
-  assert.deepEqual(resumed.body.answers, { q1: 'Half a thought' });
-
+  assert.deepEqual(resumed.body.answers, {}, 'the browser, not the API, holds unfinished answers');
+  assert.equal(resumed.body.response_key, first);
   const other = await link(survey, '/start', { response_key: second });
-  assert.deepEqual(other.body.answers, {}, 'one key cannot read another submission');
+  assert.deepEqual(other.body.answers, {}, 'one tab cannot read another tab\'s draft');
 });
 
-test('the key is never stored in a form that could be handed back out', async () => {
+test('the anonymous response key is hashed only when a completed response is recorded', async () => {
   const survey = await openToAnyone();
   const key = (await link(survey, '/start', {})).body.response_key;
+  assert.equal(h.db.prepare('SELECT * FROM survey_responses WHERE survey_id = ?').get(survey.id), undefined);
 
+  await link(survey, '/respond', { response_key: key, answers: { q1: 'Submitted' } });
   const row = h.db.prepare('SELECT * FROM survey_responses WHERE survey_id = ?').get(survey.id);
   assert.notEqual(row.anonymous_key_hash, key, 'stored hashed, like every other bearer secret');
   assert.ok(row.anonymous_key_hash.length === 64);

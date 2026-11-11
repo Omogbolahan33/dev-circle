@@ -1,5 +1,8 @@
 const db = require('../db');
 const { parseJSON } = require('../utils/helpers');
+const { PROFILE_FIELDS } = require('./memberFieldCatalog');
+const readiness = require('./readiness');
+const vocabularies = require('./vocabularies');
 
 // ─── Cohort rule engine ─────────────────────────────────────
 // Turns a stored filter_rules definition into SQL and resolves it to a member
@@ -18,19 +21,6 @@ const { parseJSON } = require('../utils/helpers');
 const CHANNELS = ['email', 'whatsapp', 'sms', 'calls', 'in_portal'];
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
-// Values already present in the member base. Filtering by a value nobody holds
-// returns nothing, so the list is drawn from the data rather than guessed.
-const distinct = column => async database => ((await database.prepare(
-  `SELECT DISTINCT ${column} AS value FROM users
-   WHERE COALESCE(${column}, '') != '' ORDER BY value`
-).all()) || []).map(r => r.value);
-
-// Same, for the JSON array columns
-const distinctInArray = column => async database => ((await database.prepare(
-  `SELECT DISTINCT json_each.value AS value FROM users, json_each(users.${column})
-   WHERE COALESCE(json_each.value, '') != '' ORDER BY value`
-).all()) || []).map(r => r.value);
-
 // Free text a member typed. A dropdown of everything anyone has ever written
 // would be unusable, so these stay open and lean on "contains".
 const OPEN_TEXT = new Set(['company']);
@@ -46,21 +36,9 @@ const FIELDS = {
     sql: 'u.status', type: 'text', label: 'Account status',
     values: ['active', 'inactive', 'suspended']
   },
-  work_sector: {
-    sql: 'u.work_sector', type: 'text', label: 'Work sector',
-    values: distinct('work_sector')
-  },
   company: {
     sql: 'u.company', type: 'text', label: 'Company'
     // deliberately open: one per member, so a list would be as long as the base
-  },
-  location_state: {
-    sql: 'u.location_state', type: 'text', label: 'State',
-    values: distinct('location_state')
-  },
-  gender: {
-    sql: 'u.gender', type: 'text', label: 'Gender',
-    values: distinct('gender')
   },
   kyb_completed: { sql: 'u.kyb_completed', type: 'bool', label: 'KYB completed' },
   engagement_streak: { sql: 'u.engagement_streak', type: 'number', label: 'Engagement streak' },
@@ -75,10 +53,17 @@ const FIELDS = {
     json: 'u.preferred_channels', type: 'array', label: 'Preferred channel',
     values: CHANNELS
   },
-  api_products: {
-    json: 'u.api_products', type: 'array', label: 'API product',
-    values: distinctInArray('api_products')
-  },
+  ...Object.fromEntries(PROFILE_FIELDS.map(field => [field.key, {
+    ...(field.storage.column ? { sql: `u.${field.storage.column}` } : {}),
+    ...(field.storage.json ? { json: `u.${field.storage.json}` } : {}),
+    type: field.type,
+    label: field.label,
+    values: field.key === 'api_products'
+      ? Object.entries(readiness.PRODUCT_LABELS).map(([value, label]) => ({ value, label }))
+      : field.vocabulary
+        ? async (_database, circleId) => vocabularies.listFor(field.vocabulary, circleId)
+        : field.values
+  }])),
 
   // Derived values
   age: {
@@ -111,7 +96,9 @@ const FIELDS = {
   cohort_id: {
     type: 'membership', label: 'Member of cohort',
     exists: 'SELECT 1 FROM user_cohorts WHERE cohort_id = ? AND user_id = u.id',
-    values: async db => await db.prepare('SELECT id AS value, name AS label FROM cohorts ORDER BY name').all()
+    values: async (database, circleId) => circleId
+      ? await database.prepare('SELECT id AS value, name AS label FROM cohorts WHERE circle_id = ? ORDER BY name').all(circleId)
+      : await database.prepare('SELECT id AS value, name AS label FROM cohorts ORDER BY name').all()
   },
   circle_id: {
     type: 'membership', label: 'Member of circle',
@@ -168,15 +155,20 @@ function buildClause(rule) {
   if (!field) throw new RuleError(`Unknown field "${rule.field}"`);
 
   const op = rule.op || 'eq';
+  const values = [...new Set((Array.isArray(rule.value) ? rule.value : [rule.value])
+    .filter(value => value !== undefined && value !== null && value !== '')
+    .map(String))];
+  if (!values.length) throw new RuleError(`Choose at least one value for "${field.label}"`);
+  const placeholders = values.map(() => '?').join(', ');
 
-  // Membership fields ask whether the member appears in some join table.
-  // EXISTS stops at the first matching row; IN (SELECT …) materialises the
-  // whole membership list per candidate.
+  // Multiple choices within one criterion mean "any of these values"; the
+  // not-equal operator excludes members matching any selected value.
   if (field.type === 'membership') {
-    const negate = op === 'neq';
+    if (!['eq', 'neq'].includes(op)) throw new RuleError(`"${field.label}" supports "is in" and "is not in" only`);
+    const predicate = field.exists.replace(/=\s*\?/, `IN (${placeholders})`);
     return {
-      sql: `${negate ? 'NOT ' : ''}EXISTS (${field.exists})`,
-      params: [String(rule.value)]
+      sql: `${op === 'neq' ? 'NOT ' : ''}EXISTS (${predicate})`,
+      params: values
     };
   }
 
@@ -184,22 +176,24 @@ function buildClause(rule) {
     if (!['eq', 'neq'].includes(op)) {
       throw new RuleError(`"${field.label}" supports "is" and "is not" only`);
     }
-    const exists = `EXISTS (SELECT 1 FROM json_each(${field.json}) WHERE json_each.value = ?)`;
-    return { sql: op === 'eq' ? exists : `NOT ${exists}`, params: [String(rule.value)] };
+    const exists = `EXISTS (SELECT 1 FROM json_each(${field.json}) WHERE json_each.value IN (${placeholders}))`;
+    return { sql: op === 'eq' ? exists : `NOT ${exists}`, params: values };
   }
 
   if (field.type === 'bool') {
     if (!['eq', 'neq'].includes(op)) {
       throw new RuleError(`"${field.label}" supports "is" and "is not" only`);
     }
-    const wanted = coerceBool(rule.value);
-    return { sql: `COALESCE(${field.sql}, 0) ${op === 'eq' ? '=' : '!='} ?`, params: [wanted] };
+    const wanted = values.map(coerceBool);
+    const comparator = op === 'eq' ? 'IN' : 'NOT IN';
+    return { sql: `COALESCE(${field.sql}, 0) ${comparator} (${wanted.map(() => '?').join(', ')})`, params: wanted };
   }
 
   if (field.type === 'number') {
+    if (values.length !== 1) throw new RuleError(`"${field.label}" accepts one number`);
     const sqlOp = OPERATORS[op];
     if (!sqlOp) throw new RuleError(`Unsupported operator "${op}" for ${field.label}`);
-    const num = Number(rule.value);
+    const num = Number(values[0]);
     if (!Number.isFinite(num)) throw new RuleError(`"${field.label}" expects a number, got "${rule.value}"`);
     // COALESCE keeps rows with no value from silently disappearing on <= checks
     return { sql: `COALESCE(${field.sql}, 0) ${sqlOp} ?`, params: [num] };
@@ -207,15 +201,24 @@ function buildClause(rule) {
 
   // text
   if (op === 'contains') {
-    return { sql: `${field.sql} LIKE ?`, params: [`%${rule.value}%`] };
+    if (values.length !== 1) throw new RuleError(`"${field.label}" contains accepts one value`);
+    return { sql: `${field.sql} LIKE ?`, params: [`%${values[0]}%`] };
+  }
+  if (Array.isArray(rule.value)) {
+    if (!['eq', 'neq'].includes(op)) throw new RuleError(`Unsupported operator "${op}" for ${field.label}`);
+    const comparator = op === 'eq' ? 'IN' : 'NOT IN';
+    return {
+      sql: `COALESCE(${field.sql}, '') ${comparator} (${placeholders})`,
+      params: values
+    };
   }
   const sqlOp = OPERATORS[op];
   if (!sqlOp) throw new RuleError(`Unsupported operator "${op}" for ${field.label}`);
   if (op === 'neq') {
     // NULL != 'x' is NULL in SQL, which would drop rows that have no value set
-    return { sql: `COALESCE(${field.sql}, '') != ?`, params: [String(rule.value)] };
+    return { sql: `COALESCE(${field.sql}, '') != ?`, params: [values[0]] };
   }
-  return { sql: `${field.sql} ${sqlOp} ?`, params: [String(rule.value)] };
+  return { sql: `${field.sql} ${sqlOp} ?`, params: [values[0]] };
 }
 
 function buildQuery(definition, { activeOnly = true, circleId = null } = {}) {
@@ -227,7 +230,8 @@ function buildQuery(definition, { activeOnly = true, circleId = null } = {}) {
   const seenJoins = new Set();
 
   for (const rule of rules) {
-    if (rule.value === undefined || rule.value === null || rule.value === '') continue;
+    if (rule.value === undefined || rule.value === null || rule.value === '' ||
+        (Array.isArray(rule.value) && rule.value.length === 0)) continue;
     const field = FIELDS[rule.field];
     if (field?.join && !seenJoins.has(field.join)) {
       seenJoins.add(field.join);
@@ -355,13 +359,13 @@ function operatorsFor(field) {
 
 // Normalise every value source to { value, label } so the UI has one shape to
 // render, whether it came from a constant, a distinct query, or a join table.
-async function resolveValues(field) {
+async function resolveValues(field, circleId) {
   if (field.type === 'bool') {
     return [{ value: 'yes', label: 'Yes' }, { value: 'no', label: 'No' }];
   }
   if (!field.values) return null;
 
-  const raw = typeof field.values === 'function' ? await field.values(db) : field.values;
+  const raw = typeof field.values === 'function' ? await field.values(db, circleId) : field.values;
   return (raw || [])
     .filter(v => v !== null && v !== undefined && v !== '')
     .map(v => (typeof v === 'object'
@@ -369,9 +373,9 @@ async function resolveValues(field) {
       : { value: String(v), label: String(v) }));
 }
 
-async function catalogue() {
+async function catalogue(circleId) {
   const keys = Object.entries(FIELDS);
-  const resolved = await Promise.all(keys.map(([, field]) => resolveValues(field)));
+  const resolved = await Promise.all(keys.map(([, field]) => resolveValues(field, circleId)));
   return keys.map(([key, field], i) => {
     const values = resolved[i];
     return {

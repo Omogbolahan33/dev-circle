@@ -2,6 +2,7 @@ const { Pool, types } = require('pg');
 const dns = require('dns');
 const config = require('../config');
 const { logger } = require('../utils/logger');
+const { statementsIn } = require('./sql');
 
 // ─── Postgres connection ────────────────────────────────────
 // Used when DATABASE_URL is set (e.g. Supabase Postgres). The pool is
@@ -66,6 +67,14 @@ function diagnoseConnectionError(err) {
     return {
       reason: 'DNS could not resolve the database hostname',
       fix: 'Check the host in DATABASE_URL for typos; on a fresh deploy DNS may just need a minute.'
+    };
+  }
+  if (/Connection terminated due to connection timeout|timeout exceeded when trying to connect/i.test(message)) {
+    return {
+      reason: 'Postgres did not provide a connection before the pool acquisition timeout',
+      fix: 'Check that the database is awake and reachable, verify DATABASE_URL and pool capacity, ' +
+        'and for Supabase serverless apps use the transaction-mode pooler on port 6543. ' +
+        'If the timeout is intermittent, inspect concurrent connections before increasing PG_CONNECTION_TIMEOUT_MS.'
     };
   }
   if (/ETIMEDOUT|ECONNREFUSED/.test(code + ' ' + message)) {
@@ -435,37 +444,16 @@ function prepare(sql) {
   };
 }
 
-// A schema string, split into the statements it is made of. pg will not take
-// several in one query, so they go one at a time.
-//
-// Comments are stripped rather than used to decide whether a chunk is worth
-// running, and that distinction is the whole of a bug that cost two tables.
-// Splitting on `;` puts the comment *above* a statement in the same chunk as
-// the statement; a check for "does this chunk start with `--`" then threw the
-// pair away together. Twenty-three of the ninety-five statements in the schema
-// were discarded that way — users, circles, roles, surveys and both onboarding
-// tables among them — and nothing said so. Existing deployments survived only
-// because those tables predated the comments being written above them.
-//
-// Only whole comment lines are removed. A `--` inside a string literal is left
-// alone, which is what stops this from quietly rewriting data.
-function statementsIn(sql) {
-  return sql
-    .split(';')
-    .map(chunk => chunk
-      .split('\n')
-      .filter(line => !/^\s*--/.test(line))
-      .join('\n')
-      .trim())
-    .filter(Boolean);
-}
-
 async function exec(sql) {
   const p = getPool();
   for (const stmt of statementsIn(sql)) {
     const final = translateSqliteToPostgres(stmt);
     // The translator turns a PRAGMA into a comment; there is nothing to send.
-    if (final && !/^\s*--/.test(final)) await p.query(final);
+    // DDL during a cold start can race a transient pooler timeout just like a
+    // normal request query, so use the same bounded acquisition retry here.
+    if (final && !/^\s*--/.test(final)) {
+      await withRetry(() => p.query(final), final.slice(0, 60));
+    }
   }
 }
 

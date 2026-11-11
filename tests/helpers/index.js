@@ -136,6 +136,7 @@ let madeUsers = 0;
 
 function makeUser(overrides = {}) {
   const identity = require('../../src/utils/identity');
+const { segmentForProducts } = require('../../src/utils/participantSegment');
   const id = uuid();
   // Every fixture member gets their own number, because the last four digits of
   // it are their credential: two members sharing a number would be two members
@@ -168,6 +169,8 @@ function makeUser(overrides = {}) {
     date_of_birth: '1994-01-01',
     ...overrides
   };
+  // Match the production invariant even when a test passes a stale segment.
+  user.segment = segmentForProducts(user.products);
 
   db.prepare(`
     INSERT INTO users (id, email, name, phone, phone_normalized, password_hash,

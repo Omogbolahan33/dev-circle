@@ -102,6 +102,27 @@ test('a card carries the settings its question type needs', () => {
   }
 });
 
+test('questions and option rows have drag handles instead of repeated arrow buttons', () => {
+  const { builder, el } = build([{
+    id: 'q1', type: 'choice', text: 'Environment?', options: ['Sandbox', 'Production']
+  }]);
+  builder.render();
+  const html = el.questions.innerHTML;
+  assert.match(html, /data-drag-question draggable="true"/);
+  assert.match(html, /data-drag-option draggable="true"/);
+  assert.ok(!html.includes('data-move='), 'no repeated up/down controls remain');
+});
+
+test('dropdown is a display setting on choice questions, not a type in the picker', () => {
+  const { builder, el } = build([{ id: 'q1', type: 'multi_choice', text: 'Tools?', options: ['CLI', 'SDK'] }]);
+  builder.renderTypeMenu();
+  builder.render();
+  assert.ok(el.questions.innerHTML.includes('data-set-check="dropdown"'));
+  assert.match(el.typeMenu.innerHTML, /data-type="choice"/);
+  assert.match(el.typeMenu.innerHTML, /data-type="multi_choice"/);
+  assert.ok(!el.typeMenu.innerHTML.includes('data-type="dropdown"'));
+});
+
 test('the type settings sit under one “More options” fold, and the fold says what is set', () => {
   // A text question: every settings row goes under the fold, and the fold's
   // label carries what has already been decided — so closed is not hidden
@@ -127,8 +148,11 @@ test('the type settings sit under one “More options” fold, and the fold says
   b2.render();
   html = e2.questions.innerHTML;
   assert.ok(html.indexOf('data-add-option="options"') < html.indexOf('data-toggle-more'), 'the options stay in the open');
-  assert.ok(html.indexOf('data-toggle-more') < html.indexOf('data-set-check="allow_other"'), 'the tuning is inside the fold');
-  assert.ok(/data-toggle-more[\s\S]{0,300}?an “other” option/.test(html), 'the fold says the “other” is on');
+  assert.ok(html.indexOf('class="options"') < html.indexOf('data-set-check="allow_other"'), 'Other sits just below the option list');
+  assert.ok(html.includes('class="option-actions"'), 'the two option controls are placed in a dedicated vertical stack');
+  assert.ok(html.indexOf('data-set-check="allow_other"') < html.indexOf('data-add-option="options"'), 'Other appears before adding another ordinary option');
+  assert.ok(html.includes('q-add-other on'), 'Other is visibly enabled beneath the options');
+  assert.ok(html.includes('Other option added'), 'the enabled control can be recognized and toggled off');
 
   // A rating's scale is tuning too, so it folds the same way
   const { builder: b3, el: e3 } = build([{ id: 'q1', type: 'rating', text: 'How clear?', scale: 5, style: 'stars' }]);
@@ -297,10 +321,14 @@ test('a choice option offers its line with a pen, and a written one reads as a q
   assert.ok(html.includes('data-attach-subtext'), 'the editor offers a picture from the device');
   assert.ok(!/option-desc-wrap open/.test(html), 'no editor is open until it is asked for');
 
-  // A dropdown option is a word and stays one: no pen, no line
-  const { builder: b2, el: plain } = build([{ id: 'q1', type: 'dropdown', text: 'Where?', options: ['NG', 'KE'] }]);
+  // Older dropdown questions open as single-choice questions with the display
+  // preference enabled; dropdown is no longer a separate authoring type.
+  const { builder: b2, state: s2, el: legacy } = build([{ id: 'q1', type: 'dropdown', text: 'Where?', options: ['NG', 'KE'] }]);
   b2.render();
-  assert.ok(!plain.questions.innerHTML.includes('option-desc-toggle'), 'a dropdown keeps its options plain');
+  assert.equal(s2.questions[0].type, 'choice');
+  assert.equal(s2.questions[0].dropdown, true);
+  assert.ok(legacy.questions.innerHTML.includes('data-set-check="dropdown"'));
+  assert.ok(!legacy.typeMenu.innerHTML.includes('data-type="dropdown"'));
 });
 
 test('branching on an answer is drawn where it is allowed, and nowhere else', () => {

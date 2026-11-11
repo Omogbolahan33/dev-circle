@@ -10,17 +10,87 @@ const circles = require('../services/circles');
 const scheduler = require('../services/scheduler');
 const surveyForm = require('../services/surveyForm');
 const readiness = require('../services/readiness');
+const memberFieldCatalog = require('../services/memberFieldCatalog');
 const vocabularies = require('../services/vocabularies');
 
 const router = express.Router();
 
+function responseQuestionList(snapshot, liveDefinition) {
+  let questions = parseJSON(snapshot, null);
+  // Older completed rows may carry the column's empty-array default rather
+  // than NULL. Treat that like a missing snapshot and use the survey definition.
+  if (!Array.isArray(questions) || questions.length === 0) {
+    questions = parseJSON(liveDefinition, []);
+  }
+  return Array.isArray(questions) ? questions : [];
+}
+
 // ─── Profile ────────────────────────────────────────────────
+
+// GET /api/users/dashboard — lean payload for the member home screen
+router.get('/dashboard', requireAuth, async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
+  if (!user) return res.status(404).json({ error: 'Member not found' });
+  await engagement.decayStale(user);
+
+  const [consent, memberCircles, stats] = await Promise.all([
+    db.prepare('SELECT channel, status, granted_at, withdrawn_at FROM consent WHERE user_id = ?').all(user.id),
+    circles.forUser(user.id),
+    db.prepare(`
+      SELECT 'sr' as k,
+             CAST(COUNT(*) AS INTEGER) as n,
+             CAST(SUM(CASE WHEN completed_at IS NOT NULL THEN 1 ELSE 0 END) AS INTEGER) as n2
+      FROM survey_responses WHERE user_id = ?
+      UNION ALL
+      SELECT 'gifts', CAST(COUNT(*) AS INTEGER), CAST(NULL AS INTEGER)
+      FROM user_gifts WHERE user_id = ?
+      UNION ALL
+      SELECT 'feedback', CAST(COUNT(*) AS INTEGER), CAST(NULL AS INTEGER)
+      FROM feedback WHERE user_id = ?
+    `).all(user.id, user.id, user.id)
+  ]);
+
+  const byK = Object.fromEntries((stats || []).map(row => [row.k, row]));
+  const circlesForBrand = (memberCircles || []).map(({ theme, ...circle }) => ({
+    ...circle,
+    brand: theme ? circles.brandOf({ theme, survey_theme: null }) : null
+  }));
+
+  res.json({
+    user: {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      company: user.company,
+      work_sector: user.work_sector,
+      created_at: user.created_at
+    },
+    circles: circlesForBrand,
+    stats: {
+      surveys_completed: Number(byK.sr?.n2 || 0),
+      surveys_invited: Number(byK.sr?.n || 0),
+      gifts_claimed: Number(byK.gifts?.n || 0),
+      feedback_submitted: Number(byK.feedback?.n || 0),
+      streak: user.engagement_streak,
+      best_streak: user.best_streak
+    },
+    readiness: readiness.computeReadiness(user, consent, {
+      wanted: await readiness.wantedFor(user.id)
+    })
+  });
+});
 
 // GET /api/users/profile
 router.get('/profile', requireAuth, async (req, res) => {
-  // The session already joined this member. Reloading users (and the inbox)
-  // was four extra round-trips for a screen that only needs counts.
-  const user = await engagement.decayStale(req.user) || req.user;
+  // Profile edits must be visible immediately, even when a later request lands
+  // on another app process with its own cached auth principal. Read the member
+  // row directly rather than treating the session's cached projection as the
+  // source of truth.
+  res.set('Cache-Control', 'no-store');
+  const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
+  if (!user) return res.status(404).json({ error: 'Member not found' });
+  await engagement.decayStale(user);
   const id = user.id;
 
   const [cohorts, consent, memberCircles, stats, participationConsent] = await Promise.all([
@@ -111,9 +181,12 @@ router.get('/profile', requireAuth, async (req, res) => {
     // Research profile choices shown on the member's editable profile.
     product_catalog: readiness.PARTICIPANT_PRODUCTS.map(p => ({ key: p, label: p })),
     age_groups: readiness.AGE_GROUPS,
-    segments: readiness.SEGMENTS,
+    segment_rules: readiness.SEGMENT_RULES,
     location_options: await vocabularies.listFor('location_state', req.circleId),
-    preferred_research_options: await vocabularies.listFor('preferred_research', req.circleId)
+    preferred_research_options: await vocabularies.listFor('preferred_research', req.circleId),
+    // A single metadata source for editable member fields and their finite
+    // choices; forms and targeting surfaces can render the same definitions.
+    profile_field_catalog: await memberFieldCatalog.profileCatalogue(db, req.circleId)
   });
 });
 
@@ -236,10 +309,11 @@ router.get('/sessions', requireAuth, async (req, res) => {
 
 // PUT /api/users/profile
 router.put('/profile', requireAuth, async (req, res) => {
+  res.set('Cache-Control', 'no-store');
   const {
     name, phone, company, work_sector,
     preferred_channels, preferred_days, preferred_time_start, preferred_time_end,
-    age_group, products, segment, employment, preferred_research, gender, location_state, api_products
+    age_group, products, employment, preferred_research, gender, location_state, api_products
   } = req.body;
 
   // req.user is the row the session was minted from; read the live record so a
@@ -307,11 +381,7 @@ router.put('/profile', requireAuth, async (req, res) => {
     if (age_group !== undefined && age_group !== null && age_group !== '' && !readiness.AGE_GROUPS.includes(age_group)) {
       throw new TypeError(`Unknown age group: ${age_group}`);
     }
-    if (segment !== undefined && segment !== null && segment !== '' && !readiness.SEGMENTS.includes(segment)) {
-      throw new TypeError(`Unknown segment: ${segment}`);
-    }
     setText('age_group', age_group || null);
-    setText('segment', segment || null);
     if (employment !== undefined && employment !== null && employment !== '' && !readiness.EMPLOYMENT_TYPES.includes(employment)) {
       throw new TypeError(`Unknown employment type: ${employment}`);
     }
@@ -344,7 +414,9 @@ router.put('/profile', requireAuth, async (req, res) => {
       if (!Array.isArray(products)) throw new TypeError('products must be an array');
       const invalid = products.filter(p => !readiness.PARTICIPANT_PRODUCTS.includes(p));
       if (invalid.length) throw new TypeError(`Unknown product(s): ${invalid.join(', ')}`);
-      setJson('products', [...new Set(products)]);
+      const distinctProducts = [...new Set(products.map(product => String(product).trim()).filter(Boolean))];
+      setJson('products', distinctProducts);
+      setText('segment', readiness.segmentForProducts(distinctProducts));
     }
   } catch (err) {
     return res.status(400).json({ error: err.message });
@@ -638,15 +710,18 @@ router.get('/engagement', requireAuth, async (req, res) => {
     params.push(type);
   }
   const filter = where.join(' AND ');
+  const summaryOnly = req.query.summary === '1';
 
   const [history, totalRow] = await Promise.all([
     db.prepare(`
       SELECT * FROM engagement_history WHERE ${filter}
       ORDER BY created_at DESC LIMIT ? OFFSET ?
     `).all(...params, limit, offset),
-    db.prepare(`SELECT COUNT(*) as c FROM engagement_history WHERE ${filter}`).get(...params)
+    summaryOnly ? Promise.resolve(null)
+      : db.prepare(`SELECT COUNT(*) as c FROM engagement_history WHERE ${filter}`).get(...params)
   ]);
 
+  if (summaryOnly) return res.json({ history: history || [] });
   res.json({
     history: history || [],
     pagination: pageMeta({ page, limit, total: Number(totalRow?.c || 0) })
@@ -869,6 +944,73 @@ router.get('/surveys', requireAuth, async (req, res) => {
   res.json({ surveys: result });
 });
 
+// Completed responses belong to the member, not to the survey's current state:
+// include them even if a survey has since closed or is no longer targeted.
+router.get('/surveys/answered', requireAuth, async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const { offset, limit, page } = paginate(req.query.page, req.query.limit || 20, { max: 50 });
+  const [rows, totalRow] = await Promise.all([
+    db.prepare(`
+      SELECT sr.id, sr.survey_id, sr.answers, sr.questions AS response_questions,
+             sr.completed_at, s.title, s.engagement_mode, s.questions AS live_questions
+      FROM survey_responses sr
+      LEFT JOIN surveys s ON s.id = sr.survey_id
+      WHERE sr.user_id = ? AND sr.completed_at IS NOT NULL
+      ORDER BY sr.completed_at DESC, sr.id
+      LIMIT ? OFFSET ?
+    `).all(req.user.id, limit, offset),
+    db.prepare(`
+      SELECT COUNT(*) AS c FROM survey_responses
+      WHERE user_id = ? AND completed_at IS NOT NULL
+    `).get(req.user.id)
+  ]);
+
+  const responses = (rows || []).map(row => {
+    const answers = parseJSON(row.answers, {});
+    const questions = responseQuestionList(row.response_questions, row.live_questions);
+    const asked = surveyForm.visible(questions, answers);
+    return {
+      id: row.id,
+      survey_id: row.survey_id,
+      title: row.title || 'Completed survey',
+      engagement_mode: row.engagement_mode,
+      completed_at: row.completed_at,
+      question_count: asked.filter(surveyForm.isAnswerable).length
+    };
+  });
+  res.json({ responses, pagination: pageMeta({ page, limit, total: Number(totalRow?.c || 0) }) });
+});
+
+// Only the owner can read their stored answers. The question snapshot is the
+// exact definition shown at completion; old rows fall back to the live survey.
+router.get('/surveys/answered/:responseId', requireAuth, async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const row = await db.prepare(`
+    SELECT sr.id, sr.survey_id, sr.answers, sr.questions AS response_questions,
+           sr.completed_at, s.title, s.description, s.engagement_mode,
+           s.questions AS live_questions
+    FROM survey_responses sr
+    LEFT JOIN surveys s ON s.id = sr.survey_id
+    WHERE sr.id = ? AND sr.user_id = ? AND sr.completed_at IS NOT NULL
+  `).get(req.params.responseId, req.user.id);
+  if (!row) return res.status(404).json({ error: 'Survey response not found' });
+
+  const answers = parseJSON(row.answers, {});
+  const questions = responseQuestionList(row.response_questions, row.live_questions);
+  res.json({
+    response: {
+      id: row.id,
+      survey_id: row.survey_id,
+      title: row.title || 'Completed survey',
+      description: row.description,
+      engagement_mode: row.engagement_mode,
+      completed_at: row.completed_at,
+      answers,
+      questions: surveyForm.visible(questions, answers)
+    }
+  });
+});
+
 // POST /api/users/surveys/:id/start
 router.post('/surveys/:id/start', requireAuth, async (req, res) => {
   const survey = await db.prepare('SELECT * FROM surveys WHERE id = ? AND status = ?').get(req.params.id, 'active');
@@ -898,6 +1040,7 @@ router.post('/surveys/:id/start', requireAuth, async (req, res) => {
 
   const hydrated = surveyForm.hydrate(survey);
   const circleRow = survey.circle_id ? await circles.byId(survey.circle_id) : null;
+  const restoredAnswers = await verbatims.restoreResponseAnswers(response, hydrated.questions);
 
   res.json({
     survey: {
@@ -907,10 +1050,10 @@ router.post('/surveys/:id/start', requireAuth, async (req, res) => {
       // product's, resolved here so the page never has to know the order.
       theme: surveyForm.resolveThemeFor(hydrated.theme, circleRow)
     },
-    response,
+    response: { ...response, answers: JSON.stringify(restoredAnswers) },
     // Answers kept from a previous sitting, so leaving a long survey and
     // coming back is not the same as starting again
-    answers: parseJSON(response.answers, {})
+    answers: restoredAnswers
   });
 });
 
@@ -1005,20 +1148,22 @@ router.post('/surveys/:id/respond', requireAuth, async (req, res) => {
   // the definition here is what lets both be true: the author can fix a typo
   // in question four, and the people who already answered it keep the question
   // they were actually shown.
-  await db.prepare(`
-    UPDATE survey_responses SET answers = ?, questions = ?, completed_at = datetime('now')
-    WHERE id = ?
-  `).run(JSON.stringify(checked.answers), JSON.stringify(questions), response.id);
-
   // The survey may have branched to its end before it was over — a consent
   // question answered "no" ends it there — and the ending the author wrote
   // for that is what the member's screen should carry, not the thank-you of
   // a survey walked to the end.
   const ending = surveyForm.ending(questions, checked.answers);
 
-  // Free-text answers are feedback, so they are filed with the rest of it
-  // rather than left inside this one response's JSON where nobody can find them
-  const { filed } = await verbatims.record(req.user.id, survey, checked.answers, { responseId: response.id });
+  // Keep the canonical feedback row and the response projection in one commit:
+  // if either write fails, neither half of the answer is left behind.
+  let filed = 0;
+  await db.atomic(async () => {
+    await db.prepare(`
+      UPDATE survey_responses SET answers = ?, questions = ?, completed_at = datetime('now')
+      WHERE id = ?
+    `).run(JSON.stringify(checked.answers), JSON.stringify(questions), response.id);
+    filed = (await verbatims.record(req.user.id, survey, checked.answers, { responseId: response.id })).filed;
+  });
 
   const { streak } = await engagement.record(req.user.id, 'survey_completed', {
     referenceId: survey.id,

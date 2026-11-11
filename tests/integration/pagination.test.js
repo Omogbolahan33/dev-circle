@@ -41,6 +41,17 @@ test('a member can walk past the first page of their own history', async () => {
   assert.equal(last.body.pagination.has_more, false, 'and says it is the end');
 });
 
+test('dashboard history mode skips the count and returns only the requested slice', async () => {
+  const user = h.makeUser({ email: 'dashboard-history@example.ng' });
+  await giveHistory(user.id, 4);
+  const token = await h.loginUser(user.email);
+
+  const res = await h.get('/api/users/engagement?limit=200&summary=1', { token });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.history.length, 4);
+  assert.equal(res.body.pagination, undefined);
+});
+
 test('walking the pages sees every event exactly once', async () => {
   // The bug this guards is the one paginate() already carried a note about:
   // an offset computed from the requested limit rather than the clamped one

@@ -108,43 +108,92 @@ async function audienceFor(session) {
   return (await db.prepare(`SELECT ${USER_NOTIFY_COLS} FROM users u WHERE u.status = 'active'`).all()) || [];
 }
 
-// Who this session reaches, and who it clashes with — so a session can be
-// moved before it is announced rather than after nobody turns up.
-async function preview(session) {
-  const when = parseWhen(session.scheduled_for);
-  if (!when) throw new SessionError('scheduled_for is not a valid date');
-
-  const audience = await audienceFor(session);
-  const channels = parseJSON(session.channels, ['in_portal']) || ['in_portal'];
-
+// Summarise one audience after its consent rows have been loaded in a batch.
+async function previewAudience(session, when, audience, channels, consentByUser, compact = false) {
   const available = [];
   const unavailable = [];
   const unreachable = [];
+  let availableCount = 0;
+  let unavailableCount = 0;
+  let unreachableCount = 0;
+  const unavailableNames = [];
 
   for (const user of audience) {
     const slot = availability(user, when);
-    const { allowed, skipped } = await notifications.resolveChannels(user, channels, 'survey_invites');
-
+    const { allowed, skipped } = await notifications.resolveChannels(
+      user, channels, 'survey_invites', { consented: consentByUser.get(user.id) || new Set() }
+    );
     const entry = {
       id: user.id, name: user.name, email: user.email,
       channels: allowed, reason: slot.reason
     };
 
-    if (!allowed.length) unreachable.push({ ...entry, reasons: skipped.map(s => s.reason) });
-    else if (slot.available) available.push(entry);
-    else unavailable.push(entry);
+    if (!allowed.length) {
+      unreachableCount++;
+      if (!compact) unreachable.push({ ...entry, reasons: skipped.map(s => s.reason) });
+    } else if (slot.available) {
+      availableCount++;
+      if (!compact) available.push(entry);
+    } else {
+      unavailableCount++;
+      if (unavailableNames.length < 4) unavailableNames.push({ name: user.name, email: user.email });
+      if (!compact) unavailable.push(entry);
+    }
   }
 
   const { day } = localParts(when);
+  if (compact) {
+    return {
+      session_id: session.id,
+      scheduled_for: session.scheduled_for,
+      weekday: day,
+      total: audience.length,
+      available_count: availableCount,
+      unavailable_count: unavailableCount,
+      unavailable_preview: unavailableNames,
+      unreachable_count: unreachableCount
+    };
+  }
+  return { scheduled_for: session.scheduled_for, weekday: day, total: audience.length, available, unavailable, unreachable };
+}
 
-  return {
-    scheduled_for: session.scheduled_for,
-    weekday: day,
-    total: audience.length,
-    available,
-    unavailable,
-    unreachable
-  };
+// Who this session reaches, and who it clashes with — so a session can be
+// moved before it is announced rather than after nobody turns up.
+async function preview(session) {
+  const when = parseWhen(session.scheduled_for);
+  if (!when) throw new SessionError('scheduled_for is not a valid date');
+  const audience = await audienceFor(session);
+  const channels = parseJSON(session.channels, ['in_portal']) || ['in_portal'];
+  const needsConsent = channels.some(channel => channel !== 'in_portal');
+  const consentByUser = needsConsent
+    ? await notifications.grantedChannelsByUser(audience.map(user => user.id))
+    : new Map();
+  return previewAudience(session, when, audience, channels, consentByUser);
+}
+
+// Batch the view's upcoming-session previews. Audience lookups remain scoped
+// per distinct session, but all consent reads are shared and the payload is a
+// count/name summary instead of repeating full audience records per session.
+async function previewMany(sessions = []) {
+  const prepared = await Promise.all(sessions.map(async session => {
+    const when = parseWhen(session.scheduled_for);
+    if (!when) throw new SessionError(`Session ${session.id} has an invalid scheduled_for date`);
+    return {
+      session,
+      when,
+      audience: await audienceFor(session),
+      channels: parseJSON(session.channels, ['in_portal']) || ['in_portal']
+    };
+  }));
+  const needsConsent = prepared.some(({ channels }) => channels.some(channel => channel !== 'in_portal'));
+  const users = new Map();
+  for (const item of prepared) for (const user of item.audience) users.set(user.id, user);
+  const consentByUser = needsConsent
+    ? await notifications.grantedChannelsByUser([...users.keys()])
+    : new Map();
+  return Promise.all(prepared.map(({ session, when, audience, channels }) =>
+    previewAudience(session, when, audience, channels, consentByUser, true)
+  ));
 }
 
 // ─── Dispatch ───────────────────────────────────────────────

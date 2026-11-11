@@ -34,7 +34,9 @@ function dbReady() {
     if (!db.ready || typeof db.ready.then !== 'function') return next();
 
     try {
-      if (!attempt) attempt = db.ready;
+      if (!attempt) {
+        attempt = typeof db.retryReady === 'function' ? db.retryReady() : db.ready;
+      }
       await attempt;
       return next();
     } catch (err) {

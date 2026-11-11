@@ -53,28 +53,54 @@ test('a written answer is filed as feedback against the member', async () => {
   const filed = h.db.prepare("SELECT * FROM feedback WHERE user_id = ? AND source = 'survey'").all(user.id);
 
   assert.equal(filed.length, 1);
-  assert.equal(filed[0].content, 'The webhook retry intervals are undocumented.');
+  assert.equal(filed[0].content, '', 'linked Feedback stores no duplicate answer text');
   assert.equal(filed[0].type, 'survey_response');
   assert.equal(filed[0].survey_id, survey.id);
   assert.equal(filed[0].question_id, 'q3');
+
+  const stored = h.db.prepare('SELECT * FROM survey_responses WHERE survey_id = ? AND user_id = ?')
+    .get(survey.id, user.id);
+  assert.equal(JSON.parse(stored.answers).q3, 'The webhook retry intervals are undocumented.',
+    'the complete answer is stored in survey_responses');
+  const responseList = await h.get(`/api/admin/surveys/${survey.id}/responses`, { token: adminToken });
+  assert.equal(responseList.body.responses[0].answers.q3,
+    'The webhook retry intervals are undocumented.', 'the response API reconstructs its original answer shape');
 });
 
-test('feedback items can be independently deleted with confirmation', async () => {
+test('survey responses cannot be deleted from Feedback', async () => {
   const user = h.makeUser({ password: 'dev-password' });
   const survey = makeSurvey();
-  await respond(user, survey, { q3: 'Please improve the SDK examples.' });
-  const item = h.db.prepare("SELECT id FROM feedback WHERE user_id = ? AND source = 'survey'").get(user.id);
+  await respond(user, survey, {
+    q3: 'Please improve the SDK examples.', q4: 'The getting-started guide is useful.'
+  });
+  const item = h.db.prepare("SELECT id FROM feedback WHERE user_id = ? AND source = 'survey' AND question_id = 'q3'")
+    .get(user.id);
 
-  const first = await h.del(`/api/admin/feedback/${item.id}`, { token: adminToken });
-  assert.equal(first.status, 409);
-  assert.equal(first.body.confirm_required, true);
-  assert.equal(first.body.linked_response, true);
+  const refused = await h.del(`/api/admin/feedback/${item.id}?confirm=true`, { token: adminToken });
+  assert.equal(refused.status, 409);
+  assert.equal(refused.body.delete_from, 'survey_responses');
+  assert.equal(Number(h.db.prepare('SELECT COUNT(*) AS c FROM feedback WHERE id = ?').get(item.id).c), 1,
+    'the survey answer projection remains in Feedback');
+  const response = h.db.prepare('SELECT answers FROM survey_responses WHERE survey_id = ? AND user_id = ?')
+    .get(survey.id, user.id);
+  const storedAnswers = JSON.parse(response.answers);
+  assert.equal(storedAnswers.q3, 'Please improve the SDK examples.',
+    'the answer remains in the canonical survey response');
+  assert.equal(storedAnswers.q4, 'The getting-started guide is useful.');
+  const responseList = await h.get(`/api/admin/surveys/${survey.id}/responses`, { token: adminToken });
+  const listedAnswers = responseList.body.responses[0].answers;
+  assert.equal(listedAnswers.q3, 'Please improve the SDK examples.',
+    'the original answer remains visible in survey results');
+  assert.equal(listedAnswers.q4, 'The getting-started guide is useful.');
 
-  const removed = await h.del(`/api/admin/feedback/${item.id}?confirm=true`, { token: adminToken });
-  assert.equal(removed.status, 200, JSON.stringify(removed.body));
-  assert.equal(Number(h.db.prepare('SELECT COUNT(*) AS c FROM feedback WHERE id = ?').get(item.id).c), 0);
-  assert.equal(Number(h.db.prepare('SELECT COUNT(*) AS c FROM survey_responses WHERE survey_id = ? AND user_id = ?')
-    .get(survey.id, user.id).c), 1, 'the feedback action does not also erase the survey response');
+  const memberToken = await h.loginUser(user.email);
+  const direct = await h.post('/api/feedback', { content: 'A separate direct feedback item.' }, { token: memberToken });
+  const directId = direct.body.feedback.id;
+  const confirmation = await h.del(`/api/admin/feedback/${directId}`, { token: adminToken });
+  assert.equal(confirmation.status, 409);
+  assert.equal(confirmation.body.confirm_required, true);
+  const removed = await h.del(`/api/admin/feedback/${directId}?confirm=true`, { token: adminToken });
+  assert.equal(removed.status, 200, 'non-survey Feedback sources remain deletable here');
 });
 
 test('the question is kept with the answer', async () => {
@@ -86,6 +112,23 @@ test('the question is kept with the answer', async () => {
   const filed = h.db.prepare("SELECT prompt FROM feedback WHERE source = 'survey'").get();
   // "About a week." on its own says nothing; the prompt is what makes it mean something
   assert.equal(filed.prompt, 'What could we improve?');
+});
+
+test('Other text stays in the response while Feedback reuses its multi-choice answer', async () => {
+  const user = h.makeUser({ password: 'dev-password' });
+  const survey = makeSurvey({ questions: [
+    { id: 'q5', type: 'multi_choice', text: 'Which docs did you use?', options: ['API reference', 'Quickstart'], allow_other: true }
+  ] });
+
+  await respond(user, survey, { q5: ['API reference', 'A migration guide'] });
+  const stored = h.db.prepare('SELECT * FROM survey_responses WHERE survey_id = ? AND user_id = ?')
+    .get(survey.id, user.id);
+  assert.deepEqual(JSON.parse(stored.answers).q5, ['API reference', 'A migration guide']);
+  assert.equal(h.db.prepare("SELECT content FROM feedback WHERE survey_id = ? AND question_id = 'q5'")
+    .get(survey.id).content, '', 'the linked Feedback row contains no duplicate answer text');
+
+  const responseList = await h.get(`/api/admin/surveys/${survey.id}/responses`, { token: adminToken });
+  assert.deepEqual(responseList.body.responses[0].answers.q5, ['API reference', 'A migration guide']);
 });
 
 test('ratings and picked options are not filed as verbatims', async () => {
@@ -126,7 +169,9 @@ test('answers are stored as written, not interpreted', async () => {
   await respond(user, survey, { q3: written });
 
   const filed = h.db.prepare("SELECT content FROM feedback WHERE source = 'survey'").get();
-  assert.equal(filed.content, written.trim(), 'only surrounding whitespace is touched');
+  assert.equal(filed.content, '', 'linked feedback keeps no second stored copy');
+  const stored = JSON.parse(h.db.prepare('SELECT answers FROM survey_responses WHERE user_id = ?').get(user.id).answers);
+  assert.equal(stored.q3, written.trim(), 'the canonical response keeps the complete validated answer');
 });
 
 test('filing the same response twice does not duplicate the verbatim', async () => {
@@ -239,18 +284,23 @@ test('feedback raised in Dev Circle can still be triaged', async () => {
 
 // ─── The survey's own results are untouched ─────────────────
 
-test('the response keeps its answers, so survey results are unaffected', async () => {
+test('the feedback answer has one stored copy and survey APIs still return it', async () => {
   const user = h.makeUser({ password: 'dev-password' });
   const survey = makeSurvey();
 
   await respond(user, survey, { q1: 4, q3: 'Filed as feedback too.' });
 
   const response = h.db.prepare('SELECT answers FROM survey_responses WHERE user_id = ?').get(user.id);
-  const answers = JSON.parse(response.answers);
+  const storedAnswers = JSON.parse(response.answers);
 
-  // Filing a copy as feedback must not move it out of the survey it belongs to
-  assert.equal(answers.q1, 4);
-  assert.equal(answers.q3, 'Filed as feedback too.');
+  assert.equal(storedAnswers.q1, 4, 'measurement answers remain in the response JSON');
+  assert.equal(storedAnswers.q3, 'Filed as feedback too.',
+    'the survey response remains the canonical stored copy');
+  assert.equal(h.db.prepare("SELECT content FROM feedback WHERE user_id = ? AND question_id = 'q3'")
+    .get(user.id).content, '', 'the linked Feedback row stores only the reference, not duplicate text');
+  const responseList = await h.get(`/api/admin/surveys/${survey.id}/responses`, { token: adminToken });
+  assert.equal(responseList.body.responses[0].answers.q3, 'Filed as feedback too.',
+    'the survey API reconstructs the same answer object for its results');
 });
 
 test('survey responses still export with their verbatims', async () => {
@@ -272,22 +322,21 @@ test('answers collected before this existed are filed retrospectively', async ()
   const survey = makeSurvey();
 
   // A response written the old way: the sentence exists only inside the JSON
+  const responseId = h.uuid();
   h.db.prepare(`
     INSERT INTO survey_responses (id, survey_id, user_id, answers, completed_at)
     VALUES (?, ?, ?, ?, datetime('now', '-40 days'))
-  `).run(h.uuid(), survey.id, user.id, JSON.stringify({ q3: 'Said long before anyone could search it.' }));
+  `).run(responseId, survey.id, user.id, JSON.stringify({ q3: 'Said long before anyone could search it.' }));
 
   assert.equal(h.db.prepare("SELECT COUNT(*) c FROM feedback WHERE source = 'survey'").get().c, 0);
 
   // The migration's backfill, applied to this response
   const { filed } = await verbatims.record(user.id, survey,
-    JSON.parse(h.db.prepare('SELECT answers FROM survey_responses WHERE user_id = ?').get(user.id).answers));
+    JSON.parse(h.db.prepare('SELECT answers FROM survey_responses WHERE user_id = ?').get(user.id).answers),
+    { responseId });
 
   assert.equal(filed, 1);
-  assert.equal(
-    h.db.prepare("SELECT content FROM feedback WHERE source = 'survey'").get().content,
-    'Said long before anyone could search it.'
-  );
+  assert.equal(h.db.prepare("SELECT content FROM feedback WHERE source = 'survey'").get().content, '');
 });
 
 test('the migration backfills a database that predates it', async () => {
@@ -327,8 +376,10 @@ test('the migration backfills a database that predates it', async () => {
 
     const filed = old.prepare("SELECT * FROM feedback WHERE source = 'survey'").all();
     assert.equal(filed.length, 1, 'answers collected before this existed must be brought forward');
-    assert.equal(filed[0].content, 'Webhook retry intervals are undocumented.');
+    assert.equal(filed[0].content, '', 'the migration moves historical answers back to their response source');
     assert.equal(filed[0].prompt, 'What could we improve?');
+    const restored = JSON.parse(old.prepare('SELECT answers FROM survey_responses').get().answers);
+    assert.equal(restored.q2, 'Webhook retry intervals are undocumented.');
     assert.equal(filed[0].user_id, userId);
     // Dated when it was said, not when the migration happened
     assert.ok(filed[0].created_at < new Date().toISOString().slice(0, 10));

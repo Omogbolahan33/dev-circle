@@ -51,6 +51,25 @@ router.get('/', requirePermission('sessions.read'), async (req, res) => {
   res.json({ sessions: (sessions || []).map(hydrate) });
 });
 
+// POST /api/admin/sessions/previews — compact availability for a session list.
+// One request replaces the browser's per-session preview fan-out.
+router.post('/previews', requirePermission('sessions.read'), async (req, res) => {
+  const ids = [...new Set(Array.isArray(req.body?.ids) ? req.body.ids.filter(id => typeof id === 'string') : [])];
+  if (ids.length > 40) return res.status(400).json({ error: 'Request at most 40 session previews' });
+  if (!ids.length) return res.json({ previews: [] });
+
+  const rows = await db.prepare(`
+    SELECT * FROM scheduled_sessions
+    WHERE circle_id = ? AND id IN (${ids.map(() => '?').join(',')})
+  `).all(req.circleId, ...ids);
+  try {
+    res.json({ previews: await scheduler.previewMany(rows || []) });
+  } catch (err) {
+    if (err instanceof scheduler.SessionError) return res.status(400).json({ error: err.message });
+    throw err;
+  }
+});
+
 // GET /api/admin/sessions/:id
 router.get('/:id', requirePermission('sessions.read'), async (req, res) => {
   const session = await db.prepare('SELECT * FROM scheduled_sessions WHERE id = ?').get(req.params.id);

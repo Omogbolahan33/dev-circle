@@ -58,10 +58,58 @@
     .grid-table td { padding: var(--sp-2); text-align: center; border-top: 1px solid var(--line-faint); }
     .grid-cell { display: block; border-radius: var(--r-sm); padding: var(--sp-1) 0; font-family: var(--font-mono); font-size: var(--fs-xs); }
 
-    .rank-row { display: grid; grid-template-columns: 28px 1fr auto; gap: var(--sp-3); align-items: center; margin-bottom: var(--sp-2); font-size: var(--fs-sm); }
+    .rank-row { display: grid; grid-template-columns: 28px minmax(100px, 180px) minmax(100px, 1fr) auto; gap: var(--sp-3); align-items: center; margin-bottom: var(--sp-2); font-size: var(--fs-sm); }
     .rank-pos { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--blue-ink); }
+    .chart-bars { display: flex; flex-direction: column; gap: var(--sp-2); margin-top: var(--sp-3); }
+    .chart-bar-row { display: grid; grid-template-columns: minmax(90px, 180px) minmax(80px, 1fr) auto; gap: var(--sp-3); align-items: center; font-size: var(--fs-sm); }
+    .chart-track { display: block; height: 9px; border-radius: var(--r-full); background: var(--tint-2); overflow: hidden; }
+    .chart-fill { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--cd-blue), var(--violet)); }
+    .pie-chart-layout { display: grid; grid-template-columns: minmax(140px, 210px) minmax(220px, 1fr); gap: var(--sp-6); align-items: center; }
+    .pie-chart { width: min(100%, 200px); aspect-ratio: 1; border-radius: 50%; border: 1px solid var(--line-faint); }
+    .pie-legend { display: flex; flex-direction: column; gap: var(--sp-2); }
+    .pie-legend-row { display: grid; grid-template-columns: 12px minmax(70px, 1fr) auto; gap: var(--sp-2); align-items: center; font-size: var(--fs-sm); }
+    .pie-swatch { width: 10px; height: 10px; border-radius: 3px; }
+    .analysis-filter { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); margin-bottom: var(--sp-4); padding: var(--sp-2) var(--sp-3); border: 1px solid var(--cd-blue-40); border-radius: var(--r-md); color: var(--ash); font-size: var(--fs-sm); }
+    .summary-visual { cursor: pointer; }
+    .summary-visual:focus-visible { outline: 2px solid var(--cd-blue); outline-offset: 4px; border-radius: var(--r-sm); }
+    .word-cloud { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: var(--sp-2) var(--sp-4); min-height: 150px; padding: var(--sp-5); border: 1px solid var(--line-faint); border-radius: var(--r-md); background: var(--surface-1); }
+    .word-cloud-word { font-weight: var(--fw-semibold); line-height: 1.15; }
+    [data-drill-kind] { cursor: pointer; }
+    [data-drill-kind]:focus-visible { outline: 2px solid var(--cd-blue); outline-offset: 2px; }
+    .chart-bar-row[data-drill-kind]:hover, .pie-legend-row[data-drill-kind]:hover { color: var(--white); }
+    .word-cloud-word[data-drill-kind]:hover { text-decoration: underline; text-underline-offset: 3px; }
+    .dist-bar[data-drill-kind]:hover { background: var(--violet); }
+    .grid-cell[data-drill-kind]:hover { outline: 2px solid var(--cd-blue); }
+    .drill-results:not([hidden]) { margin-top: var(--sp-4); padding: var(--sp-4); border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface-1); }
+    .drill-results-head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); margin-bottom: var(--sp-2); font-size: var(--fs-sm); }
+    .drill-answer { padding: var(--sp-3) 0 var(--sp-3) var(--sp-4); border-left: 2px solid var(--cd-blue); margin: 0; font-size: var(--fs-sm); line-height: var(--lh-loose); color: var(--ash); }
+    @media (max-width: 600px) {
+      .pie-chart-layout { grid-template-columns: 1fr; justify-items: center; }
+      .pie-legend { width: 100%; }
+      .rank-row { grid-template-columns: 24px minmax(75px, 1fr) minmax(60px, 1fr); }
+      .rank-row .rank-meta { grid-column: 2 / -1; }
+    }
 
     .asked-note { font-size: var(--fs-xs); color: var(--gold-ink); margin-bottom: var(--sp-3); }
+
+    .survey-tabs-row { display: flex; align-items: center; gap: var(--sp-3); }
+    .survey-tabs-row .tabs { flex: 1; min-width: 0; }
+    .survey-tabs-actions { display: flex; align-items: center; gap: var(--sp-2); flex-shrink: 0; margin-top: var(--sp-5); }
+    @media (max-width: 640px) {
+      .survey-tabs-row { flex-wrap: wrap; }
+      .survey-tabs-row .tabs { width: 100%; flex: none; }
+      .survey-tabs-actions { margin-top: 0; }
+    }
+
+    .actions-menu { position: relative; display: inline-block; }
+    .actions-menu > summary { list-style: none; cursor: pointer; display: inline-flex; align-items: center; gap: var(--sp-2); }
+    .actions-menu > summary::-webkit-details-marker { display: none; }
+    .actions-menu-pop { position: absolute; z-index: 40; top: calc(100% + 6px); right: 0; min-width: 210px; padding: var(--sp-1); border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface-3); box-shadow: 0 10px 28px rgba(0,0,0,.18); }
+    .actions-menu-item { display: flex; align-items: center; width: 100%; padding: var(--sp-2) var(--sp-3); border: 0; border-radius: var(--r-sm); background: transparent; color: var(--white); font: inherit; font-size: var(--fs-sm); text-align: left; text-decoration: none; cursor: pointer; white-space: nowrap; }
+    .actions-menu-item:hover:not(:disabled) { background: var(--tint-2); text-decoration: none; }
+    .actions-menu-item.danger { color: var(--rose-ink); }
+    .actions-menu-item:disabled { opacity: .45; cursor: not-allowed; }
+    .actions-menu-divider { height: 1px; margin: var(--sp-1) var(--sp-2); background: var(--line); }
   </style>
 </head>
 <body>
@@ -84,10 +132,13 @@
         <div class="page-actions" id="actions"></div>
       </div>
 
-      <nav class="tabs">
-        <button class="tab active" data-panel="summary">Summary</button>
-        <button class="tab" data-panel="individual">Individual responses</button>
-      </nav>
+      <div class="survey-tabs-row">
+        <nav class="tabs">
+          <button class="tab active" data-panel="summary">Summary</button>
+          <button class="tab" data-panel="individual">Individual responses</button>
+        </nav>
+        <div class="survey-tabs-actions" id="tabActions"></div>
+      </div>
     </header>
 
     <div class="app-body">
@@ -106,6 +157,17 @@
       </div>
 
       <div class="panel" id="panel-individual">
+        <div class="toolbar mb-4" id="responseTools">
+          <label class="inline-field">
+            <span>Response status</span>
+            <select class="input" id="responseStatusFilter">
+              <option value="all">All responses</option>
+              <option value="completed">Completed</option>
+              <option value="in_progress">In progress</option>
+            </select>
+          </label>
+          <span class="result-count" id="responseFilterCount"></span>
+        </div>
         <div class="table-shell">
           <div class="table-scroll">
             <table class="data-table" id="responseTable"><tbody><tr><td><div class="skeleton" style="width:100%;height:140px"></div></td></tr></tbody></table>
@@ -203,6 +265,12 @@
   Shell.admin('surveys');
 
   const surveyId = param('id');
+  let allResponses = [];
+  let responseQuestions = [];
+  let completedResponses = [];
+  let responseStatusFilter = 'all';
+  let analysisDrillData = new Map();
+  let analysisFilter = null;
   if (!surveyId) window.location.href = '/admin/surveys.html';
 
   async function load() {
@@ -210,7 +278,11 @@
       const data = await api.get(`/admin/surveys/${surveyId}/responses`);
       const survey = data.survey;
       const responses = data.responses;
-      const completed = responses.filter(r => r.completed_at);
+      allResponses = responses;
+      responseQuestions = survey.questions;
+      completedResponses = responses.filter(r => r.completed_at);
+      analysisFilter = null;
+      const completed = completedResponses;
 
       document.getElementById('crumbName').textContent = survey.title;
       document.title = `Dev Circle — ${survey.title}`;
@@ -218,13 +290,27 @@
       document.getElementById('subtitle').textContent =
         [survey.description, survey.engagement_mode, `~${survey.time_estimate_min} min`].filter(Boolean).join(' · ');
 
-      document.getElementById('actions').innerHTML = `
-        ${badge(survey.status, survey.status === 'active' ? 'active' : survey.status === 'draft' ? 'warn' : 'inactive')}
+      const canDeleteResponses = Auth.can('responses.delete');
+      document.getElementById('actions').innerHTML =
+        badge(survey.status, survey.status === 'active' ? 'active' : survey.status === 'draft' ? 'warn' : 'inactive');
+      document.getElementById('tabActions').innerHTML = `
+        <a class="btn btn-sm btn-ghost" href="/admin/survey-new.html?id=${survey.id}">Edit</a>
         ${survey.public_path
-          ? `<button class="btn btn-sm btn-secondary" onclick="copyLink(this)">Copy link</button>` : ''}
-        <a class="btn btn-sm btn-secondary" href="/admin/survey-new.html?id=${survey.id}">Edit</a>
-        <button class="btn btn-sm btn-secondary" onclick="openImport()">Import responses</button>
-        <button class="btn btn-sm btn-secondary" onclick="exportResponses(this)">Export CSV</button>`;
+          ? '<button class="btn btn-sm btn-secondary" onclick="copyLink(this)">Copy link</button>' : ''}
+        <details class="actions-menu" id="surveyActionsMenu">
+          <summary class="btn btn-sm btn-secondary" aria-label="More survey actions">More actions <span aria-hidden="true">⌄</span></summary>
+          <div class="actions-menu-pop" aria-label="Survey actions">
+            <button class="actions-menu-item" onclick="openImport(); closeActionsMenu(this)">Import responses</button>
+            <button class="actions-menu-item" onclick="exportResponses(this); closeActionsMenu(this)">Export CSV</button>
+            ${canDeleteResponses ? `<div class="actions-menu-divider" role="separator"></div>
+              <button class="actions-menu-item danger" id="deleteInProgressAction" disabled onclick="deleteInProgress(this); closeActionsMenu(this)">Delete all in progress</button>` : ''}
+          </div>
+        </details>`;
+
+      window.closeActionsMenu = (element) => {
+        const menu = element?.closest('details.actions-menu');
+        if (menu) menu.open = false;
+      };
 
       window.copyLink = async (btn) => {
         await busy(btn, 'Copying…', async () => {
@@ -266,6 +352,9 @@
 
   function renderAnalysis(questions, completed) {
     const el = document.getElementById('analysis');
+    analysisDrillData = new Map();
+    const activeCriteria = analysisFilter?.criteria || [];
+    const cohort = completed.filter(record => activeCriteria.every(criterion => criterion.ids.has(record)));
 
     if (!completed.length) {
       el.innerHTML = emptyState({
@@ -276,9 +365,19 @@
       return;
     }
 
+    if (analysisFilter && !cohort.length) {
+      el.innerHTML = `<div class="analysis-filter"><span>Filter: ${escapeHtml(analysisFilter.label)}</span><button class="btn btn-sm btn-ghost" data-clear-analysis-filter>Clear</button></div><p class="dim text-sm">No responses match this filter.</p>`;
+      return;
+    }
+
+    const filterNotice = analysisFilter ? `
+      <div class="analysis-filter">
+        <span>Filter: ${escapeHtml(analysisFilter.label)} · ${cohort.length}</span>
+        <button class="btn btn-sm btn-ghost" data-clear-analysis-filter>Clear</button>
+      </div>` : '';
     let number = 0;
 
-    el.innerHTML = questions.map(q => {
+    el.innerHTML = filterNotice + questions.map(q => {
       // A section is where the survey said something, not where it asked
       if (!SurveySchema.isAnswerable(q)) {
         return `<section class="q-block"><div class="q-kicker">Section</div>
@@ -289,19 +388,21 @@
       // Only the members this question was actually put to. With branching,
       // a percentage over everyone who finished the survey is a different
       // number about a different population.
-      const shown = completed.filter(r => !r.asked || r.asked.includes(q.id));
+      const questionCohort = cohort;
+      const shown = questionCohort.filter(r => !r.asked || r.asked.includes(q.id));
       const answered = shown.filter(r => SurveySchema.isAnswered(q, r.answers[q.id]));
       const answers = answered.map(r => r.answers[q.id]);
+      analysisDrillData.set(q.id, { question: q, records: answered });
 
       return `
-        <section class="q-block">
+        <section class="q-block" data-summary-question="${escapeHtml(q.id)}">
           <div class="q-kicker">Q${number} · ${escapeHtml(q.type)} · ${answers.length} answered${
             q.required ? ' · required' : ''}</div>
           <h3 class="q-ask">${escapeHtml(q.text)}</h3>
-          ${shown.length < completed.length
-            ? `<p class="asked-note">Asked of ${shown.length} of ${completed.length} — the rest were branched past it.</p>`
+          ${shown.length < questionCohort.length
+            ? `<p class="asked-note">Asked of ${shown.length} of ${questionCohort.length} — the rest were branched past it.</p>`
             : ''}
-          ${answers.length ? summary(q, answers, answered) : '<p class="dim text-sm">No answers to this question.</p>'}
+          ${answers.length ? `<div class="summary-visual" tabindex="0" role="group" aria-label="Question response chart; activate for all responses">${summary(q, answers, answered)}<div class="drill-results" data-drill-results hidden aria-live="polite"></div></div>` : '<p class="dim text-sm">No answers to this question.</p>'}
         </section>`;
     }).join('');
   }
@@ -319,9 +420,9 @@
         return `
           <div class="avg">${nps.score > 0 ? '+' : ''}${nps.score}<span class="of"> NPS</span></div>
           <div class="nps-split">
-            ${nps.detractors ? `<span class="nps-part detractors" style="width:${pct(nps.detractors)}%">${nps.detractors}</span>` : ''}
-            ${nps.passives ? `<span class="nps-part passives" style="width:${pct(nps.passives)}%">${nps.passives}</span>` : ''}
-            ${nps.promoters ? `<span class="nps-part promoters" style="width:${pct(nps.promoters)}%">${nps.promoters}</span>` : ''}
+            ${nps.detractors ? `<span class="nps-part detractors" role="button" tabindex="0" data-drill-kind="nps" data-value="detractors" style="width:${pct(nps.detractors)}%">${nps.detractors}</span>` : ''}
+            ${nps.passives ? `<span class="nps-part passives" role="button" tabindex="0" data-drill-kind="nps" data-value="passives" style="width:${pct(nps.passives)}%">${nps.passives}</span>` : ''}
+            ${nps.promoters ? `<span class="nps-part promoters" role="button" tabindex="0" data-drill-kind="nps" data-value="promoters" style="width:${pct(nps.promoters)}%">${nps.promoters}</span>` : ''}
           </div>
           <div class="nps-legend">
             <span>Detractors 0–6: ${nps.detractors}</span>
@@ -341,37 +442,15 @@
             <div class="kv-row"><span class="kv-key">Mean</span><span class="kv-val mono">${round(mean)}</span></div>
             <div class="kv-row"><span class="kv-key">Lowest</span><span class="kv-val mono">${round(values[0])}</span></div>
             <div class="kv-row"><span class="kv-key">Highest</span><span class="kv-val mono">${round(values[values.length - 1])}</span></div>
-          </div>`;
+          </div>
+          ${numericHistogram(values, q.unit)}`;
       }
 
       case 'choice':
       case 'dropdown':
       case 'boolean':
-      case 'multi_choice': {
-        const counts = {};
-        for (const answer of answers) {
-          for (const value of (Array.isArray(answer) ? answer : [answer])) {
-            const label = q.type === 'boolean'
-              ? (value ? (q.true_label || 'Yes') : (q.false_label || 'No'))
-              : String(value);
-            counts[label] = (counts[label] || 0) + 1;
-          }
-        }
-        const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
-        const max = sorted[0][1];
-
-        return sorted.map(([label, count]) => `
-          <div class="choice-row">
-            <span class="truncate" title="${escapeHtml(label)}">${escapeHtml(label)}</span>
-            <span class="choice-track"><span class="choice-fill" style="width:${(count / max) * 100}%"></span></span>
-            <span class="mono text-xs">${count} · ${Math.round((count / answers.length) * 100)}%</span>
-          </div>`).join('') +
-          // Where several may be picked, the percentages are of people and so
-          // do not add to a hundred. Saying so costs one line and saves the
-          // reader assuming the numbers are wrong.
-          (q.type === 'multi_choice'
-            ? '<p class="hint">Percentages are of respondents, so they add to more than 100.</p>' : '');
-      }
+      case 'multi_choice':
+        return categoricalChart(q, answers);
 
       case 'ranking': {
         // Average position, because "picked first by 12" and "second by
@@ -385,15 +464,20 @@
             if (i === 0) totals[option].first++;
           });
         }
-        return Object.entries(totals)
+        const ranked = Object.entries(totals)
           .map(([option, t]) => ({ option, avg: t.sum / t.n, first: t.first }))
-          .sort((a, b) => a.avg - b.avg)
-          .map((row, i) => `
+          .sort((a, b) => a.avg - b.avg);
+        const worst = Math.max(...ranked.map(row => row.avg), 1);
+        return ranked.map((row, i) => {
+          const preference = worst <= 1 ? 100 : Math.max(2, ((worst - row.avg) / (worst - 1)) * 100);
+          return `
             <div class="rank-row">
               <span class="rank-pos">#${i + 1}</span>
-              <span class="truncate">${escapeHtml(row.option)}</span>
-              <span class="mono text-xs dim">avg ${row.avg.toFixed(1)} · first by ${row.first}</span>
-            </div>`).join('');
+              <span class="truncate" title="${escapeHtml(row.option)}">${escapeHtml(row.option)}</span>
+              <span class="chart-track" title="Higher bar means a better average position"><span class="chart-fill" role="button" tabindex="0" data-drill-kind="ranking" data-value="${escapeHtml(row.option)}" aria-label="${escapeHtml(row.option)} ranked" style="width:${preference}%"></span></span>
+              <span class="rank-meta mono text-xs dim">avg ${row.avg.toFixed(1)} · first by ${row.first}</span>
+            </div>`;
+        }).join('');
       }
 
       case 'matrix': {
@@ -422,7 +506,7 @@
                       ${columns.map(column => {
                         const n = counts[column] || 0;
                         const share = n / total;
-                        return `<td><span class="grid-cell" style="background:${
+                        return `<td><span class="grid-cell"${n ? ` role="button" tabindex="0" data-drill-kind="matrix" data-row="${escapeHtml(row)}" data-value="${escapeHtml(column)}"` : ''} style="background:${
                           n ? `rgba(16,126,188,${0.12 + share * 0.6})` : 'transparent'}">${
                           n ? Math.round(share * 100) + '%' : '—'}</span></td>`;
                       }).join('')}
@@ -439,18 +523,240 @@
           <div class="kv">
             <div class="kv-row"><span class="kv-key">Earliest</span><span class="kv-val mono">${escapeHtml(sorted[0])}</span></div>
             <div class="kv-row"><span class="kv-key">Latest</span><span class="kv-val mono">${escapeHtml(sorted[sorted.length - 1])}</span></div>
-          </div>`;
+          </div>
+          ${dateHistogram(sorted)}`;
       }
 
-      default:
-        // Open answers are quoted, not counted — the words are the finding.
-        return answered.slice(0, 12).map(r => `
-          <blockquote class="verbatim">
-            ${escapeHtml(String(r.answers[q.id]))}
-            <span class="who">${r.user_id ? escapeHtml(personName(r.user_name, r.user_email)) : 'Anonymous'}</span>
-          </blockquote>`).join('') +
-          (answered.length > 12 ? `<p class="dim text-xs">+${answered.length - 12} more</p>` : '');
+      default: {
+        // Keep the raw words available, but lead with their shared vocabulary.
+        return wordCloud(answers);
+      }
     }
+  }
+
+  const CHART_COLORS = ['var(--cd-blue)', 'var(--emerald)', 'var(--violet)', 'var(--gold-ink)', 'var(--cd-clay)', 'var(--rose-ink)', 'var(--blue-ink)', 'var(--ash)'];
+
+  function categoricalChart(q, answers) {
+    const counts = new Map();
+    for (const answer of answers) {
+      for (const value of (Array.isArray(answer) ? answer : [answer])) {
+        const label = q.type === 'boolean'
+          ? (value ? (q.true_label || 'Yes') : (q.false_label || 'No'))
+          : String(value);
+        counts.set(label, (counts.get(label) || 0) + 1);
+      }
+    }
+    const sorted = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+    if (!sorted.length) return '<p class="dim text-sm">No countable options.</p>';
+
+    if (q.type !== 'multi_choice' && sorted.length <= 6) {
+      let cursor = 0;
+      const slices = sorted.map(([, count], i) => {
+        const start = cursor;
+        cursor += count / answers.length * 100;
+        return `${CHART_COLORS[i % CHART_COLORS.length]} ${start}% ${cursor}%`;
+      }).join(', ');
+      return `
+        <div class="pie-chart-layout">
+          <div class="pie-chart" role="img" aria-label="Pie chart of ${answers.length} responses" style="background:conic-gradient(${slices})"></div>
+          <div class="pie-legend">
+            ${sorted.map(([label, count], i) => `
+              <div class="pie-legend-row" role="button" tabindex="0" data-drill-kind="choice" data-value="${escapeHtml(label)}">
+                <span class="pie-swatch" style="background:${CHART_COLORS[i % CHART_COLORS.length]}"></span>
+                <span class="truncate" title="${escapeHtml(label)}">${escapeHtml(label)}</span>
+                <span class="mono text-xs">${count} · ${Math.round(count / answers.length * 100)}%</span>
+              </div>`).join('')}
+          </div>
+        </div>`;
+    }
+
+    const max = Math.max(...sorted.map(([, count]) => count));
+    return `<div class="chart-bars">${sorted.map(([label, count]) => `
+      <div class="chart-bar-row">
+        <span class="truncate" title="${escapeHtml(label)}">${escapeHtml(label)}</span>
+        <span class="chart-track"><span class="chart-fill" role="button" tabindex="0" data-drill-kind="choice" data-value="${escapeHtml(label)}" aria-label="${escapeHtml(label)} responses" style="width:${count / max * 100}%"></span></span>
+        <span class="mono text-xs">${count} · ${Math.round(count / answers.length * 100)}%</span>
+      </div>`).join('')}</div>`;
+  }
+
+  function numericHistogram(values, unit) {
+    if (!values.length) return '';
+    const min = values[0];
+    const maxValue = values[values.length - 1];
+    const binCount = min === maxValue ? 1 : Math.min(8, Math.max(3, Math.ceil(Math.sqrt(values.length))));
+    const step = binCount === 1 ? 1 : (maxValue - min) / binCount;
+    const bins = Array.from({ length: binCount }, (_, i) => ({
+      label: binCount === 1 ? String(round(min)) : `${round(min + i * step)}–${round(i === binCount - 1 ? maxValue : min + (i + 1) * step)}${unit ? ` ${unit}` : ''}`,
+      count: 0,
+      drill: {
+        kind: 'number',
+        min: binCount === 1 ? min : min + i * step,
+        max: binCount === 1 ? maxValue : (i === binCount - 1 ? maxValue : min + (i + 1) * step),
+        last: i === binCount - 1
+      }
+    }));
+    values.forEach(value => {
+      const index = binCount === 1 ? 0 : Math.min(binCount - 1, Math.floor((value - min) / step));
+      bins[index].count++;
+    });
+    return barSeries(bins, 'Answer range');
+  }
+
+  function dateHistogram(values) {
+    const months = {};
+    values.forEach(value => {
+      const month = String(value).slice(0, 7);
+      months[month] = (months[month] || 0) + 1;
+    });
+    const keys = Object.keys(months).sort();
+    const yearly = keys.length > 18;
+    const groups = {};
+    keys.forEach(key => {
+      const group = yearly ? key.slice(0, 4) : key;
+      groups[group] = (groups[group] || 0) + months[key];
+    });
+    const series = Object.entries(groups).map(([key, count]) => ({
+      label: yearly ? key : new Date(`${key}-01T00:00:00Z`).toLocaleDateString('en', { month: 'short', year: '2-digit', timeZone: 'UTC' }),
+      count,
+      drill: { kind: 'date', bucket: key, yearly }
+    }));
+    return barSeries(series, yearly ? 'Responses by year' : 'Responses by month');
+  }
+
+  function drillAttrs(drill = {}) {
+    return Object.entries(drill).map(([key, value]) => {
+      const attr = key === 'kind' ? 'drill-kind' : key === 'last' ? 'last-bin' : key;
+      return `data-${attr}="${escapeHtml(String(value))}"`;
+    }).join(' ');
+  }
+
+  function barSeries(series, label) {
+    const max = Math.max(...series.map(item => item.count), 1);
+    return `<div class="chart-bars" aria-label="${escapeHtml(label)}">${series.map(item => `
+      <div class="chart-bar-row">
+        <span class="truncate" title="${escapeHtml(item.label)}">${escapeHtml(item.label)}</span>
+        <span class="chart-track"><span class="chart-fill"${item.count ? ` role="button" tabindex="0" ${drillAttrs(item.drill)} aria-label="${escapeHtml(item.label)} responses"` : ''} style="width:${item.count / max * 100}%"></span></span>
+        <span class="mono text-xs">${item.count}</span>
+      </div>`).join('')}</div>`;
+  }
+
+  function wordCloud(answers) {
+    const stop = new Set(('about after again all also and any are because been before being between both but can could did does doing down during each few for from further had has have having here how into its itself just more most other our out over own same should some such than that the their them then there these they this those through too under until very was were what when where which while who whom why will with would your youre you').split(' '));
+    const frequencies = new Map();
+    for (const answer of answers) {
+      const words = String(answer).toLocaleLowerCase().match(/[\p{L}\p{N}']+/gu) || [];
+      for (const word of words) if (word.length > 2 && !stop.has(word)) frequencies.set(word, (frequencies.get(word) || 0) + 1);
+    }
+    let terms = [...frequencies.entries()].sort((a, b) => b[1] - a[1]).slice(0, 36);
+    if (!terms.length) {
+      for (const answer of answers) {
+        for (const word of String(answer).toLocaleLowerCase().match(/[\p{L}\p{N}']+/gu) || []) {
+          if (word.length > 1) frequencies.set(word, (frequencies.get(word) || 0) + 1);
+        }
+      }
+      terms = [...frequencies.entries()].sort((a, b) => b[1] - a[1]).slice(0, 36);
+    }
+    if (!terms.length) return '<p class="dim text-sm">No repeated terms to chart.</p>';
+    const max = Math.max(...terms.map(([, count]) => count));
+    const min = Math.min(...terms.map(([, count]) => count));
+    return `<div class="word-cloud" aria-label="Frequently used words">${terms.map(([word, count], i) => {
+      const size = 15 + ((count - min) / Math.max(1, max - min)) * 23;
+      return `<span class="word-cloud-word" role="button" tabindex="0" data-drill-kind="word" data-value="${escapeHtml(word)}" title="${count} mention${count === 1 ? '' : 's'}" style="font-size:${size.toFixed(1)}px;color:${CHART_COLORS[i % CHART_COLORS.length]}">${escapeHtml(word)}</span>`;
+    }).join('')}</div>`;
+  }
+
+  function matchesDrill(question, record, target) {
+    const answer = record.answers[question.id];
+    const kind = target.dataset.drillKind;
+    const value = target.dataset.value;
+    switch (kind) {
+      case 'choice':
+        if (question.type === 'boolean') return (answer ? (question.true_label || 'Yes') : (question.false_label || 'No')) === value;
+        return (Array.isArray(answer) ? answer : [answer]).some(item => String(item) === value);
+      case 'word':
+        return (String(answer).toLocaleLowerCase().match(/[\p{L}\p{N}']+/gu) || []).includes(value.toLocaleLowerCase());
+      case 'rating':
+        return Math.round(Number(answer)) === Number(value);
+      case 'nps': {
+        const score = Number(answer);
+        return value === 'detractors' ? score <= 6 : value === 'passives' ? score >= 7 && score <= 8 : score >= 9;
+      }
+      case 'number': {
+        const score = Number(answer);
+        const min = Number(target.dataset.min);
+        const max = Number(target.dataset.max);
+        return score >= min && (target.dataset.lastBin === 'true' ? score <= max : score < max);
+      }
+      case 'date':
+        return String(answer).startsWith(target.dataset.bucket);
+      case 'ranking':
+        return Array.isArray(answer) && answer.some(item => String(item) === value);
+      case 'matrix': {
+        const picked = answer && answer[target.dataset.row];
+        return (Array.isArray(picked) ? picked : [picked]).some(item => String(item) === value);
+      }
+      default:
+        return false;
+    }
+  }
+
+  function responseAnswer(question, record) {
+    const answer = record.answers[question.id];
+    if (question.type === 'boolean') return answer ? (question.true_label || 'Yes') : (question.false_label || 'No');
+    if (question.type === 'ranking' && Array.isArray(answer)) return answer.map((item, i) => `${i + 1}. ${item}`).join(' · ');
+    if (Array.isArray(answer)) return answer.join(' · ');
+    if (answer && typeof answer === 'object') return Object.entries(answer)
+      .map(([row, picked]) => `${row}: ${Array.isArray(picked) ? picked.join(', ') : picked}`).join(' · ');
+    return String(answer ?? '');
+  }
+
+  function showDrillResults(section, label, matches, drillKey) {
+    const results = section?.querySelector('[data-drill-results]');
+    if (!results) return;
+    if (!results.hidden && results.dataset.activeDrill === drillKey) {
+      results.hidden = true;
+      return;
+    }
+    const entry = analysisDrillData.get(section.dataset.summaryQuestion);
+    results.dataset.activeDrill = drillKey;
+    results.innerHTML = `
+      <div class="drill-results-head">
+        <strong>${escapeHtml(label)} · ${matches.length}</strong>
+        <button type="button" class="icon-btn" data-close-drill aria-label="Close responses">×</button>
+      </div>
+      ${matches.length ? matches.map(record => `
+        <blockquote class="drill-answer">
+          ${escapeHtml(responseAnswer(entry.question, record))}
+          <span class="who">${record.user_id ? escapeHtml(personName(record.user_name, record.user_email)) : 'Anonymous'}</span>
+        </blockquote>`).join('') : '<p class="dim text-sm">No responses in this group.</p>'}`;
+    results.hidden = false;
+  }
+
+  function openAllResponses(section) {
+    const entry = section && analysisDrillData.get(section.dataset.summaryQuestion);
+    if (!entry) return;
+    showDrillResults(section, 'All responses', entry.records, 'all');
+  }
+
+  function openDrill(target) {
+    const section = target.closest('[data-summary-question]');
+    const entry = section && analysisDrillData.get(section.dataset.summaryQuestion);
+    if (!entry) return;
+    const label = target.dataset.value || target.querySelector('.truncate')?.textContent.trim() || target.textContent.trim();
+    const drillKey = [target.dataset.drillKind, target.dataset.row || '', target.dataset.value || '', target.dataset.bucket || '', target.dataset.min || '', target.dataset.max || ''].join(':');
+    const matches = entry.records.filter(record => matchesDrill(entry.question, record, target));
+    const questionId = entry.question.id;
+    const questionNumber = responseQuestions.filter(SurveySchema.isAnswerable).findIndex(question => question.id === questionId) + 1;
+    const criterion = { questionId, label: `Q${questionNumber}: ${label}`, ids: new Set(matches) };
+    const criteria = [...(analysisFilter?.criteria || []).filter(item => item.questionId !== questionId), criterion];
+    const order = new Map(responseQuestions.filter(SurveySchema.isAnswerable).map((question, index) => [question.id, index]));
+    criteria.sort((a, b) => order.get(a.questionId) - order.get(b.questionId));
+    analysisFilter = { criteria, label: criteria.map(item => item.label).join(' · ') };
+
+    renderAnalysis(responseQuestions, completedResponses);
+    const updatedSection = [...analysisRoot.querySelectorAll('[data-summary-question]')]
+      .find(node => node.dataset.summaryQuestion === questionId);
+    showDrillResults(updatedSection, label, matches, drillKey);
   }
 
   // The spread, not just the middle: a flat distribution and a hard split have
@@ -469,7 +775,7 @@
         ${Object.keys(counts).map(v => `
           <div class="dist-col">
             <span class="dist-n">${counts[v]}</span>
-            <span class="dist-bar" style="height:${(counts[v] / max) * 100}%"></span>
+            <span class="dist-bar"${counts[v] ? ` role="button" tabindex="0" data-drill-kind="rating" data-value="${v}" aria-label="Rating ${v}"` : ''} style="height:${(counts[v] / max) * 100}%"></span>
             <span class="dist-x">${v}</span>
           </div>`).join('')}
       </div>
@@ -485,9 +791,30 @@
   function renderIndividual(questions, responses) {
     const table = document.getElementById('responseTable');
     const canDelete = Auth.can('responses.delete');
+    const canMarkSubmitted = Auth.can('responses.update');
+    const completed = responses.filter(r => Boolean(r.completed_at));
+    const inProgress = responses.filter(r => !r.completed_at);
+    const visible = responseStatusFilter === 'completed' ? completed
+      : responseStatusFilter === 'in_progress' ? inProgress : responses;
+    const filter = document.getElementById('responseStatusFilter');
+    filter.value = responseStatusFilter;
+    filter.innerHTML = `
+      <option value="all">All responses (${responses.length})</option>
+      <option value="completed">Completed (${completed.length})</option>
+      <option value="in_progress">In progress (${inProgress.length})</option>`;
+    filter.value = responseStatusFilter;
+    document.getElementById('responseFilterCount').textContent = `Showing ${visible.length} of ${responses.length}`;
+    const bulkDelete = document.getElementById('deleteInProgressAction');
+    if (bulkDelete) {
+      bulkDelete.disabled = !inProgress.length;
+      bulkDelete.textContent = `Delete all in progress (${inProgress.length})`;
+    }
 
-    if (!responses.length) {
-      table.innerHTML = `<tbody><tr><td>${emptyState({ title: 'Nothing submitted yet' })}</td></tr></tbody>`;
+    if (!visible.length) {
+      const title = responseStatusFilter === 'in_progress' ? 'No responses in progress'
+        : responseStatusFilter === 'completed' ? 'No completed responses yet'
+        : 'Nothing submitted yet';
+      table.innerHTML = `<tbody><tr><td>${emptyState({ title })}</td></tr></tbody>`;
       return;
     }
 
@@ -500,11 +827,11 @@
           <th>Respondent</th>
           ${asked.map(q => `<th>${escapeHtml(q.text.slice(0, 34))}${q.text.length > 34 ? '…' : ''}</th>`).join('')}
           <th>Submitted</th>
-          ${canDelete ? '<th>Actions</th>' : ''}
+          ${visible.some(r => canDelete || (canMarkSubmitted && !r.completed_at)) ? '<th>Actions</th>' : ''}
         </tr>
       </thead>
       <tbody>
-        ${responses.map(r => `
+        ${visible.map(r => `
           <tr class="${r.user_id ? 'row-link' : ''}"
               ${r.user_id ? `onclick="window.location.href='/admin/member.html?id=${r.user_id}'"` : ''}>
             <td>${r.user_id
@@ -531,9 +858,31 @@
               return `<td class="text-sm">${escapeHtml(text)}</td>`;
             }).join('')}
             <td class="text-xs muted nowrap">${r.completed_at ? formatDate(r.completed_at) : '<span class="dim">In progress</span>'}</td>
-            ${canDelete ? `<td onclick="event.stopPropagation()"><button class="btn btn-sm btn-ghost" onclick="deleteResponse('${r.id}', event)">Delete</button></td>` : ''}
+            ${canDelete || (canMarkSubmitted && !r.completed_at) ? `<td onclick="event.stopPropagation()"><details class="actions-menu">
+              <summary class="btn btn-sm btn-ghost" aria-label="More actions for response">More</summary>
+              <div class="actions-menu-pop" aria-label="Response actions">
+                ${canMarkSubmitted && !r.completed_at ? `<button class="actions-menu-item" onclick="markResponseSubmitted('${r.id}', this); closeActionsMenu(this)">Mark as submitted</button>` : ''}
+                ${canDelete ? `<button class="actions-menu-item danger" onclick="deleteResponse('${r.id}', event); closeActionsMenu(this)">Delete response</button>` : ''}
+              </div>
+            </details></td>` : ''}
           </tr>`).join('')}
       </tbody>`;
+  }
+
+  async function markResponseSubmitted(responseId, btn) {
+    if (!window.confirm('Mark this saved response as submitted? Required answers will be validated, and it will appear in completed results.')) return;
+    const path = `/admin/surveys/${encodeURIComponent(surveyId)}/responses/${encodeURIComponent(responseId)}/submit`;
+    await busy(btn, 'Submitting…', async () => {
+      try {
+        const result = await api.post(path, {});
+        showToast(result.message || 'Response marked submitted');
+        await load();
+      } catch (err) {
+        const missing = (err.body?.missing || []).map(id => responseQuestions.find(q => q.id === id)?.text || id);
+        const detail = missing.length ? ` Missing: ${missing.join(', ')}.` : '';
+        showToast(`${err.message || 'Could not mark response submitted'}${detail}`, 'error');
+      }
+    });
   }
 
   async function deleteResponse(responseId, event) {
@@ -556,6 +905,45 @@
     }
     showToast('Response and linked verbatims deleted');
     await load();
+  }
+
+  document.getElementById('responseStatusFilter').addEventListener('change', event => {
+    responseStatusFilter = event.target.value;
+    renderIndividual(responseQuestions, allResponses);
+  });
+
+  async function deleteInProgress(btn) {
+    const path = `/admin/surveys/${encodeURIComponent(surveyId)}/responses?status=in_progress`;
+    const finish = result => {
+      showToast(`Removed ${result.deleted_responses} unfinished response(s) and ${result.deleted_feedback} feedback item(s)`);
+      responseStatusFilter = 'in_progress';
+      return load();
+    };
+    await busy(btn, 'Removing…', async () => {
+      try {
+        const result = await api.del(path);
+        await finish(result);
+      } catch (err) {
+        if (err.status !== 409 || !err.body?.confirm_required) {
+          showToast(err.message || 'Could not remove unfinished responses', 'error');
+          return;
+        }
+        const feedback = Number(err.body.feedback || 0);
+        const extra = feedback ? ` ${feedback} linked feedback item(s) will also be removed.` : '';
+        if (!window.confirm(`${err.message}${extra}\n\nThey will need to start over.`)) return;
+        try {
+          const result = await api(`${path}&confirm=true`, { method: 'DELETE' });
+          await finish(result);
+        } catch (confirmedError) {
+          showToast(confirmedError.message || 'Could not remove unfinished responses', 'error');
+        }
+      }
+    });
+    if (btn) {
+      const remaining = allResponses.filter(r => !r.completed_at).length;
+      btn.disabled = !remaining;
+      btn.textContent = `Delete all in progress (${remaining})`;
+    }
   }
 
   async function exportResponses(btn) {
@@ -699,6 +1087,51 @@
       }
     });
   }
+
+  document.addEventListener('click', event => {
+    document.querySelectorAll('.actions-menu[open]').forEach(menu => {
+      if (!menu.contains(event.target)) menu.open = false;
+    });
+  }, true);
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape') document.querySelectorAll('.actions-menu[open]').forEach(menu => { menu.open = false; });
+  });
+
+  const analysisRoot = document.getElementById('analysis');
+  analysisRoot.addEventListener('click', event => {
+    if (event.target.closest('[data-clear-analysis-filter]')) {
+      analysisFilter = null;
+      renderAnalysis(responseQuestions, completedResponses);
+      return;
+    }
+    if (event.target.closest('[data-close-drill]')) {
+      const results = event.target.closest('[data-drill-results]');
+      if (results) results.hidden = true;
+      return;
+    }
+    if (event.target.closest('[data-drill-results]')) return;
+    const graphic = event.target.closest('[data-drill-kind]');
+    if (graphic) {
+      openDrill(graphic);
+      return;
+    }
+    const visual = event.target.closest('.summary-visual');
+    if (visual) openAllResponses(visual.closest('[data-summary-question]'));
+  });
+  analysisRoot.addEventListener('keydown', event => {
+    if (!['Enter', ' '].includes(event.key)) return;
+    const graphic = event.target.closest('[data-drill-kind]');
+    if (graphic) {
+      event.preventDefault();
+      openDrill(graphic);
+      return;
+    }
+    const visual = event.target.closest('.summary-visual');
+    if (visual) {
+      event.preventDefault();
+      openAllResponses(visual.closest('[data-summary-question]'));
+    }
+  });
 
   document.querySelectorAll('.tab[data-panel]').forEach(tab => {
     tab.addEventListener('click', () => {

@@ -517,7 +517,7 @@ const SCHEMA_POSTGRES = `
   );
 
   -- Indexes
-  CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+  DROP INDEX IF EXISTS idx_users_email;
   CREATE INDEX IF NOT EXISTS idx_users_status ON users(status);
   CREATE INDEX IF NOT EXISTS idx_users_api_status ON users(api_status);
   CREATE INDEX IF NOT EXISTS idx_users_phone_normalized ON users(phone_normalized);
@@ -526,24 +526,27 @@ const SCHEMA_POSTGRES = `
   CREATE INDEX IF NOT EXISTS idx_user_cohorts_user ON user_cohorts(user_id);
   CREATE INDEX IF NOT EXISTS idx_user_cohorts_cohort ON user_cohorts(cohort_id);
   CREATE INDEX IF NOT EXISTS idx_consent_user ON consent(user_id);
-  CREATE INDEX IF NOT EXISTS idx_circles_slug ON circles(slug);
+  DROP INDEX IF EXISTS idx_circles_slug;
   CREATE INDEX IF NOT EXISTS idx_circles_status_created ON circles(status, created_at);
   CREATE INDEX IF NOT EXISTS idx_circle_members_user ON circle_members(user_id);
   CREATE INDEX IF NOT EXISTS idx_circle_admins_admin ON circle_admins(admin_id);
+  CREATE INDEX IF NOT EXISTS idx_circle_admins_role ON circle_admins(role_id);
   CREATE INDEX IF NOT EXISTS idx_surveys_trigger ON surveys(trigger_event);
-  CREATE INDEX IF NOT EXISTS idx_surveys_public_token ON surveys(public_token) WHERE public_token IS NOT NULL;
-  CREATE INDEX IF NOT EXISTS idx_survey_responses_survey ON survey_responses(survey_id);
+  DROP INDEX IF EXISTS idx_surveys_public_token;
+  DROP INDEX IF EXISTS idx_survey_responses_survey;
   CREATE INDEX IF NOT EXISTS idx_survey_responses_user ON survey_responses(user_id);
-  CREATE INDEX IF NOT EXISTS idx_survey_responses_anon ON survey_responses(anonymous_key_hash) WHERE anonymous_key_hash IS NOT NULL;
+  DROP INDEX IF EXISTS idx_survey_responses_anon;
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_survey_responses_anon_key_unique ON survey_responses(survey_id, anonymous_key_hash) WHERE anonymous_key_hash IS NOT NULL;
   CREATE INDEX IF NOT EXISTS idx_survey_responses_external ON survey_responses(survey_id, external_response_id) WHERE external_response_id IS NOT NULL;
   CREATE INDEX IF NOT EXISTS idx_questions_normalized ON questions(normalized, type);
   CREATE INDEX IF NOT EXISTS idx_questions_external ON questions(external_source, external_ref);
   CREATE INDEX IF NOT EXISTS idx_questions_circle ON questions(circle_id);
-  CREATE INDEX IF NOT EXISTS idx_engagement_user ON engagement_history(user_id);
+  DROP INDEX IF EXISTS idx_engagement_user;
   CREATE INDEX IF NOT EXISTS idx_engagement_type ON engagement_history(type);
   CREATE INDEX IF NOT EXISTS idx_engagement_created ON engagement_history(created_at);
   CREATE INDEX IF NOT EXISTS idx_engagement_user_created ON engagement_history(user_id, created_at DESC);
   CREATE INDEX IF NOT EXISTS idx_feedback_user ON feedback(user_id);
+  CREATE INDEX IF NOT EXISTS idx_feedback_survey ON feedback(survey_id);
   CREATE INDEX IF NOT EXISTS idx_feedback_status ON feedback(status);
   CREATE INDEX IF NOT EXISTS idx_feedback_source ON feedback(source);
   CREATE INDEX IF NOT EXISTS idx_feedback_ticket ON feedback(external_ticket_id);
@@ -553,12 +556,14 @@ const SCHEMA_POSTGRES = `
   CREATE INDEX IF NOT EXISTS idx_deliveries_source ON message_deliveries(source_type, source_id);
   CREATE INDEX IF NOT EXISTS idx_deliveries_user ON message_deliveries(user_id);
   CREATE INDEX IF NOT EXISTS idx_sessions_when ON scheduled_sessions(scheduled_for, status);
+  CREATE INDEX IF NOT EXISTS idx_scheduled_sessions_survey ON scheduled_sessions(survey_id);
+  CREATE INDEX IF NOT EXISTS idx_scheduled_sessions_circle ON scheduled_sessions(circle_id);
   CREATE INDEX IF NOT EXISTS idx_sessions_subject ON sessions(subject_id);
   CREATE INDEX IF NOT EXISTS idx_sessions_expiry ON sessions(expires_at);
   CREATE INDEX IF NOT EXISTS idx_login_codes_identifier ON login_codes(identifier, created_at);
   CREATE INDEX IF NOT EXISTS idx_login_codes_user ON login_codes(user_id);
   CREATE INDEX IF NOT EXISTS idx_integration_events_processed ON integration_events(processed);
-  CREATE INDEX IF NOT EXISTS idx_user_gifts_user ON user_gifts(user_id);
+  DROP INDEX IF EXISTS idx_user_gifts_user;
   CREATE UNIQUE INDEX IF NOT EXISTS idx_user_gifts_unique ON user_gifts(user_id, gift_id);
   CREATE INDEX IF NOT EXISTS idx_user_gifts_gift ON user_gifts(gift_id);
   CREATE INDEX IF NOT EXISTS idx_users_created_at ON users(created_at DESC);
@@ -574,15 +579,205 @@ const SCHEMA_POSTGRES = `
   CREATE UNIQUE INDEX IF NOT EXISTS idx_feedback_verbatim ON feedback(user_id, survey_id, question_id) WHERE question_id IS NOT NULL AND survey_id IS NOT NULL AND user_id IS NOT NULL;
   CREATE UNIQUE INDEX IF NOT EXISTS idx_feedback_verbatim_anon ON feedback(response_id, question_id) WHERE response_id IS NOT NULL AND question_id IS NOT NULL;
   CREATE UNIQUE INDEX IF NOT EXISTS idx_feedback_external_response ON feedback(source_system, external_response_id) WHERE external_response_id IS NOT NULL;
-  CREATE UNIQUE INDEX IF NOT EXISTS idx_session_dispatch_once ON session_dispatches(session_id, offset_minutes);
-  CREATE INDEX IF NOT EXISTS idx_email_templates_circle ON email_templates(circle_id);
+  DROP INDEX IF EXISTS idx_session_dispatch_once;
+  DROP INDEX IF EXISTS idx_email_templates_circle;
+  CREATE INDEX IF NOT EXISTS idx_email_templates_updated_by ON email_templates(updated_by);
+  CREATE INDEX IF NOT EXISTS idx_option_lists_updated_by ON option_lists(updated_by);
   CREATE INDEX IF NOT EXISTS idx_onboarding_forms_circle ON onboarding_forms(circle_id);
-  CREATE INDEX IF NOT EXISTS idx_onboarding_forms_token ON onboarding_forms(public_token) WHERE public_token IS NOT NULL;
+  DROP INDEX IF EXISTS idx_onboarding_forms_token;
   CREATE INDEX IF NOT EXISTS idx_onboarding_submissions_form ON onboarding_submissions(form_id, status);
+  CREATE INDEX IF NOT EXISTS idx_onboarding_submissions_decided_by ON onboarding_submissions(decided_by);
+  CREATE INDEX IF NOT EXISTS idx_onboarding_submissions_user ON onboarding_submissions(user_id);
   CREATE INDEX IF NOT EXISTS idx_onboarding_submissions_circle ON onboarding_submissions(circle_id, status);
   CREATE INDEX IF NOT EXISTS idx_onboarding_submissions_email ON onboarding_submissions(email) WHERE email IS NOT NULL;
   CREATE INDEX IF NOT EXISTS idx_onboarding_submissions_key ON onboarding_submissions(session_key_hash) WHERE session_key_hash IS NOT NULL;
   CREATE UNIQUE INDEX IF NOT EXISTS idx_onboarding_submissions_external ON onboarding_submissions(form_id, external_ref) WHERE external_ref IS NOT NULL;
+
+  -- survey_responses is the canonical store for complete answers; Feedback rows
+  -- are reference-only projections. Restore old feedback-owned values when a
+  -- prior deployment stripped them, clear duplicate content, and link legacy
+  -- member rows when the survey/user pair identifies one response.
+  DO $survey_feedback_once$
+  DECLARE
+    response_row record;
+    feedback_row record;
+    question_row jsonb;
+    question_list jsonb;
+    answer_map jsonb;
+    answer_value jsonb;
+    kept_values jsonb;
+    answer_text text;
+    changed boolean;
+    response_count integer;
+  BEGIN
+    FOR response_row IN
+      SELECT sr.id, sr.survey_id, sr.user_id, sr.answers, sr.questions,
+             s.questions AS live_questions
+      FROM survey_responses sr
+      JOIN surveys s ON s.id = sr.survey_id
+      WHERE sr.completed_at IS NOT NULL
+    LOOP
+      answer_map := COALESCE(NULLIF(response_row.answers, '')::jsonb, '{}'::jsonb);
+      question_list := COALESCE(NULLIF(response_row.questions, '')::jsonb, '[]'::jsonb);
+      IF jsonb_typeof(question_list) IS DISTINCT FROM 'array' THEN
+        question_list := COALESCE(NULLIF(response_row.live_questions, '')::jsonb, '[]'::jsonb);
+      ELSIF jsonb_array_length(question_list) = 0 THEN
+        question_list := COALESCE(NULLIF(response_row.live_questions, '')::jsonb, '[]'::jsonb);
+      END IF;
+      changed := false;
+
+      FOR feedback_row IN
+        SELECT f.id, f.response_id, f.survey_id, f.user_id, f.question_id, f.content
+        FROM feedback f
+        WHERE f.type = 'survey_response' AND f.question_id IS NOT NULL
+          AND f.source IN ('survey', 'external_survey')
+          AND (
+            f.response_id = response_row.id
+            OR (
+              f.response_id IS NULL AND f.survey_id = response_row.survey_id
+              AND f.user_id IS NOT DISTINCT FROM response_row.user_id
+              AND (SELECT COUNT(*) FROM survey_responses sr2
+                   WHERE sr2.survey_id = response_row.survey_id
+                     AND sr2.user_id IS NOT DISTINCT FROM response_row.user_id) = 1
+            )
+          )
+      LOOP
+        SELECT question_item.value INTO question_row
+        FROM jsonb_array_elements(question_list) AS question_item(value)
+        WHERE question_item.value->>'id' = feedback_row.question_id
+        LIMIT 1;
+        IF question_row IS NULL THEN CONTINUE; END IF;
+
+        answer_value := answer_map -> feedback_row.question_id;
+        IF NULLIF(feedback_row.content, '') IS NOT NULL THEN
+          IF answer_value IS NULL AND question_row->>'type' = 'text'
+             AND COALESCE(question_row->>'format', '') = '' THEN
+            answer_map := jsonb_set(answer_map, ARRAY[feedback_row.question_id], to_jsonb(feedback_row.content), true);
+            changed := true;
+          ELSIF answer_value IS NULL AND question_row->>'type' IN ('choice', 'dropdown')
+             AND COALESCE((question_row->>'allow_other')::boolean, false) THEN
+            answer_map := jsonb_set(answer_map, ARRAY[feedback_row.question_id], to_jsonb(feedback_row.content), true);
+            changed := true;
+          ELSIF question_row->>'type' = 'multi_choice'
+             AND COALESCE((question_row->>'allow_other')::boolean, false) THEN
+            SELECT COALESCE(jsonb_agg(to_jsonb(value)), '[]'::jsonb) INTO kept_values
+            FROM unnest(string_to_array(feedback_row.content, '; ')) AS items(value);
+            IF jsonb_typeof(answer_value) = 'array' THEN
+              SELECT COALESCE(jsonb_agg(DISTINCT item.value), '[]'::jsonb) INTO kept_values
+              FROM jsonb_array_elements(answer_value || kept_values) AS item(value);
+            END IF;
+            answer_map := jsonb_set(answer_map, ARRAY[feedback_row.question_id], kept_values, true);
+            changed := true;
+          END IF;
+        END IF;
+        IF answer_map ? feedback_row.question_id THEN
+          UPDATE feedback SET content = '' WHERE id = feedback_row.id;
+        END IF;
+
+        IF feedback_row.response_id IS NULL THEN
+          SELECT COUNT(*) INTO response_count FROM feedback f2
+          WHERE f2.response_id = response_row.id AND f2.question_id = feedback_row.question_id;
+          IF response_count = 0 THEN
+            UPDATE feedback SET response_id = response_row.id
+            WHERE id = feedback_row.id AND response_id IS NULL;
+          END IF;
+        END IF;
+      END LOOP;
+
+      IF changed THEN
+        UPDATE survey_responses SET answers = answer_map::text WHERE id = response_row.id;
+      END IF;
+    END LOOP;
+  END
+  $survey_feedback_once$;
+
+  -- Keep participant segment generated from the distinct participant products,
+  -- even for inserts and writes that do not pass through an application form.
+  CREATE OR REPLACE FUNCTION public.derive_participant_segment()
+  RETURNS trigger
+  LANGUAGE plpgsql
+  AS $participant_segment$
+  DECLARE product_count INTEGER;
+  BEGIN
+    BEGIN
+      SELECT COUNT(DISTINCT product) INTO product_count
+      FROM jsonb_array_elements_text(
+        CASE WHEN COALESCE(NEW.products, '') ~ '^\s*\['
+          THEN NEW.products::jsonb ELSE '[]'::jsonb END
+      ) AS p(product);
+    EXCEPTION WHEN OTHERS THEN
+      product_count := 0;
+    END;
+
+    NEW.segment := CASE
+      WHEN product_count = 0 THEN 'General / App'
+      WHEN product_count = 1 THEN 'Single Product'
+      WHEN product_count = 2 THEN 'Multi-Product'
+      ELSE 'Power Tester'
+    END;
+    RETURN NEW;
+  END;
+  $participant_segment$;
+
+  DO $participant_segment_trigger$
+  BEGIN
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_trigger
+      WHERE tgname = 'users_derive_participant_segment'
+        AND tgrelid = 'public.users'::regclass
+        AND NOT tgisinternal
+    ) THEN
+      CREATE TRIGGER users_derive_participant_segment
+        BEFORE INSERT OR UPDATE OF products, segment ON public.users
+        FOR EACH ROW EXECUTE FUNCTION public.derive_participant_segment();
+    END IF;
+  END;
+  $participant_segment_trigger$;
+  REVOKE ALL ON FUNCTION public.derive_participant_segment() FROM PUBLIC, anon, authenticated;
+
+  -- Database tables are accessed through the trusted server, not PostgREST.
+  -- Enable RLS without client policies to deny direct anon/authenticated API
+  -- access; the table owner/service connection used by the server bypasses it.
+  DO $rls$
+  DECLARE target record;
+  BEGIN
+    FOR target IN
+      SELECT schemaname, tablename
+      FROM pg_tables
+      WHERE schemaname = 'public'
+    LOOP
+      EXECUTE format('ALTER TABLE %I.%I ENABLE ROW LEVEL SECURITY', target.schemaname, target.tablename);
+    END LOOP;
+  END
+  $rls$;
+
+  -- Table access is server-only; RLS is defense in depth, while revoking
+  -- client grants also removes operations such as TRUNCATE that bypass RLS.
+  REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM anon, authenticated;
+  REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM anon, authenticated;
+  REVOKE CREATE ON SCHEMA public FROM anon, authenticated;
+  DO $revoke_columns$
+  DECLARE grant_row record;
+  BEGIN
+    FOR grant_row IN
+      SELECT DISTINCT table_schema, table_name, column_name, grantee
+      FROM information_schema.column_privileges
+      WHERE table_schema = 'public'
+        AND grantee IN ('anon', 'authenticated')
+    LOOP
+      EXECUTE format(
+        'REVOKE SELECT (%1$I), INSERT (%1$I), UPDATE (%1$I), REFERENCES (%1$I) ON TABLE %2$I.%3$I FROM %4$I',
+        grant_row.column_name, grant_row.table_schema, grant_row.table_name, grant_row.grantee
+      );
+    END LOOP;
+  END
+  $revoke_columns$;
+  ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON TABLES FROM anon, authenticated;
+  ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON SEQUENCES FROM anon, authenticated;
+  -- Function EXECUTE defaults to PUBLIC globally; a schema-only REVOKE cannot
+  -- cancel that global default, so revoke it globally for this creator role.
+  ALTER DEFAULT PRIVILEGES REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;
+  ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE EXECUTE ON FUNCTIONS FROM anon, authenticated;
 `;
 
 module.exports = { SCHEMA_POSTGRES };

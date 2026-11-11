@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const { segmentForProducts } = require('../utils/participantSegment');
 
 // ─── Migrations ─────────────────────────────────────────────
 // The base schema in db.js is created once on an empty database. Everything
@@ -1718,6 +1719,239 @@ function define(db) {
           );
           INSERT INTO developer_circle_consent (user_id)
           SELECT id FROM users;
+        `);
+      }
+    },
+    {
+      id: 38,
+      name: 'unique_anonymous_survey_response_keys',
+      up() {
+        return db.exec(`
+          CREATE UNIQUE INDEX IF NOT EXISTS idx_survey_responses_anon_key_unique
+            ON survey_responses(survey_id, anonymous_key_hash)
+            WHERE anonymous_key_hash IS NOT NULL;
+        `);
+      }
+    },
+    {
+      id: 39,
+      name: 'foreign_key_indexes_and_duplicate_cleanup',
+      up() {
+        return db.exec(`
+          CREATE INDEX IF NOT EXISTS idx_circle_admins_role ON circle_admins(role_id);
+          CREATE INDEX IF NOT EXISTS idx_email_templates_updated_by ON email_templates(updated_by);
+          CREATE INDEX IF NOT EXISTS idx_feedback_survey ON feedback(survey_id);
+          CREATE INDEX IF NOT EXISTS idx_onboarding_submissions_decided_by ON onboarding_submissions(decided_by);
+          CREATE INDEX IF NOT EXISTS idx_onboarding_submissions_user ON onboarding_submissions(user_id);
+          CREATE INDEX IF NOT EXISTS idx_option_lists_updated_by ON option_lists(updated_by);
+          CREATE INDEX IF NOT EXISTS idx_scheduled_sessions_survey ON scheduled_sessions(survey_id);
+          CREATE INDEX IF NOT EXISTS idx_scheduled_sessions_circle ON scheduled_sessions(circle_id);
+          DROP INDEX IF EXISTS idx_session_dispatch_once;
+        `);
+      }
+    },
+    {
+      id: 40,
+      name: 'remove_redundant_indexes',
+      up() {
+        return db.exec(`
+          DROP INDEX IF EXISTS idx_users_email;
+          DROP INDEX IF EXISTS idx_circles_slug;
+          DROP INDEX IF EXISTS idx_survey_responses_anon;
+          DROP INDEX IF EXISTS idx_user_gifts_user;
+          DROP INDEX IF EXISTS idx_email_templates_circle;
+          DROP INDEX IF EXISTS idx_onboarding_forms_token;
+        `);
+      }
+    },
+    {
+      id: 41,
+      name: 'keep_survey_verbatims_once',
+      up() {
+        // The original survey response remains the API's answer shape, but its
+        // free-text content now lives in Feedback. Remove only answer values
+        // that have a matching feedback record; unrelated/malformed responses
+        // are deliberately left untouched.
+        const responses = db.prepare(`
+          SELECT sr.id, sr.survey_id, sr.user_id, sr.answers, sr.questions,
+                 s.questions AS survey_questions
+          FROM survey_responses sr
+          JOIN surveys s ON s.id = sr.survey_id
+          WHERE sr.completed_at IS NOT NULL
+        `).all();
+        const feedback = db.prepare(`
+          SELECT id, response_id, survey_id, user_id, question_id, content
+          FROM feedback
+          WHERE type = 'survey_response' AND question_id IS NOT NULL
+            AND source IN ('survey', 'external_survey')
+        `).all();
+        const responseCounts = new Map();
+        const responseKey = (surveyId, userId) => JSON.stringify([surveyId, userId || null]);
+        for (const row of db.prepare(`
+          SELECT survey_id, user_id, COUNT(*) AS count
+          FROM survey_responses GROUP BY survey_id, user_id
+        `).all()) {
+          responseCounts.set(responseKey(row.survey_id, row.user_id), Number(row.count || 0));
+        }
+
+        const parse = (value, fallback) => {
+          try { return JSON.parse(value || ''); } catch { return fallback; }
+        };
+        const label = option => option && typeof option === 'object'
+          ? String(option.label ?? option.value ?? '') : String(option ?? '');
+        const fold = value => String(value ?? '').trim().toLowerCase();
+        const update = db.prepare('UPDATE survey_responses SET answers = ? WHERE id = ?');
+        const linkedQuestion = db.prepare('SELECT COUNT(*) AS c FROM feedback WHERE response_id = ? AND question_id = ?');
+        const link = db.prepare('UPDATE feedback SET response_id = ? WHERE id = ? AND response_id IS NULL');
+
+        for (const response of responses) {
+          const key = responseKey(response.survey_id, response.user_id);
+          const linked = feedback.filter(row => row.response_id === response.id || (
+            !row.response_id && row.survey_id === response.survey_id && row.user_id === response.user_id &&
+            responseCounts.get(key) === 1
+          ));
+          if (!linked.length) continue;
+
+          const answers = parse(response.answers, {});
+          if (!answers || typeof answers !== 'object' || Array.isArray(answers)) continue;
+          const responseQuestions = parse(response.questions, []);
+          const questions = Array.isArray(responseQuestions) && responseQuestions.length
+            ? responseQuestions : parse(response.survey_questions, []);
+          const byId = new Map((Array.isArray(questions) ? questions : []).map(question => [question.id, question]));
+          let changed = false;
+
+          for (const row of linked) {
+            const question = byId.get(row.question_id);
+            if (!question || !Object.hasOwn(answers, row.question_id)) continue;
+            const answer = answers[row.question_id];
+            if (question.type === 'text' && !question.format && typeof answer === 'string' &&
+                answer.trim() === String(row.content || '').trim()) {
+              delete answers[row.question_id];
+              changed = true;
+            } else if (question.allow_other && ['choice', 'dropdown'].includes(question.type) &&
+                       typeof answer === 'string' && fold(answer) === fold(row.content)) {
+              delete answers[row.question_id];
+              changed = true;
+            } else if (question.allow_other && question.type === 'multi_choice' && Array.isArray(answer)) {
+              const offered = new Set((question.options || []).map(option => fold(label(option))));
+              const copied = new Set(String(row.content || '').split('; ').map(fold));
+              const kept = answer.filter(value => offered.has(fold(value)) || !copied.has(fold(value)));
+              if (kept.length !== answer.length) {
+                if (kept.length) answers[row.question_id] = kept;
+                else delete answers[row.question_id];
+                changed = true;
+              }
+            }
+
+            if (!row.response_id && !Number(linkedQuestion.get(response.id, row.question_id)?.c || 0)) {
+              link.run(response.id, row.id);
+            }
+          }
+          if (changed) update.run(JSON.stringify(answers), response.id);
+        }
+      }
+    },
+    {
+      id: 42,
+      name: 'survey_responses_are_verbatim_source',
+      up() {
+        const responses = db.prepare(`
+          SELECT sr.id, sr.answers, sr.questions, s.questions AS survey_questions
+          FROM survey_responses sr
+          LEFT JOIN surveys s ON s.id = sr.survey_id
+        `).all();
+        const feedbackForResponse = db.prepare(`
+          SELECT id, question_id, content FROM feedback
+          WHERE response_id = ? AND question_id IS NOT NULL
+            AND source IN ('survey', 'external_survey')
+        `);
+        const updateResponse = db.prepare('UPDATE survey_responses SET answers = ? WHERE id = ?');
+        const parse = (value, fallback) => {
+          try { return JSON.parse(value || ''); } catch { return fallback; }
+        };
+        for (const response of responses) {
+          const answers = parse(response.answers, {});
+          if (!answers || typeof answers !== 'object' || Array.isArray(answers)) continue;
+          const savedQuestions = parse(response.questions, []);
+          const questions = Array.isArray(savedQuestions) && savedQuestions.length
+            ? savedQuestions : parse(response.survey_questions, []);
+          const byId = new Map((Array.isArray(questions) ? questions : []).map(question => [question.id, question]));
+          let changed = false;
+          const clearFeedback = db.prepare("UPDATE feedback SET content = '' WHERE id = ?");
+          for (const row of feedbackForResponse.all(response.id)) {
+            const question = byId.get(row.question_id);
+            if (!question) continue;
+            if (row.content) {
+              if (question.type === 'multi_choice') {
+                const current = Array.isArray(answers[row.question_id]) ? answers[row.question_id] : [];
+                const seen = new Set(current.map(value => String(value).trim().toLowerCase()));
+                const other = String(row.content).split('; ').filter(Boolean)
+                  .filter(value => !seen.has(value.trim().toLowerCase()));
+                if (other.length) {
+                  answers[row.question_id] = [...current, ...other];
+                  changed = true;
+                }
+              } else if (!Object.hasOwn(answers, row.question_id) && ['text', 'choice', 'dropdown'].includes(question.type)) {
+                answers[row.question_id] = row.content;
+                changed = true;
+              }
+            }
+            if (Object.hasOwn(answers, row.question_id)) clearFeedback.run(row.id);
+          }
+          if (changed) updateResponse.run(JSON.stringify(answers), response.id);
+        }
+      }
+    },
+    {
+      id: 43,
+      name: 'derive_participant_segment_from_products',
+      up() {
+        const rows = db.prepare('SELECT id, products FROM users').all();
+        const update = db.prepare('UPDATE users SET segment = ? WHERE id = ?');
+        for (const row of rows || []) update.run(segmentForProducts(row.products), row.id);
+
+        return db.exec(`
+          CREATE TRIGGER IF NOT EXISTS users_segment_from_products_insert
+          AFTER INSERT ON users
+          BEGIN
+            UPDATE users SET segment = CASE
+              WHEN (SELECT COUNT(DISTINCT value) FROM json_each(CASE WHEN json_valid(NEW.products) THEN NEW.products ELSE '[]' END)) = 0 THEN 'General / App'
+              WHEN (SELECT COUNT(DISTINCT value) FROM json_each(CASE WHEN json_valid(NEW.products) THEN NEW.products ELSE '[]' END)) = 1 THEN 'Single Product'
+              WHEN (SELECT COUNT(DISTINCT value) FROM json_each(CASE WHEN json_valid(NEW.products) THEN NEW.products ELSE '[]' END)) = 2 THEN 'Multi-Product'
+              ELSE 'Power Tester'
+            END
+            WHERE id = NEW.id;
+          END;
+
+          CREATE TRIGGER IF NOT EXISTS users_segment_from_products_update
+          AFTER UPDATE OF products ON users
+          BEGIN
+            UPDATE users SET segment = CASE
+              WHEN (SELECT COUNT(DISTINCT value) FROM json_each(CASE WHEN json_valid(NEW.products) THEN NEW.products ELSE '[]' END)) = 0 THEN 'General / App'
+              WHEN (SELECT COUNT(DISTINCT value) FROM json_each(CASE WHEN json_valid(NEW.products) THEN NEW.products ELSE '[]' END)) = 1 THEN 'Single Product'
+              WHEN (SELECT COUNT(DISTINCT value) FROM json_each(CASE WHEN json_valid(NEW.products) THEN NEW.products ELSE '[]' END)) = 2 THEN 'Multi-Product'
+              ELSE 'Power Tester'
+            END
+            WHERE id = NEW.id;
+          END;
+
+          CREATE TRIGGER IF NOT EXISTS users_segment_is_derived
+          AFTER UPDATE OF segment ON users
+          WHEN NEW.segment IS NOT CASE
+            WHEN (SELECT COUNT(DISTINCT value) FROM json_each(CASE WHEN json_valid(NEW.products) THEN NEW.products ELSE '[]' END)) = 0 THEN 'General / App'
+            WHEN (SELECT COUNT(DISTINCT value) FROM json_each(CASE WHEN json_valid(NEW.products) THEN NEW.products ELSE '[]' END)) = 1 THEN 'Single Product'
+            WHEN (SELECT COUNT(DISTINCT value) FROM json_each(CASE WHEN json_valid(NEW.products) THEN NEW.products ELSE '[]' END)) = 2 THEN 'Multi-Product'
+            ELSE 'Power Tester'
+          END
+          BEGIN
+            UPDATE users SET segment = CASE
+              WHEN (SELECT COUNT(DISTINCT value) FROM json_each(CASE WHEN json_valid(NEW.products) THEN NEW.products ELSE '[]' END)) = 0 THEN 'General / App'
+              WHEN (SELECT COUNT(DISTINCT value) FROM json_each(CASE WHEN json_valid(NEW.products) THEN NEW.products ELSE '[]' END)) = 1 THEN 'Single Product'
+              WHEN (SELECT COUNT(DISTINCT value) FROM json_each(CASE WHEN json_valid(NEW.products) THEN NEW.products ELSE '[]' END)) = 2 THEN 'Multi-Product'
+              ELSE 'Power Tester'
+            END
+            WHERE id = NEW.id;
+          END;
         `);
       }
     }

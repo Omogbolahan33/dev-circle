@@ -198,7 +198,7 @@
   const can = permission => me.permissions.includes('*') || me.permissions.includes(permission);
 
   async function loadMe() {
-    const data = await api.get('/auth/me');
+    const data = await Shell.adminMe();
     me = { user: data.user || {}, permissions: data.permissions || [] };
   }
 

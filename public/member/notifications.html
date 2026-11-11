@@ -153,24 +153,24 @@
   }
 
   async function load() {
-    try {
-      const [profile, prefs] = await Promise.all([
-        api.get('/users/profile'),
-        api.get('/users/notification-preferences'),
-        loadInbox(1)
-      ]);
-
-      preferences = {};
-      prefs.categories.forEach(c => { preferences[c.key] = c.enabled; });
-
-      renderCategories(prefs.categories);
-      document.getElementById('quietStart').value = prefs.quiet_hours.start;
-      document.getElementById('quietEnd').value = prefs.quiet_hours.end;
-
-      renderConsent(profile.consent, profile.participation_consent);
-    } catch (err) {
-      showToast('Failed to load: ' + err.message, 'error');
-    }
+    const tasks = [
+      Shell.memberProfile().then(profile => {
+        renderConsent(profile.consent, profile.participation_consent);
+      }).catch(err => showToast('Could not load consent settings: ' + err.message, 'error')),
+      api.get('/users/notification-preferences').then(prefs => {
+        preferences = {};
+        prefs.categories.forEach(c => { preferences[c.key] = c.enabled; });
+        renderCategories(prefs.categories);
+        document.getElementById('quietStart').value = prefs.quiet_hours.start;
+        document.getElementById('quietEnd').value = prefs.quiet_hours.end;
+      }).catch(err => showToast('Could not load notification preferences: ' + err.message, 'error')),
+      loadInbox(1).catch(err => {
+        document.getElementById('inbox').innerHTML = emptyState({
+          title: 'Could not load your inbox', text: err.message
+        });
+      })
+    ];
+    await Promise.all(tasks);
   }
 
   function renderCategories(categories) {

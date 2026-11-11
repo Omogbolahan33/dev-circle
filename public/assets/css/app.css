@@ -348,6 +348,7 @@
     top: 0;
     z-index: var(--z-sticky);
   }
+  .mobile-bar .brand-mark .brand-logo-img { height:18px; max-width:104px; }
 
   .sidebar {
     position: fixed;
@@ -359,7 +360,7 @@
     box-shadow: var(--shadow-xl);
   }
   .sidebar.open { transform: translateX(0); }
-  .sidebar.open + .sidebar-scrim { display: block; }
+  .sidebar.open ~ .sidebar-scrim { display: block; }
 
   .app-body { padding: var(--sp-5) var(--sp-4) var(--sp-12); }
 }
@@ -601,6 +602,16 @@
 .stat-foot { font-size: var(--fs-xs); color: var(--ash-dim); margin-top: var(--sp-2); }
 .stat-foot .up { color: var(--green-ink); }
 .stat-foot .down { color: var(--rose-ink); }
+
+@media (max-width: 600px) {
+  /* Keep the four overview metrics in a compact 2×2 block instead of letting
+     the 180px auto-fit minimum turn them into four full-width phone cards. */
+  .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-2); }
+  .stat { padding: 12px; border-radius: var(--r-md); }
+  .stat-label { font-size: 10px; letter-spacing: .06em; margin-bottom: 5px; }
+  .stat-value { font-size: 22px; }
+  .stat-value .unit { font-size: var(--fs-sm); }
+}
 
 /* Figures — numbers stated typographically, separated by hairlines rather
    than boxed into tiles. Used where a few standing counts genuinely help
@@ -1347,16 +1358,6 @@ textarea.input { min-height: 90px; line-height: var(--lh-normal); }
 .portal-link:hover { color: var(--white); background: var(--tint-1); text-decoration: none; }
 .portal-link.active { color: var(--white); background: var(--cd-blue-dim); }
 
-/* The current page label shown in the bar on a phone; desktop shows the full
-   link row instead. */
-.portal-current {
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-semibold);
-  color: var(--text-1);
-  white-space: nowrap;
-}
-.mobile-only { display: none; }
-
 /* Thumb navigation: a fixed bottom tab bar on phones, hidden where the link
    row fits in the top bar. */
 .portal-tabbar { display: none; }
@@ -1371,12 +1372,11 @@ textarea.input { min-height: 90px; line-height: var(--lh-normal); }
 @media (max-width: 640px) {
   .portal-body { padding: var(--sp-6) var(--sp-4) calc(var(--sp-12) + 64px); }
 
-  /* The link row moves to the bottom tab bar; the bar instead names the page,
-     so it is the member's mobile breadcrumb and the in-content breadcrumb is
-     hidden to avoid showing "Home / Page" twice. */
+  /* Keep the top bar to its controls; destinations live in the thumb-friendly
+     bottom tab bar, so a repeated current-page title is unnecessary. */
   .portal-links { display: none; }
-  .portal-current { display: inline-block; flex: 1; text-align: center; }
-  .mobile-only { display: inline; }
+  .portal-bar-inner > .sidebar-brand { margin-right: auto; }
+  .portal-bar .brand-mark .brand-logo-img { height:18px; max-width:104px; }
   .portal-body .breadcrumb { display: none; }
 
   .portal-tabbar {
@@ -1716,6 +1716,12 @@ textarea.input { min-height: 90px; line-height: var(--lh-normal); }
 .criterion-op { flex: 0 0 auto; width: 118px; }
 .criterion-value { flex: 1 1 40%; min-width: 0; display: flex; }
 .criterion-value .input { width: 100%; }
+.criterion-choices { display:flex; flex-wrap:wrap; align-content:flex-start; gap:6px; width:100%; max-height:132px; overflow:auto; }
+.criterion-option { border:1px solid var(--line); border-radius:var(--r-full); background:var(--surface-1); color:var(--text-2); padding:5px 9px; font:inherit; font-size:var(--fs-xs); cursor:pointer; }
+.criterion-option:hover { border-color:var(--line-strong); color:var(--text-1); }
+.criterion-option.selected { border-color:var(--cd-blue); background:var(--cd-blue-dim); color:var(--cd-blue); }
+.criterion-option:focus-visible { outline:2px solid var(--cd-blue); outline-offset:2px; }
+.criterion-choice-hint { flex-basis:100%; color:var(--text-3); font-size:10px; padding-top:2px; }
 
 .criterion-empty {
   font-size: var(--fs-xs);
@@ -2057,11 +2063,31 @@ textarea.input { min-height: 90px; line-height: var(--lh-normal); }
 .sv-ask + .sv-control, .sv-note + .sv-control { margin-top: var(--sp-6); }
 .sv-number-kicker { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--cd-blue); margin-bottom: var(--sp-3); }
 
-/* An asterisk alone has never told anyone anything, so it is always paired
-   with a legend where the questions start. */
+/* Required status stays beside each question; this compact key explains
+   the asterisk alongside the form title without taking a row of its own. */
 .sv-required { color: var(--rose-ink); margin-left: 4px; font-weight: var(--fw-regular); }
+.sv-required-key {
+  display: inline-block; margin-left: var(--sp-2); color: var(--ash-dim);
+  font-size: var(--fs-xs); font-weight: var(--fw-medium); letter-spacing: 0;
+  vertical-align: middle; white-space: nowrap;
+}
+.sv-required-key > span { color: var(--rose-ink); }
 
 .sv-options { display: flex; flex-direction: column; gap: var(--sp-2); }
+.sv-dropdown-multi { position: relative; }
+.sv-dropdown-trigger {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3);
+  min-height: 48px; text-align: left; cursor: pointer;
+}
+.sv-dropdown-trigger > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sv-dropdown-menu {
+  position: absolute; z-index: 20; top: calc(100% + 4px); left: 0; right: 0;
+  max-height: 280px; overflow-y: auto; padding: var(--sp-2);
+  border: 1px solid var(--line-strong); border-radius: var(--r-md);
+  background: var(--surface-2); box-shadow: var(--shadow-lg);
+}
+.sv-dropdown-menu[hidden] { display: none; }
+.sv-dropdown-menu .sv-option { min-height: 40px; padding: var(--sp-2) var(--sp-3); }
 
 .sv-option {
   display: flex;

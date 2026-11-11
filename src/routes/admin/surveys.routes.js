@@ -631,8 +631,8 @@ router.get('/surveys/:id/responses', requirePermission('surveys.read'), async (r
 
   res.json({
     survey: hydrated,
-    responses: responses.map(r => {
-      const answers = parseJSON(r.answers, {});
+    responses: await Promise.all(responses.map(async r => {
+      const answers = await verbatims.restoreResponseAnswers(r, hydrated.questions);
       return {
         ...r,
         answers,
@@ -641,8 +641,59 @@ router.get('/surveys/:id/responses', requirePermission('surveys.read'), async (r
         // ever asked of them.
         asked: r.completed_at ? surveyForm.visible(hydrated.questions, answers).map(q => q.id) : null
       };
-    })
+    }))
   });
+});
+
+// POST /api/admin/surveys/:id/responses/:responseId/submit
+// An admin may finalize saved progress, but only when it passes the same server
+// validation as an ordinary submission. This changes response status without
+// recording a member engagement event.
+router.post('/surveys/:id/responses/:responseId/submit', requirePermission('responses.update'), async (req, res) => {
+  const survey = await db.prepare('SELECT * FROM surveys WHERE id = ? AND circle_id = ?')
+    .get(req.params.id, req.circleId);
+  if (!survey) return res.status(404).json({ error: 'Survey not found' });
+
+  const response = await db.prepare(`
+    SELECT id, user_id, answers, completed_at
+    FROM survey_responses WHERE id = ? AND survey_id = ?
+  `).get(req.params.responseId, survey.id);
+  if (!response) return res.status(404).json({ error: 'Survey response not found' });
+  if (response.completed_at) return res.status(409).json({ error: 'This response is already submitted.' });
+
+  const hydrated = surveyForm.hydrate(survey);
+  const answers = parseJSON(response.answers, {});
+  if (!answers || typeof answers !== 'object' || Array.isArray(answers)) {
+    return res.status(400).json({ error: 'Saved answers are not a valid response object.' });
+  }
+  const checked = surveyForm.checkResponse(hydrated.questions, answers);
+  if (!checked.ok) {
+    return res.status(400).json({
+      error: checked.missing.length
+        ? 'This response cannot be marked submitted because required answers are missing.'
+        : 'This response contains answers that are no longer valid for the survey.',
+      missing: checked.missing,
+      errors: checked.errors
+    });
+  }
+
+  let completed = false;
+  let filedFeedback = 0;
+  await db.atomic(async () => {
+    const updated = await db.prepare(`
+      UPDATE survey_responses
+      SET answers = ?, questions = ?, completed_at = datetime('now')
+      WHERE id = ? AND survey_id = ? AND completed_at IS NULL
+    `).run(JSON.stringify(checked.answers), JSON.stringify(hydrated.questions), response.id, survey.id);
+    completed = Number(updated?.changes || 0) > 0;
+    if (!completed) return;
+
+    const filed = await verbatims.record(response.user_id || null, survey, checked.answers, { responseId: response.id });
+    filedFeedback = filed.filed;
+  });
+
+  if (!completed) return res.status(409).json({ error: 'This response is already submitted.' });
+  res.json({ message: 'Response marked submitted', filed_feedback: filedFeedback });
 });
 
 // DELETE /api/admin/surveys/:id/responses/:responseId
@@ -665,9 +716,8 @@ router.delete('/surveys/:id/responses/:responseId', requirePermission('responses
     const linked = Number((await db.prepare(`
       SELECT COUNT(*) AS c FROM feedback
       WHERE response_id = ?
-         OR (? IS NOT NULL AND survey_id = ? AND type = 'survey_response'
-             AND user_id = ?)
-    `).get(response.id, response.user_id, survey.id, response.user_id))?.c || 0);
+         OR (response_id IS NULL AND survey_id = ? AND type = 'survey_response' AND user_id = ?)
+    `).get(response.id, survey.id, response.user_id))?.c || 0);
     return res.status(409).json({
       error: 'Deleting this response also deletes its survey verbatims from Feedback. Confirm to continue.',
       confirm_required: true,
@@ -680,14 +730,76 @@ router.delete('/surveys/:id/responses/:responseId', requirePermission('responses
     const removed = await db.prepare(`
       DELETE FROM feedback
       WHERE response_id = ?
-         OR (? IS NOT NULL AND survey_id = ? AND type = 'survey_response'
-             AND user_id = ?)
-    `).run(response.id, response.user_id, survey.id, response.user_id);
+         OR (response_id IS NULL AND survey_id = ? AND type = 'survey_response' AND user_id = ?)
+    `).run(response.id, survey.id, response.user_id);
     deletedFeedback = Number(removed?.changes || 0);
     await db.prepare('DELETE FROM survey_responses WHERE id = ?').run(response.id);
   });
 
   res.json({ message: 'Survey response deleted', deleted_feedback: deletedFeedback });
+});
+
+// DELETE /api/admin/surveys/:id/responses?status=in_progress
+// Remove every unfinished response for this survey in one confirmed operation.
+// These rows hold saved progress, so deleting them means a member starts over.
+router.delete('/surveys/:id/responses', requirePermission('responses.delete'), async (req, res) => {
+  if (req.query.status !== 'in_progress') {
+    return res.status(400).json({ error: 'Only status=in_progress can be bulk-deleted here' });
+  }
+
+  const survey = await db.prepare('SELECT id FROM surveys WHERE id = ? AND circle_id = ?')
+    .get(req.params.id, req.circleId);
+  if (!survey) return res.status(404).json({ error: 'Survey not found' });
+
+  const [responseRow, feedbackRow] = await Promise.all([
+    db.prepare('SELECT COUNT(*) AS c FROM survey_responses WHERE survey_id = ? AND completed_at IS NULL').get(survey.id),
+    db.prepare(`
+      SELECT COUNT(*) AS c FROM feedback
+      WHERE response_id IN (
+        SELECT id FROM survey_responses WHERE survey_id = ? AND completed_at IS NULL
+      ) OR (response_id IS NULL AND survey_id = ? AND type = 'survey_response' AND user_id IN (
+        SELECT user_id FROM survey_responses
+        WHERE survey_id = ? AND completed_at IS NULL AND user_id IS NOT NULL
+      ))
+    `).get(survey.id, survey.id, survey.id)
+  ]);
+  const responses = Number(responseRow?.c || 0);
+  const feedback = Number(feedbackRow?.c || 0);
+
+  if (responses && req.query.confirm !== 'true' && req.body?.confirm !== true) {
+    return res.status(409).json({
+      error: `Delete ${responses} unfinished response(s) and their saved progress? Those members will need to start over.`,
+      confirm_required: true,
+      responses,
+      feedback
+    });
+  }
+
+  let deletedFeedback = 0;
+  let deletedResponses = 0;
+  await db.atomic(async () => {
+    const removedFeedback = await db.prepare(`
+      DELETE FROM feedback
+      WHERE response_id IN (
+        SELECT id FROM survey_responses WHERE survey_id = ? AND completed_at IS NULL
+      ) OR (response_id IS NULL AND survey_id = ? AND type = 'survey_response' AND user_id IN (
+        SELECT user_id FROM survey_responses
+        WHERE survey_id = ? AND completed_at IS NULL AND user_id IS NOT NULL
+      ))
+    `).run(survey.id, survey.id, survey.id);
+    deletedFeedback = Number(removedFeedback?.changes || 0);
+
+    const removedResponses = await db.prepare(
+      'DELETE FROM survey_responses WHERE survey_id = ? AND completed_at IS NULL'
+    ).run(survey.id);
+    deletedResponses = Number(removedResponses?.changes || 0);
+  });
+
+  res.json({
+    message: 'Unfinished survey responses and saved progress deleted',
+    deleted_responses: deletedResponses,
+    deleted_feedback: deletedFeedback
+  });
 });
 
 // ─── Responses collected elsewhere ──────────────────────────
@@ -964,13 +1076,13 @@ router.post('/surveys/:id/responses/import', requirePermission('surveys.write'),
   `);
 
   const insertResponse = db.prepare(`
-    INSERT INTO survey_responses (id, survey_id, user_id, answers, completed_at, triggered_by,
+    INSERT INTO survey_responses (id, survey_id, user_id, answers, questions, completed_at, triggered_by,
                                   respondent_kind, source_system, external_response_id)
-    VALUES (?, ?, ?, ?, ?, 'import', ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, 'import', ?, ?, ?)
   `);
   const completeResponse = db.prepare(`
     UPDATE survey_responses
-    SET answers = ?, completed_at = ?, triggered_by = 'import',
+    SET answers = ?, questions = ?, completed_at = ?, triggered_by = 'import',
         source_system = ?, external_response_id = ?
     WHERE id = ?
   `);
@@ -1067,27 +1179,30 @@ router.post('/surveys/:id/responses/import', requirePermission('surveys.write'),
       const pending = member ? await findPending.get(survey.id, member.id) : null;
       const responseId = pending ? pending.id : uuid();
 
-      if (pending) {
-        await completeResponse.run(serialized, at, sourceSystem, meta.externalId || null, responseId);
-      } else {
-        await insertResponse.run(
-          responseId, survey.id, member ? member.id : null, serialized, at,
-          // Not 'anonymous': nobody answered this under a promise of
-          // anonymity. It is a response with no account behind it, which is a
-          // different thing and is worth being able to tell apart later.
-          // A response with no account behind it on a link survey is anonymous
-          // in the sense the word promises whoever answered. On a survey put
-          // to named people it is simply one we could not attach, which is a
-          // different thing and worth being able to tell apart later.
-          member ? 'member' : (anonymousExpected ? 'anonymous' : 'external'),
-          sourceSystem, meta.externalId || null
-        );
-      }
+      let filed = 0;
+      await db.atomic(async () => {
+        if (pending) {
+          await completeResponse.run(serialized, JSON.stringify(questions), at, sourceSystem, meta.externalId || null, responseId);
+        } else {
+          await insertResponse.run(
+            responseId, survey.id, member ? member.id : null, serialized, JSON.stringify(questions), at,
+            // Not 'anonymous': nobody answered this under a promise of
+            // anonymity. It is a response with no account behind it, which is a
+            // different thing and is worth being able to tell apart later.
+            // A response with no account behind it on a link survey is anonymous
+            // in the sense the word promises whoever answered. On a survey put
+            // to named people it is simply one we could not attach, which is a
+            // different thing and worth being able to tell apart later.
+            member ? 'member' : (anonymousExpected ? 'anonymous' : 'external'),
+            sourceSystem, meta.externalId || null
+          );
+        }
 
-      // What was written in a sheet is what a developer told us, on the same
-      // terms as anything typed in here
-      const { filed } = await verbatims.record(member ? member.id : null, survey, checked.answers, {
-        at, responseId, sourceSystem, externalResponseId: meta.externalId || null
+        // What was written in a sheet is what a developer told us, on the same
+        // terms as anything typed in here
+        filed = (await verbatims.record(member ? member.id : null, survey, checked.answers, {
+          at, responseId, sourceSystem, externalResponseId: meta.externalId || null
+        })).filed;
       });
       results.verbatims += filed;
 
@@ -1148,8 +1263,8 @@ router.get('/surveys/:id/export', requirePermission('export.read'), async (req, 
     ...questions.map((q, i) => `q${i + 1}. ${q.text || q.type}`)
   ];
 
-  const rows = responses.map(r => {
-    const answers = parseJSON(r.answers, {});
+  const rows = await Promise.all(responses.map(async r => {
+    const answers = await verbatims.restoreResponseAnswers(r, surveyForm.hydrate(survey).questions);
     const asked = new Set(surveyForm.visible(
       surveyForm.hydrate(survey).questions, answers
     ).map(q => q.id));
@@ -1165,7 +1280,7 @@ router.get('/surveys/:id/export', requirePermission('export.read'), async (req, 
       // A grid or a ranking is flattened the same way it reads on screen.
       ...questions.map(q => (asked.has(q.id) ? surveyForm.answerToText(q, answers[q.id]) : ''))
     ];
-  });
+  }));
 
   const csv = toCSV(headers, rows, (row, header) => row[headers.indexOf(header)]);
 

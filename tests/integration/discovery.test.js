@@ -219,6 +219,19 @@ test('an unknown grouping is refused with the list of real ones', async () => {
   assert.ok(res.body.available.includes('question'));
 });
 
+test('grouped table items load in one endpoint response and retain their group key', async () => {
+  const user = h.makeUser();
+  const survey = await makeSurvey('Round', [{ type: 'text', text: 'A?' }, { type: 'text', text: 'B?' }]);
+  await answer(user, survey, { [survey.questions[0].id]: 'Answer A', [survey.questions[1].id]: 'Answer B' });
+
+  const grouped = await h.get('/api/admin/feedback/grouped?group_by=question&include_items=true', { token });
+  assert.equal(grouped.status, 200);
+  const groupA = grouped.body.groups.find(group => group.label === 'A?');
+  const itemsA = grouped.body.items_by_group.filter(item => item.group_key === groupA.key);
+  assert.equal(itemsA.length, 1);
+  assert.equal(itemsA[0].content, 'Answer A');
+});
+
 test('drilling into a group returns exactly that group', async () => {
   const user = h.makeUser();
   const survey = await makeSurvey('Round', [{ type: 'text', text: 'A?' }, { type: 'text', text: 'B?' }]);

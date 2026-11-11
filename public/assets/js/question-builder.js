@@ -50,7 +50,10 @@ const QuestionBuilder = (() => {
     // whole the moment anything in it changes, so the open row has to outlive
     // the redraw — keyed by the question and the option's place in its list.
     const descExpanded = new Set();
+    const subtextExpanded = new Set();
     const descKey = (questionId, list, i) => `${questionId}|${list}|${i}`;
+    let activeQuestionDrag = null;
+    let activeOptionDrag = null;
 
     // Which cards have their "More options" fold open. The same redraw
     // problem: the choice is the author's, so it is kept across the redraws
@@ -68,7 +71,7 @@ const QuestionBuilder = (() => {
     // ─── The question list ────────────────────────────────────
 
     function renderTypeMenu() {
-      el.typeMenu.innerHTML = schema.types.map(type => `
+      el.typeMenu.innerHTML = schema.types.filter(type => !type.legacy && type.type !== 'dropdown').map(type => `
         <button class="type-option" data-type="${type.type}">
           <span class="type-option-name">${escapeHtml(type.label)}</span>
           <span class="type-option-hint">${escapeHtml(type.hint)}</span>
@@ -129,6 +132,14 @@ const QuestionBuilder = (() => {
     }
 
     function render() {
+      // Forms loaded after this shared builder was initialized get the same
+      // legacy conversion as questions present at startup.
+      state.questions.forEach(question => {
+        if (question.type === 'dropdown') {
+          question.type = 'choice';
+          question.dropdown = true;
+        }
+      });
       const holder = el.questions;
       holder.innerHTML = state.questions.map((q, i) => card(q, i)).join('');
       state.questions.forEach((q, i) => bindCard(holder.children[i], q, i));
@@ -151,15 +162,16 @@ const QuestionBuilder = (() => {
 
       const head = `
         <div class="q-head" data-open-toggle>
+          <button type="button" class="icon-btn drag-handle" data-drag-question draggable="true"
+                  aria-label="Drag to reorder question ${index + 1}" title="Drag to reorder">⠿</button>
           <span class="q-num">Q${index + 1}</span>
           <span class="q-kind">${escapeHtml(type.label)}</span>
           ${question.required ? '<span class="q-flag">required</span>' : ''}
+          ${question.dropdown ? '<span class="q-flag">dropdown</span>' : ''}
           ${question.visible_if ? '<span class="q-branching">conditional</span>' : ''}
           ${question.branch_to ? '<span class="q-branches">branches on its answer</span>' : ''}
           ${opts.cardFlags ? opts.cardFlags(question, index) : ''}
           <span class="spacer"></span>
-          <button class="icon-btn" data-move="up" ${index === 0 ? 'disabled' : ''} aria-label="Move up">↑</button>
-          <button class="icon-btn" data-move="down" ${index === state.questions.length - 1 ? 'disabled' : ''} aria-label="Move down">↓</button>
           <button class="icon-btn" data-duplicate aria-label="Duplicate">⧉</button>
           <button class="icon-btn" data-remove aria-label="Remove question">×</button>
         </div>`;
@@ -181,16 +193,19 @@ const QuestionBuilder = (() => {
           ${head}
 
           <div class="field">
-            <label class="label">${question.type === 'section' ? 'Heading' : 'Question'}
-              <span class="tip" data-tip="A word can be a link: [Terms &amp; Conditions](https://example.com/terms)">?</span></label>
+            <div class="q-label-row">
+              <label class="label">${question.type === 'section' ? 'Heading' : 'Question'}
+                <span class="tip" data-tip="A word can be a link: [Terms &amp; Conditions](https://example.com/terms)">?</span></label>
+              ${SurveySchema.isAnswerable(question) ? `
+                <button type="button" class="q-required-toggle" data-required aria-pressed="${question.required}" title="${question.required ? 'Make this question optional' : 'Require an answer'}">
+                  <span class="check${question.required ? ' on' : ''}">✓</span> Required
+                </button>` : ''}
+            </div>
             <input type="text" class="input q-text" value="${escapeHtml(question.text || '')}"
                    placeholder="${escapeHtml(placeholderFor(question.type))}">
           </div>
 
-          ${SurveySchema.isAnswerable(question) ? `
-            <label class="row-tight text-sm" style="cursor:pointer;gap:var(--sp-2);margin-bottom:var(--sp-4)">
-              <span class="check${question.required ? ' on' : ''}" data-required>✓</span> An answer is required
-            </label>` : ''}
+          ${questionSubtextEditor(question)}
 
           ${coreEditor(question)}
           ${moreOptions(question, index)}
@@ -230,7 +245,8 @@ const QuestionBuilder = (() => {
 
     function optionsList(question, list) {
       const isCards = question.type === 'choice' || question.type === 'multi_choice';
-      const optionTip = isCards
+      const supportsSubtext = isCards && !question.dropdown;
+      const optionTip = supportsSubtext
         ? `The pen beside an option adds the line the member reads under it — a sentence, a link, or a picture.`
           + (question.type === 'multi_choice'
             ? ` Mark an option “only” when it cannot be true alongside the others — “None of these”.`
@@ -238,37 +254,45 @@ const QuestionBuilder = (() => {
         : '';
       return `
         <div class="field" style="margin-bottom:0">
-          <label class="label">Options${optionTip ? `
-            <span class="tip" data-tip="${escapeHtml(optionTip)}">?</span>` : ''}</label>
-          <div class="options">
+          <div class="options-heading">
+            <label class="label">Options${optionTip ? `
+              <span class="tip" data-tip="${escapeHtml(optionTip)}">?</span>` : ''}</label>
+            ${isCards && list === 'options' ? `
+              <button type="button" class="q-display-toggle" data-set-check="dropdown"
+                      aria-pressed="${!!question.dropdown}" title="Show choices in a dropdown">
+                <span class="check${question.dropdown ? ' on' : ''}">✓</span> Dropdown
+              </button>` : ''}
+          </div>
+          <div class="options" data-sort-list="${list}">
             ${(question[list] || []).map((option, i) => {
               const word = isCards
                 ? (option && typeof option === 'object' ? option.label : option)
                 : option;
               const subtext = isCards && option && typeof option === 'object'
                 ? (option.subtext || '') : '';
-              const descOpen = isCards && descExpanded.has(descKey(question.id, list, i));
+              const descOpen = supportsSubtext && descExpanded.has(descKey(question.id, list, i));
               return `
               <div class="option-item" data-list="${list}" data-option="${i}">
                 <div class="option-row">
-                  <span class="handle">${i + 1}</span>
+                  <button type="button" class="handle" data-drag-option draggable="true"
+                          aria-label="Drag to reorder option ${i + 1}" title="Drag to reorder">⠿</button>
                   <div class="option-fields">
                     <input type="text" class="input option-word" value="${escapeHtml(word)}" placeholder="Option ${i + 1}">
-                    ${isCards && subtext ? `
+                    ${supportsSubtext && subtext ? `
                     <button type="button" class="option-desc-preview" data-toggle-desc
                             title="The line the member reads under this option — click to edit">
                       ${escapeHtml(subtext)}</button>` : ''}
                   </div>
-                  ${isCards ? `
+                  ${supportsSubtext ? `
                   <button type="button" class="icon-btn option-desc-toggle${subtext ? ' on' : ''}"
-                          data-toggle-desc aria-label="Add or edit the line shown under this option"
-                          title="A line under this option as the member reads it — words, a link, a picture">✎</button>` : ''}
+                          data-toggle-desc aria-label="Add or edit option subtext"
+                          title="Add or edit option subtext">✎</button>` : ''}
                   ${question.type === 'multi_choice' && list === 'options' ? `
                   <button class="exclusive-flag${(question.exclusive_options || []).includes(word) ? ' on' : ''}"
                           data-exclusive="${i}" title="Cannot be picked with anything else">only</button>` : ''}
                   <button class="icon-btn" data-drop-option="${i}" aria-label="Remove option">×</button>
                 </div>
-                ${isCards ? `
+                ${supportsSubtext ? `
                 <div class="option-desc-wrap${descOpen ? ' open' : ''}">
                   <div class="option-desc-edit">
                     <input type="text" class="input option-subtext" maxlength="300" value="${escapeHtml(subtext)}"
@@ -280,8 +304,41 @@ const QuestionBuilder = (() => {
               </div>`;
             }).join('')}
           </div>
-          <button class="btn btn-sm btn-ghost mt-2" data-add-option="${list}">+ Add option</button>
+          <div class="option-actions">
+            ${question.type === 'choice' && list === 'options' ? `
+              <button type="button" class="q-add-other${question.allow_other ? ' on' : ''}"
+                      data-set-check="allow_other" aria-pressed="${!!question.allow_other}">
+                <span class="check${question.allow_other ? ' on' : ''}">✓</span>
+                ${question.allow_other ? 'Other option added' : '+ Add “Other” option'}
+              </button>` : ''}
+            <button class="btn btn-sm btn-ghost" data-add-option="${list}">+ Add option</button>
+          </div>
         </div>`;
+    }
+
+    // Optional helper text appears under a question for the respondent. Keep
+    // the control compact: a small add link when empty, or the text with a pen
+    // beside it when written; open the textarea only while editing.
+    function questionSubtextEditor(question) {
+      if (question.type === 'section') return '';
+      const open = subtextExpanded.has(question.id);
+      if (open) {
+        return `
+          <div class="question-subtext-editor is-open">
+            <textarea class="input" data-set="description" maxlength="500" aria-label="Question subtext"
+              placeholder="Subtext…">${escapeHtml(question.description || '')}</textarea>
+            <button type="button" class="question-subtext-link" data-toggle-subtext>Done</button>
+          </div>`;
+      }
+      if (question.description) {
+        return `
+          <div class="question-subtext-preview">
+            <span>${escapeHtml(question.description)}</span>
+            <button type="button" class="icon-btn question-subtext-edit" data-toggle-subtext
+                    aria-label="Edit question subtext" title="Edit question subtext">✎</button>
+          </div>`;
+      }
+      return `<button type="button" class="question-subtext-link question-subtext-add" data-toggle-subtext>+ Subtext</button>`;
     }
 
     // What the question is made of: out in the open, under the wording.
@@ -332,16 +389,10 @@ const QuestionBuilder = (() => {
         case 'choice':
         case 'dropdown':
           return `
-            <div class="row wrap" style="gap:var(--sp-4)">
-              <label class="row-tight text-sm" style="cursor:pointer">
-                <span class="check${question.allow_other ? ' on' : ''}" data-set-check="allow_other">✓</span>
-                Offer "something else"
-              </label>
-              <label class="row-tight text-sm" style="cursor:pointer">
-                <span class="check${question.randomize ? ' on' : ''}" data-set-check="randomize">✓</span>
-                Shuffle the order
-              </label>
-            </div>`;
+            <label class="row-tight text-sm" style="cursor:pointer">
+              <span class="check${question.randomize ? ' on' : ''}" data-set-check="randomize">✓</span>
+              Shuffle the order
+            </label>`;
 
         case 'multi_choice':
           return `
@@ -524,7 +575,6 @@ const QuestionBuilder = (() => {
         }
         case 'choice':
         case 'dropdown':
-          if (question.allow_other) parts.push('an “other” option');
           if (question.randomize) parts.push('shuffled');
           break;
         case 'multi_choice':
@@ -774,6 +824,45 @@ const QuestionBuilder = (() => {
       const redraw = () => { render(); changed(); };
       const touch = () => changed();
 
+      const questionHandle = cardEl.querySelector('[data-drag-question]');
+      questionHandle?.addEventListener('dragstart', event => {
+        activeQuestionDrag = index;
+        activeOptionDrag = null;
+        cardEl.classList.add('is-dragging');
+        if (event.dataTransfer) {
+          event.dataTransfer.effectAllowed = 'move';
+          event.dataTransfer.setData('text/plain', `question:${index}`);
+        }
+      });
+      questionHandle?.addEventListener('dragend', clearDragIndicators);
+      questionHandle?.addEventListener('keydown', event => {
+        if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+        event.preventDefault();
+        const target = index + (event.key === 'ArrowUp' ? -1 : 1);
+        if (moveQuestionTo(index, target)) {
+          el.questions.querySelector(`.q-card[data-index="${target}"] [data-drag-question]`)?.focus();
+        }
+      });
+      cardEl.addEventListener('dragover', event => {
+        if (activeQuestionDrag === null) return;
+        event.preventDefault();
+        if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+        cardEl.classList.add('drop-target');
+      });
+      cardEl.addEventListener('dragleave', event => {
+        if (!cardEl.contains(event.relatedTarget)) cardEl.classList.remove('drop-target');
+      });
+      cardEl.addEventListener('drop', event => {
+        if (activeQuestionDrag === null) return;
+        event.preventDefault();
+        const from = activeQuestionDrag;
+        const rect = cardEl.getBoundingClientRect();
+        let target = index + (event.clientY > rect.top + rect.height / 2 ? 1 : 0);
+        if (from < target) target--;
+        clearDragIndicators();
+        moveQuestionTo(from, target);
+      });
+
       // Clicking the card opens it; clicking a control inside the header does
       // what that control says instead of collapsing the thing being used
       cardEl.querySelectorAll('[data-open-toggle]').forEach(target => {
@@ -796,14 +885,20 @@ const QuestionBuilder = (() => {
         touch();
       });
 
+      cardEl.querySelector('[data-toggle-subtext]')?.addEventListener('click', () => {
+        if (subtextExpanded.has(question.id)) subtextExpanded.delete(question.id);
+        else subtextExpanded.add(question.id);
+        render();
+        if (subtextExpanded.has(question.id)) {
+          el.questions.querySelector(`.q-card[data-index="${index}"] [data-set="description"]`)?.focus();
+        }
+      });
+
       cardEl.querySelector('[data-required]')?.addEventListener('click', () => {
         question.required = !question.required;
         redraw();
       });
 
-      cardEl.querySelectorAll('[data-move]').forEach(button => {
-        button.addEventListener('click', () => move(index, button.dataset.move === 'up' ? -1 : 1));
-      });
       cardEl.querySelector('[data-remove]')?.addEventListener('click', () => remove(index));
       cardEl.querySelector('[data-duplicate]')?.addEventListener('click', () => duplicate(index));
 
@@ -850,6 +945,46 @@ const QuestionBuilder = (() => {
         const list = item.dataset.list;
         const i = Number(item.dataset.option);
         const row = item.querySelector('.option-row');
+        const optionHandle = item.querySelector('[data-drag-option]');
+        optionHandle?.addEventListener('dragstart', event => {
+          activeOptionDrag = { questionId: question.id, list, index: i };
+          activeQuestionDrag = null;
+          item.classList.add('is-dragging');
+          if (event.dataTransfer) {
+            event.dataTransfer.effectAllowed = 'move';
+            event.dataTransfer.setData('text/plain', `option:${question.id}:${list}:${i}`);
+          }
+        });
+        optionHandle?.addEventListener('dragend', clearDragIndicators);
+        optionHandle?.addEventListener('keydown', event => {
+          if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+          event.preventDefault();
+          const target = i + (event.key === 'ArrowUp' ? -1 : 1);
+          if (moveOption(question, list, i, target)) {
+            el.questions.querySelector(`.q-card[data-index="${index}"] .option-item[data-list="${list}"][data-option="${target}"] [data-drag-option]`)?.focus();
+          }
+        });
+        item.addEventListener('dragover', event => {
+          if (!activeOptionDrag || activeOptionDrag.questionId !== question.id || activeOptionDrag.list !== list) return;
+          event.preventDefault();
+          event.stopPropagation();
+          if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+          item.classList.add('drop-target');
+        });
+        item.addEventListener('dragleave', event => {
+          if (!item.contains(event.relatedTarget)) item.classList.remove('drop-target');
+        });
+        item.addEventListener('drop', event => {
+          if (!activeOptionDrag || activeOptionDrag.questionId !== question.id || activeOptionDrag.list !== list) return;
+          event.preventDefault();
+          event.stopPropagation();
+          const { index: from } = activeOptionDrag;
+          const rect = item.getBoundingClientRect();
+          let target = i + (event.clientY > rect.top + rect.height / 2 ? 1 : 0);
+          if (from < target) target--;
+          clearDragIndicators();
+          moveOption(question, list, from, target);
+        });
 
         const wordOf = () => isCards
           ? (question[list][i] && typeof question[list][i] === 'object'
@@ -1145,14 +1280,39 @@ const QuestionBuilder = (() => {
     // Moving or removing a question can strand a rule that pointed at it, so
     // every rule is checked against what is still in front of it afterwards.
 
-    function move(index, by) {
-      const to = index + by;
-      if (to < 0 || to >= state.questions.length) return;
-      const [question] = state.questions.splice(index, 1);
+    function clearDragIndicators() {
+      activeQuestionDrag = null;
+      activeOptionDrag = null;
+      el.questions.querySelectorAll('.is-dragging, .drop-target').forEach(node => {
+        node.classList.remove('is-dragging', 'drop-target');
+      });
+    }
+
+    function moveQuestionTo(from, to) {
+      if (from < 0 || from >= state.questions.length || to < 0 || to >= state.questions.length || from === to) return false;
+      const [question] = state.questions.splice(from, 1);
       state.questions.splice(to, 0, question);
+      if (Number.isInteger(state.openQuestion)) {
+        if (state.openQuestion === from) state.openQuestion = to;
+        else if (from < state.openQuestion && to >= state.openQuestion) state.openQuestion--;
+        else if (from > state.openQuestion && to <= state.openQuestion) state.openQuestion++;
+      }
       pruneLogic();
       render();
       changed();
+      return true;
+    }
+
+    function moveOption(question, list, from, to) {
+      const options = question[list];
+      if (!Array.isArray(options) || from < 0 || from >= options.length || to < 0 || to >= options.length || from === to) return false;
+      const [option] = options.splice(from, 1);
+      options.splice(to, 0, option);
+      const prefix = `${question.id}|${list}|`;
+      for (const key of [...descExpanded]) if (key.startsWith(prefix)) descExpanded.delete(key);
+      render();
+      changed();
+      return true;
     }
 
     async function remove(index) {

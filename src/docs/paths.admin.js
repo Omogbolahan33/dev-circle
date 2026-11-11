@@ -137,28 +137,45 @@ const paths = {
           work_sector: arrayOf(object({ label: str('Sector'), count: int('Members') }), 'By industry'),
           location_state: arrayOf(object({ label: str('State'), count: int('Members') }), 'Top 15 states'),
           gender: arrayOf(object({ label: str('Gender'), count: int('Members') }), 'By gender'),
-          age_band: arrayOf(object({ label: str('Band'), count: int('Members') }), 'Under 25 / 25–34 / 35–44 / 45+'),
-          api_products: arrayOf(object({ label: str('Product'), count: int('Members') }), 'A member counts once per product'),
+          age_group: arrayOf(object({ label: str('Age group'), count: int('Members') }), 'Member-selected age group'),
+          age_band: arrayOf(object({ label: str('Age group'), count: int('Members') }), 'Legacy alias for age_group'),
+          products: arrayOf(object({ label: str('Participant product'), count: int('Members') }), 'Member-selected products; members may appear in more than one'),
+          api_products: arrayOf(object({ label: str('API product'), count: int('Members') }), 'API products in use; a member counts once per product'),
+          segment: arrayOf(object({ label: str('Generated segment'), count: int('Members') }), 'Calculated from distinct participant products: 0 = General / App, 1 = Single Product, 2 = Multi-Product, 3+ = Power Tester'),
+          employment: arrayOf(object({ label: str('Employment'), count: int('Members') }), 'Employment type'),
+          preferred_research: arrayOf(object({ label: str('Research type'), count: int('Members') }), 'Preferred research activity'),
           api_status: arrayOf(object({ label: str('Stage'), count: int('Members') }), 'Sandbox against production'),
           kyb: arrayOf(object({ label: str('Completed or Pending'), count: int('Members') }), 'KYB progress'),
           engagement_depth: arrayOf(object({ label: str('Band'), count: int('Members') }), 'How many surveys members have answered'),
           data_coverage: object({
-            no_date_of_birth: int('Members with no date of birth'),
+            no_age_group: int('Members with no age group'),
             no_gender: int('Members with no gender'),
             no_location: int('Members with no state'),
-            no_products: int('Members with no products recorded')
-          }, { description: 'How much of the base is missing from each breakdown above.' })
+            no_products: int('Members with no participant products recorded'),
+            no_api_products: int('Members with no API products recorded'),
+            no_segment: int('Members with no generated participant segment (expected 0 after backfill)'),
+            no_employment: int('Members with no employment type'),
+            no_preferred_research: int('Members with no preferred research type')
+          }, { description: 'How much of the base is missing from each profile-field breakdown.' })
         }), {
           total: 248,
           work_sector: [{ label: 'Fintech', count: 121 }, { label: 'Unspecified', count: 44 }],
           location_state: [{ label: 'Lagos', count: 160 }],
           gender: [{ label: 'male', count: 141 }, { label: 'female', count: 92 }],
-          age_band: [{ label: '25–34', count: 118 }],
+          age_group: [{ label: '25 - 34', count: 118 }],
+          age_band: [{ label: '25 - 34', count: 118 }],
+          products: [{ label: 'Mobile App', count: 143 }],
           api_products: [{ label: 'lending', count: 143 }],
+          segment: [{ label: 'Single Product', count: 118 }],
+          employment: [{ label: 'Salary Earner', count: 136 }],
+          preferred_research: [{ label: 'User interviews', count: 82 }],
           api_status: [{ label: 'sandbox', count: 191 }],
           kyb: [{ label: 'Pending', count: 173 }],
           engagement_depth: [{ label: 'Never responded', count: 61 }],
-          data_coverage: { no_date_of_birth: 88, no_gender: 15, no_location: 21, no_products: 40 }
+          data_coverage: {
+            no_age_group: 88, no_gender: 15, no_location: 21, no_products: 40,
+            no_api_products: 28, no_segment: 0, no_employment: 33, no_preferred_research: 57
+          }
         })
       }
     })
@@ -207,6 +224,12 @@ const paths = {
       responses: {
         200: json('Everything on record for this member.', object({
           user: ref('Member'),
+          profile_fields: arrayOf(object({
+            key: str('Member profile field key'),
+            label: str('Display label'),
+            input: str('Control type'),
+            values: arrayOf(object({ value: str('Stored value'), label: str('Display label') }), 'Available choices')
+          }), 'Shared profile field metadata and choices'),
           cohorts: arrayOf(ref('Cohort'), 'Cohorts they belong to'),
           consent: arrayOf(ref('ConsentRecord'), 'Consent per channel'),
           engagement: arrayOf(ref('EngagementEvent'), 'Last 50 engagement events'),
@@ -219,6 +242,7 @@ const paths = {
           deliveries: arrayOf(ref('MessageDelivery'), 'Last 25 outbound attempts')
         }), {
           user: { id: MEMBER_ID, email: 'chidi@paystack.africa', name: 'Chidi Nwosu', status: 'active' },
+          profile_fields: [],
           cohorts: [{ id: 'c1', name: 'All Members' }],
           consent: [{ channel: 'email', status: 'granted' }],
           engagement: [{ id: 'e1', type: 'survey_completed', created_at: '2026-08-12 16:40:09' }],
@@ -448,7 +472,8 @@ const paths = {
       summary: 'Feedback grouped along one axis',
       description: [
         'Groups first, verbatims on drill-in. Filters and grouping compose, so "what the',
-        'lending cohort said, by question" is one call.',
+        'lending cohort said, by question" is one call. Set `include_items=true` for the',
+        'grouped table payload instead of fetching each group separately.',
         '',
         'Counts lead with distinct developers rather than answers: five people saying a',
         'thing once and one person saying it five times are different facts, and a single',
@@ -456,6 +481,7 @@ const paths = {
       ].join('\n'),
       parameters: [
         query('group_by', 'Which axis to group along — see /admin/feedback/axes', { type: 'string', default: 'question' }),
+        query('include_items', 'Set true to include per-group table rows in one response', { type: 'string', enum: ['true', 'false'] }),
         query('prompted', 'true for answers to questions, false for what was raised unprompted', { type: 'string', enum: ['true', 'false'] }),
         query('search', 'Match against the question or the answer'),
         query('question_id', 'Narrow to one question'),
@@ -1896,6 +1922,29 @@ const paths = {
     })
   },
 
+  '/admin/surveys/{id}/responses/{responseId}/submit': {
+    post: op({
+      tag: 'Admin · Surveys',
+      permission: 'responses.update',
+      operationId: 'markSurveyResponseSubmitted',
+      summary: 'Mark a valid saved response as submitted',
+      description: 'Validates saved answers against the survey, records the question snapshot and linked free-text feedback, then marks the response complete. Missing required answers are refused. This status change does not create a member engagement event.',
+      parameters: [path('id', 'Survey id'), path('responseId', 'Response id')],
+      requestBody: jsonBody(object({}), {}, { required: false }),
+      responses: {
+        200: json('The response is now submitted.', object({
+          message: str('Human summary'), filed_feedback: int('New feedback items filed')
+        }), { message: 'Response marked submitted', filed_feedback: 1 }),
+        400: json('Saved answers are incomplete or invalid.', ref('Error'), {
+          error: 'This response cannot be marked submitted because required answers are missing.',
+          missing: ['q1']
+        }),
+        404: json('Survey or response not found in this circle.', ref('Error'), { error: 'Survey response not found' }),
+        409: json('The response is already submitted.', ref('Error'), { error: 'This response is already submitted.' })
+      }
+    })
+  },
+
   '/admin/surveys/{id}/responses/template': {
     get: op({
       tag: 'Admin · Surveys',
@@ -2162,6 +2211,31 @@ const paths = {
           preview: { recipients: 57, available: 41, reachable: 53, unavailable: [{ id: MEMBER_ID, name: 'Chidi Nwosu', reason: 'Outside their 10:00–14:00 window' }] }
         }),
         400: json('A missing or invalid field.', ref('Error'), { error: 'scheduled_for must be an ISO date-time' })
+      }
+    })
+  },
+
+  '/admin/sessions/previews': {
+    post: op({
+      tag: 'Admin · Sessions',
+      permission: 'sessions.read',
+      operationId: 'previewSessionList',
+      summary: 'Load compact availability for upcoming sessions',
+      description: 'Batches availability summaries for the sessions page. Request up to 40 ids; response includes counts and at most four unavailable names per session.',
+      requestBody: jsonBody(object({
+        ids: arrayOf({ type: 'string' }, 'Session ids to preview (maximum 40)')
+      }, { required: ['ids'] }), { ids: ['ss1', 'ss2'] }),
+      responses: {
+        200: json('Compact previews, one per session found in the current circle.', object({
+          previews: arrayOf(object({
+            session_id: str('Session id'), scheduled_for: str('ISO date-time'), weekday: str('WAT weekday'),
+            total: int('Audience size'), available_count: int('Available members'),
+            unavailable_count: int('Unavailable members'),
+            unavailable_preview: arrayOf(object({ name: str('Member name'), email: str('Member email') }), 'At most four unavailable members'),
+            unreachable_count: int('Members with no allowed channel')
+          }), 'Session summaries')
+        }), { previews: [] }),
+        400: json('More than 40 ids or an invalid session date.', ref('Error'), { error: 'Request at most 40 session previews' })
       }
     })
   },

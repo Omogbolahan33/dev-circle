@@ -52,6 +52,48 @@ function apply(db, migration) {
   }
 }
 
+test('survey responses remain canonical and linked Feedback content is deduplicated', () => {
+  const { db } = databaseAt(40);
+  const userId = crypto.randomUUID();
+  const surveyId = crypto.randomUUID();
+  const responseId = crypto.randomUUID();
+  const questions = [
+    { id: 'q_text', type: 'text', text: 'What changed?' },
+    { id: 'q_multi', type: 'multi_choice', text: 'Which docs?', options: ['Quickstart'], allow_other: true }
+  ];
+
+  db.prepare('INSERT INTO users (id, email, name, password_hash) VALUES (?, ?, ?, ?)')
+    .run(userId, 'one@example.ng', 'One', 'x');
+  db.prepare('INSERT INTO surveys (id, title, questions) VALUES (?, ?, ?)')
+    .run(surveyId, 'Docs', JSON.stringify(questions));
+  db.prepare(`
+    INSERT INTO survey_responses (id, survey_id, user_id, answers, questions, completed_at)
+    VALUES (?, ?, ?, ?, ?, datetime('now'))
+  `).run(responseId, surveyId, userId, JSON.stringify({
+    q_text: 'The code samples are outdated.', q_multi: ['Quickstart', 'Migration guide']
+  }), JSON.stringify(questions));
+  for (const [questionId, content] of [
+    ['q_text', 'The code samples are outdated.'], ['q_multi', 'Migration guide']
+  ]) {
+    db.prepare(`
+      INSERT INTO feedback (id, user_id, type, content, source, survey_id, question_id)
+      VALUES (?, ?, 'survey_response', ?, 'survey', ?, ?)
+    `).run(crypto.randomUUID(), userId, content, surveyId, questionId);
+  }
+
+  const definitions = migrations.define(db);
+  apply(db, definitions.find(m => m.id === 41));
+  apply(db, definitions.find(m => m.id === 42));
+
+  const response = db.prepare('SELECT answers FROM survey_responses WHERE id = ?').get(responseId);
+  assert.deepEqual(JSON.parse(response.answers), {
+    q_text: 'The code samples are outdated.', q_multi: ['Quickstart', 'Migration guide']
+  });
+  assert.deepEqual(db.prepare('SELECT response_id, content FROM feedback ORDER BY question_id').all(), [
+    { response_id: responseId, content: '' }, { response_id: responseId, content: '' }
+  ]);
+});
+
 test('the anonymous-respondent rebuild carries every row and column across', () => {
   const { db } = databaseAt(24);
 

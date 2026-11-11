@@ -11,6 +11,16 @@
   <link rel="stylesheet" href="/assets/css/tokens.css">
   <link rel="stylesheet" href="/assets/css/app.css">
   <script src="/assets/js/theme.js"></script>
+  <style>
+    .survey-actions-menu { position: relative; display: inline-block; }
+    .survey-actions-menu > summary { list-style: none; cursor: pointer; }
+    .survey-actions-menu > summary::-webkit-details-marker { display: none; }
+    .survey-actions-menu-pop { position: absolute; z-index: 40; top: calc(100% + 6px); right: 0; min-width: 190px; padding: var(--sp-1); border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface-3); box-shadow: 0 10px 28px rgba(0,0,0,.18); }
+    .survey-actions-item { display: flex; align-items: center; width: 100%; padding: var(--sp-2) var(--sp-3); border: 0; border-radius: var(--r-sm); background: transparent; color: var(--white); font: inherit; font-size: var(--fs-sm); text-align: left; text-decoration: none; cursor: pointer; white-space: nowrap; }
+    .survey-actions-item:hover { background: var(--tint-2); text-decoration: none; }
+    .survey-actions-item.danger { color: var(--rose-ink); }
+    .survey-actions-divider { height: 1px; margin: var(--sp-1) var(--sp-2); background: var(--line); }
+  </style>
 </head>
 <body>
 
@@ -150,19 +160,42 @@
             <div class="row-actions">
               ${s.status === 'active' && s.target_type === 'anonymous' ? `
                 <button class="btn btn-sm btn-ghost" onclick="copyLink('${s.public_path}')">Copy link</button>` : ''}
-              ${s.status === 'active' && s.target_type !== 'anonymous' ? `
-                <button class="btn btn-sm btn-ghost" onclick="invite('${s.id}', this)">Invite</button>
-                <button class="btn btn-sm btn-ghost" onclick="remind('${s.id}', this)">Remind</button>` : ''}
               <a class="btn btn-sm btn-ghost" href="/admin/survey-new.html?id=${s.id}">Edit</a>
-              <button class="btn btn-sm btn-ghost" onclick="duplicate('${s.id}', this)">Duplicate</button>
-              <a class="btn btn-sm btn-ghost" href="/admin/survey-responses.html?id=${s.id}">Responses</a>
-              <a class="btn btn-sm btn-ghost" href="/admin/survey-responses.html?id=${s.id}&import=1">Import</a>
-              ${canDeleteSurveys ? `<button class="btn btn-sm btn-danger" onclick="deleteSurvey('${s.id}', event)">Delete</button>` : ''}
+              <details class="survey-actions-menu">
+                <summary class="btn btn-sm btn-ghost" title="More actions" aria-label="More actions">⋯</summary>
+                <div class="survey-actions-menu-pop" aria-label="More survey actions">
+                  ${s.status === 'active' && s.target_type !== 'anonymous' ? `
+                    <button class="survey-actions-item" onclick="invite('${s.id}', this); closeSurveyActions(this)">Invite</button>
+                    <button class="survey-actions-item" onclick="remind('${s.id}', this); closeSurveyActions(this)">Remind</button>
+                    <div class="survey-actions-divider" role="separator"></div>` : ''}
+                  <button class="survey-actions-item" onclick="duplicate('${s.id}', this); closeSurveyActions(this)">Duplicate</button>
+                  <a class="survey-actions-item" href="/admin/survey-responses.html?id=${s.id}">Responses</a>
+                  <a class="survey-actions-item" href="/admin/survey-responses.html?id=${s.id}&import=1">Import</a>
+                  ${canDeleteSurveys ? `<div class="survey-actions-divider" role="separator"></div>
+                    <button class="survey-actions-item danger" onclick="deleteSurvey('${s.id}', event); closeSurveyActions(this)">Delete survey</button>` : ''}
+                </div>
+              </details>
             </div>
           </td>
         </tr>`;
     }).join('');
   }
+
+  function closeSurveyActions(element) {
+    const menu = element?.closest('details.survey-actions-menu');
+    if (menu) menu.open = false;
+  }
+
+  document.addEventListener('click', event => {
+    document.querySelectorAll('.survey-actions-menu[open]').forEach(menu => {
+      if (!menu.contains(event.target)) menu.open = false;
+    });
+  }, true);
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape') {
+      document.querySelectorAll('.survey-actions-menu[open]').forEach(menu => { menu.open = false; });
+    }
+  });
 
   async function deleteSurvey(id, event) {
     event?.stopPropagation();

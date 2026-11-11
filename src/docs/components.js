@@ -222,7 +222,16 @@ const schemas = {
     conditions: arrayOf(object({
       field: str('Field to test — see GET /admin/cohorts/rule-fields', { example: 'api_status' }),
       operator: str('Comparison to apply', { enum: ['eq', 'neq', 'contains', 'gt', 'gte', 'lt', 'lte'], example: 'eq' }),
-      value: { description: 'Value to compare against', example: 'production' }
+      value: {
+        anyOf: [
+          { type: 'string' },
+          { type: 'number' },
+          { type: 'boolean' },
+          { type: 'array', minItems: 1, items: { type: 'string' } }
+        ],
+        description: 'A single value or a list of values; a list matches any selected value.',
+        example: ['Fintech', 'Banking']
+      }
     }), 'The conditions to combine')
   }, { description: 'A cohort definition the rule engine can evaluate.' }),
 

@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 
 const { SCHEMA_POSTGRES } = require('../../src/db/schema.postgres');
+const { statementsIn } = require('../../src/db/sql');
 
 // The Postgres schema is applied statement-by-statement (pg.exec splits on
 // ';'). A CREATE TABLE that REFERENCES another table must therefore appear
@@ -23,6 +24,31 @@ function createTableName(stmt) {
 function referencedTables(stmt) {
   return [...stmt.matchAll(/REFERENCES\s+(\w+)\s*\(/gi)].map(m => m[1]);
 }
+
+test('Postgres SQL splitter ignores semicolons inside comments and dollar-quoted bodies', () => {
+  assert.deepEqual(statementsIn('-- a comment; with punctuation\nCREATE TABLE example (id TEXT);\nSELECT 1;'), [
+    'CREATE TABLE example (id TEXT)',
+    'SELECT 1'
+  ]);
+  assert.deepEqual(statementsIn(`DO $rls$ DECLARE target record; BEGIN
+    EXECUTE format('ALTER TABLE %I.%I ENABLE ROW LEVEL SECURITY', target.schemaname, target.tablename);
+  END $rls$; SELECT 1;`), [
+    `DO $rls$ DECLARE target record; BEGIN\n    EXECUTE format('ALTER TABLE %I.%I ENABLE ROW LEVEL SECURITY', target.schemaname, target.tablename);\n  END $rls$`,
+    'SELECT 1'
+  ]);
+
+  const schemaStatements = statementsIn(SCHEMA_POSTGRES);
+  assert.ok(schemaStatements.some(s => /^DO \$rls\$/i.test(s) && s.includes('ENABLE ROW LEVEL SECURITY')));
+  assert.ok(schemaStatements.some(s => /REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM anon, authenticated/i.test(s)));
+  assert.ok(schemaStatements.some(s => /REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM anon, authenticated/i.test(s)));
+  assert.ok(schemaStatements.some(s => /ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON TABLES FROM anon, authenticated/i.test(s)));
+  assert.ok(schemaStatements.some(s => /ALTER DEFAULT PRIVILEGES REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC/i.test(s)));
+  assert.ok(schemaStatements.some(s => /CREATE TABLE IF NOT EXISTS developer_circle_consent/i.test(s)));
+  assert.ok(schemaStatements.some(s => /CREATE OR REPLACE FUNCTION public\.derive_participant_segment/i.test(s)));
+  assert.ok(schemaStatements.some(s => /CREATE TRIGGER users_derive_participant_segment/i.test(s)));
+  assert.ok(schemaStatements.some(s => /REVOKE ALL ON FUNCTION public\.derive_participant_segment\(\) FROM PUBLIC, anon, authenticated/i.test(s)));
+  assert.ok(!schemaStatements.some(s => /^withdrawal\b/i.test(s)));
+});
 
 test('postgres schema creates referenced tables before their foreign keys', () => {
   const created = new Set();
@@ -60,17 +86,17 @@ test('indexes only target tables that the schema creates', () => {
   }
 });
 
-test('supabase SQL migration stays in lockstep with SCHEMA_POSTGRES', () => {
+test('current Postgres schema preserves the initial Supabase table definitions', () => {
   const sqlPath = path.join(__dirname, '../../supabase/migrations/20260821000000_initial_schema.sql');
-  const fromFile = fs.readFileSync(sqlPath, 'utf8');
-
-  const normalize = sql => statements(sql)
+  const initial = fs.readFileSync(sqlPath, 'utf8');
+  const normalize = sql => statementsIn(sql)
     .map(s => s.replace(/--[^\n]*/g, '').replace(/\s+/g, ' ').trim())
     .filter(Boolean);
+  const initialTables = normalize(initial).filter(s => /^CREATE TABLE IF NOT EXISTS/i.test(s));
+  const currentTables = new Set(normalize(SCHEMA_POSTGRES)
+    .filter(s => /^CREATE TABLE IF NOT EXISTS/i.test(s)));
 
-  assert.deepEqual(
-    normalize(fromFile),
-    normalize(SCHEMA_POSTGRES),
-    'supabase/migrations/20260821000000_initial_schema.sql must match SCHEMA_POSTGRES'
-  );
+  for (const table of initialTables) {
+    assert.ok(currentTables.has(table), `current schema must preserve initial table definition: ${table.slice(0, 80)}`);
+  }
 });

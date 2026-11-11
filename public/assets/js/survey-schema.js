@@ -56,9 +56,10 @@ const SurveySchema = (() => {
     {
       type: 'dropdown',
       label: 'Dropdown',
-      hint: 'Pick one from a long list',
+      hint: 'Legacy single-choice format',
       answerable: true,
-      options: true
+      options: true,
+      legacy: true
     },
     {
       type: 'rating',
@@ -372,17 +373,26 @@ const SurveySchema = (() => {
     const issues = [];
     const at = (field, message) => issues.push({ index, field, message, number: index + 1 });
 
-    const type = trimmed(raw && raw.type) || 'text';
-    if (!BY_TYPE.has(type)) {
-      at('type', `"${type}" is not a question type`);
+    const rawType = trimmed(raw && raw.type) || 'text';
+    if (!BY_TYPE.has(rawType)) {
+      at('type', `"${rawType}" is not a question type`);
       return { question: null, issues };
     }
+    // Accept the former standalone type at the boundary, but store it as a
+    // single-choice question with a dropdown display preference.
+    const type = rawType === 'dropdown' ? 'choice' : rawType;
 
     const question = {
       id: trimmed(raw.id) || null,       // the caller assigns this; kept if already stable
       type,
       text: trimmed(raw.text)
     };
+    if (type === 'choice' && (rawType === 'dropdown' || raw.dropdown === true || raw.dropdown === 'true')) {
+      question.dropdown = true;
+    }
+    if (type === 'multi_choice' && (raw.dropdown === true || raw.dropdown === 'true')) {
+      question.dropdown = true;
+    }
 
     if (!question.text) {
       at('text', 'Every question needs its wording');

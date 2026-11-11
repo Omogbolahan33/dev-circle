@@ -26,6 +26,7 @@ beforeEach(async () => {
 // requirePermission existed but no route used it.
 const FORBIDDEN_FOR_READ_ONLY = [
   ['POST', '/api/admin/surveys', { title: 'x', questions: [] }],
+  ['POST', '/api/admin/surveys/no-such-survey/responses/no-such-response/submit', {}],
   ['POST', '/api/admin/cohorts', { name: 'x' }],
   ['POST', '/api/admin/blasts', { content: 'x', channel: 'email', target_type: 'all' }],
   ['POST', '/api/admin/roles', { name: 'x', permissions: ['members.read'] }],
@@ -49,6 +50,7 @@ test('delete capabilities are distinct, assignable permissions', async () => {
   const keys = res.body.permissions.map(p => p.key);
   assert.ok(keys.includes('members.delete'));
   assert.ok(keys.includes('responses.delete'));
+  assert.ok(keys.includes('responses.update'));
   assert.ok(keys.includes('surveys.delete'));
   assert.ok(keys.includes('feedback.delete'));
 

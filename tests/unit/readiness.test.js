@@ -16,7 +16,6 @@ test('a newly registered user without available time leaves Ring 2 incomplete', 
     work_sector: 'Banking',
     age_group: '25 - 34',
     products: '["Mobile App"]',
-    segment: 'Single Product',
     employment: 'Salary Earner',
     preferred_research: 'Product testing',
     preferred_days: '[]',
@@ -59,7 +58,21 @@ test('a newly registered user without available time leaves Ring 2 incomplete', 
 
   assert.match(readiness.summary, /2 of 3 rings complete/);
   assert.match(readiness.summary, /Available Time/);
-  assert.match(readiness.next_action.headline, /available time/i);
+  assert.equal(readiness.next_action.headline, 'Choose the days that work for you');
+  assert.equal(readiness.next_action.action_label, 'Choose days');
+  assert.equal(readiness.next_action.action_url, '/member/profile.html#availability');
+});
+
+test('availability action distinguishes missing hours from missing days', () => {
+  const user = {
+    name: 'Tunde Bakare', phone: '+2348012345678', company: 'Sterling', work_sector: 'Banking',
+    age_group: '25 - 34', products: ['Mobile App'], employment: 'Salary Earner',
+    preferred_research: 'Product testing', preferred_days: ['Mon', 'Wed'],
+    preferred_time_start: '', preferred_time_end: '', preferred_channels: ['email']
+  };
+  const readiness = computeReadiness(user, [{ channel: 'email', status: 'granted' }]);
+  assert.equal(readiness.next_action.headline, 'Set the hours you are available');
+  assert.equal(readiness.next_action.action_label, 'Set hours');
 });
 
 test('updating available time completes Ring 2 and closes all 3 rings', () => {
@@ -71,7 +84,6 @@ test('updating available time completes Ring 2 and closes all 3 rings', () => {
     work_sector: 'Banking',
     age_group: '25 - 34',
     products: ['Mobile App'],
-    segment: 'Single Product',
     employment: 'Salary Earner',
     preferred_research: 'Product testing',
     preferred_days: ['Mon', 'Wed', 'Fri'],
@@ -107,7 +119,6 @@ test('missing work sector or company leaves Ring 1 incomplete', () => {
     work_sector: null, // missing
     age_group: '25 - 34',
     products: ['Mobile App'],
-    segment: 'Single Product',
     employment: 'Salary Earner',
     preferred_research: 'Product testing',
     preferred_days: ['Tue', 'Thu'],
@@ -121,7 +132,7 @@ test('missing work sector or company leaves Ring 1 incomplete', () => {
   const ring1 = readiness.rings.find(r => r.id === 'profile');
 
   assert.equal(ring1.is_complete, false);
-  assert.equal(ring1.percentage, 78); // 7 of 9 tasks done
+  assert.equal(ring1.percentage, 75); // 6 of 8 tasks done without a user-entered segment field
   assert.equal(readiness.completed_rings, 2);
   assert.equal(readiness.is_complete, false);
 

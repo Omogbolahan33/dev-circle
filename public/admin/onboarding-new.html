@@ -561,7 +561,7 @@
 
   const OPTION_TYPES = ['choice', 'multi_choice', 'dropdown', 'ranking'];
 
-  // Cards carry a subtext line; a dropdown and a ranking are plain words.
+  // Choice cards can carry subtext; dropdown display and ranking use plain words.
   function asOptions(type, list) {
     return ['choice', 'multi_choice'].includes(type)
       ? list.map(label => ({ label, subtext: '' }))
@@ -582,10 +582,9 @@
   function fillOptions(question, field) {
     if (!field?.options || !OPTION_TYPES.includes(question.type)) return false;
     question.options = asOptions(question.type, field.options);
-    // Thirty-seven states as cards is a wall to scroll past, so a long list
-    // picks the control that suits it. Only from `choice`, which is the one
-    // that renders every option at once — a multi-select has to stay one.
-    if (question.type === 'choice' && question.options.length > 8) question.type = 'dropdown';
+    // Thirty-seven states as cards is a wall to scroll past, so show a long
+    // single-choice list as a dropdown without changing what kind of answer it is.
+    if (question.type === 'choice' && question.options.length > 8) question.dropdown = true;
     return true;
   }
 

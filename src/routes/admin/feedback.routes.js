@@ -6,6 +6,7 @@ const notifications = require('../../services/notifications');
 const { toCSV, paginate, pageMeta } = require('../../utils/helpers');
 const { buildXLSX } = require('../../utils/xlsx');
 const views = require('../../services/feedbackViews');
+const verbatims = require('../../services/verbatims');
 
 // Every read is bounded by the circle being worked in
 const scoped = req => ({ ...req.query, circle_id: req.circleId });
@@ -38,7 +39,8 @@ router.get('/feedback', requirePermission('feedback.read'), async (req, res) => 
 
   const [feedback, bySource, totalRow] = await Promise.all([
     db.prepare(`
-      SELECT f.id, f.user_id, f.type, f.content, f.category, f.status, f.source,
+      SELECT f.id, f.user_id, f.type, f.content, f.response_id, f.question_id,
+             f.category, f.status, f.source, f.source_system,
              f.survey_id, f.canonical_question_id, f.prompt, f.created_at,
              f.external_ticket_id, f.circle_id,
              u.name as user_name, u.email as user_email, u.company as user_company,
@@ -59,9 +61,10 @@ router.get('/feedback', requirePermission('feedback.read'), async (req, res) => 
     `).all(req.circleId),
     db.prepare(`SELECT COUNT(*) as c FROM feedback f WHERE ${where.join(' AND ')}`).get(...params)
   ]);
+  const hydratedFeedback = await verbatims.hydrateFeedbackRows(feedback || []);
 
   res.json({
-    feedback: feedback || [],
+    feedback: hydratedFeedback,
     sources: bySource || [],
     pagination: pageMeta({ page, limit: pageSize, total: Number(totalRow?.c || 0) })
   });
@@ -82,12 +85,12 @@ router.get('/feedback/grouped', requirePermission('feedback.read'), async (req, 
   const axis = req.query.group_by || 'question';
   const query = scoped(req);
   const preloaded = await takePreload(req, () => null);
-  const [groups, totals] = preloaded
-    ? [preloaded.groups, preloaded.totals]
-    : await Promise.all([
-      views.group(axis, query),
-      views.summarise(query)
-    ]);
+  const includeItems = req.query.include_items === 'true';
+  const [groups, totals, itemsByGroup] = await Promise.all([
+    preloaded ? preloaded.groups : views.group(axis, query),
+    preloaded ? preloaded.totals : views.summarise(query),
+    includeItems ? views.itemsByGroup(axis, query, { limitPerGroup: 500 }) : undefined
+  ]);
 
   if (!groups) {
     return res.status(400).json({
@@ -100,7 +103,8 @@ router.get('/feedback/grouped', requirePermission('feedback.read'), async (req, 
     group_by: axis,
     axis: views.axes().find(a => a.key === axis),
     groups,
-    totals
+    totals,
+    ...(itemsByGroup ? { items_by_group: itemsByGroup } : {})
   });
 });
 
@@ -220,29 +224,35 @@ router.get('/feedback/export/count', requirePermission('export.read'), async (re
   });
 });
 
-// DELETE /api/admin/feedback/:id — removes one feedback row. If it came from a
-// survey, the corresponding response remains in Surveys; deleting the response
-// there also removes any other linked verbatims.
+// DELETE /api/admin/feedback/:id — removes the Feedback projection only.
+// Survey responses remain the canonical record and are never altered here.
 router.delete('/feedback/:id', requirePermission('feedback.delete'), async (req, res) => {
   const fb = await db.prepare(`
-    SELECT id, type, source, content, survey_id, response_id, user_id
+    SELECT id, type, source, content, survey_id, response_id, user_id, question_id
     FROM feedback
     WHERE id = ? AND (circle_id = ? OR circle_id IS NULL)
   `).get(req.params.id, req.circleId);
   if (!fb) return res.status(404).json({ error: 'Feedback not found' });
 
-  if (req.query.confirm !== 'true' && req.body?.confirm !== true) {
-    const linkedResponse = fb.type === 'survey_response' && Boolean(fb.survey_id || fb.response_id);
+  const isSurveyAnswer = fb.type === 'survey_response' ||
+    (['survey', 'external_survey'].includes(fb.source) && Boolean(fb.survey_id || fb.response_id));
+  if (isSurveyAnswer) {
     return res.status(409).json({
-      error: linkedResponse
-        ? 'Delete this feedback item? Its survey response will remain in Surveys.'
-        : 'Delete this feedback item permanently?',
+      error: 'Survey answers cannot be deleted from Feedback. Delete the response from its survey results instead.',
+      delete_from: 'survey_responses'
+    });
+  }
+
+  if (req.query.confirm !== 'true' && req.body?.confirm !== true) {
+    return res.status(409).json({
+      error: 'Delete this feedback item permanently?',
       confirm_required: true,
-      linked_response: linkedResponse
+      linked_response: false
     });
   }
 
   const removed = await db.prepare('DELETE FROM feedback WHERE id = ?').run(fb.id);
+
   if (!removed?.changes) return res.status(404).json({ error: 'Feedback not found' });
   res.json({ message: 'Feedback item deleted' });
 });
